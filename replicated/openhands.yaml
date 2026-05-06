@@ -235,7 +235,7 @@ spec:
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
-        RUNTIME_CLASS: ""
+        RUNTIME_CLASS: "sysbox-runc"
         RUNTIME_DISABLE_SSL: "false"
         PERSISTENT_STORAGE_SIZE: 'repl{{ ConfigOption "sandbox_storage_size" }}'
         MEMORY_REQUEST: 'repl{{ ConfigOption "sandbox_memory_request" }}'
