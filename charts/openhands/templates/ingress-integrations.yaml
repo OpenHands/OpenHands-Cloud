@@ -43,6 +43,13 @@ spec:
             name: openhands-integrations-service
             port:
               number: 3000
+      - path: /integration/azure-devops/events
+        pathType: Exact
+        backend:
+          service:
+            name: openhands-integrations-service
+            port:
+              number: 3000
       - path: /integration/jira/events
         pathType: Exact
         backend:

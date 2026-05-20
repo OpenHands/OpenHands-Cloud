@@ -243,6 +243,36 @@ authentication as well.
      enabled: true
    ```
 
+#### Azure DevOps
+
+1. Create an Azure AD App Registration:
+
+   - Go to the Azure Portal > Azure Active Directory > App registrations > New registration
+   - Set the "Redirect URI" to `https://auth.openhands.example.com/realms/allhands/broker/azuredevops/endpoint`
+   - Under "Certificates & secrets", create a new client secret
+   - Under "API permissions", add the following permissions for Azure DevOps (if using delegated permissions): vso.code_write, vso.work_write, vso.identity, vso.profile, vso.project
+   - Note the Application (client) ID, Directory (tenant) ID, and Client Secret
+
+2. Create an Azure DevOps App secret:
+
+   ```bash
+   kubectl create secret generic azuredevops-app -n openhands \
+     --from-literal=client-id=<your-azure-ad-client-id> \
+     --from-literal=client-secret=<your-azure-ad-client-secret>
+   ```
+
+3. Update site-values.yaml file:
+
+   ```yaml
+   azureDevOps:
+     enabled: true
+     # For single-tenant apps, set your Azure AD tenant ID
+     # For multi-tenant apps, leave empty or set to "common"
+     tenantId: "<your-tenant-id-or-empty>"
+     auth:
+       existingSecret: azuredevops-app
+   ```
+
 When the chart is deployed, a job will run to configure the Keycloak realm with the identity provider credentials you provided.
 
 #### Bitbucket Data Center

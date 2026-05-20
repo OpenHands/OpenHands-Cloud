@@ -193,6 +193,20 @@
       name: {{ .Values.bitbucket.auth.existingSecret }}
       key: client-secret
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: AZURE_DEVOPS_APP_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-id
+- name: AZURE_DEVOPS_APP_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-secret
+- name: AZURE_DEVOPS_TENANT_ID
+  value: {{ .Values.azureDevOps.tenantId | quote }}
+{{- end }}
 {{- if .Values.bitbucketDataCenter.enabled }}
 - name: BITBUCKET_DATA_CENTER_HOST
   value: {{ .Values.bitbucketDataCenter.host }}

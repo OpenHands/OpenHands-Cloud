@@ -13,6 +13,7 @@ appConfig:
   OPENHANDS_GITHUB_SERVICE_CLS: "integrations.github.github_service.SaaSGitHubService"
   OPENHANDS_GITLAB_SERVICE_CLS: "integrations.gitlab.gitlab_service.SaaSGitLabService"
   OPENHANDS_BITBUCKET_SERVICE_CLS: "integrations.bitbucket.bitbucket_service.SaaSBitBucketService"
+  OPENHANDS_AZURE_DEVOPS_SERVICE_CLS: "integrations.azure_devops.azure_devops_service.SaaSAzureDevOpsService"
   OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS: "integrations.bitbucket_data_center.bitbucket_dc_service.SaaSBitbucketDCService"
   OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
@@ -656,6 +657,14 @@ jiraDc:
 
 linear:
   enabled: false
+
+azureDevOps:
+  enabled: false
+  # Azure AD tenant ID for single-tenant app authentication
+  # Leave empty or set to "common" for multi-tenant apps
+  tenantId: ""
+  auth:
+    existingSecret: azuredevops-app
 
 # Plugin Directory subchart configuration
 # When enabled, deploys the plugin directory marketplace as a subchart
