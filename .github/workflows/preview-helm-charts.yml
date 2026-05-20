@@ -30,8 +30,10 @@ jobs:
 
       - name: Detect chart changes
         id: changes
+        env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
+          BASE_REF="origin/${PR_BASE_REF}"
           echo "Comparing against: $BASE_REF"
 
           # Get list of changed files

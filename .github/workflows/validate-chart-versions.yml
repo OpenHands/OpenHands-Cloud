@@ -62,16 +62,19 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/${{ env.YQ_VERSION }}/yq_linux_amd64
+          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
           sudo chmod +x /usr/local/bin/yq
 
       - name: Check for chart changes and validate version bumps
         id: validate
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          ENFORCE_VERSION_BUMP: ${{ inputs.enforce_version_bump }}
         run: |
-          echo "Comparing against: ${{ inputs.base_ref }}"
+          echo "Comparing against: $BASE_REF"
 
           # Get list of changed files
-          CHANGED_FILES=$(git diff --name-only ${{ inputs.base_ref }}...HEAD)
+          CHANGED_FILES=$(git diff --name-only "${BASE_REF}...HEAD")
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
@@ -106,7 +109,7 @@ jobs:
               echo "Current version: $CURRENT_VERSION"
 
               # Get base version
-              BASE_VERSION=$(git show ${{ inputs.base_ref }}:"${chart_dir}/Chart.yaml" | yq e '.version' -)
+              BASE_VERSION=$(git show "${BASE_REF}:${chart_dir}/Chart.yaml" | yq e '.version' -)
               echo "Base version: $BASE_VERSION"
 
               # Check if version was bumped
@@ -114,7 +117,7 @@ jobs:
                 # Version not bumped - not publishable
                 echo "${chart_name}-publishable=false" >> $GITHUB_OUTPUT
                 
-                if [ "${{ inputs.enforce_version_bump }}" = "true" ]; then
+                if [ "$ENFORCE_VERSION_BUMP" = "true" ]; then
                   echo "❌ ERROR: Chart ${chart_dir} has changes but version was not bumped!"
                   echo "   Current version: $CURRENT_VERSION"
                   echo "   Base version: $BASE_VERSION"
