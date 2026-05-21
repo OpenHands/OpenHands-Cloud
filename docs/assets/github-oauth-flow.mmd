@@ -3,84 +3,91 @@ sequenceDiagram
     participant Browser
     participant OpenHands as OpenHands<br/>(Enterprise Server)
     participant DB as SecretsStore
-    participant Keycloak as Keycloak<br/>(Identity Provider)
-    participant GitHub as GitHub<br/>(OAuth Provider)
+    participant Keycloak as Keycloak<br/>(Identity Provider / OAuth Broker)
+    participant GitHub as GitHub<br/>(GitHub App, OAuth 2.0)
 
-    Note over Browser,GitHub: User Login Flow (Client-Side Initiated)
+    Note over Browser,GitHub: This deployment uses a GitHub APP (not a classic OAuth App).<br/>Evidence: GitHub App client_id has the Iv__ prefix and<br/>the returned user token is prefixed ghu_ (App user-to-server).<br/>GitHub Apps grant capabilities via App-level permissions,<br/>so OAuth scope strings are largely ignored.<br/>User tokens expire (8 h) and the App returns a refresh token<br/>that OpenHands rotates via grant_type=refresh_token.
 
-    Note over Browser: User visits /login (SPA route)<br/>Clicks "Sign in with GitHub"<br/>Frontend builds Keycloak URL<br/>window.location.href = url
+    Note over Browser,Keycloak: OIDC. SPA initiates login client-side.
+    Note over Browser: SPA at /login builds URL via<br/>generate-auth-url.ts and assigns<br/>window.location.href
 
-    Browser->>Keycloak: GET /realms/allhands/protocol/openid-connect/auth<br/>?client_id=allhands<br/>&response_type=code<br/>&kc_idp_hint=github<br/>&redirect_uri=.../oauth/keycloak/callback<br/>&scope=openid+email+profile
+    Browser->>Keycloak: GET /realms/allhands/protocol/openid-connect/auth<br/>?client_id=allhands<br/>&response_type=code<br/>&kc_idp_hint=github<br/>&redirect_uri=.../oauth/keycloak/callback<br/>&scope=openid+email+profile<br/>&state=base64(redirect_url)
 
-    Note over Keycloak: kc_idp_hint=github<br/>skips login page
+    Note over Keycloak: kc_idp_hint=github skips Keycloak login screen.<br/>Keycloak does NOT forward the SPA OIDC scopes.<br/>It sends its own configured defaultScope to GitHub.
 
-    Keycloak->>Browser: 302 Redirect to GitHub
+    Keycloak-->>Browser: 303 See Other<br/>/realms/allhands/broker/github/login?session_code=...
 
-    Browser->>GitHub: GET /login/oauth/authorize<br/>?client_id=<GITHUB_APP_CLIENT_ID><br/>&redirect_uri=.../broker/github/endpoint<br/>&scope=openid+email+profile
+    Browser->>Keycloak: GET /realms/allhands/broker/github/login
+    Keycloak-->>Browser: 303 See Other to github.com
 
-    Note over GitHub: User authorizes<br/>GitHub App
+    Note over Browser,GitHub: OAuth 2.0 (NOT OIDC). Keycloak<br/>built-in providerId=github broker.
+    Browser->>GitHub: GET /login/oauth/authorize<br/>?client_id=GITHUB_APP_CLIENT_ID  -- Iv__ prefix marks GitHub App<br/>&redirect_uri=.../realms/allhands/broker/github/endpoint<br/>&response_type=code<br/>&scope=openid+email+profile  -- OIDC strings, not GitHub OAuth scopes<br/>&state=keycloak-state
 
-    GitHub->>Browser: 302 Redirect to Keycloak broker
-    Browser->>Keycloak: GET /realms/allhands/broker/github/endpoint<br/>?code=<github-auth-code>
+    Note over GitHub: Scope strings openid/email/profile are<br/>NOT GitHub native scopes (user, user:email, ...).<br/>GitHub Apps ignore them. App permissions are<br/>configured on github.com and apply uniformly.<br/>User authorizes the App (first time) or is auto-redirected.
 
-    Note over Keycloak,GitHub: Server-to-Server Token Exchange
+    GitHub-->>Browser: 302 to Keycloak broker endpoint
+    Browser->>Keycloak: GET /realms/allhands/broker/github/endpoint<br/>?code=github-auth-code<br/>&state=keycloak-state
 
-    Keycloak->>GitHub: POST /login/oauth/access_token<br/>client_id, client_secret, code
-    GitHub-->>Keycloak: access_token (ghu_...)
+    Note over Keycloak,GitHub: Server-to-server (no browser).
+    Keycloak->>GitHub: POST /login/oauth/access_token<br/>client_id, client_secret, code, redirect_uri
+    GitHub-->>Keycloak: access_token=ghu_...<br/>refresh_token=ghr_...<br/>expires_in, refresh_token_expires_in
 
-    Keycloak->>GitHub: GET /user<br/>Authorization: Bearer ghu_...
-    GitHub-->>Keycloak: User profile (id, email, name)
+    Keycloak->>GitHub: GET https://api.github.com/user<br/>Authorization: Bearer ghu_...
+    GitHub-->>Keycloak: id, login, email, ...
 
-    Note over Keycloak: Creates/updates user<br/>Stores GitHub token<br/>(storeToken: true)<br/>Maps github_id attribute
+    Note over Keycloak: Maps github id to user attribute github_id<br/>via github-user-attribute-mapper.<br/>Hardcodes identity_provider=github.<br/>Persists tokens because storeToken=true.
 
-    Keycloak->>Browser: 302 Redirect to OpenHands
-    Browser->>OpenHands: GET /oauth/keycloak/callback<br/>?code=<keycloak-auth-code><br/>&session_state=<uuid><br/>&iss=.../realms/allhands
+    Keycloak-->>Browser: 302 to OpenHands
+    Browser->>OpenHands: GET /oauth/keycloak/callback<br/>?code=kc-code.session.client<br/>&session_state=...&iss=...
 
-    Note over OpenHands,Keycloak: Server-to-Server Token Exchange
+    Note over OpenHands,Keycloak: Server-to-server OIDC.
+    OpenHands->>Keycloak: POST /realms/allhands/protocol/openid-connect/token<br/>grant_type=authorization_code, code,<br/>client_id=allhands, client_secret
+    Keycloak-->>OpenHands: access_token (JWT), id_token (JWT), refresh_token<br/>NO offline_access on this leg
 
-    OpenHands->>Keycloak: POST /realms/allhands/protocol/openid-connect/token<br/>client_id, client_secret, code, grant_type=authorization_code
-    Keycloak-->>OpenHands: access_token, refresh_token, id_token
+    OpenHands->>Keycloak: GET /realms/allhands/protocol/openid-connect/userinfo<br/>Authorization: Bearer kc_access_token
+    Keycloak-->>OpenHands: sub, email, preferred_username, github_id, identity_provider
 
-    OpenHands->>Keycloak: GET /realms/allhands/protocol/openid-connect/userinfo<br/>Authorization: Bearer <access_token>
-    Keycloak-->>OpenHands: User claims (sub, email, github_id, identity_provider)
+    Note over OpenHands: Logs (verbatim):<br/>Logging in user UUID in org UUID<br/>user_logged_in idp=github idp_type=oidc
 
-    Note over OpenHands,Keycloak: Fetch & Store GitHub Token from Keycloak Broker
+    Note over OpenHands,Keycloak: Fetch broker-stored GitHub token.
+    OpenHands->>Keycloak: GET /realms/allhands/broker/github/token<br/>Authorization: Bearer kc_access_token
+    Keycloak-->>OpenHands: access_token=ghu_...<br/>refresh_token=ghr_...<br/>expires_at, refresh_expires_at
+    OpenHands->>DB: Encrypt and persist tokens (AuthTokenStore)
 
-    OpenHands->>Keycloak: GET /realms/allhands/broker/github/token<br/>Authorization: Bearer <keycloak_access_token>
-    Keycloak-->>OpenHands: GitHub access_token (ghu_...)
+    Note over OpenHands: server/routes/auth.py branches on two<br/>independent flags - valid_offline_token and<br/>has_accepted_tos. First login fails both.<br/>Returning users typically pass both.
 
-    OpenHands->>DB: Store GitHub token in SecretsStore
-
-    Note over OpenHands: User logged in<br/>Session created
-
-    alt First Login - TOS Required
-        OpenHands->>Browser: 302 Redirect to /accept-tos (SPA page)
-        Note over Browser: User accepts TOS on SPA page
+    alt has_accepted_tos == false (first login)
+        OpenHands-->>Browser: 302 to /accept-tos<br/>?redirect_url=(offline_auth_url_or_app)
+        Note over Browser: SPA renders TOS. User clicks accept.
         Browser->>OpenHands: POST /api/accept_tos
-        OpenHands-->>Browser: 200 OK, JSON {redirect_url: ...}
-        Note over Browser: Frontend reads redirect_url<br/>window.location.href = redirect_url
-        Browser->>Keycloak: GET /realms/allhands/protocol/openid-connect/auth<br/>&redirect_uri=.../oauth/keycloak/offline/callback<br/>&scope=openid+email+profile+offline_access
-        Keycloak->>Browser: 302 Redirect with new code
-        Browser->>OpenHands: GET /oauth/keycloak/offline/callback<br/>?code=<new-keycloak-code>
-        OpenHands->>Keycloak: POST /realms/allhands/protocol/openid-connect/token
-        Keycloak-->>OpenHands: refresh_token (for offline access)
+        OpenHands-->>Browser: 200 OK, body has redirect_url<br/>(NOT a 302)
+        Note over Browser: SPA reads redirect_url and assigns<br/>window.location.href = redirect_url
     end
 
-    OpenHands->>Browser: Set session cookies<br/>Redirect to app
-
-    Note over Browser,GitHub: Subsequent API Calls (GitHub Token from SecretsStore)
-
-    Browser->>OpenHands: API request (e.g., list repos)
-
-    OpenHands->>DB: Load GitHub token from SecretsStore
-
-    alt Token Expired
-        OpenHands->>GitHub: POST /login/oauth/access_token<br/>grant_type=refresh_token<br/>(direct refresh with GitHub)
-        GitHub-->>OpenHands: New access_token
-        OpenHands->>DB: Update token in SecretsStore
+    alt valid_offline_token == false (first login, or offline session expired)
+        Note over Browser,Keycloak: Second OIDC flow. Captures offline (refresh) token.<br/>Keycloak SSO session is live, so no GitHub round-trip.
+        Browser->>Keycloak: GET /realms/allhands/protocol/openid-connect/auth<br/>scope=openid+email+profile+offline_access<br/>redirect_uri=.../oauth/keycloak/offline/callback
+        Keycloak-->>Browser: 302 with new authorization code
+        Browser->>OpenHands: GET /oauth/keycloak/offline/callback?code=...
+        OpenHands->>Keycloak: POST /protocol/openid-connect/token
+        Keycloak-->>OpenHands: access_token + LONG-LIVED refresh_token (offline)
     end
 
-    OpenHands->>GitHub: API call with GitHub token<br/>Authorization: Bearer ghu_...
-    GitHub-->>OpenHands: API response
+    OpenHands-->>Browser: Set session cookies, redirect to app<br/>(returning users land here directly with no TOS/offline detour)
 
-    OpenHands->>Browser: Response with data
+    Note over Browser,GitHub: Subsequent calls. GitHub token from local store.
+    Browser->>OpenHands: GET /api/v1/git/installations/search?provider=github
+    OpenHands->>DB: load_tokens(github)
+
+    alt access_token near expiry (less than 4h left) and refresh_token still valid
+        Note over OpenHands,GitHub: token_manager._refresh_github_token
+        OpenHands->>GitHub: POST https://github.com/login/oauth/access_token<br/>client_id, client_secret, refresh_token,<br/>grant_type=refresh_token
+        GitHub-->>OpenHands: new access_token + new refresh_token<br/>expires_in, refresh_token_expires_in
+        OpenHands->>DB: re-encrypt and persist
+    else access_token still valid
+        Note over OpenHands: Use stored ghu_... as-is
+    end
+
+    OpenHands->>GitHub: GET https://api.github.com/...<br/>Authorization: Bearer ghu_...
+    GitHub-->>OpenHands: Repos / installations / etc.
+    OpenHands-->>Browser: JSON response
