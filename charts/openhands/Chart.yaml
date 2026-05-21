@@ -38,7 +38,7 @@ dependencies:
     condition: replicated.enabled
   - name: runtime-api
     repository: oci://ghcr.io/all-hands-ai/helm-charts
-    version: 0.3.3
+    version: 0.3.4
     condition: runtime-api.enabled
   - name: automation
     repository: oci://ghcr.io/all-hands-ai/helm-charts
