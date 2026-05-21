@@ -14,30 +14,48 @@ hash. If someone adds a new password field but forgets to add it to the hash,
 changing it in the admin console silently has no effect until a manual restart.
 This check keeps the two in sync, the same way the chart-version check keeps
 chart changes and version bumps in sync.
+
+NOTE: this check only blocks a merge if it is configured as a required status
+check on the protected branch (ideally strict / require-up-to-date). Otherwise
+it is advisory. It also runs on push to main so drift is surfaced immediately.
 """
 
 import pathlib
 import re
 import sys
 
+import yaml
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-config_lines = (ROOT / "replicated" / "config.yaml").read_text().splitlines()
-openhands_lines = (ROOT / "replicated" / "openhands.yaml").read_text().splitlines()
 
-# Password (secret) field names declared in config.yaml.
+# 1. Password (secret) field names declared in config.yaml, parsed structurally
+# so reformatting the YAML can't make the check silently miss a field.
+config = yaml.safe_load((ROOT / "replicated" / "config.yaml").read_text())
 password_fields = []
-last_name = None
-for line in config_lines:
-    name_match = re.match(r"\s*- name:\s*(\S+)", line)
-    if name_match:
-        last_name = name_match.group(1).strip("\"'")
-    elif re.match(r"\s*type:\s*password\b", line) and last_name:
-        password_fields.append(last_name)
 
-# ConfigOption names referenced inside the secretsChecksum value.
-checksum_line = next((l for l in openhands_lines if "secretsChecksum:" in l), "")
-covered = set(re.findall(r'ConfigOption\s+"([^"]+)"', checksum_line))
 
+def collect(items):
+    for item in items or []:
+        if isinstance(item, dict):
+            if item.get("type") == "password" and "name" in item:
+                password_fields.append(item["name"])
+            collect(item.get("items"))
+
+
+for group in config.get("spec", {}).get("groups", []):
+    collect(group.get("items"))
+
+# 2. ConfigOption names referenced inside the secretsChecksum value.
+checksum_expr = ""
+for doc in yaml.safe_load_all((ROOT / "replicated" / "openhands.yaml").read_text()):
+    if isinstance(doc, dict):
+        value = (doc.get("spec", {}).get("values", {}) or {}).get("secretsChecksum")
+        if value:
+            checksum_expr = value
+            break
+covered = set(re.findall(r'ConfigOption\s+"([^"]+)"', checksum_expr))
+
+# 3. Every secret field must be covered by the checksum.
 missing = [f for f in password_fields if f not in covered]
 if missing:
     print(
