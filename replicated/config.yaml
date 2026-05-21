@@ -417,27 +417,39 @@ spec:
       items:
         - name: bitbucket_data_center_auth_enabled
           title: Enable Bitbucket Data Center Authentication
-          help_text: Enable Bitbucket Data Center OAuth for user authentication
+          help_text: Let users sign in with their Bitbucket Data Center account.
           type: bool
           default: "0"
         - name: bitbucket_data_center_domain
           title: Bitbucket Data Center Domain
-          help_text: Domain of your Bitbucket Data Center instance
+          help_text: >-
+            Hostname of your Bitbucket Data Center instance (e.g. bbdc.example.com)
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_id
           title: Bitbucket Data Center Client ID
-          help_text: Client ID from your Bitbucket Data Center OAuth App
+          help_text: >-
+            Client ID of the OAuth 2.0 Application Link created in Bitbucket
+            Data Center (Administration → Application Links).
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_secret
           title: Bitbucket Data Center Client Secret
-          help_text: Client Secret from your Bitbucket Data Center OAuth App
+          help_text: Client Secret for that Application Link.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
+        - name: bitbucket_data_center_bot_token
+          title: Bitbucket Data Center Bot Token (optional)
+          help_text: >-
+            HTTP access token for a dedicated bot user (e.g. openhands-bot)
+            with repo access. When set, OpenHands posts comments and reactions
+            as the bot instead of the mentioning user or installer; jobs still
+            run on the invoking user's workspace.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
 
     - name: github_authentication
       title: GitHub Authentication
