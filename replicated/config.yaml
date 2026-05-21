@@ -705,6 +705,56 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: custom_sandbox_image_enabled
+          title: Use a Custom Sandbox Image
+          help_text: |
+            Override the agent-server image used by new and warm sandboxes.
+            Use this if you mirror the image to your own registry. Leave
+            disabled to use the image bundled with this release.
+          type: bool
+          default: "0"
+        - name: custom_sandbox_image_repository
+          title: Sandbox Image Repository
+          help_text: 'Full repository path with no tag, e.g. my-registry.example.com/openhands/agent-server'
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          help_text: Image tag, e.g. 1.21.1-python
+          type: text
+          default: "1.21.1-python"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_registry_server
+          title: Registry Server
+          help_text: |
+            Host (and optional port) of the registry, e.g. my-registry.example.com.
+            Leave blank if the registry is public, or if your cluster authenticates
+            to the registry via a credential provider (EKS IRSA, GKE Workload
+            Identity, AKS managed identity) — those bypass pull secrets entirely.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_username
+          title: Registry Username
+          help_text: |
+            Registry username. Some registries use sentinel values: _json_key
+            for GCP Artifact Registry, AWS for ECR static creds, $oauthtoken
+            for Quay robot accounts.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_password
+          title: Registry Password or Credentials
+          help_text: |
+            Password, PAT, or credentials string. This field is single-line —
+            for GCP Artifact Registry, minify the service-account JSON first
+            (e.g. `jq -c . key.json`) and paste the one-line result, with
+            username set to _json_key.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
 
     - name: proxy_configuration
       title: Proxy Configuration
