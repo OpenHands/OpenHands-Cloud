@@ -417,49 +417,37 @@ spec:
       items:
         - name: bitbucket_data_center_auth_enabled
           title: Enable Bitbucket Data Center Authentication
-          help_text: Enable Bitbucket Data Center OAuth for user authentication
+          help_text: Let users sign in with their Bitbucket Data Center account.
           type: bool
           default: "0"
         - name: bitbucket_data_center_domain
           title: Bitbucket Data Center Domain
           help_text: >-
-            Hostname of your Bitbucket Data Center instance — **without** the
-            protocol or a trailing slash. Example: `bitbucket.example.com`
-            (not `https://bitbucket.example.com`). OpenHands prepends
-            `https://` automatically; including it produces an invalid
-            `https://https://…` URL and login will fail.
+            Hostname of your Bitbucket Data Center instance (e.g. bbdc.example.com)
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_id
           title: Bitbucket Data Center Client ID
           help_text: >-
-            Client ID of the OAuth 2.0 application (incoming Application Link)
-            you registered in Bitbucket Data Center under Administration →
-            Application Links. Its redirect/callback URL must point at this
-            install's Keycloak (the auth hostname).
+            Client ID of the OAuth 2.0 Application Link created in Bitbucket
+            Data Center (Administration → Application Links).
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_secret
           title: Bitbucket Data Center Client Secret
-          help_text: >-
-            Client Secret of that same OAuth 2.0 application in Bitbucket Data
-            Center.
+          help_text: Client Secret for that Application Link.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_bot_token
           title: Bitbucket Data Center Bot Token (optional)
           help_text: >-
-            Optional. HTTP access token for a dedicated bot user account (e.g.
-            "openhands-bot") that has been granted access to the relevant
-            projects/repositories. When set, OpenHands posts all comments and
-            reactions as this bot instead of as the @-mentioning user or the
-            webhook installer (similar to GitHub's openhands[bot]). Jobs still
-            run with the invoking user's own credentials. Create it while
-            logged in as that bot user (Manage account → HTTP access tokens,
-            with Repository write). Leave blank to post as the user/installer.
+            HTTP access token for a dedicated bot user (e.g. openhands-bot)
+            with repo access. When set, OpenHands posts comments and reactions
+            as the bot instead of the mentioning user or installer; jobs still
+            run on the invoking user's workspace.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
 
