@@ -6,12 +6,12 @@ metadata:
 spec:
   collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
     - secret:
-        name: {{ .Release.Name }}-postgresql
+        name: postgres-password
         namespace: {{ .Release.Namespace }}
         key: postgres-password
         includeValue: false
     - secret:
-        name: {{ .Release.Name }}-redis
+        name: redis
         namespace: {{ .Release.Namespace }}
         key: redis-password
         includeValue: false
@@ -106,6 +106,17 @@ spec:
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
           maxAge: 168h
+    # Runtime sandbox pod logs. Pod names are dynamic (runtime-*) and the
+    # logs collector has no glob-name support, so select by the runtime_id
+    # label — a bare key matches "label exists with any value". Pod/event
+    # metadata is already captured by the top-level clusterResources collector.
+    - logs:
+        name: runtime-sandboxes/logs
+        selector:
+          - runtime_id
+        limits:
+          maxAge: 168h
+        timestamps: true
     {{- end }}
     {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
     # LiteLLM logs
@@ -126,23 +137,17 @@ spec:
         namespace: ingress-nginx
         limits:
           maxAge: 168h
-    {{- if .Values.postgresql.enabled }}
+    {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
     - postgresql:
         collectorName: postgresql
-        uri: postgresql://postgres:@{{ .Release.Name }}-postgresql:5432/openhands?sslmode=disable
+        uri: postgresql://{{ .Values.replicated.postgresUsername | urlquery }}:{{ .Values.replicated.postgresPassword | urlquery }}@{{ .Release.Name }}-postgresql.{{ .Release.Namespace }}.svc.cluster.local:5432/{{ .Values.replicated.postgresDatabase }}?sslmode=disable
         tls:
           disabled: true
-        password:
-          secretName: {{ .Release.Name }}-postgresql
-          secretKey: postgres-password
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- if and .Values.redis.enabled .Values.replicated.enabled }}
     - redis:
         collectorName: redis
-        uri: redis://{{ .Release.Name }}-redis-master:6379
-        password:
-          secretName: {{ .Release.Name }}-redis
-          secretKey: redis-password
+        uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ .Release.Name }}-redis-master.{{ .Release.Namespace }}.svc.cluster.local:6379
     {{- end }}
   analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
     - deploymentStatus:
@@ -162,11 +167,8 @@ spec:
           - fail:
               when: "< 1"
               message: "OpenHands integrations deployment is not ready"
-          - warn:
-              when: "< 2"
-              message: "OpenHands integrations deployment is ready but not at full capacity"
           - pass:
-              when: ">= 2"
+              when: ">= 1"
               message: "OpenHands integrations deployment is ready"
     - deploymentStatus:
         name: openhands-mcp
@@ -175,11 +177,8 @@ spec:
           - fail:
               when: "< 1"
               message: "OpenHands MCP deployment is not ready"
-          - warn:
-              when: "< 2"
-              message: "OpenHands MCP deployment is ready but not at full capacity"
           - pass:
-              when: ">= 2"
+              when: ">= 1"
               message: "OpenHands MCP deployment is ready"
     {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
     - deploymentStatus:
@@ -263,7 +262,21 @@ spec:
           - pass:
               when: ">= 1"
               message: "Ingress NGINX controller deployment is ready"
-    {{- if .Values.postgresql.enabled }}
+    # No `name` => all-deployments mode: auto-fails any deployment whose ready
+    # count doesn't match desired. Named blocks above guard "must exist at all".
+    - deploymentStatus:
+        namespaces:
+          - {{ .Release.Namespace }}
+          - ingress-nginx
+    - clusterPodStatuses:
+        namespaces:
+          - {{ .Release.Namespace }}
+          - ingress-nginx
+        outcomes:
+          - fail:
+              when: "!= Healthy"
+              message: "Pod {{`{{ .Namespace }}/{{ .Name }}`}} is not Healthy: {{`{{ .Status.Reason }}`}}"
+    {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
     - postgresql:
         checkName: "PostgreSQL Database Health"
         collectorName: postgresql
@@ -281,7 +294,7 @@ spec:
               when: "connected == true"
               message: "PostgreSQL database is healthy"
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- if and .Values.redis.enabled .Values.replicated.enabled }}
     - redis:
         checkName: "Redis Cache Health"
         collectorName: redis

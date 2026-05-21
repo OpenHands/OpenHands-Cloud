@@ -17,7 +17,7 @@ spec:
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
-      tag: 'sha-60f5c1c'
+      tag: 'sha-be9afb7'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
@@ -55,7 +55,7 @@ spec:
         # this is what we need to use for real deployments
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
         # repository: 'ghcr.io/openhands/agent-server'
-        tag: '1.19.1-python'
+        tag: '1.21.1-python'
 
     keycloak:
       enabled: true
@@ -247,7 +247,7 @@ spec:
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configs:
           - name: default
-            image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.19.1-python'
+            image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.21.1-python'
             working_dir: "/workspace"
             environment:
               LOG_JSON: "1"
@@ -320,6 +320,10 @@ spec:
 
     replicated:
       enabled: true
+      redisPassword: 'repl{{ ConfigOption "redis_password" }}'
+      postgresUsername: 'repl{{ ConfigOption "postgres_username" }}'
+      postgresPassword: 'repl{{ ConfigOption "postgres_password" }}'
+      postgresDatabase: 'repl{{ ConfigOption "postgres_database" }}'
       image:
         registry: images.r9.all-hands.dev
         repository: library/replicated-sdk-image
@@ -444,7 +448,6 @@ spec:
           enabled: true
           image:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/automation'
-            tag: sha-e52cca3
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "app_hostname"}}{{repl end}}'
@@ -456,6 +459,7 @@ spec:
           database:
             createDatabaseUser: true
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'
+            superuserName: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
 
     - when: '{{repl ConfigOptionEquals "postgres_type" "embedded_postgres" }}'
       recursiveMerge: true
@@ -477,11 +481,11 @@ spec:
         runtime:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.19.1-python'
+            tag: '1.21.1-python'
           warmRuntimes:
             configs:
               - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.1-python'
+                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.21.1-python'
                 working_dir: "/workspace"
                 environment:
                   LOG_JSON: "1"
@@ -559,6 +563,7 @@ spec:
         {{repl if ne $llmDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $llmDomain }}{{repl end }}
         {{repl if ne $runtimeApiDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $runtimeApiDomain }}{{repl end }}
         {{repl if ne $runtimeBaseDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $runtimeBaseDomain }}{{repl end }}
+        {{repl if ConfigOptionEquals "analytics_enabled" "1" }}{{repl $computedNoProxy = printf "%s,laminar-app-server-service,laminar-clickhouse,laminar-frontend,laminar-postgres,laminar-query-engine,laminar-quickwit-control-plane,laminar-quickwit-indexer,laminar-quickwit-janitor,laminar-quickwit-metastore,laminar-quickwit-searcher,laminar-rabbitmq,laminar-redis" $computedNoProxy }}{{repl end }}
         {{repl if ne (ConfigOption "no_proxy") "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy (ConfigOption "no_proxy") }}{{repl end }}
         {{repl ConfigOptionEquals "proxy_enabled" "1" }}
       recursiveMerge: true
@@ -626,6 +631,26 @@ spec:
                   tenant_id: os.environ/AZURE_TENANT_ID
                   client_id: os.environ/AZURE_CLIENT_ID
                   client_secret: os.environ/AZURE_CLIENT_SECRET
+
+    # Custom / Local LLM — any OpenAI-compatible endpoint (OpenRouter, vLLM,
+    # Ollama, LM Studio, LiteLLM gateway, etc.). LiteLLM routes via the
+    # generic `openai/<model>` provider, which forwards the request body to
+    # <custom_base_url>/chat/completions with `Authorization: Bearer
+    # <custom_api_key>` headers.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "custom" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/custom-llm'
+          OH_AGENT_SERVER_ENV: '{{repl printf "{\"CUSTOM_API_KEY\": \"%s\", \"CUSTOM_API_BASE\": \"%s\", \"SSL_CERT_FILE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"REQUESTS_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"GIT_SSL_CAINFO\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"CURL_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"NODE_EXTRA_CA_CERTS\": \"/etc/openhands/ca-bundle/ca-bundle.crt\"}" (ConfigOption "custom_api_key") (ConfigOption "custom_base_url") }}'
+        litellm-helm:
+          proxy_config:
+            model_list:
+              - model_name: 'custom-llm'
+                litellm_params:
+                  model: 'openai/{{repl ConfigOption "custom_model"}}'
+                  api_key: os.environ/CUSTOM_API_KEY
+                  api_base: os.environ/CUSTOM_API_BASE
 
     - when: '{{repl ConfigOptionEquals "google_api_type" "vertex" }}'
       recursiveMerge: true

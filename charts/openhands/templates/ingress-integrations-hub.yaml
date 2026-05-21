@@ -1,0 +1,59 @@
+{{- /*
+  Ingress entry for the integrations-hub service.
+
+  The integrations-hub backend is a single FastAPI container that serves
+  BOTH the Next.js SPA bundle and the /api/* routes from one image. When
+  `(index .Values "integrations-hub" "rootPath")` is set (default
+  `/integrations-hub`), the FastAPI app mounts every route under that
+  prefix -- so `/integrations-hub/api/health`, `/integrations-hub/api/mcp`,
+  and the SPA HTML / `/_next/...` assets all live behind the same path.
+
+  That means this ingress only needs ONE rule covering the prefix; we do
+  not need a separate /api/integrations-hub rewrite, and we deliberately
+  do not configure a `nginx.ingress.kubernetes.io/rewrite-target` -- the
+  backend handles its own prefix.
+
+  The path is read from the integrations-hub subchart so the ingress
+  rule, container probes, and the SPA bundle's baked-in
+  `NEXT_PUBLIC_BASE_PATH` always agree.
+*/}}
+{{- if and .Values.ingress.enabled (index .Values "integrations-hub" "enabled") }}
+{{- $rootPath := index .Values "integrations-hub" "rootPath" | default "/integrations-hub" }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openhands-integrations-hub-ingress
+  annotations:
+    {{- if .Values.ingress.root.annotations }}
+    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
+    {{- else }}
+    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.class }}
+  {{- if .Values.tls.enabled }}
+  tls:
+  - hosts:
+    {{- if .Values.ingress.prefixWithBranch }}
+    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
+    {{- else }}
+    - {{ .Values.ingress.host }}
+    {{- end }}
+    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+  {{- end }}
+  rules:
+  {{- if .Values.ingress.prefixWithBranch }}
+  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
+  {{- else }}
+  - host: {{ .Values.ingress.host }}
+  {{- end }}
+    http:
+      paths:
+      - path: {{ $rootPath | quote }}
+        pathType: Prefix
+        backend:
+          service:
+            name: integrations-hub
+            port:
+              number: 80
+{{- end }}

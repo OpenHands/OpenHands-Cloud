@@ -252,7 +252,7 @@ Bitbucket Data Center is the self-hosted version of Bitbucket. The setup is diff
 1. Create a Bitbucket Data Center Application Link:
 
    - Follow the instructions in Bitbucket Data Center to create an [OAuth2 Application Link](https://confluence.atlassian.com/enterprise/link-to-atlassian-products-using-oauth-2-0-1688928427.html)
-   - Grant repository read and write scopes.
+   - Grant **Repository: Admin** scope. (Admin is required so OpenHands can manage the per-repo webhook via Bitbucket's REST API; it implies Repository: Write.)
    - Set the application URL to `https://auth.openhands.example.com/realms/openhands/broker/bitbucket_data_center
    - Note the Client ID and Client Secret provided by Bitbucket Data Center
 

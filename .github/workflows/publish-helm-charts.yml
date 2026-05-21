@@ -28,7 +28,7 @@ jobs:
       matrix:
         chart:
           # Order matters: openhands depends on crd-check, runtime-api, automation,
-          # and plugin-directory, so those must publish first.
+          # plugin-directory, and integrations-hub, so those must publish first.
           - name: crd-check
             path: charts/crd-check
           - name: runtime-api
@@ -39,6 +39,8 @@ jobs:
             path: charts/automation
           - name: plugin-directory
             path: charts/plugin-directory
+          - name: integrations-hub
+            path: charts/integrations-hub
           - name: openhands
             path: charts/openhands
           - name: openhands-secrets
