@@ -17,6 +17,9 @@ spec:
         {{- if .Values.allowedUsers }}
         checksum/user-waitlist: {{ include (print $.Template.BasePath "/user-waitlist-configmap.yaml") . | sha256sum }}
         {{- end }}
+        {{- if .Values.secretsChecksum }}
+        checksum/config-secrets: {{ .Values.secretsChecksum | quote }}
+        {{- end }}
         {{- include "openhands.caBundle.checksumAnnotation" . | nindent 8 }}
     spec:
       terminationGracePeriodSeconds: 60
