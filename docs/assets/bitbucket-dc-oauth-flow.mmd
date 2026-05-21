@@ -1,3 +1,5 @@
+%% Validated against OpenHands-Cloud @ 136f63fdc
+
 sequenceDiagram
     autonumber
     participant Browser
@@ -16,7 +18,7 @@ sequenceDiagram
 
     Keycloak->>Browser: 302 Redirect to Bitbucket Data Center
 
-    Browser->>BBDC: GET https://<BBDC_HOST>/rest/oauth2/latest/authorize<br/>?client_id=<BBDC_CLIENT_ID><br/>&redirect_uri=.../broker/bitbucket_data_center/endpoint<br/>&response_type=code<br/>&scope=REPO_WRITE<br/>&state=<keycloak-state>
+    Browser->>BBDC: GET https://<BBDC_HOST>/rest/oauth2/latest/authorize<br/>?client_id=<BBDC_CLIENT_ID><br/>&redirect_uri=.../broker/bitbucket_data_center/endpoint<br/>&response_type=code<br/>&scope=REPO_ADMIN<br/>&state=<keycloak-state>
 
     Note over BBDC: User authenticates to BBDC<br/>and authorizes the OAuth app
 
@@ -59,21 +61,27 @@ sequenceDiagram
 
     Note over OpenHands: User logged in<br/>Session created
 
-    alt First Login - TOS Required
+    Note over OpenHands: server/routes/auth.py branches on two<br/>independent flags - valid_offline_token and<br/>has_accepted_tos. First login fails both.<br/>Returning users typically pass both.
+
+    alt has_accepted_tos == false (first login)
         OpenHands->>Browser: 302 Redirect to /accept-tos (SPA page)
         Note over Browser: User accepts TOS on SPA page
         Browser->>OpenHands: POST /api/accept_tos
         Note over OpenHands: Log: "User <uuid> accepted TOS"
-        OpenHands-->>Browser: 200 OK, JSON {redirect_url: ...}
-        Note over Browser: Frontend reads redirect_url<br/>window.location.href = redirect_url
-        Browser->>Keycloak: GET /realms/allhands/protocol/openid-connect/auth<br/>&kc_idp_hint=bitbucket_data_center<br/>&redirect_uri=.../oauth/keycloak/offline/callback<br/>&scope=openid+email+profile+offline_access
-        Keycloak->>Browser: 302 Redirect with new code<br/>(reuses existing SSO session — no BBDC roundtrip)
-        Browser->>OpenHands: GET /oauth/keycloak/offline/callback<br/>?code=<new-keycloak-code>
-        OpenHands->>Keycloak: POST /realms/allhands/protocol/openid-connect/token
-        Keycloak-->>OpenHands: refresh_token (for offline access)
+        OpenHands-->>Browser: 200 OK, body has redirect_url<br/>(NOT a 302)
+        Note over Browser: SPA reads redirect_url and assigns<br/>window.location.href = redirect_url
     end
 
-    OpenHands->>Browser: Set session cookies<br/>Redirect to app
+    alt valid_offline_token == false (first login, or offline session expired)
+        Note over Browser,Keycloak: Second OIDC flow. Captures offline (refresh) token.<br/>Keycloak SSO session is live, so no BBDC round-trip.
+        Browser->>Keycloak: GET /realms/allhands/protocol/openid-connect/auth<br/>&kc_idp_hint=bitbucket_data_center<br/>&redirect_uri=.../oauth/keycloak/offline/callback<br/>&scope=openid+email+profile+offline_access
+        Keycloak->>Browser: 302 Redirect with new authorization code
+        Browser->>OpenHands: GET /oauth/keycloak/offline/callback<br/>?code=<new-keycloak-code>
+        OpenHands->>Keycloak: POST /realms/allhands/protocol/openid-connect/token
+        Keycloak-->>OpenHands: access_token + LONG-LIVED refresh_token (offline)
+    end
+
+    OpenHands->>Browser: Set session cookies<br/>Redirect to app<br/>(returning users land here directly with no TOS/offline detour)
 
     Note over Browser,BBDC: Subsequent API Calls (BBDC Token from SecretsStore)
 
@@ -82,10 +90,13 @@ sequenceDiagram
     OpenHands->>DB: Load BBDC token from SecretsStore
     Note over OpenHands: Log: "Getting token for user <email><br/>and IDP ProviderType.BITBUCKET_DATA_CENTER"<br/>"Got ProviderType.BITBUCKET_DATA_CENTER token: eyJhb..."
 
-    alt Token Expired
-        OpenHands->>BBDC: POST /rest/oauth2/latest/token<br/>grant_type=refresh_token<br/>(direct refresh with BBDC)
-        BBDC-->>OpenHands: New access_token
-        OpenHands->>DB: Update token in SecretsStore
+    alt access_token near expiry (less than 15 min left) and refresh_token still valid
+        Note over OpenHands,BBDC: token_manager._refresh_bitbucket_data_center_token<br/>(gated by AuthTokenStore._is_token_expired<br/>with ACCESS_TOKEN_EXPIRY_BUFFER = 900s)
+        OpenHands->>BBDC: POST /rest/oauth2/latest/token<br/>client_id, client_secret, refresh_token,<br/>grant_type=refresh_token
+        BBDC-->>OpenHands: new access_token + new refresh_token
+        OpenHands->>DB: re-encrypt and persist
+    else access_token still valid
+        Note over OpenHands: Use stored eyJhb... as-is
     end
 
     OpenHands->>BBDC: REST API call with BBDC token<br/>Authorization: Bearer eyJhb...<br/>(e.g., GET /rest/api/latest/projects/.../repos)
