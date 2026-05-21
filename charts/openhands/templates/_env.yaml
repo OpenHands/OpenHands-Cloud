@@ -206,6 +206,12 @@
     secretKeyRef:
       name: bitbucket-data-center-app
       key: client-secret
+- name: BITBUCKET_DATA_CENTER_BOT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: bitbucket-data-center-app
+      key: bot-token
+      optional: true
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
