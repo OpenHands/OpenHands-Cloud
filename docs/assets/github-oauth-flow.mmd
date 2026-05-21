@@ -1,4 +1,4 @@
-%% Validated against OpenHands-Cloud @ cf8ab16ac
+%% Validated against OpenHands-Cloud @ 136f63fdc
 
 sequenceDiagram
     autonumber
@@ -81,8 +81,8 @@ sequenceDiagram
     Browser->>OpenHands: GET /api/v1/git/installations/search?provider=github
     OpenHands->>DB: load_tokens(github)
 
-    alt access_token near expiry (less than 4h left) and refresh_token still valid
-        Note over OpenHands,GitHub: token_manager._refresh_github_token
+    alt access_token near expiry (less than 15 min left) and refresh_token still valid
+        Note over OpenHands,GitHub: token_manager._refresh_github_token<br/>(gated by AuthTokenStore._is_token_expired<br/>with ACCESS_TOKEN_EXPIRY_BUFFER = 900s)
         OpenHands->>GitHub: POST https://github.com/login/oauth/access_token<br/>client_id, client_secret, refresh_token,<br/>grant_type=refresh_token
         GitHub-->>OpenHands: new access_token + new refresh_token<br/>expires_in, refresh_token_expires_in
         OpenHands->>DB: re-encrypt and persist
