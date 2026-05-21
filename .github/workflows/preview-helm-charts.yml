@@ -19,6 +19,7 @@ jobs:
       image-loader: ${{ steps.changes.outputs.image-loader }}
       automation: ${{ steps.changes.outputs.automation }}
       plugin-directory: ${{ steps.changes.outputs.plugin-directory }}
+      integrations-hub: ${{ steps.changes.outputs.integrations-hub }}
       openhands: ${{ steps.changes.outputs.openhands }}
       openhands-secrets: ${{ steps.changes.outputs.openhands-secrets }}
     steps:
@@ -29,8 +30,10 @@ jobs:
 
       - name: Detect chart changes
         id: changes
+        env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
+          BASE_REF="origin/${PR_BASE_REF}"
           echo "Comparing against: $BASE_REF"
 
           # Get list of changed files
@@ -39,7 +42,7 @@ jobs:
           echo "$CHANGED_FILES"
 
           # Check each chart for changes
-          for chart in crd-check runtime-api image-loader automation plugin-directory openhands openhands-secrets; do
+          for chart in crd-check runtime-api image-loader automation plugin-directory integrations-hub openhands openhands-secrets; do
             if echo "$CHANGED_FILES" | grep -q "^charts/${chart}/"; then
               echo "${chart}=true" >> $GITHUB_OUTPUT
               echo "Changes detected in charts/${chart}"
@@ -62,13 +65,15 @@ jobs:
       matrix:
         chart:
           # Order matters! Charts that are dependencies must be published first.
-          # crd-check, automation, plugin-directory, and runtime-api are dependencies of openhands.
+          # crd-check, automation, plugin-directory, integrations-hub, and runtime-api are dependencies of openhands.
           - name: crd-check
             path: charts/crd-check
           - name: automation
             path: charts/automation
           - name: plugin-directory
             path: charts/plugin-directory
+          - name: integrations-hub
+            path: charts/integrations-hub
           - name: runtime-api
             path: charts/runtime-api
           - name: image-loader
@@ -88,6 +93,7 @@ jobs:
           HAS_CHANGES_IMAGE_LOADER: ${{ needs.detect-changes.outputs.image-loader }}
           HAS_CHANGES_AUTOMATION: ${{ needs.detect-changes.outputs.automation }}
           HAS_CHANGES_PLUGIN_DIRECTORY: ${{ needs.detect-changes.outputs.plugin-directory }}
+          HAS_CHANGES_INTEGRATIONS_HUB: ${{ needs.detect-changes.outputs.integrations-hub }}
           HAS_CHANGES_OPENHANDS: ${{ needs.detect-changes.outputs.openhands }}
           HAS_CHANGES_OPENHANDS_SECRETS: ${{ needs.detect-changes.outputs.openhands-secrets }}
           IS_PUBLISHABLE_CRD_CHECK: ${{ needs.validate-chart-versions.outputs.crd-check-publishable }}
@@ -95,6 +101,7 @@ jobs:
           IS_PUBLISHABLE_IMAGE_LOADER: ${{ needs.validate-chart-versions.outputs.image-loader-publishable }}
           IS_PUBLISHABLE_AUTOMATION: ${{ needs.validate-chart-versions.outputs.automation-publishable }}
           IS_PUBLISHABLE_PLUGIN_DIRECTORY: ${{ needs.validate-chart-versions.outputs.plugin-directory-publishable }}
+          IS_PUBLISHABLE_INTEGRATIONS_HUB: ${{ needs.validate-chart-versions.outputs.integrations-hub-publishable }}
           IS_PUBLISHABLE_OPENHANDS: ${{ needs.validate-chart-versions.outputs.openhands-publishable }}
           IS_PUBLISHABLE_OPENHANDS_SECRETS: ${{ needs.validate-chart-versions.outputs.openhands-secrets-publishable }}
         run: |
@@ -119,6 +126,10 @@ jobs:
             plugin-directory)
               HAS_CHANGES="$HAS_CHANGES_PLUGIN_DIRECTORY"
               IS_PUBLISHABLE="$IS_PUBLISHABLE_PLUGIN_DIRECTORY"
+              ;;
+            integrations-hub)
+              HAS_CHANGES="$HAS_CHANGES_INTEGRATIONS_HUB"
+              IS_PUBLISHABLE="$IS_PUBLISHABLE_INTEGRATIONS_HUB"
               ;;
             openhands)
               HAS_CHANGES="$HAS_CHANGES_OPENHANDS"
@@ -203,6 +214,14 @@ jobs:
 
           yq -i "(.dependencies[] | select(.name == \"plugin-directory\")).version = \"${PLUGIN_DIRECTORY_PREVIEW}\"" charts/openhands/Chart.yaml
 
+      - name: Update integrations-hub dependency version
+        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.integrations-hub == 'true'
+        run: |
+          INTEGRATIONS_HUB_VERSION=$(yq '.version' charts/integrations-hub/Chart.yaml)
+          INTEGRATIONS_HUB_PREVIEW="${INTEGRATIONS_HUB_VERSION}-alpha.${{ github.event.pull_request.number }}"
+
+          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")).version = \"${INTEGRATIONS_HUB_PREVIEW}\"" charts/openhands/Chart.yaml
+
       - name: Test ${{ matrix.chart.name }} chart with default values
         if: steps.check.outputs.should_publish == 'true'
         run: |
@@ -279,6 +298,8 @@ jobs:
             path: charts/automation
           - name: plugin-directory
             path: charts/plugin-directory
+          - name: integrations-hub
+            path: charts/integrations-hub
           - name: openhands
             path: charts/openhands
           - name: openhands-secrets
@@ -330,6 +351,15 @@ jobs:
 
           echo "Updating openhands plugin-directory dependency to ${PLUGIN_DIRECTORY_PREVIEW}"
           yq -i "(.dependencies[] | select(.name == \"plugin-directory\")).version = \"${PLUGIN_DIRECTORY_PREVIEW}\"" charts/openhands/Chart.yaml
+
+      - name: Update integrations-hub dependency version for openhands
+        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.integrations-hub == 'true'
+        run: |
+          INTEGRATIONS_HUB_VERSION=$(yq '.version' charts/integrations-hub/Chart.yaml)
+          INTEGRATIONS_HUB_PREVIEW="${INTEGRATIONS_HUB_VERSION}-alpha.${{ github.event.pull_request.number }}"
+
+          echo "Updating openhands integrations-hub dependency to ${INTEGRATIONS_HUB_PREVIEW}"
+          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")).version = \"${INTEGRATIONS_HUB_PREVIEW}\"" charts/openhands/Chart.yaml
 
       - name: Lint ${{ matrix.chart.name }} chart
         run: |

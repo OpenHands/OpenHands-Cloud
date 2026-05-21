@@ -2,12 +2,12 @@ apiVersion: v2
 name: automation
 description: OpenHands Automations Service — scheduled and event-driven automation execution
 type: application
-version: 0.1.7
+version: 0.1.9
 appVersion: "0.1.0"
 dependencies:
   - name: postgresql
-    version: 15.x.x
-    repository: https://charts.bitnami.com/bitnami
+    version: 15.5.38
+    repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
   - name: minio
     version: 5.0.10

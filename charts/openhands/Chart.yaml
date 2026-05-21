@@ -1,8 +1,8 @@
 apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
-appVersion: cloud-1.26.1
-version: 0.7.13
+appVersion: cloud-1.29.1
+version: 0.7.22
 maintainers:
   - name: rbren
   - name: xingyao
@@ -14,7 +14,7 @@ dependencies:
     condition: keycloak.enabled
   - name: laminar
     repository: https://lmnr-ai.github.io/lmnr-helm
-    version: 0.1.11
+    version: 0.1.13
     condition: laminar.enabled
   - name: litellm-helm
     repository: oci://ghcr.io/berriai
@@ -38,11 +38,11 @@ dependencies:
     condition: replicated.enabled
   - name: runtime-api
     repository: oci://ghcr.io/all-hands-ai/helm-charts
-    version: 0.3.2
+    version: 0.3.3
     condition: runtime-api.enabled
   - name: automation
     repository: oci://ghcr.io/all-hands-ai/helm-charts
-    version: 0.1.7
+    version: 0.1.9
     condition: automation.enabled
   - name: crd-check
     repository: oci://ghcr.io/all-hands-ai/helm-charts
@@ -51,3 +51,7 @@ dependencies:
     repository: oci://ghcr.io/all-hands-ai/helm-charts
     version: 0.1.1
     condition: plugin-directory.enabled
+  - name: integrations-hub
+    repository: oci://ghcr.io/all-hands-ai/helm-charts
+    version: 0.1.0
+    condition: integrations-hub.enabled

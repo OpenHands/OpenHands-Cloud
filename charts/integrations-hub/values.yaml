@@ -1,0 +1,202 @@
+image:
+  repository: ghcr.io/openhands/integrations-hub
+  tag: latest
+
+imagePullSecrets: []
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+securityContext:
+  runAsUser: 42420
+  runAsGroup: 42420
+  runAsNonRoot: true
+
+serviceAccount:
+  create: true
+  name: integrations-hub-sa
+  annotations: {}
+
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+
+# Service configuration
+service:
+  # Public base URL where this service is reachable
+  # Example: https://integrations.example.com or https://domain/integrations
+  baseUrl: ""
+  # Port the container listens on (8000 for Python/FastAPI backend)
+  port: 8000
+
+# Path prefix the application is mounted under. Must match:
+#   1. The image's `NEXT_PUBLIC_BASE_PATH` build arg (baked into the SPA
+#      bundle at image-build time -- see the project Dockerfile).
+#   2. The parent chart's `templates/ingress-integrations-hub.yaml` path.
+#
+# Wired to the FastAPI container as `INTHUB_ROOT_PATH`, which causes
+# `backend/app/main.py::build_app` to mount every route -- including the
+# SPA static files and `/api/health` -- under this prefix. Container
+# probes below also honour the prefix automatically.
+#
+# Set to an empty string to serve the app from the cluster root (only
+# makes sense for a dedicated subdomain image where the SPA was built
+# without `NEXT_PUBLIC_BASE_PATH`).
+rootPath: "/integrations-hub"
+
+# Bypass authentication for local development only. When true the FastAPI
+# app rejects non-loopback requests and uses a synthetic dev@localhost
+# owner; never enable this in staging/production.
+# Exposed to the container as INTHUB_DISABLE_AUTH.
+disableAuth: false
+
+# OpenHands identity provider configuration. The backend validates session
+# cookies / API keys against GET <baseUrl>/api/v1/users/me.
+openhands:
+  # Base URL of the OpenHands instance. Falls back to the global ingress
+  # host when left empty (see templates/_env.yaml).
+  # Backend env var: INTHUB_OPENHANDS_BASE_URL
+  baseUrl: ""
+  # Cookie name set by the OpenHands identity provider session.
+  # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
+  authCookieName: "keycloak_auth"
+  # Stable-origin URL used as the OAuth callback proxy for preview
+  # deployments (mirrors the AUTH_REDIRECT_PROXY_URL pattern used by
+  # Auth.js on Vercel). Leave empty to register callbacks against the
+  # request host directly.
+  # Backend env var: AUTH_REDIRECT_PROXY_URL
+  redirectProxyUrl: ""
+  # Optional callback target for preview deployments; used when
+  # redirectProxyUrl is set and oauth_flow.py needs to forward back to
+  # the originating deployment.
+  # Backend env var: AUTH_URL
+  authUrl: ""
+
+# Credential encryption key for stored provider credentials.
+# Generate with: openssl rand -base64 32
+# Backend env var: INTHUB_CREDENTIAL_ENCRYPTION_KEY
+credentialEncryption:
+  # Secret containing the encryption key
+  secretName: "integrations-hub-encryption-secret"
+  secretKey: "encryption-key"
+
+# Optional internal service-to-service auth secret. Required only when a
+# Next.js proxy in front of FastAPI injects X-Integrations-Hub-Internal-Secret;
+# in pure SPA + FastAPI K8s deployments this is unused.
+# Backend env var: INTHUB_INTERNAL_AUTH_SECRET
+auth:
+  # Leave empty to skip wiring INTHUB_INTERNAL_AUTH_SECRET into the pod.
+  internalSecretName: ""
+  internalSecretKey: "internal-auth-secret"
+
+# Admin configuration
+# Backend env var: APP_ADMIN_EMAILS (comma-separated)
+admin:
+  # Comma-separated list of admin email addresses.
+  emails: "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev"
+
+# PostgreSQL database configuration
+# The backend expects a single URL via INTHUB_POSTGRES_URL. The chart
+# constructs it from the components below using Kubernetes $(VAR_NAME)
+# expansion (see templates/_env.yaml). Alternatively, set `database.url`
+# directly to bypass the components and supply a full connection string.
+database:
+  # Optional pre-built connection URL (e.g. postgresql://user:pass@host:port/db).
+  # When set, the chart uses this verbatim and the host/port/user/name/secret
+  # fields below are not consulted.
+  # Backend env var: INTHUB_POSTGRES_URL
+  url: ""
+  # Full hostname of the PostgreSQL server
+  # Examples:
+  #   - Cloud SQL: "my-project:us-central1:my-instance"
+  #   - In-cluster: "integrations-hub-postgresql"
+  #   - Feature env: "integrations-hub-feature-branch-postgresql"
+  host: ""
+  port: "5432"
+  user: "integrations_hub_user"
+  name: "integrations_hub"
+  # Secret containing the database password
+  secretName: "integrations-hub-db-secret"
+  secretKey: "db-password"
+  # Use an existing secret instead of auto-generating one
+  # When true, the chart will not create the db secret
+  existingSecret: false
+  # Create database and user in an existing PostgreSQL instance (non-GCP only)
+  # When true, runs an init container to create the database and user
+  # Useful when sharing a PostgreSQL instance with other services
+  # NOTE: For GCP Cloud SQL, database and user are created via Terraform in the infra repo
+  # This setting is ignored when gcp.dbInstance is set
+  createDatabaseUser: false
+  # Secret containing the postgres superuser password (for creating the service user)
+  # Only used when createDatabaseUser=true and gcp.dbInstance is not set
+  superuserSecretName: "postgres-password"
+  superuserSecretKey: "password"
+  # Connection pool settings
+  poolSize: 10
+  maxOverflow: 5
+
+# GCP Cloud SQL (leave empty for non-GCP)
+# When gcp.dbInstance is set, the database and user must be pre-created via Terraform
+gcp:
+  dbInstance: ""
+  project: ""
+  region: ""
+
+# Datadog configuration
+datadog:
+  enabled: false
+  env: "dev"
+  serviceName: "integrations-hub"
+
+# Cron job configuration
+cron:
+  # Secret for cron job authentication
+  secretName: "integrations-hub-cron-secret"
+  secretKey: "cron-secret"
+
+# Additional environment variables passed verbatim to the container.
+# Entries here win over the defaults computed in templates/_env.yaml, so
+# they are the right escape hatch for one-off knobs the backend reads
+# directly (for example NEXTAUTH_URL or service-specific OAuth secrets
+# such as NOTION_CLIENT_ID/NOTION_CLIENT_SECRET).
+env: {}
+
+# PostgreSQL subchart configuration (for ephemeral/feature environments)
+# When enabled, deploys an in-cluster PostgreSQL instance
+# Service name will be "{release-name}-postgresql", secret name also "{release-name}-postgresql"
+postgresql:
+  enabled: false
+  auth:
+    username: postgres
+    database: integrations_hub
+  primary:
+    persistence:
+      enabled: false
+    initdb:
+      scriptsConfigMap: ""
+  service:
+    ports:
+      postgresql: 5432
+  image:
+    repository: bitnamilegacy/postgresql
+
+global:
+  security:
+    # This allows using the bitnamilegacy image repo
+    allowInsecureImages: true

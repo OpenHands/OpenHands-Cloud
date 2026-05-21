@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/openhands/automation
-  tag: sha-6aef482
+  tag: sha-cf93073
 
 imagePullSecrets: []
 
@@ -77,6 +77,11 @@ database:
   # When true, runs an init container to create the database and user
   # Useful when sharing a PostgreSQL instance with other services
   createDatabaseUser: false
+  # Superuser used to create the automation database and user.
+  # Defaults to "postgres" but must be overridden when the external PostgreSQL
+  # admin account uses a different name (e.g. AWS RDS instances).
+  # Only used when createDatabaseUser=true
+  superuserName: "postgres"
   # Secret containing the postgres superuser password (for creating the automation user)
   # Only used when createDatabaseUser=true
   superuserSecretName: "postgres-password"

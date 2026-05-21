@@ -1,0 +1,11 @@
+apiVersion: v2
+name: integrations-hub
+description: OpenHands Integrations Hub - Agent context layer with managed connectors and MCP integrations
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: postgresql
+    version: 15.x.x
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
