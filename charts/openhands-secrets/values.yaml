@@ -73,6 +73,11 @@ config:
   slack_client_secret: ""
   slack_signing_secret: ""
 
+  # Custom sandbox image registry credentials
+  custom_sandbox_image_registry_server: ""
+  custom_sandbox_image_registry_username: ""
+  custom_sandbox_image_registry_password: ""
+
   # Plugin Directory secrets
   plugin_directory_identity_shared_secret: ""
   plugin_directory_session_secret: ""

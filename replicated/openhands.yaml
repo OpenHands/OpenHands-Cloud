@@ -52,10 +52,12 @@ spec:
 
     runtime:
       image:
-        # this is what we need to use for real deployments
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
-        # repository: 'ghcr.io/openhands/agent-server'
-        tag: '1.21.1-python'
+        # Defaults to the Replicated-proxied agent-server image. When
+        # custom_sandbox_image_enabled=1, an admin-supplied repository/tag
+        # takes over — both for new sandboxes (via AGENT_SERVER_IMAGE_*
+        # env on the openhands server) and for the warm pool below.
+        repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
+        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.21.1-python{{repl end}}'
 
     keycloak:
       enabled: true
@@ -230,7 +232,7 @@ spec:
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
         RUNTIME_BASE_URL: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}'
-        RUNTIME_IMAGE_PULL_SECRETS: '{{repl ImagePullSecretName }}'
+        RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
         RUNTIME_CLASS: ""
@@ -247,7 +249,7 @@ spec:
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configs:
           - name: default
-            image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.21.1-python'
+            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.21.1-python{{repl end}}'
             working_dir: "/workspace"
             environment:
               LOG_JSON: "1"
