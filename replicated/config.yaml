@@ -422,19 +422,30 @@ spec:
           default: "0"
         - name: bitbucket_data_center_domain
           title: Bitbucket Data Center Domain
-          help_text: Domain of your Bitbucket Data Center instance
+          help_text: >-
+            Hostname of your Bitbucket Data Center instance — **without** the
+            protocol or a trailing slash. Example: `bitbucket.example.com`
+            (not `https://bitbucket.example.com`). OpenHands prepends
+            `https://` automatically; including it produces an invalid
+            `https://https://…` URL and login will fail.
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_id
           title: Bitbucket Data Center Client ID
-          help_text: Client ID from your Bitbucket Data Center OAuth App
+          help_text: >-
+            Client ID of the OAuth 2.0 application (incoming Application Link)
+            you registered in Bitbucket Data Center under Administration →
+            Application Links. Its redirect/callback URL must point at this
+            install's Keycloak (the auth hostname).
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_secret
           title: Bitbucket Data Center Client Secret
-          help_text: Client Secret from your Bitbucket Data Center OAuth App
+          help_text: >-
+            Client Secret of that same OAuth 2.0 application in Bitbucket Data
+            Center.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
@@ -446,8 +457,9 @@ spec:
             projects/repositories. When set, OpenHands posts all comments and
             reactions as this bot instead of as the @-mentioning user or the
             webhook installer (similar to GitHub's openhands[bot]). Jobs still
-            run with the invoking user's own credentials. Leave blank to post
-            as the user/installer.
+            run with the invoking user's own credentials. Create it while
+            logged in as that bot user (Manage account → HTTP access tokens,
+            with Repository write). Leave blank to post as the user/installer.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
 
