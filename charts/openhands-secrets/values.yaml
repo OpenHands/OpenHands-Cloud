@@ -48,6 +48,8 @@ config:
   aws_region_name: "us-west-2"
   bedrock_model_id: ""
   custom_api_key: ""
+  custom_base_url: ""
+  custom_model: ""
   
   # S3 credentials
   external_s3_access_key: ""

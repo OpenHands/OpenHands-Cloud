@@ -285,7 +285,7 @@ spec:
           required: true
         - name: custom_base_url
           title: Custom LLM Base URL
-          help_text: Base URL for your custom or local LLM endpoint
+          help_text: Base URL of your OpenAI-compatible LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
@@ -295,6 +295,12 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: false
+        - name: custom_model
+          title: Custom LLM Model Name
+          help_text: Model identifier as accepted by the endpoint (e.g., anthropic/claude-sonnet-4-5 for OpenRouter, llama-3.1-70b-instruct for vLLM)
+          type: text
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+          required: true
 
     - name: security_secrets
       title: Security & Authentication
@@ -757,10 +763,14 @@ spec:
           default: "0"
         - name: plugin_directory_marketplace_source
           title: Marketplace Source
-          help_text: "URI of the plugin catalog to load. Supports github://owner/repo[@ref], https:// URLs to a catalog JSON file, or file:// paths."
+          help_text: "URI of the plugin catalog to load. Supports github://owner/repo[@ref], or http(s):// URLs to a catalog JSON file."
           type: text
           when: 'repl{{ ConfigOptionEquals "plugin_directory_enabled" "1" }}'
           required: true
+          validation:
+            regex:
+              pattern: ^(github|https?)://
+              message: Must start with github://, https://, or http://
 
     - name: analytics_configuration
       title: Analytics Configuration

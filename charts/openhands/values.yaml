@@ -116,7 +116,7 @@ gitlabWebhookInstallation:
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: cloud-1.26.1
+  tag: cloud-1.29.1
 
 ingress:
   enabled: false
@@ -213,7 +213,7 @@ resendSync:
 runtime:
   image:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.19.1-python
+    tag: 1.21.1-python
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -416,6 +416,20 @@ laminar:
         clusterIssuer: ""
       annotations: {}
 
+  # Pin to laminar 0.1.9's default. K8s forbids changing StatefulSet
+  # volumeClaimTemplates in place; the 0.1.10 default of 100Gi breaks
+  # `helm upgrade` with "spec: Forbidden". With replicaCount: 1 this
+  # value only describes the template, never new replicas.
+  #
+  # To grow rabbitmq disk where size is actually enforced (e.g. GKE
+  # hyperdisk-balanced), patch the live PVC out of band with
+  # `kubectl patch pvc`. On Replicated's openebs-hostpath this is a
+  # no-op — the LocalPV-hostpath provisioner has no resize handler
+  # and hostpath capacity is metadata only.
+  rabbitmq:
+    persistence:
+      size: "50Gi"
+
 litellm-helm:
   # Set this to false if you are using your own litellm instance
   # NOTE: We recommend using the provided LiteLLM instance (enabled: true) for simplicity
@@ -579,7 +593,7 @@ runtime-api:
     count: 1
     configs:
       - name: default
-        image: "ghcr.io/openhands/agent-server:1.19.1-python"
+        image: "ghcr.io/openhands/agent-server:1.21.1-python"
         working_dir: "/workspace"
         environment:
           LOG_JSON: "1"
@@ -817,6 +831,11 @@ automation:
     # When true, runs an init container to create the database and user
     # Useful when sharing a PostgreSQL instance with other services
     createDatabaseUser: false
+    # Superuser used to create the automation database and user.
+    # Defaults to "postgres" but must be overridden when the external PostgreSQL
+    # admin account uses a different name.
+    # Only used when createDatabaseUser=true
+    superuserName: "postgres"
     # Secret containing the postgres superuser password (for creating the automation user)
     # Only used when createDatabaseUser=true
     superuserSecretName: "postgres-password"
@@ -868,6 +887,15 @@ automation:
 
 replicated:
   enabled: false
+  # Database credentials below are rendered only into the support-bundle Secret
+  # (gated on replicated.enabled), following the same convention as the rest of
+  # replicated/openhands.yaml — the Replicated installer templates ConfigOption
+  # values into Secrets at install time. The troubleshoot v1beta2 redis/postgres
+  # collectors have no secretRef field, so auth must be inlined into the URI.
+  redisPassword: ""
+  postgresUsername: ""
+  postgresPassword: ""
+  postgresDatabase: ""
 
 global:
   security:
@@ -937,3 +965,144 @@ crdCheck:
     limits:
       memory: 128Mi
   location: ""
+
+# Integrations Hub - Agent context layer with managed connectors and MCP integrations
+integrations-hub:
+  enabled: false
+
+  image:
+    repository: ghcr.io/openhands/integrations-hub
+    # tag: set via helm args or override
+
+  imagePullSecrets: []
+
+  deployment:
+    replicas: 1
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  securityContext:
+    runAsUser: 42420
+    runAsGroup: 42420
+    runAsNonRoot: true
+
+  serviceAccount:
+    create: true
+    name: integrations-hub-sa
+    annotations: {}
+
+  probes:
+    startup:
+      failureThreshold: 30
+      periodSeconds: 10
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      failureThreshold: 3
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      failureThreshold: 3
+
+  # Service configuration
+  service:
+    baseUrl: ""
+    # Port the FastAPI container listens on (matches the integrations-hub
+    # Dockerfile's `EXPOSE 8000` on the development branch).
+    port: 8000
+
+  # Path prefix that the hub is mounted under. This single value drives
+  # three things at once and they MUST agree:
+  #   - The parent chart's `templates/ingress-integrations-hub.yaml`
+  #     routing rule (host-based ingress + this path).
+  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var, which causes
+  #     `backend/app/main.py::build_app` to mount every route under the
+  #     prefix.
+  #   - The Next.js SPA's `NEXT_PUBLIC_BASE_PATH`, which is baked into
+  #     the image at build time (default `/integrations-hub` in the
+  #     project Dockerfile). Override the image's build arg if you set a
+  #     different rootPath here.
+  rootPath: "/integrations-hub"
+
+  # Bypass authentication for local development only -- never enable in
+  # staging/production. Exposed as INTHUB_DISABLE_AUTH.
+  disableAuth: false
+
+  # OpenHands identity provider used to validate session cookies / API keys.
+  openhands:
+    # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
+    # ingress host when left empty -- see charts/integrations-hub/templates/_env.yaml).
+    baseUrl: ""
+    # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
+    authCookieName: "keycloak_auth"
+    # Stable-origin URL used as the OAuth callback proxy for preview
+    # deployments. Backend env var: AUTH_REDIRECT_PROXY_URL.
+    redirectProxyUrl: ""
+    # Optional callback target for preview deployments paired with
+    # redirectProxyUrl. Backend env var: AUTH_URL.
+    authUrl: ""
+
+  # Credential encryption key configuration.
+  # Backend env var: INTHUB_CREDENTIAL_ENCRYPTION_KEY.
+  credentialEncryption:
+    secretName: "integrations-hub-encryption-secret"
+    secretKey: "encryption-key"
+
+  # Optional internal service-to-service auth secret. Only needed when a
+  # Next.js proxy in front of FastAPI injects X-Integrations-Hub-Internal-Secret;
+  # in pure SPA + FastAPI K8s deployments this is unused. Leave
+  # internalSecretName empty to skip wiring INTHUB_INTERNAL_AUTH_SECRET.
+  auth:
+    internalSecretName: ""
+    internalSecretKey: "internal-auth-secret"
+
+  # Admin allowlist for /api/admin/* routes.
+  # Backend env var: APP_ADMIN_EMAILS (comma-separated).
+  admin:
+    emails: ""
+
+  # PostgreSQL database configuration. The backend reads a single
+  # connection URL via INTHUB_POSTGRES_URL; the chart builds it from the
+  # components below using $(VAR_NAME) expansion in templates/_env.yaml.
+  # Set `database.url` to bypass that builder and supply a pre-formed URL.
+  database:
+    url: ""
+    host: ""
+    port: "5432"
+    user: "integrations_hub_user"
+    name: "integrations_hub"
+    secretName: "integrations-hub-db-secret"
+    secretKey: "db-password"
+    existingSecret: false
+    createDatabaseUser: false
+    superuserSecretName: "postgres-password"
+    superuserSecretKey: "password"
+
+  # GCP Cloud SQL (leave empty for non-GCP)
+  gcp:
+    dbInstance: ""
+    project: ""
+    region: ""
+
+  # Datadog configuration
+  datadog:
+    enabled: false
+    env: "dev"
+    serviceName: "integrations-hub"
+
+  # Cron job configuration
+  cron:
+    secretName: "integrations-hub-cron-secret"
+    secretKey: "cron-secret"
+
+  # Env vars passed directly to the container
+  env: {}
+
+  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  postgresql:
+    enabled: false

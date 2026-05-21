@@ -2,5 +2,5 @@ apiVersion: v2
 name: openhands-secrets
 description: A Helm chart for OpenHands secrets
 type: application
-version: 0.1.15
+version: 0.1.16
 appVersion: "1.0"
