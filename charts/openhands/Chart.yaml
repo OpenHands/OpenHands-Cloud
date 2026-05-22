@@ -33,7 +33,7 @@ dependencies:
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: redis.enabled
   - name: replicated
-    repository: oci://charts.shortrib.io/library
+    repository: oci://registry.replicated.com/library
     version: 1.9.0
     condition: replicated.enabled
   - name: runtime-api
