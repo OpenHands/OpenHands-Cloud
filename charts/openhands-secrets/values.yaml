@@ -60,6 +60,11 @@ config:
   bitbucket_data_center_client_id: ""
   bitbucket_data_center_client_secret: ""
 
+  # Jira Data Center credentials (OAuth, optional)
+  jira_data_center_base_url: ""
+  jira_data_center_client_id: ""
+  jira_data_center_client_secret: ""
+
   # GitHub credentials
   github_oauth_client_id: ""
   github_oauth_client_secret: ""
