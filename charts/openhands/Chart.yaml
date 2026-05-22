@@ -2,7 +2,7 @@ apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
 appVersion: cloud-1.29.1
-version: 0.7.22
+version: 0.7.26
 maintainers:
   - name: rbren
   - name: xingyao
@@ -33,7 +33,7 @@ dependencies:
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: redis.enabled
   - name: replicated
-    repository: oci://charts.shortrib.io/library
+    repository: oci://registry.replicated.com/library
     version: 1.9.0
     condition: replicated.enabled
   - name: runtime-api
