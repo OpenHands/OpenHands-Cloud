@@ -460,6 +460,9 @@ spec:
           enabled: true
           existingSecret: automation-service-key
           secretKey: automation-service-key
+        automationService:
+          url: http://automation/api/automation
+          eventForwardingEnabled: true
         automationWebhookSecret:
           enabled: true
           existingSecret: automation-webhook-secret
