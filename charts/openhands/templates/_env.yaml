@@ -402,6 +402,11 @@
 {{- if .Values.jiraDc.enabled }}
 - name: ENABLE_JIRA_DC
   value: "true"
+- name: JIRA_DC_WEBHOOKS_ENABLED
+  value: "1"
+{{- if eq .Values.jiraDc.linkMethod "oauth" }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_DC_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -417,6 +422,10 @@
     secretKeyRef:
       name: jira-dc-app
       key: base-url
+{{- else }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "0"
+{{- end }}
 {{- end }}
 
 {{- if .Values.linear.enabled }}

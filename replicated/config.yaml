@@ -451,6 +451,49 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
 
+    - name: jira_data_center_integration
+      title: Jira Data Center Integration
+      description: Enable the Jira Data Center issue integration. The service-account token and webhook secret are configured per-workspace in the OpenHands app UI after enabling.
+      items:
+        - name: jira_data_center_enabled
+          title: Enable Jira Data Center Integration
+          help_text: Enable the Jira Data Center issue integration.
+          type: bool
+          default: "0"
+        - name: jira_data_center_link_method
+          title: How should Jira users be linked to OpenHands accounts?
+          help_text: >-
+            OAuth (recommended): each user proves ownership of their Jira account via your server's
+            OAuth 2.0 application. This is the most secure option. Email match: users are linked by
+            matching their Jira email to their OpenHands email. Use this only if your Jira Data Center
+            server does not have an OAuth 2.0 application configured.
+          type: select_one
+          default: oauth
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          items:
+            - name: oauth
+              title: OAuth (verified, recommended)
+            - name: email
+              title: Email match (no OAuth app required)
+        - name: jira_data_center_base_url
+          title: Jira Data Center Base URL
+          help_text: Full base URL of your Jira Data Center server, INCLUDING the https:// scheme (e.g. https://jira.example.com).
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_id
+          title: Jira Data Center OAuth Client ID
+          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server (callback URL https://app.YOUR-DOMAIN/integration/jira-dc/callback).
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_secret
+          title: Jira Data Center OAuth Client Secret
+          help_text: Client secret from the OAuth 2.0 application on your Jira Data Center server.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+
     - name: github_authentication
       title: GitHub Authentication
       description: Configure GitHub App integration for user authentication. Note that this is a GitHub App and NOT a GitHub OAuth app.
