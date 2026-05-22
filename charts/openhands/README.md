@@ -201,12 +201,18 @@ authentication as well.
    - Select the following scopes: api, read_user, write_repository, openid, email, profile
    - Note the Client ID and Client Secret provided by GitLab
 
+   - If you want to get webhooks:
+
+     - Generate a webhook secret `export GITLAB_WEBHOOK_SECRET=head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32`.
+     - You'll need to manually configure webhooks after deployment (see webhook setup section below).
+
 2. Create a GitLab App secret:
 
    ```bash
    kubectl create secret generic gitlab-app -n openhands \
      --from-literal=client-id=<your-gitlab-client-id> \
      --from-literal=client-secret=<your-gitlab-client-secret> \
+     --from-literal=webhook-secret=$GITLAB_WEBHOOK_SECRET
    ```
 
 3. Update site-values.yaml file:
@@ -377,6 +383,130 @@ Upgrade the release:
 ```bash
 helm upgrade --install openhands --namespace openhands oci://ghcr.io/all-hands-ai/helm-charts/openhands -f site-values.yaml
 ```
+
+## Setting Up Webhooks for Issue and PR Integration
+
+After deploying OpenHands, you can configure webhooks to enable automatic responses to GitHub issues/PRs and GitLab issues/merge requests. This allows users to mention `@openhands` in issues and get automated assistance.
+
+### GitHub Webhooks
+
+GitHub webhooks are automatically configured when you create the GitHub App with the webhook settings above. The webhook will be installed on repositories when users authenticate and grant access.
+
+### GitLab Webhooks
+
+GitLab webhooks require manual configuration after deployment. Follow these steps:
+
+#### Prerequisites
+
+1. **Admin Access**: You must have Maintainer or Owner permissions on GitLab projects or groups
+2. **Authentication**: Users must authenticate with GitLab through OpenHands first
+3. **Webhook Secret**: The `GITLAB_WEBHOOK_SECRET` created during GitLab app setup
+
+#### Manual Webhook Installation
+
+**Option 1: Using the Webhook Installation Script**
+
+1. Access the OpenHands pod:
+   ```bash
+   kubectl exec -it deployment/openhands-service -n openhands -- /bin/bash
+   ```
+
+2. Run the webhook installer:
+   ```bash
+   cd /app && python enterprise/sync/install_gitlab_webhooks.py
+   ```
+
+   This script will:
+   - Find all GitLab repositories and groups where users have admin access
+   - Check if webhooks already exist
+   - Install webhooks with the correct configuration
+   - Store webhook details in the database
+
+3. Set up a cron job for ongoing webhook management:
+   ```bash
+   kubectl create configmap gitlab-webhook-cron -n openhands --from-literal=script='#!/bin/bash
+   cd /app && python enterprise/sync/install_gitlab_webhooks.py'
+   
+   # Create a CronJob to run the webhook installer every hour
+   kubectl apply -f - <<EOF
+   apiVersion: batch/v1
+   kind: CronJob
+   metadata:
+     name: gitlab-webhook-installer
+     namespace: openhands
+   spec:
+     schedule: "0 * * * *"  # Run every hour
+     jobTemplate:
+       spec:
+         template:
+           spec:
+             containers:
+             - name: webhook-installer
+               image: <your-openhands-image>
+               command: ["/bin/bash"]
+               args: ["-c", "cd /app && python enterprise/sync/install_gitlab_webhooks.py"]
+               env:
+               # Add necessary environment variables from your main deployment
+               - name: WEB_HOST
+                 value: "openhands.example.com"
+               # Add other required env vars...
+             restartPolicy: OnFailure
+   EOF
+   ```
+
+**Option 2: Manual Webhook Configuration**
+
+If the automated script doesn't work, you can manually create webhooks:
+
+1. **For each GitLab project or group:**
+   - Navigate to **Settings** → **Webhooks**
+   - Click **Add new webhook**
+
+2. **Configure the webhook:**
+   - **URL**: `https://openhands.example.com/integration/gitlab/events`
+   - **Secret token**: Use the `$GITLAB_WEBHOOK_SECRET` value
+   - **Trigger events**: Select these events:
+     - Issues events
+     - Confidential issues events
+     - Merge requests events
+     - Note events (comments)
+     - Confidential note events
+     - Job events
+     - Pipeline events
+   - **Enable SSL verification**: Yes
+
+3. **Test the webhook:**
+   - Click **Test** → **Issues events** to verify the webhook is working
+   - Check the OpenHands logs for webhook receipt confirmation
+
+#### Webhook Configuration Details
+
+The webhook system uses these technical specifications:
+
+- **Webhook Name**: "OpenHands Resolver"
+- **Description**: "Cloud OpenHands Resolver"
+- **URL Pattern**: `https://{your-domain}/integration/gitlab/events`
+- **Content Type**: application/json
+- **SSL Verification**: Enabled
+- **Events**: `note_events`, `merge_requests_events`, `confidential_issues_events`, `issues_events`, `confidential_note_events`, `job_events`, `pipeline_events`
+
+#### Troubleshooting Webhooks
+
+**Webhooks not being created:**
+- Ensure you have Maintainer or Owner permissions on the GitLab project/group
+- Check that users have authenticated with GitLab through OpenHands
+- Verify the OpenHands service can access GitLab API
+
+**Webhook events not being processed:**
+- Check webhook URL matches your OpenHands domain
+- Verify webhook secret matches the configured `GITLAB_WEBHOOK_SECRET`
+- Ensure all required events are enabled
+- Check OpenHands logs for webhook processing errors
+
+**For debugging:**
+- Check the `gitlab_webhook` database table for webhook status
+- Review OpenHands service logs: `kubectl logs deployment/openhands-service -n openhands`
+- Test webhook delivery in GitLab's webhook settings
 
 ## Hardening
 
