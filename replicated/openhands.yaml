@@ -181,6 +181,8 @@ spec:
         environment_variables:
           OR_APP_NAME: "OpenHands"
           OR_SITE_URL: "https://docs.all-hands.dev"
+        general_settings:
+          forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
         model_list:
           # LiteLLM 1.83.14 workaround: expose this model through the
           # proxy for openhands/claude-opus-4-7 because direct Anthropic calls

@@ -301,6 +301,11 @@ spec:
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
+        - name: litellm_forward_client_headers
+          title: Forward Client Headers to LLM Providers
+          help_text: Forward client x-* request headers and anthropic-beta through LiteLLM to upstream LLM providers. Leave disabled unless you trust callers and need provider-visible custom headers.
+          type: bool
+          default: "0"
 
     - name: security_secrets
       title: Security & Authentication
