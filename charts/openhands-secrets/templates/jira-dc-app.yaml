@@ -1,0 +1,18 @@
+{{- if or .Values.config.jira_data_center_base_url .Values.config.jira_data_center_client_id .Values.config.jira_data_center_client_secret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jira-dc-app
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  {{- if .Values.config.jira_data_center_base_url }}
+  base-url: {{ .Values.config.jira_data_center_base_url | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.jira_data_center_client_id }}
+  client-id: {{ .Values.config.jira_data_center_client_id | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.jira_data_center_client_secret }}
+  client-secret: {{ .Values.config.jira_data_center_client_secret | b64enc | quote }}
+  {{- end }}
+{{- end }}

@@ -417,26 +417,81 @@ spec:
       items:
         - name: bitbucket_data_center_auth_enabled
           title: Enable Bitbucket Data Center Authentication
-          help_text: Enable Bitbucket Data Center OAuth for user authentication
+          help_text: Let users sign in with their Bitbucket Data Center account.
           type: bool
           default: "0"
         - name: bitbucket_data_center_domain
           title: Bitbucket Data Center Domain
-          help_text: Domain of your Bitbucket Data Center instance
+          help_text: >-
+            Hostname of your Bitbucket Data Center instance (e.g. bbdc.example.com)
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_id
           title: Bitbucket Data Center Client ID
-          help_text: Client ID from your Bitbucket Data Center OAuth App
+          help_text: >-
+            Client ID of the OAuth 2.0 Application Link created in Bitbucket
+            Data Center (Administration → Application Links).
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_secret
           title: Bitbucket Data Center Client Secret
-          help_text: Client Secret from your Bitbucket Data Center OAuth App
+          help_text: Client Secret for that Application Link.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+        - name: bitbucket_data_center_bot_token
+          title: Bitbucket Data Center Bot Token (optional)
+          help_text: >-
+            HTTP access token for a dedicated bot user (e.g. openhands-bot)
+            with repo access. When set, OpenHands posts comments and reactions
+            as the bot instead of the mentioning user or installer; jobs still
+            run on the invoking user's workspace.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+
+    - name: jira_data_center_integration
+      title: Jira Data Center Integration
+      description: Enable the Jira Data Center issue integration. The service-account token and webhook secret are configured per-workspace in the OpenHands app UI after enabling.
+      items:
+        - name: jira_data_center_enabled
+          title: Enable Jira Data Center Integration
+          help_text: Enable the Jira Data Center issue integration.
+          type: bool
+          default: "0"
+        - name: jira_data_center_link_method
+          title: How should Jira users be linked to OpenHands accounts?
+          help_text: >-
+            OAuth (recommended): each user proves ownership of their Jira account via your server's
+            OAuth 2.0 application. This is the most secure option. Email match: users are linked by
+            matching their Jira email to their OpenHands email. Use this only if your Jira Data Center
+            server does not have an OAuth 2.0 application configured.
+          type: select_one
+          default: oauth
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          items:
+            - name: oauth
+              title: OAuth (verified, recommended)
+            - name: email
+              title: Email match (no OAuth app required)
+        - name: jira_data_center_base_url
+          title: Jira Data Center Base URL
+          help_text: Full base URL of your Jira Data Center server, INCLUDING the https:// scheme (e.g. https://jira.example.com).
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_id
+          title: Jira Data Center OAuth Client ID
+          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server (callback URL https://app.YOUR-DOMAIN/integration/jira-dc/callback).
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_secret
+          title: Jira Data Center OAuth Client Secret
+          help_text: Client secret from the OAuth 2.0 application on your Jira Data Center server.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
 
     - name: github_authentication
@@ -705,6 +760,53 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: custom_sandbox_image_enabled
+          title: Use a Custom Sandbox Image
+          help_text: Use this if you bundle a custom agent-server image.
+          type: bool
+          default: "0"
+        - name: custom_sandbox_image_repository
+          title: Sandbox Image Repository
+          help_text: 'Full repository path with no tag, e.g. my-registry.example.com/openhands/agent-server'
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          help_text: Image tag, e.g. 1.21.1-python
+          type: text
+          default: "1.21.1-python"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_registry_server
+          title: Registry Server
+          help_text: |
+            Host (and optional port) of the registry, e.g. my-registry.example.com.
+            Leave blank if the registry is public, or if your cluster authenticates
+            via a credential provider (EKS IRSA, GKE Workload Identity, AKS managed
+            identity).
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_username
+          title: Registry Username
+          help_text: |
+            Registry username. Some registries use sentinel values: _json_key
+            for GCP Artifact Registry, AWS for ECR static creds, $oauthtoken
+            for Quay robot accounts.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_password
+          title: Registry Password or Credentials
+          help_text: |
+            Password, PAT, or credentials string. This field is single-line.
+            For GCP Artifact Registry, minify the service-account JSON first
+            (e.g. `jq -c . key.json`) and paste the one-line result, with
+            username set to _json_key.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
 
     - name: proxy_configuration
       title: Proxy Configuration

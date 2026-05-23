@@ -60,6 +60,11 @@ config:
   bitbucket_data_center_client_id: ""
   bitbucket_data_center_client_secret: ""
 
+  # Jira Data Center credentials (OAuth, optional)
+  jira_data_center_base_url: ""
+  jira_data_center_client_id: ""
+  jira_data_center_client_secret: ""
+
   # GitHub credentials
   github_oauth_client_id: ""
   github_oauth_client_secret: ""
@@ -72,6 +77,11 @@ config:
   slack_client_id: ""
   slack_client_secret: ""
   slack_signing_secret: ""
+
+  # Custom sandbox image registry credentials
+  custom_sandbox_image_registry_server: ""
+  custom_sandbox_image_registry_username: ""
+  custom_sandbox_image_registry_password: ""
 
   # Plugin Directory secrets
   plugin_directory_identity_shared_secret: ""

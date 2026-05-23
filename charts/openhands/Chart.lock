@@ -4,7 +4,7 @@ dependencies:
   version: 24.7.5
 - name: laminar
   repository: https://lmnr-ai.github.io/lmnr-helm
-  version: 0.1.12
+  version: 0.1.13
 - name: litellm-helm
   repository: oci://ghcr.io/berriai
   version: 0.1.831
@@ -18,7 +18,7 @@ dependencies:
   repository: oci://registry-1.docker.io/bitnamicharts
   version: 20.3.0
 - name: replicated
-  repository: oci://charts.shortrib.io/library
+  repository: oci://registry.replicated.com/library
   version: 1.9.0
 - name: runtime-api
   repository: oci://ghcr.io/all-hands-ai/helm-charts
@@ -35,5 +35,5 @@ dependencies:
 - name: integrations-hub
   repository: oci://ghcr.io/all-hands-ai/helm-charts
   version: 0.1.0
-digest: sha256:5f6f403be3c95d5334f04da9e7dccad15d1097dda8f1f467939312e1121ef361
-generated: "2026-05-18T21:56:55.906147-05:00"
+digest: sha256:69dda3ea1b463d7b6623250ad4eb6e4b940d3ca03dbd83ec4806881d5075b28c
+generated: "2026-05-22T11:24:47.82372-04:00"

@@ -50,6 +50,13 @@ spec:
             name: openhands-integrations-service
             port:
               number: 3000
+      - path: /integration/jira-dc/events
+        pathType: Exact
+        backend:
+          service:
+            name: openhands-integrations-service
+            port:
+              number: 3000
       - path: /api/billing/stripe-webhook
         pathType: Exact
         backend:

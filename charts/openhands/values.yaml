@@ -95,6 +95,14 @@ bitbucket:
 enterpriseSSO:
   enabled: false
 
+# sha256 of all secret (password) config values, injected by KOTS. Changing any
+# secret-backed config changes this value, which changes the openhands pod
+# template and forces a rollout so the new secret is picked up (secret-sourced
+# env vars only load at pod start). The value is computed in replicated/openhands.yaml.
+# Blast radius: this restarts the openhands pod on ANY secret change, including
+# secrets that only affect other components (e.g. an LLM key used only by LiteLLM).
+secretsChecksum: ""
+
 bitbucketDataCenter:
   enabled: false
   host: ""
@@ -653,6 +661,7 @@ jira:
 
 jiraDc:
   enabled: false
+  linkMethod: oauth
 
 linear:
   enabled: false
