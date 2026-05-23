@@ -18,7 +18,7 @@ dependencies:
   repository: oci://registry-1.docker.io/bitnamicharts
   version: 20.3.0
 - name: replicated
-  repository: oci://charts.shortrib.io/library
+  repository: oci://registry.replicated.com/library
   version: 1.9.0
 - name: runtime-api
   repository: oci://ghcr.io/all-hands-ai/helm-charts
@@ -35,5 +35,5 @@ dependencies:
 - name: integrations-hub
   repository: oci://ghcr.io/all-hands-ai/helm-charts
   version: 0.1.0
-digest: sha256:28d80e6612e672fed0bfcc416ff76124f7eee460bc0732ab1575fa7c2bef96e9
-generated: "2026-05-19T15:00:27.302921-05:00"
+digest: sha256:69dda3ea1b463d7b6623250ad4eb6e4b940d3ca03dbd83ec4806881d5075b28c
+generated: "2026-05-22T11:24:47.82372-04:00"

@@ -665,6 +665,7 @@ jira:
 
 jiraDc:
   enabled: false
+  linkMethod: oauth
 
 linear:
   enabled: false

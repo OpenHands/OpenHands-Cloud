@@ -353,32 +353,32 @@
 - name: DD_TRACE_SAMPLING_RULES
   value: '[{"service":"deploy","name":"fastapi.request","resource":"/integration/*","sample_rate":0.05}, {"service":"deploy","name":"fastapi.request","resource":"/slack/on-*","sample_rate":0.05}]'
 {{- end }}
-{{- if .Values.laminar.enabled }}
-{{- if .Values.laminar.apiKeyFromSecret }}
+{{- if and .Values.laminar.enabled .Values.laminar.apiKeyFromSecret }}
 - name: LMNR_PROJECT_API_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.laminar.apiKeyFromSecret.name }}
       key: {{ .Values.laminar.apiKeyFromSecret.key }}
       optional: true
+{{- else }}
+- name: LMNR_PROJECT_API_KEY
+  value: ""
 {{- end }}
-{{- if .Values.laminar.baseUrlFromSecret }}
+{{- if and .Values.laminar.enabled .Values.laminar.baseUrlFromSecret }}
 - name: LMNR_BASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ .Values.laminar.baseUrlFromSecret.name }}
       key: {{ .Values.laminar.baseUrlFromSecret.key }}
       optional: true
+{{- else }}
+- name: LMNR_BASE_URL
+  value: ""
 {{- end }}
-{{- if .Values.laminar.forceHttp }}
 - name: LMNR_FORCE_HTTP
-  value: {{ .Values.laminar.forceHttp | quote }}
-{{- end }}
-{{- if .Values.laminar.httpPort }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
 - name: LMNR_HTTP_PORT
-  value: {{ .Values.laminar.httpPort | quote }}
-{{- end }}
-{{- end }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.httpPort }}{{ .Values.laminar.httpPort | quote }}{{ else }}""{{ end }}
 - name: DB_PASS
   valueFrom:
     secretKeyRef:
@@ -402,6 +402,11 @@
 {{- if .Values.jiraDc.enabled }}
 - name: ENABLE_JIRA_DC
   value: "true"
+- name: JIRA_DC_WEBHOOKS_ENABLED
+  value: "1"
+{{- if eq .Values.jiraDc.linkMethod "oauth" }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_DC_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -417,6 +422,10 @@
     secretKeyRef:
       name: jira-dc-app
       key: base-url
+{{- else }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "0"
+{{- end }}
 {{- end }}
 
 {{- if .Values.linear.enabled }}
