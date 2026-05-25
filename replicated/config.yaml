@@ -442,7 +442,7 @@ spec:
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_bot_token
-          title: Bitbucket Data Center Bot Token (optional but recommended)
+          title: Bitbucket Data Center Bot Token (optional but strongly recommended)
           help_text: >-
             HTTP access token for a dedicated bot user (e.g. openhands-bot)
             with repo access. When set, OpenHands posts comments and reactions
