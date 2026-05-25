@@ -447,11 +447,11 @@ spec:
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_bot_token
-          title: Bitbucket Data Center Bot Token (optional)
+          title: Bitbucket Data Center Bot Token (optional but strongly recommended)
           help_text: >-
             HTTP access token for a dedicated bot user (e.g. openhands-bot)
             with repo access. When set, OpenHands posts comments and reactions
-            as the bot instead of the mentioning user or installer; jobs still
+            as the bot instead of as the mentioning user or installer; jobs still
             run on the invoking user's workspace.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
