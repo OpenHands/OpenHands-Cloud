@@ -1,4 +1,4 @@
-{{- if or .Values.config.jira_data_center_base_url .Values.config.jira_data_center_client_id .Values.config.jira_data_center_client_secret }}
+{{- if or .Values.config.jira_data_center_base_url .Values.config.jira_data_center_client_id .Values.config.jira_data_center_client_secret .Values.config.jira_data_center_service_account_email .Values.config.jira_data_center_service_account_pat }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -14,5 +14,11 @@ data:
   {{- end }}
   {{- if .Values.config.jira_data_center_client_secret }}
   client-secret: {{ .Values.config.jira_data_center_client_secret | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.jira_data_center_service_account_email }}
+  service-account-email: {{ .Values.config.jira_data_center_service_account_email | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.jira_data_center_service_account_pat }}
+  service-account-pat: {{ .Values.config.jira_data_center_service_account_pat | b64enc | quote }}
   {{- end }}
 {{- end }}

@@ -491,7 +491,7 @@ spec:
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
-      description: Enable the Jira Data Center issue integration. The service-account token and webhook secret are configured per-workspace in the OpenHands app UI after enabling.
+      description: Enable the Jira Data Center issue integration. Configure the Jira server, linking method, and service account for this OpenHands Enterprise deployment.
       items:
         - name: jira_data_center_enabled
           title: Enable Jira Data Center Integration
@@ -513,6 +513,25 @@ spec:
               title: OAuth (verified, recommended)
             - name: email
               title: Email match (no OAuth app required)
+        - name: jira_data_center_service_account_email
+          title: Jira Data Center Service Account Email
+          help_text: >-
+            Email address of the Jira service account OpenHands uses to read
+            issues and post comments/reactions. This service account is required
+            for the Jira Data Center integration in this OpenHands Enterprise
+            deployment.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
+        - name: jira_data_center_service_account_pat
+          title: Jira Data Center Service Account PAT
+          help_text: >-
+            Personal access token for the Jira service account. OpenHands uses
+            this token to read Jira issues and post comments/reactions as the
+            service account.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
         - name: jira_data_center_base_url
           title: Jira Data Center Base URL
           help_text: Full base URL of your Jira Data Center server, INCLUDING the https:// scheme (e.g. https://jira.example.com).

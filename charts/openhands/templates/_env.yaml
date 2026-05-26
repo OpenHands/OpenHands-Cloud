@@ -424,6 +424,18 @@
   value: "true"
 - name: JIRA_DC_WEBHOOKS_ENABLED
   value: "1"
+- name: JIRA_DC_SERVICE_ACCOUNT_EMAIL
+  valueFrom:
+    secretKeyRef:
+      name: jira-dc-app
+      key: service-account-email
+      optional: true
+- name: JIRA_DC_SERVICE_ACCOUNT_PAT
+  valueFrom:
+    secretKeyRef:
+      name: jira-dc-app
+      key: service-account-pat
+      optional: true
 {{- if eq .Values.jiraDc.linkMethod "oauth" }}
 - name: JIRA_DC_ENABLE_OAUTH
   value: "1"
