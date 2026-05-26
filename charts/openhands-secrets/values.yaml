@@ -59,6 +59,13 @@ config:
   bitbucket_data_center_domain: ""
   bitbucket_data_center_client_id: ""
   bitbucket_data_center_client_secret: ""
+  bitbucket_data_center_bot_token: ""
+
+  # Azure DevOps credentials (Microsoft Entra OAuth)
+  azure_devops_tenant_id: ""
+  azure_devops_organization: ""
+  azure_devops_client_id: ""
+  azure_devops_client_secret: ""
 
   # Jira Data Center credentials (OAuth, optional)
   jira_data_center_base_url: ""
