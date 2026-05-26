@@ -90,6 +90,11 @@ litellm-helm:
     #   litellm_params:
     #     model: "anthropic/claude-3-7-sonnet-20250219"
     #     api_key: os.environ/ANTHROPIC_API_KEY
+    #
+    # Enable only when you trust callers and need custom x-* request headers
+    # forwarded to upstream LLM providers.
+    # general_settings:
+    #   forward_client_headers_to_llm_api: true
 
 runtime-api:
   enabled: true

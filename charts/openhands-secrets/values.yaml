@@ -64,6 +64,8 @@ config:
   jira_data_center_base_url: ""
   jira_data_center_client_id: ""
   jira_data_center_client_secret: ""
+  jira_data_center_service_account_email: ""
+  jira_data_center_service_account_pat: ""
 
   # GitHub credentials
   github_oauth_client_id: ""

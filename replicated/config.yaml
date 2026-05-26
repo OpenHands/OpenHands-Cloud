@@ -301,6 +301,11 @@ spec:
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
+        - name: litellm_forward_client_headers
+          title: Forward Client Headers to LLM Providers
+          help_text: Forward client x-* request headers and anthropic-beta through LiteLLM to upstream LLM providers. Leave disabled unless you trust callers and need provider-visible custom headers.
+          type: bool
+          default: "0"
 
     - name: security_secrets
       title: Security & Authentication
@@ -442,18 +447,18 @@ spec:
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_bot_token
-          title: Bitbucket Data Center Bot Token (optional)
+          title: Bitbucket Data Center Bot Token (optional but strongly recommended)
           help_text: >-
             HTTP access token for a dedicated bot user (e.g. openhands-bot)
             with repo access. When set, OpenHands posts comments and reactions
-            as the bot instead of the mentioning user or installer; jobs still
+            as the bot instead of as the mentioning user or installer; jobs still
             run on the invoking user's workspace.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
-      description: Enable the Jira Data Center issue integration. The service-account token and webhook secret are configured per-workspace in the OpenHands app UI after enabling.
+      description: Enable the Jira Data Center issue integration. Configure the Jira server, linking method, and service account for this OpenHands Enterprise deployment.
       items:
         - name: jira_data_center_enabled
           title: Enable Jira Data Center Integration
@@ -475,6 +480,25 @@ spec:
               title: OAuth (verified, recommended)
             - name: email
               title: Email match (no OAuth app required)
+        - name: jira_data_center_service_account_email
+          title: Jira Data Center Service Account Email
+          help_text: >-
+            Email address of the Jira service account OpenHands uses to read
+            issues and post comments/reactions. This service account is required
+            for the Jira Data Center integration in this OpenHands Enterprise
+            deployment.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
+        - name: jira_data_center_service_account_pat
+          title: Jira Data Center Service Account PAT
+          help_text: >-
+            Personal access token for the Jira service account. OpenHands uses
+            this token to read Jira issues and post comments/reactions as the
+            service account.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
         - name: jira_data_center_base_url
           title: Jira Data Center Base URL
           help_text: Full base URL of your Jira Data Center server, INCLUDING the https:// scheme (e.g. https://jira.example.com).
