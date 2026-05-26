@@ -180,10 +180,10 @@ spec:
           OR_APP_NAME: "OpenHands"
           OR_SITE_URL: "https://docs.all-hands.dev"
         model_list:
-          # LiteLLM 1.84.1 workaround: expose this model through the
-          # proxy for openhands/claude-opus-4-7 because direct Anthropic calls
-          # break thinking translation in this release. Can consider removing after LiteLLM
-          # ships https://github.com/BerriAI/litellm/pull/27074.
+          # Keep this alias available through the proxy for
+          # openhands/claude-opus-4-7. LiteLLM 1.84.1 is the stable release
+          # containing the thinking translation fix from
+          # https://github.com/BerriAI/litellm/pull/27074.
           - model_name: "claude-opus-4-7"
             litellm_params:
               model: "anthropic/claude-opus-4-7"
