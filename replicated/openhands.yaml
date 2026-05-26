@@ -506,11 +506,11 @@ spec:
         runtime:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.21.1-python'
+            tag: '1.22.1-python'
           warmRuntimes:
             configs:
               - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.21.1-python'
+                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.22.1-python'
                 working_dir: "/workspace"
                 environment:
                   LOG_JSON: "1"
