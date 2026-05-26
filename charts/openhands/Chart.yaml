@@ -42,7 +42,7 @@ dependencies:
     condition: runtime-api.enabled
   - name: automation
     repository: oci://ghcr.io/all-hands-ai/helm-charts
-    version: 0.1.9
+    version: 0.1.10
     condition: automation.enabled
   - name: crd-check
     repository: oci://ghcr.io/all-hands-ai/helm-charts
