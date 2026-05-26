@@ -141,7 +141,7 @@ spec:
         - --use_v2_migration_resolver
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/berriai/litellm-database'
-        tag: "1.84.0-rc.1"
+        tag: "1.84.1"
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       environmentSecrets:
@@ -180,7 +180,7 @@ spec:
           OR_APP_NAME: "OpenHands"
           OR_SITE_URL: "https://docs.all-hands.dev"
         model_list:
-          # LiteLLM 1.84.0rc1 workaround: expose this model through the
+          # LiteLLM 1.84.1 workaround: expose this model through the
           # proxy for openhands/claude-opus-4-7 because direct Anthropic calls
           # break thinking translation in this release. Can consider removing after LiteLLM
           # ships https://github.com/BerriAI/litellm/pull/27074.
