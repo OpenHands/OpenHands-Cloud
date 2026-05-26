@@ -1,7 +1,7 @@
 apiVersion: v2
 name: runtime-api
 description: A Helm chart for the FastAPI application
-version: 0.3.3 # Change this to trigger a new helm chart version being published
+version: 0.3.4 # Change this to trigger a new helm chart version being published
 appVersion: "1.0.0"
 dependencies:
   - name: postgresql
