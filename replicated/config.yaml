@@ -540,7 +540,7 @@ spec:
           required: true
         - name: jira_data_center_client_id
           title: Jira Data Center OAuth Client ID
-          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server (callback URL https://app.YOUR-DOMAIN/integration/jira-dc/callback).
+          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server.
           type: text
           when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
