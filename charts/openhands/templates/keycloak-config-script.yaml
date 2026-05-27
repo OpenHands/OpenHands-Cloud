@@ -167,7 +167,7 @@ data:
       for alias in $(jq -r '.identityProviders[].alias' $REALM_JSON); do
         EXISTING_MAPPERS=$(curl -s "$KC_REALM/identity-provider/instances/$alias/mappers" \
           -H "Authorization: Bearer $ACCESS_TOKEN")
-        if echo "$EXISTING_MAPPERS" | jq -e 'type == "object" and has("error")' >/dev/null; then
+        if ! echo "$EXISTING_MAPPERS" | jq -e 'type == "array"' >/dev/null 2>&1; then
           echo "  Skipping mappers for $alias: $EXISTING_MAPPERS"
           continue
         fi
