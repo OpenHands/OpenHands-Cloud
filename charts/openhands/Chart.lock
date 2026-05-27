@@ -36,4 +36,4 @@ dependencies:
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
 digest: sha256:1f4476080a68f1cd331046e59f312836700958ac2a23bf95a6368abf28656712
-generated: "2026-05-26T17:25:16.233599-04:00"
+generated: "2026-05-27T10:30:34.584689-04:00"
