@@ -8,7 +8,7 @@
 import base64
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -23,19 +23,22 @@ from conftest import (
     get_chart_value,
     get_dependency_version,
     # Fixture baseline constants for self-documenting assertions
+    AUTOMATION_CHART_APP_VERSION,
+    AUTOMATION_CHART_VERSION,
     OPENHANDS_CHART_VERSION,
     OPENHANDS_CHART_APP_VERSION,
+    OPENHANDS_CHART_AUTOMATION_VERSION,
     OPENHANDS_CHART_RUNTIME_API_VERSION,
     OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION,
-    RUNTIME_API_CHART_FULL_VERSION,
-    RUNTIME_API_CHART_FULL_APP_VERSION,
     RUNTIME_API_CHART_MINIMAL_VERSION,
     # Test input constants for update operations
     NEW_APP_VERSION,
+    NEW_AUTOMATION_VERSION,
     NEW_RUNTIME_API_VERSION,
 )
 from update_openhands_charts import (
     DeployConfig,
+    bump_chart_version,
     bump_patch_version,
     cloud_tag_exists,
     extract_version_from_cloud_tag,
@@ -46,9 +49,9 @@ from update_openhands_charts import (
     get_short_sha,
     main,
     parse_args,
+    update_automation_values,
     update_openhands_chart,
     update_openhands_values,
-    update_runtime_api_chart,
     update_runtime_api_values,
 )
 
@@ -259,36 +262,47 @@ class TestUpdateChartAcrossVariants:
 
     def test_chart_app_version_updates_to_new_cloud_tag(self, temp_chart_file):
         """Verify appVersion field is updated to the new OpenHands cloud tag."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None, None)
 
         assert get_chart_value(temp_chart_file, "appVersion") == NEW_APP_VERSION
 
     def test_chart_version_bumps_patch_on_update(self, temp_chart_file):
         """Verify chart version patch is incremented when changes are made."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None, None)
 
         assert_version_bumped(temp_chart_file, OPENHANDS_CHART_VERSION)
 
     def test_runtime_api_dependency_version_updates(self, temp_chart_file):
         """Verify runtime-api dependency version is updated in Chart.yaml."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, None)
 
         assert get_dependency_version(temp_chart_file, "runtime-api") == NEW_RUNTIME_API_VERSION
 
-    @pytest.mark.parametrize("app_version,runtime_api_version,unchanged_key", [
+    def test_automation_dependency_version_updates(self, temp_chart_file):
+        """Verify automation dependency version is updated in Chart.yaml."""
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None, NEW_AUTOMATION_VERSION)
+
+        assert get_dependency_version(temp_chart_file, "automation") == NEW_AUTOMATION_VERSION
+
+    @pytest.mark.parametrize("app_version,runtime_api_version,automation_version,unchanged_key", [
         # When appVersion already matches target, it should be reported as unchanged
         pytest.param(
-            OPENHANDS_CHART_APP_VERSION, NEW_RUNTIME_API_VERSION, "appVersion",
+            OPENHANDS_CHART_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, "appVersion",
             id="appVersion unchanged when already current"
         ),
         # When runtime-api version already matches target, it should be reported as unchanged
         pytest.param(
-            NEW_APP_VERSION, OPENHANDS_CHART_RUNTIME_API_VERSION, "runtime-api version",
+            NEW_APP_VERSION, OPENHANDS_CHART_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, "runtime-api version",
             id="runtime-api version unchanged when already current"
+        ),
+        # When automation version already matches target, it should be reported as unchanged
+        pytest.param(
+            NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, OPENHANDS_CHART_AUTOMATION_VERSION, "automation version",
+            id="automation version unchanged when already current"
         ),
     ])
     def test_version_unchanged_when_already_current(
-        self, temp_chart_file, app_version, runtime_api_version, unchanged_key
+        self, temp_chart_file, app_version, runtime_api_version, automation_version, unchanged_key
     ):
         """Verify no change is recorded when a version already matches target.
 
@@ -296,7 +310,7 @@ class TestUpdateChartAcrossVariants:
         when values are already at their target state, preventing spurious version
         bumps and unnecessary commits in CI/CD pipelines.
         """
-        result = update_openhands_chart(temp_chart_file, app_version, runtime_api_version)
+        result = update_openhands_chart(temp_chart_file, app_version, runtime_api_version, automation_version)
 
         assert result.is_unchanged(unchanged_key)
 
@@ -318,8 +332,8 @@ class TestUpdateChart:
         return make_temp_yaml_file(sample_openhands_chart_with_deps)
 
     def test_non_runtime_api_dependencies_remain_unchanged(self, temp_chart_file):
-        """Verify only runtime-api dependency is modified; other deps are preserved."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        """Verify only runtime-api and automation dependencies are modified; other deps preserved."""
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
 
         assert get_dependency_version(temp_chart_file, "other-dep") == OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION
 
@@ -330,21 +344,21 @@ class TestUpdateChart:
     ])
     def test_scalar_metadata_preserved_after_update(self, temp_chart_file, key, expected):
         """Verify scalar metadata fields are not modified by chart update."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
 
         assert get_chart_value(temp_chart_file, key) == expected
 
     def test_maintainers_count_preserved_after_update(self, temp_chart_file):
         """Verify maintainers list length is not modified by chart update."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
 
         assert len(get_chart_value(temp_chart_file, "maintainers")) == 1
 
     def test_dependencies_count_preserved_after_update(self, temp_chart_file):
         """Verify dependencies list length is not modified by chart update."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
 
-        assert len(get_chart_value(temp_chart_file, "dependencies")) == 2
+        assert len(get_chart_value(temp_chart_file, "dependencies")) == 3
 
 
 
@@ -578,6 +592,7 @@ class TestGetDeployConfig:
     VALID_WORKFLOW_YAML = """\
 env:
   RUNTIME_API_SHA: abc123def456
+  AUTOMATION_SHA: 1234567890abcdef1234567890abcdef12345678
   OPENHANDS_RUNTIME_IMAGE_TAG: "cloud-1.21.0-nikolaik"
   OTHER_VAR: value
 """
@@ -603,6 +618,7 @@ env:
         assert result is not None
         assert isinstance(result, DeployConfig)
         assert result.runtime_api_sha == "abc123def456"
+        assert result.automation_sha == "1234567890abcdef1234567890abcdef12345678"
         assert result.openhands_runtime_image_tag == "cloud-1.21.0-nikolaik"
 
     def test_constructs_correct_url_without_ref(self, monkeypatch, mock_successful_response):
@@ -653,6 +669,7 @@ env:
 
         assert result is not None
         assert result.runtime_api_sha == ""
+        assert result.automation_sha == ""
         assert result.openhands_runtime_image_tag == ""
 
     def test_returns_empty_string_when_env_section_missing(self, monkeypatch, make_workflow_response):
@@ -672,6 +689,7 @@ env:
 
         assert result is not None
         assert result.runtime_api_sha == ""
+        assert result.automation_sha == ""
         assert result.openhands_runtime_image_tag == ""
 
     # =========================================================================
@@ -1102,6 +1120,7 @@ class TestConditionalChartVersionBump:
             temp_openhands_chart_file,
             new_app_version=OPENHANDS_CHART_APP_VERSION,
             new_runtime_api_version=OPENHANDS_CHART_RUNTIME_API_VERSION,
+            new_automation_version=OPENHANDS_CHART_AUTOMATION_VERSION,
             has_changes=False,
         )
 
@@ -1115,6 +1134,7 @@ class TestConditionalChartVersionBump:
             temp_openhands_chart_file,
             new_app_version="cloud-1.1.0",
             new_runtime_api_version="0.2.7",
+            new_automation_version="0.1.2",
             has_changes=True,
         )
 
@@ -1127,14 +1147,18 @@ class TestConditionalChartVersionBump:
 
     def test_runtime_api_no_version_bump_when_no_changes(self, temp_runtime_api_chart_file):
         """Test that runtime-api chart version is not bumped when has_changes is False."""
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file, has_changes=False)
+        new_version, result = bump_chart_version(
+            temp_runtime_api_chart_file, "runtime-api", has_changes=False
+        )
 
         assert new_version == RUNTIME_API_CHART_MINIMAL_VERSION  # Version unchanged
         assert result.is_unchanged("runtime-api chart version")
 
     def test_runtime_api_version_bump_when_has_changes(self, temp_runtime_api_chart_file):
         """Test that runtime-api chart version is bumped when has_changes is True."""
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file, has_changes=True)
+        new_version, result = bump_chart_version(
+            temp_runtime_api_chart_file, "runtime-api", has_changes=True
+        )
 
         expected_version = bump_patch_version(RUNTIME_API_CHART_MINIMAL_VERSION)
         assert new_version == expected_version  # Version bumped
@@ -1177,7 +1201,7 @@ class TestDryRun:
         original_content = temp_chart_file.read_text()
 
         # Act: run update with dry_run=True
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, dry_run=True)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, dry_run=True)
 
         # Assert: file unchanged
         assert temp_chart_file.read_text() == original_content
@@ -1185,12 +1209,13 @@ class TestDryRun:
     def test_update_chart_dry_run_prints_changes(self, temp_chart_file):
         """Test that dry-run still records what would be changed."""
         # Act
-        result = update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, dry_run=True)
+        result = update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, dry_run=True)
 
         # Assert: changes are tracked even though file wasn't modified
         assert result.has_change_for("appVersion")
         assert result.has_change_for("version")
         assert result.has_change_for("runtime-api version")
+        assert result.has_change_for("automation version")
 
     def test_update_values_dry_run_no_file_changes(self, temp_values_file):
         """Test that dry-run doesn't modify values.yaml."""
@@ -1229,7 +1254,7 @@ class TestDryRun:
         original_content = temp_chart_file.read_text()
 
         # Act: run update with dry_run=False (default behavior)
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, dry_run=False)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, dry_run=False)
 
         # Assert: file was modified
         assert temp_chart_file.read_text() != original_content
@@ -1252,7 +1277,7 @@ class TestDryRun:
 
 
 class TestUpdateRuntimeApiChart:
-    """Tests for update_runtime_api_chart function."""
+    """Tests for bump_chart_version with runtime-api chart."""
 
     @pytest.fixture
     def temp_runtime_api_chart_file(self, make_temp_yaml_file, sample_runtime_api_chart_full):
@@ -1261,7 +1286,7 @@ class TestUpdateRuntimeApiChart:
 
     def test_bump_runtime_api_version(self, temp_runtime_api_chart_file):
         """Test that runtime-api chart version is bumped correctly."""
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file)
+        new_version, result = bump_chart_version(temp_runtime_api_chart_file, "runtime-api")
 
         assert get_chart_value(temp_runtime_api_chart_file, "version") == "0.1.21"
         assert new_version == "0.1.21"
@@ -1273,13 +1298,13 @@ class TestUpdateRuntimeApiChart:
     ])
     def test_scalar_fields_preserved_after_version_bump(self, temp_runtime_api_chart_file, key, expected):
         """Verify scalar fields are not modified by runtime-api chart version bump."""
-        update_runtime_api_chart(temp_runtime_api_chart_file)
+        bump_chart_version(temp_runtime_api_chart_file, "runtime-api")
 
         assert get_chart_value(temp_runtime_api_chart_file, key) == expected
 
     def test_dependencies_count_preserved_after_version_bump(self, temp_runtime_api_chart_file):
         """Verify dependencies list length is not modified by runtime-api chart version bump."""
-        update_runtime_api_chart(temp_runtime_api_chart_file)
+        bump_chart_version(temp_runtime_api_chart_file, "runtime-api")
 
         assert len(get_chart_value(temp_runtime_api_chart_file, "dependencies")) == 1
 
@@ -1287,13 +1312,15 @@ class TestUpdateRuntimeApiChart:
         """Test that dry-run doesn't modify the file."""
         original_content = temp_runtime_api_chart_file.read_text()
 
-        update_runtime_api_chart(temp_runtime_api_chart_file, dry_run=True)
+        bump_chart_version(temp_runtime_api_chart_file, "runtime-api", dry_run=True)
 
         assert temp_runtime_api_chart_file.read_text() == original_content
 
     def test_dry_run_returns_new_version(self, temp_runtime_api_chart_file):
         """Test that dry-run still returns the new version."""
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file, dry_run=True)
+        new_version, result = bump_chart_version(
+            temp_runtime_api_chart_file, "runtime-api", dry_run=True
+        )
         assert new_version == "0.1.21"
 
 
@@ -1387,6 +1414,126 @@ class TestUpdateRuntimeApiValues:
             runtime_image_tag="cloud-1.1.0-nikolaik",
         )
 
+        assert result.has_changes is True
+
+
+class TestUpdateAutomationValues:
+    """Tests for update_automation_values function.
+
+    The automation chart now uses the deploy-config automation SHA, which is
+    published as a full `sha-<40 hex>` image tag.
+    """
+
+    @pytest.fixture
+    def temp_automation_values_file(self, make_temp_yaml_file, sample_automation_values):
+        """Create a temporary automation values.yaml file."""
+        return make_temp_yaml_file(sample_automation_values)
+
+    def test_updates_automation_image_tag(self, temp_automation_values_file):
+        """Test that automation image tag is updated from deploy-config SHA."""
+        result = update_automation_values(
+            temp_automation_values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+        )
+
+        assert_file_contains(
+            temp_automation_values_file,
+            "tag: sha-1234567890abcdef1234567890abcdef12345678",
+        )
+        assert result.has_changes is True
+
+    def test_idempotent_when_reapplying_same_values(self, temp_automation_values_file):
+        """Test that reapplying the same automation SHA reports no changes."""
+        result = update_automation_values(
+            temp_automation_values_file,
+            automation_sha="1.20.0",
+        )
+
+        # Verify: Boolean flag correctly indicates no changes
+        assert result.has_changes is False
+        assert result.is_unchanged("automation image tag")
+
+    def test_preserves_other_content(self, temp_automation_values_file):
+        """Test that other content is preserved."""
+        update_automation_values(
+            temp_automation_values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+        )
+
+        assert_file_contains_all(temp_automation_values_file, [
+            "repository: ghcr.io/openhands/automation",
+            "imagePullSecrets: []",
+            "replicas: 1",
+        ])
+
+    def test_dry_run_no_file_changes(self, temp_automation_values_file):
+        """Test that dry-run doesn't modify the file."""
+        original_content = temp_automation_values_file.read_text()
+
+        update_automation_values(
+            temp_automation_values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+            dry_run=True,
+        )
+
+        assert temp_automation_values_file.read_text() == original_content
+
+
+class TestUpdateAutomationChart:
+    """Tests for bump_chart_version with automation chart.
+
+    The automation chart version should be bumped when values change,
+    following the same pattern as runtime-api chart updates.
+    """
+
+    @pytest.fixture
+    def temp_automation_chart_file(self, make_temp_yaml_file, sample_automation_chart):
+        """Create a temporary automation Chart.yaml file."""
+        return make_temp_yaml_file(sample_automation_chart)
+
+    def test_bumps_automation_chart_version(self, temp_automation_chart_file):
+        """Test that automation chart version is bumped correctly."""
+        new_version, result = bump_chart_version(temp_automation_chart_file, "automation")
+
+        assert get_chart_value(temp_automation_chart_file, "version") == "0.1.2"
+        assert new_version == "0.1.2"
+        assert result.has_changes is True
+
+    def test_no_version_bump_when_no_changes(self, temp_automation_chart_file):
+        """Test that version is not bumped when has_changes is False."""
+        new_version, result = bump_chart_version(
+            temp_automation_chart_file, "automation", has_changes=False
+        )
+
+        assert get_chart_value(temp_automation_chart_file, "version") == AUTOMATION_CHART_VERSION
+        assert new_version == AUTOMATION_CHART_VERSION
+        assert result.has_changes is False
+        assert result.is_unchanged("automation chart version")
+
+    def test_preserves_other_fields(self, temp_automation_chart_file):
+        """Test that other fields are preserved."""
+        bump_chart_version(temp_automation_chart_file, "automation")
+
+        assert get_chart_value(temp_automation_chart_file, "apiVersion") == "v2"
+        assert get_chart_value(temp_automation_chart_file, "name") == "automation"
+        assert get_chart_value(temp_automation_chart_file, "appVersion") == AUTOMATION_CHART_APP_VERSION
+        assert len(get_chart_value(temp_automation_chart_file, "dependencies")) == 2
+
+    def test_dry_run_no_file_changes(self, temp_automation_chart_file):
+        """Test that dry-run doesn't modify the file."""
+        original_content = temp_automation_chart_file.read_text()
+
+        bump_chart_version(temp_automation_chart_file, "automation", dry_run=True)
+
+        assert temp_automation_chart_file.read_text() == original_content
+
+    def test_dry_run_returns_new_version(self, temp_automation_chart_file):
+        """Test that dry-run still returns the new version."""
+        new_version, result = bump_chart_version(
+            temp_automation_chart_file, "automation", dry_run=True
+        )
+
+        assert new_version == "0.1.2"
         assert result.has_changes is True
 
 
@@ -1511,6 +1658,28 @@ class TestCloudTagExists:
         calls = mock_repo.get_git_ref.call_args_list
         assert calls[0][0][0] == "tags/cloud-1.0.0"
         assert calls[1][0][0] == "tags/cloud-10.20.30"
+
+
+class TestParseArgs:
+    """Tests for parse_args function."""
+
+    def test_cloud_tag_argument_exists(self, monkeypatch):
+        """Test that --cloud-tag argument is accepted."""
+        monkeypatch.setattr(sys, "argv", ["script", "--cloud-tag", "cloud-1.2.0"])
+        args = parse_args()
+        assert args.cloud_tag == "cloud-1.2.0"
+
+    def test_cloud_tag_default_is_none(self, monkeypatch):
+        """Test that --cloud-tag defaults to None."""
+        monkeypatch.setattr(sys, "argv", ["script"])
+        args = parse_args()
+        assert args.cloud_tag is None
+
+    def test_dry_run_argument(self, monkeypatch):
+        """Test that --dry-run argument works."""
+        monkeypatch.setattr(sys, "argv", ["script", "--dry-run"])
+        args = parse_args()
+        assert args.dry_run is True
 
 
 if __name__ == "__main__":

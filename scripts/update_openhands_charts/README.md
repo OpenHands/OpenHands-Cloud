@@ -29,6 +29,17 @@ Updates the OpenHands and runtime-api helm charts to cut a new enterprise chart 
    uv run scripts/update_openhands_charts/update_openhands_charts.py
    ```
 
+   If you want to pass in a specific cloud tag instead of getting the latest GitHub OpenHands cloud tag:
+   ```bash
+   ./scripts/update_openhands_charts/update_openhands_charts.py --cloud-tag cloud-x.x.x
+   ```
+
+   Or using uv directly:
+
+   ```bash
+   uv run scripts/update_openhands_charts/update_openhands_charts.py --cloud-tag cloud-x.x.x
+   ```
+
    > View help for available arguments: `uv run scripts/update_openhands_charts/update_openhands_charts.py --help`
 
 ### DRY RUN mode
