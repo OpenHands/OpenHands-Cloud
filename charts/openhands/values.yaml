@@ -1,5 +1,13 @@
 allowedUsers: null
 
+# When false, the OpenHands chart's own templates (deployment, services,
+# ingresses, cronjobs, etc.) are skipped. Subcharts (litellm-helm, runtime-api,
+# postgresql, redis, minio, keycloak, automation, plugin-directory,
+# integrations-hub, laminar, replicated) still respect their individual
+# `enabled` flags, so this umbrella chart can be used to deploy any subset of
+# them without the OpenHands app itself.
+enabled: true
+
 autoscaling:
   enabled: false
   minReplicas: 1
