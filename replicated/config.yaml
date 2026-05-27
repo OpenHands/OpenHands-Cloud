@@ -919,6 +919,28 @@ spec:
       title: Advanced Options
       description: Optional components and advanced configuration settings
       items:
+        - name: custom_llm_extra_headers
+          title: Custom LLM Extra HTTP Headers (JSON, stopgap)
+          help_text: |
+            STOPGAP. This setting will be replaced by an organization-level
+            setting in the OpenHands application in a future release. Use only
+            if your upstream LLM gateway requires static auth or routing
+            headers that cannot be expressed via the standard Authorization
+            bearer header.
+
+            Format: JSON object mapping header names to values. These headers
+            are applied to every request from LiteLLM Proxy to the upstream
+            gateway for all users in this deployment. Leave blank for none.
+
+            Example: {"Ocp-Apim-Subscription-Key": "abc123", "X-Tenant-Id": "prod"}
+          type: textarea
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+          required: false
+          validation:
+            regex:
+              pattern: '(?s)^\s*(\{\s*\}|\{\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*(,\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*)*\})?\s*$'
+              message: Must be blank or a JSON object with string values, such as {"Header-Name":"value"}
         - name: automations_enabled
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
