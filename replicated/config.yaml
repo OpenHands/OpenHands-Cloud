@@ -301,11 +301,6 @@ spec:
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
-        - name: litellm_forward_client_headers
-          title: Forward Client Headers to LLM Providers
-          help_text: Forward client x-* request headers and anthropic-beta through LiteLLM to upstream LLM providers. Leave disabled unless you trust callers and need provider-visible custom headers.
-          type: bool
-          default: "0"
 
     - name: security_secrets
       title: Security & Authentication
@@ -915,12 +910,42 @@ spec:
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
 
-    - name: advanced_options
-      title: Advanced Options
-      description: Optional components and advanced configuration settings
+    - name: automations_configuration
+      title: Automations
+      description: Configure the Automations UI and backend
       items:
         - name: automations_enabled
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
           default: "0"
+
+    - name: advanced_options
+      title: Advanced Options
+      description: Optional components and advanced configuration settings
+      items:
+        - name: litellm_forward_client_headers
+          title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
+          help_text: >-
+            Forward selected headers from each client request through LiteLLM to upstream LLM providers. When enabled, LiteLLM forwards the anthropic-beta header and client x-* headers, except x-stainless-* headers. It does not forward Authorization or non-x-* gateway headers such as Ocp-Apim-Subscription-Key. Leave disabled unless you need provider-visible client headers. Use Custom LLM Extra HTTP Headers for static gateway auth or routing headers.
+          type: bool
+          default: "0"
+        - name: custom_llm_extra_headers_enabled
+          title: Enable Custom LLM Extra HTTP Headers (JSON)
+          help_text: >-
+            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every request to the custom upstream gateway for all users in this deployment. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the standard Authorization bearer header.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+        - name: custom_llm_extra_headers
+          title: Custom LLM Extra HTTP Headers (JSON)
+          help_text: >-
+            Format: JSON object mapping header names to values. Example: {"Ocp-Apim-Subscription-Key": "abc123", "X-Tenant-Id": "prod"}
+          type: textarea
+          default: ""
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "custom_llm_extra_headers_enabled" "1") }}'
+          required: false
+          validation:
+            regex:
+              pattern: '(?s)^\s*(\{\s*\}|\{\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*(,\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*)*\})?\s*$'
+              message: Must be blank or a JSON object with string values, such as {"Header-Name":"value"}

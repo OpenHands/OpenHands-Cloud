@@ -676,6 +676,7 @@ spec:
                   model: 'openai/{{repl ConfigOption "custom_model"}}'
                   api_key: os.environ/CUSTOM_API_KEY
                   api_base: os.environ/CUSTOM_API_BASE
+                  extra_headers: repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson | mustToJson }}repl{{ else }}{}repl{{ end }}
 
     - when: '{{repl ConfigOptionEquals "google_api_type" "vertex" }}'
       recursiveMerge: true
