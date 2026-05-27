@@ -1,4 +1,4 @@
-{{- if and .Values.ingress.enabled (index .Values "plugin-directory").enabled }}
+{{- if and .Values.enabled .Values.ingress.enabled (index .Values "plugin-directory").enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
