@@ -502,7 +502,9 @@ spec:
           title: How should Jira users be linked to OpenHands accounts?
           help_text: >-
             OAuth (recommended): each user proves ownership of their Jira account via your server's
-            OAuth 2.0 application. This is the most secure option. Email match: users are linked by
+            OAuth 2.0 application. When creating the OAuth app in Jira, use
+            https://app.<your-openhands-domain>/integration/jira-dc/callback as the callback URL,
+            then enter the app's client ID and secret below. Email match: users are linked by
             matching their Jira email to their OpenHands email. Use this only if your Jira Data Center
             server does not have an OAuth 2.0 application configured.
           type: select_one
