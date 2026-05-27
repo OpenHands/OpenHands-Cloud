@@ -167,6 +167,10 @@ data:
       for alias in $(jq -r '.identityProviders[].alias' $REALM_JSON); do
         EXISTING_MAPPERS=$(curl -s "$KC_REALM/identity-provider/instances/$alias/mappers" \
           -H "Authorization: Bearer $ACCESS_TOKEN")
+        if ! echo "$EXISTING_MAPPERS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+          echo "  Skipping mappers for $alias: $EXISTING_MAPPERS"
+          continue
+        fi
         for mapper_name in $(jq -r --arg a "$alias" \
           '.identityProviderMappers[] | select(.identityProviderAlias == $a) | .name' $REALM_JSON); do
 
@@ -175,7 +179,7 @@ data:
             $REALM_JSON > /tmp/mapper.json
 
           EXISTING_ID=$(echo "$EXISTING_MAPPERS" | jq -r --arg n "$mapper_name" \
-            '.[] | select(.name == $n) | .id')
+            '.[] | objects | select(.name == $n) | .id')
 
           if [ -n "$EXISTING_ID" ] && [ "$EXISTING_ID" != "null" ]; then
             jq --arg id "$EXISTING_ID" '. + {id: $id}' /tmp/mapper.json > /tmp/mapper-update.json

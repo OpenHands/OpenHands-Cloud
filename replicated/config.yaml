@@ -442,12 +442,12 @@ spec:
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_bot_token
-          title: Bitbucket Data Center Bot Token (optional but strongly recommended)
+          title: Bitbucket Data Center Bot Token (strongly recommended)
           help_text: >-
-            HTTP access token for a dedicated bot user (e.g. openhands-bot)
-            with repo access. When set, OpenHands posts comments and reactions
-            as the bot instead of as the mentioning user or installer; jobs still
-            run on the invoking user's workspace.
+            HTTP access token for a dedicated bot user with repo access. When
+            set, OpenHands posts comments and reactions as the bot instead of
+            as the mentioning user or installer; jobs still run on the invoking
+            user's workspace.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
 
@@ -497,7 +497,9 @@ spec:
           title: How should Jira users be linked to OpenHands accounts?
           help_text: >-
             OAuth (recommended): each user proves ownership of their Jira account via your server's
-            OAuth 2.0 application. This is the most secure option. Email match: users are linked by
+            OAuth 2.0 application. When creating the OAuth app in Jira, use
+            https://app.<your-openhands-domain>/integration/jira-dc/callback as the callback URL,
+            then enter the app's client ID and secret below. Email match: users are linked by
             matching their Jira email to their OpenHands email. Use this only if your Jira Data Center
             server does not have an OAuth 2.0 application configured.
           type: select_one
@@ -535,7 +537,7 @@ spec:
           required: true
         - name: jira_data_center_client_id
           title: Jira Data Center OAuth Client ID
-          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server (callback URL https://app.YOUR-DOMAIN/integration/jira-dc/callback).
+          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server.
           type: text
           when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
