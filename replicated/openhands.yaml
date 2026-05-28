@@ -141,7 +141,7 @@ spec:
         - --use_v2_migration_resolver
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/berriai/litellm-database'
-        tag: "1.84.1"
+        tag: "1.84.1"  # bare semver, no "v" prefix or "-stable" suffix (format used by BerriAI for 1.84.x+ stable images)
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       environmentSecrets:
