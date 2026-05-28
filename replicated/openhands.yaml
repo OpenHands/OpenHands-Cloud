@@ -149,7 +149,7 @@ spec:
         - --use_v2_migration_resolver
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/berriai/litellm-database'
-        tag: "v1.83.14-stable"
+        tag: "1.84.1"  # bare semver, no "v" prefix or "-stable" suffix (format used by BerriAI for 1.84.x+ stable images)
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       environmentSecrets:
@@ -190,10 +190,12 @@ spec:
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
         model_list:
-          # LiteLLM 1.83.14 workaround: expose this model through the
-          # proxy for openhands/claude-opus-4-7 because direct Anthropic calls
-          # break thinking translation in this release. Can consider removing after LiteLLM
-          # ships https://github.com/BerriAI/litellm/pull/27074.
+          # Keep this alias available through the proxy for
+          # openhands/claude-opus-4-7 (retained for backward compatibility
+          # with existing OpenHands installations that route this model
+          # through the proxy). LiteLLM 1.84.1 is the stable release
+          # containing the thinking translation fix from
+          # https://github.com/BerriAI/litellm/pull/27074.
           - model_name: "claude-opus-4-7"
             litellm_params:
               model: "anthropic/claude-opus-4-7"
