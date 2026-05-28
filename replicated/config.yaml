@@ -968,7 +968,7 @@ spec:
         - name: extra_request_headers_enabled
           title: Enable Extra Upstream HTTP Headers (JSON)
           help_text: >-
-            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every outbound request to the upstream LLM provider for all users in this deployment, regardless of which provider you selected. Provider-managed headers such as Authorization or x-api-key are constructed by LiteLLM and cannot be overridden here. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the provider's standard authentication.
+            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every outbound request to the upstream LLM provider for all users in this deployment. Provider-managed headers such as Authorization or x-api-key are constructed by LiteLLM and cannot be overridden here. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the provider's standard authentication.
           type: bool
           default: "0"
         - name: extra_request_headers
