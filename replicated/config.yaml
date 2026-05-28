@@ -483,6 +483,13 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
           required: true
+        - name: azure_devops_webhook_secret
+          title: Azure DevOps Webhook Secret
+          help_text: Shared secret used to authenticate Azure DevOps Service Hook requests to OpenHands.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
