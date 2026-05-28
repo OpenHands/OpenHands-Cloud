@@ -251,7 +251,7 @@ maintainers:
   - name: test
 dependencies:
   - name: runtime-api
-    repository: oci://ghcr.io/all-hands-ai/helm-charts
+    repository: oci://ghcr.io/openhands/helm-charts
     version: 0.1.10
     condition: runtime-api.enabled
   - name: other-dep

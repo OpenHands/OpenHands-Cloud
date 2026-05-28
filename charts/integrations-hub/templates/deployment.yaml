@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: integrations-hub
+  labels:
+    app: integrations-hub
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: integrations-hub
+  template:
+    metadata:
+      labels:
+        app: integrations-hub
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      {{- if and .Values.database.createDatabaseUser (not .Values.gcp.dbInstance) }}
+      # Create database and user in PostgreSQL (non-GCP only)
+      # For GCP Cloud SQL, database and user are created via Terraform in the infra repo
+      - name: create-db-user
+        image: postgres:14
+        env:
+          - name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.database.superuserSecretName }}
+                key: {{ .Values.database.superuserSecretKey }}
+          - name: DB_HOST
+            value: {{ .Values.database.host | quote }}
+          - name: DB_PORT
+            value: {{ .Values.database.port | quote }}
+          - name: DB_NAME
+            value: {{ .Values.database.name | quote }}
+          - name: DB_USER
+            value: {{ .Values.database.user | quote }}
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.database.secretName }}
+                key: {{ .Values.database.secretKey }}
+        command:
+          - sh
+          - -c
+          - |
+            echo "Waiting for PostgreSQL at $DB_HOST to be ready..."
+            for i in $(seq 1 60); do
+              # Try connecting and capture any error
+              if psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres -c "SELECT 1;" 2>&1; then
+                echo "PostgreSQL is up!"
+
+                echo "Creating the database $DB_NAME if it doesn't exist..."
+                psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres --set=ON_ERROR_STOP=1 <<'SQL'
+            \set db_name `printf %s "$DB_NAME"`
+
+            SELECT format('CREATE DATABASE %I', :'db_name')
+            WHERE NOT EXISTS (
+              SELECT 1 FROM pg_database WHERE datname = :'db_name'
+            )
+            \gexec
+            SQL
+
+                echo "Creating the user $DB_USER if it doesn't exist..."
+                psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d "$DB_NAME" --set=ON_ERROR_STOP=1 <<'SQL'
+            \set db_name `printf %s "$DB_NAME"`
+            \set db_user `printf %s "$DB_USER"`
+            \set db_password `printf %s "$DB_PASSWORD"`
+
+            SELECT format('CREATE USER %I WITH PASSWORD %L', :'db_user', :'db_password')
+            WHERE NOT EXISTS (
+              SELECT 1 FROM pg_roles WHERE rolname = :'db_user'
+            )
+            \gexec
+
+            GRANT ALL PRIVILEGES ON DATABASE :"db_name" TO :"db_user";
+            GRANT USAGE ON SCHEMA public TO :"db_user";
+            GRANT CREATE ON SCHEMA public TO :"db_user";
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO :"db_user";
+            SQL
+
+                echo "Database and user creation complete."
+                exit 0
+              fi
+              echo "Waiting for PostgreSQL... ($i/60)"
+              sleep 5
+            done
+            echo "PostgreSQL did not become available in time."
+            exit 1
+      {{- else if .Values.postgresql.enabled }}
+      # Wait for the service's own PostgreSQL subchart to be ready
+      - name: wait-for-postgres
+        image: bitnamilegacy/postgresql:latest
+        command: ['sh', '-c']
+        args:
+          - |
+            DB_HOST="{{ .Values.database.host }}"
+            echo "Waiting for PostgreSQL at $DB_HOST to be ready..."
+            until PGPASSWORD=$INTHUB_DB_PASS psql -h $DB_HOST -p {{ .Values.database.port }} -U {{ .Values.database.user }} -c '\q' > /dev/null 2>&1; do
+              echo "PostgreSQL is unavailable - sleeping for 2 seconds"
+              sleep 2
+            done
+            echo "PostgreSQL is up and running!"
+        env:
+        {{- include "integrations-hub.env" . | nindent 8 }}
+      {{- end }}
+      # Run database migrations before starting the main container
+      - name: migrate
+        image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
+        command: ["alembic", "upgrade", "head"]
+        env:
+        {{- include "integrations-hub.env" . | nindent 8 }}
+      containers:
+      - name: integrations-hub
+        imagePullPolicy: Always
+        image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
+        ports:
+        - containerPort: {{ .Values.service.port | default 8000 }}
+        resources:
+          {{- toYaml .Values.deployment.resources | nindent 12 }}
+        # Health endpoint lives at /api/health on the FastAPI app
+        # (backend/app/routers/health.py). The leading prefix matches
+        # `.Values.rootPath` -- i.e. /integrations-hub/api/health by
+        # default, plain /api/health when rootPath is unset -- because
+        # the backend mounts all routes under INTHUB_ROOT_PATH. Keeping
+        # the probe URL in sync with the Helm value prevents probes
+        # from 404'ing whenever the chart's mount path changes.
+        # There is no separate /ready endpoint, so readiness reuses the
+        # same probe path.
+        {{- $healthPath := printf "%s/api/health" (.Values.rootPath | default "") }}
+        startupProbe:
+          httpGet:
+            path: {{ $healthPath | quote }}
+            port: {{ .Values.service.port | default 8000 }}
+          failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+        livenessProbe:
+          httpGet:
+            path: {{ $healthPath | quote }}
+            port: {{ .Values.service.port | default 8000 }}
+          initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+        readinessProbe:
+          httpGet:
+            path: {{ $healthPath | quote }}
+            port: {{ .Values.service.port | default 8000 }}
+          initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+        env:
+        {{- include "integrations-hub.env" . | nindent 8 }}

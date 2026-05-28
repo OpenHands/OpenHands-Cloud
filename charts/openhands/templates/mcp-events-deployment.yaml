@@ -1,3 +1,4 @@
+{{- if .Values.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,6 +17,9 @@ spec:
       annotations:
         {{- if .Values.allowedUsers }}
         checksum/user-waitlist: {{ include (print $.Template.BasePath "/user-waitlist-configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.secretsChecksum }}
+        checksum/config-secrets: {{ .Values.secretsChecksum | quote }}
         {{- end }}
         {{- include "openhands.caBundle.checksumAnnotation" . | nindent 8 }}
     spec:
@@ -79,3 +83,4 @@ spec:
         env:
         {{- include "openhands.env" . | nindent 8 }}
         {{- include "openhands.caBundle.env" . | nindent 8 }}
+{{- end }}

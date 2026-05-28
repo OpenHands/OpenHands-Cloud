@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/openhands/agent-server
-  tag: 1.19.1-python
+  tag: 1.22.1-python
   pullPolicy: Always
 
 runtimeClass: sysbox-runc
@@ -22,10 +22,10 @@ nodeSelector:
   sysbox-install: "yes"
 
 tolerations:
-- key: "sysbox-runtime"
-  operator: "Equal"
-  value: "not-running"
-  effect: "NoSchedule"
+  - key: "sysbox-runtime"
+    operator: "Equal"
+    value: "not-running"
+    effect: "NoSchedule"
 affinity: {}
 
 nodeOverprovisioner:

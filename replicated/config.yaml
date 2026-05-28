@@ -285,7 +285,7 @@ spec:
           required: true
         - name: custom_base_url
           title: Custom LLM Base URL
-          help_text: Base URL for your custom or local LLM endpoint
+          help_text: Base URL of your OpenAI-compatible LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
@@ -295,6 +295,12 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: false
+        - name: custom_model
+          title: Custom LLM Model Name
+          help_text: Model identifier as accepted by the endpoint (e.g., anthropic/claude-sonnet-4-5 for OpenRouter, llama-3.1-70b-instruct for vLLM)
+          type: text
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+          required: true
 
     - name: security_secrets
       title: Security & Authentication
@@ -411,26 +417,135 @@ spec:
       items:
         - name: bitbucket_data_center_auth_enabled
           title: Enable Bitbucket Data Center Authentication
-          help_text: Enable Bitbucket Data Center OAuth for user authentication
+          help_text: Let users sign in with their Bitbucket Data Center account.
           type: bool
           default: "0"
         - name: bitbucket_data_center_domain
           title: Bitbucket Data Center Domain
-          help_text: Domain of your Bitbucket Data Center instance
+          help_text: >-
+            Hostname of your Bitbucket Data Center instance (e.g. bbdc.example.com)
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_id
           title: Bitbucket Data Center Client ID
-          help_text: Client ID from your Bitbucket Data Center OAuth App
+          help_text: >-
+            Client ID of the OAuth 2.0 Application Link created in Bitbucket
+            Data Center (Administration → Application Links).
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_secret
           title: Bitbucket Data Center Client Secret
-          help_text: Client Secret from your Bitbucket Data Center OAuth App
+          help_text: Client Secret for that Application Link.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+        - name: bitbucket_data_center_bot_token
+          title: Bitbucket Data Center Bot Token (strongly recommended)
+          help_text: >-
+            HTTP access token for a dedicated bot user with repo access. When
+            set, OpenHands posts comments and reactions as the bot instead of
+            as the mentioning user or installer; jobs still run on the invoking
+            user's workspace.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+
+    - name: azure_devops_authentication
+      title: Azure DevOps Authentication
+      description: Configure Azure DevOps OAuth through Microsoft Entra ID
+      items:
+        - name: azure_devops_auth_enabled
+          title: Enable Azure DevOps Authentication
+          help_text: Let users sign in with Microsoft Entra ID and access Azure DevOps without personal access tokens.
+          type: bool
+          default: "0"
+        - name: azure_devops_tenant_id
+          title: Microsoft Entra Tenant ID
+          help_text: Tenant ID for the Microsoft Entra app registration used by Azure DevOps OAuth.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+          required: true
+        - name: azure_devops_organization
+          title: Azure DevOps Organization
+          help_text: Optional default Azure DevOps organization name, e.g. contoso for https://dev.azure.com/contoso.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+        - name: azure_devops_client_id
+          title: Azure DevOps Client ID
+          help_text: Client ID of the Microsoft Entra app registration.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+          required: true
+        - name: azure_devops_client_secret
+          title: Azure DevOps Client Secret
+          help_text: Client secret for the Microsoft Entra app registration.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+          required: true
+
+    - name: jira_data_center_integration
+      title: Jira Data Center Integration
+      description: Enable the Jira Data Center issue integration. Configure the Jira server, linking method, and service account for this OpenHands Enterprise deployment.
+      items:
+        - name: jira_data_center_enabled
+          title: Enable Jira Data Center Integration
+          help_text: Enable the Jira Data Center issue integration.
+          type: bool
+          default: "0"
+        - name: jira_data_center_link_method
+          title: How should Jira users be linked to OpenHands accounts?
+          help_text: >-
+            OAuth (recommended): each user proves ownership of their Jira account via your server's
+            OAuth 2.0 application. When creating the OAuth app in Jira, use
+            https://app.<your-openhands-domain>/integration/jira-dc/callback as the callback URL,
+            then enter the app's client ID and secret below. Email match: users are linked by
+            matching their Jira email to their OpenHands email. Use this only if your Jira Data Center
+            server does not have an OAuth 2.0 application configured.
+          type: select_one
+          default: oauth
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          items:
+            - name: oauth
+              title: OAuth (verified, recommended)
+            - name: email
+              title: Email match (no OAuth app required)
+        - name: jira_data_center_service_account_email
+          title: Jira Data Center Service Account Email
+          help_text: >-
+            Email address of the Jira service account OpenHands uses to read
+            issues and post comments/reactions. This service account is required
+            for the Jira Data Center integration in this OpenHands Enterprise
+            deployment.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
+        - name: jira_data_center_service_account_pat
+          title: Jira Data Center Service Account PAT
+          help_text: >-
+            Personal access token for the Jira service account. OpenHands uses
+            this token to read Jira issues and post comments/reactions as the
+            service account.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
+        - name: jira_data_center_base_url
+          title: Jira Data Center Base URL
+          help_text: Full base URL of your Jira Data Center server, INCLUDING the https:// scheme (e.g. https://jira.example.com).
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_id
+          title: Jira Data Center OAuth Client ID
+          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_secret
+          title: Jira Data Center OAuth Client Secret
+          help_text: Client secret from the OAuth 2.0 application on your Jira Data Center server.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
 
     - name: github_authentication
@@ -699,6 +814,53 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: custom_sandbox_image_enabled
+          title: Use a Custom Sandbox Image
+          help_text: Use this if you bundle a custom agent-server image.
+          type: bool
+          default: "0"
+        - name: custom_sandbox_image_repository
+          title: Sandbox Image Repository
+          help_text: 'Full repository path with no tag, e.g. my-registry.example.com/openhands/agent-server'
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          help_text: Image tag, e.g. 1.21.1-python
+          type: text
+          default: "1.21.1-python"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_registry_server
+          title: Registry Server
+          help_text: |
+            Host (and optional port) of the registry, e.g. my-registry.example.com.
+            Leave blank if the registry is public, or if your cluster authenticates
+            via a credential provider (EKS IRSA, GKE Workload Identity, AKS managed
+            identity).
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_username
+          title: Registry Username
+          help_text: |
+            Registry username. Some registries use sentinel values: _json_key
+            for GCP Artifact Registry, AWS for ECR static creds, $oauthtoken
+            for Quay robot accounts.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_password
+          title: Registry Password or Credentials
+          help_text: |
+            Password, PAT, or credentials string. This field is single-line.
+            For GCP Artifact Registry, minify the service-account JSON first
+            (e.g. `jq -c . key.json`) and paste the one-line result, with
+            username set to _json_key.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
 
     - name: proxy_configuration
       title: Proxy Configuration
@@ -757,10 +919,14 @@ spec:
           default: "0"
         - name: plugin_directory_marketplace_source
           title: Marketplace Source
-          help_text: "URI of the plugin catalog to load. Supports github://owner/repo[@ref], https:// URLs to a catalog JSON file, or file:// paths."
+          help_text: "URI of the plugin catalog to load. Supports github://owner/repo[@ref], or http(s):// URLs to a catalog JSON file."
           type: text
           when: 'repl{{ ConfigOptionEquals "plugin_directory_enabled" "1" }}'
           required: true
+          validation:
+            regex:
+              pattern: ^(github|https?)://
+              message: Must start with github://, https://, or http://
 
     - name: analytics_configuration
       title: Analytics Configuration
@@ -779,12 +945,42 @@ spec:
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
 
-    - name: advanced_options
-      title: Advanced Options
-      description: Optional components and advanced configuration settings
+    - name: automations_configuration
+      title: Automations
+      description: Configure the Automations UI and backend
       items:
         - name: automations_enabled
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
           default: "0"
+
+    - name: advanced_options
+      title: Advanced Options
+      description: Optional components and advanced configuration settings
+      items:
+        - name: litellm_forward_client_headers
+          title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
+          help_text: >-
+            Forward selected headers from each client request through LiteLLM to upstream LLM providers. When enabled, LiteLLM forwards the anthropic-beta header and client x-* headers, except x-stainless-* headers. It does not forward Authorization or non-x-* gateway headers such as Ocp-Apim-Subscription-Key. Leave disabled unless you need provider-visible client headers. Use Custom LLM Extra HTTP Headers for static gateway auth or routing headers.
+          type: bool
+          default: "0"
+        - name: custom_llm_extra_headers_enabled
+          title: Enable Custom LLM Extra HTTP Headers (JSON)
+          help_text: >-
+            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every request to the custom upstream gateway for all users in this deployment. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the standard Authorization bearer header.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+        - name: custom_llm_extra_headers
+          title: Custom LLM Extra HTTP Headers (JSON)
+          help_text: >-
+            Format: JSON object mapping header names to values. Example: {"Ocp-Apim-Subscription-Key": "abc123", "X-Tenant-Id": "prod"}
+          type: textarea
+          default: ""
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "custom_llm_extra_headers_enabled" "1") }}'
+          required: false
+          validation:
+            regex:
+              pattern: '(?s)^\s*(\{\s*\}|\{\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*(,\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*)*\})?\s*$'
+              message: Must be blank or a JSON object with string values, such as {"Header-Name":"value"}

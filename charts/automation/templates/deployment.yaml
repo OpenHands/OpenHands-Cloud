@@ -42,6 +42,8 @@ spec:
             value: {{ .Values.database.name | quote }}
           - name: DB_USER
             value: {{ .Values.database.user | quote }}
+          - name: DB_SUPERUSER
+            value: {{ .Values.database.superuserName | default "postgres" | quote }}
           - name: DB_PASSWORD
             valueFrom:
               secretKeyRef:
@@ -53,16 +55,16 @@ spec:
           - |
             echo "Waiting for PostgreSQL at $DB_HOST to be available..."
             for i in $(seq 1 60); do
-              if psql -h $DB_HOST -p $DB_PORT -U postgres -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
+              if psql -h $DB_HOST -p $DB_PORT -U $DB_SUPERUSER -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
                 echo "PostgreSQL is up!"
 
                 echo "Creating the database $DB_NAME if it doesn't exist..."
-                psql -h $DB_HOST -p $DB_PORT -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 || \
-                psql -h $DB_HOST -p $DB_PORT -U postgres -d postgres -c "CREATE DATABASE $DB_NAME;"
+                psql -h $DB_HOST -p $DB_PORT -U $DB_SUPERUSER -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 || \
+                psql -h $DB_HOST -p $DB_PORT -U $DB_SUPERUSER -d postgres -c "CREATE DATABASE $DB_NAME;"
 
                 echo "Creating the user $DB_USER if it doesn't exist..."
-                psql -h $DB_HOST -p $DB_PORT -U postgres -d $DB_NAME -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1 || \
-                (psql -h $DB_HOST -p $DB_PORT -U postgres -d $DB_NAME -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD'; GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER; GRANT USAGE ON SCHEMA public TO $DB_USER; GRANT CREATE ON SCHEMA public TO $DB_USER; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;")
+                psql -h $DB_HOST -p $DB_PORT -U $DB_SUPERUSER -d $DB_NAME -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1 || \
+                (psql -h $DB_HOST -p $DB_PORT -U $DB_SUPERUSER -d $DB_NAME -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD'; GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER; GRANT USAGE ON SCHEMA public TO $DB_USER; GRANT CREATE ON SCHEMA public TO $DB_USER; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;")
 
                 exit 0
               fi

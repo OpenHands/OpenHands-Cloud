@@ -48,6 +48,8 @@ config:
   aws_region_name: "us-west-2"
   bedrock_model_id: ""
   custom_api_key: ""
+  custom_base_url: ""
+  custom_model: ""
   
   # S3 credentials
   external_s3_access_key: ""
@@ -57,6 +59,20 @@ config:
   bitbucket_data_center_domain: ""
   bitbucket_data_center_client_id: ""
   bitbucket_data_center_client_secret: ""
+  bitbucket_data_center_bot_token: ""
+
+  # Azure DevOps credentials (Microsoft Entra OAuth)
+  azure_devops_tenant_id: ""
+  azure_devops_organization: ""
+  azure_devops_client_id: ""
+  azure_devops_client_secret: ""
+
+  # Jira Data Center credentials (OAuth, optional)
+  jira_data_center_base_url: ""
+  jira_data_center_client_id: ""
+  jira_data_center_client_secret: ""
+  jira_data_center_service_account_email: ""
+  jira_data_center_service_account_pat: ""
 
   # GitHub credentials
   github_oauth_client_id: ""
@@ -70,6 +86,11 @@ config:
   slack_client_id: ""
   slack_client_secret: ""
   slack_signing_secret: ""
+
+  # Custom sandbox image registry credentials
+  custom_sandbox_image_registry_server: ""
+  custom_sandbox_image_registry_username: ""
+  custom_sandbox_image_registry_password: ""
 
   # Plugin Directory secrets
   plugin_directory_identity_shared_secret: ""
