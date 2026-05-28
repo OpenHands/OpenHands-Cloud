@@ -1,4 +1,4 @@
-{{- if .Values.gitlabWebhookInstallation.enabled }}
+{{- if and .Values.enabled .Values.gitlabWebhookInstallation.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:

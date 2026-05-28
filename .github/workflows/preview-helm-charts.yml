@@ -181,6 +181,12 @@ jobs:
           
           # Update Chart.yaml with preview version
           yq -i ".version = \"${PREVIEW_VERSION}\"" charts/${{ matrix.chart.name }}/Chart.yaml
+
+      - name: Set preview dependency repository
+        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands'
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "PREVIEW_REPOSITORY=oci://ghcr.io/${REPO_OWNER}/helm-charts" >> "$GITHUB_ENV"
       
       - name: Update runtime-api dependency version
         if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.runtime-api == 'true'
@@ -188,8 +194,7 @@ jobs:
           RUNTIME_API_VERSION=$(yq '.version' charts/runtime-api/Chart.yaml)
           RUNTIME_API_PREVIEW="${RUNTIME_API_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
-          yq -i "(.dependencies[] | select(.name == \"runtime-api\")).version = \"${RUNTIME_API_PREVIEW}\"" charts/openhands/Chart.yaml
-          yq -i "(.dependencies[] | select(.name == \"runtime-api\")).repository = \"oci://ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/helm-charts\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"runtime-api\")) |= (.version = \"${RUNTIME_API_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update automation dependency version
         if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.automation == 'true'
@@ -197,7 +202,7 @@ jobs:
           AUTOMATION_VERSION=$(yq '.version' charts/automation/Chart.yaml)
           AUTOMATION_PREVIEW="${AUTOMATION_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
-          yq -i "(.dependencies[] | select(.name == \"automation\")).version = \"${AUTOMATION_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"automation\")) |= (.version = \"${AUTOMATION_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update crd-check dependency version
         if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.crd-check == 'true'
@@ -205,7 +210,7 @@ jobs:
           CRD_CHECK_VERSION=$(yq '.version' charts/crd-check/Chart.yaml)
           CRD_CHECK_PREVIEW="${CRD_CHECK_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
-          yq -i "(.dependencies[] | select(.name == \"crd-check\")).version = \"${CRD_CHECK_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"crd-check\")) |= (.version = \"${CRD_CHECK_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update plugin-directory dependency version
         if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.plugin-directory == 'true'
@@ -213,7 +218,7 @@ jobs:
           PLUGIN_DIRECTORY_VERSION=$(yq '.version' charts/plugin-directory/Chart.yaml)
           PLUGIN_DIRECTORY_PREVIEW="${PLUGIN_DIRECTORY_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
-          yq -i "(.dependencies[] | select(.name == \"plugin-directory\")).version = \"${PLUGIN_DIRECTORY_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"plugin-directory\")) |= (.version = \"${PLUGIN_DIRECTORY_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update integrations-hub dependency version
         if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.integrations-hub == 'true'
@@ -221,7 +226,7 @@ jobs:
           INTEGRATIONS_HUB_VERSION=$(yq '.version' charts/integrations-hub/Chart.yaml)
           INTEGRATIONS_HUB_PREVIEW="${INTEGRATIONS_HUB_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
-          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")).version = \"${INTEGRATIONS_HUB_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")) |= (.version = \"${INTEGRATIONS_HUB_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Test ${{ matrix.chart.name }} chart with default values
         if: steps.check.outputs.should_publish == 'true'
@@ -317,6 +322,12 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Set preview dependency repository for openhands
+        if: matrix.chart.name == 'openhands'
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "PREVIEW_REPOSITORY=oci://ghcr.io/${REPO_OWNER}/helm-charts" >> "$GITHUB_ENV"
+
       - name: Update runtime-api dependency version for openhands
         if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.runtime-api == 'true'
         run: |
@@ -324,8 +335,7 @@ jobs:
           RUNTIME_API_PREVIEW="${RUNTIME_API_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
           echo "Updating openhands runtime-api dependency to ${RUNTIME_API_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"runtime-api\")).version = \"${RUNTIME_API_PREVIEW}\"" charts/openhands/Chart.yaml
-          yq -i "(.dependencies[] | select(.name == \"runtime-api\")).repository = \"oci://ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/helm-charts\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"runtime-api\")) |= (.version = \"${RUNTIME_API_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update automation dependency version for openhands
         if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.automation == 'true'
@@ -334,7 +344,7 @@ jobs:
           AUTOMATION_PREVIEW="${AUTOMATION_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
           echo "Updating openhands automation dependency to ${AUTOMATION_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"automation\")).version = \"${AUTOMATION_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"automation\")) |= (.version = \"${AUTOMATION_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update crd-check dependency version for openhands
         if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.crd-check == 'true'
@@ -343,7 +353,7 @@ jobs:
           CRD_CHECK_PREVIEW="${CRD_CHECK_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
           echo "Updating openhands crd-check dependency to ${CRD_CHECK_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"crd-check\")).version = \"${CRD_CHECK_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"crd-check\")) |= (.version = \"${CRD_CHECK_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update plugin-directory dependency version for openhands
         if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.plugin-directory == 'true'
@@ -352,7 +362,7 @@ jobs:
           PLUGIN_DIRECTORY_PREVIEW="${PLUGIN_DIRECTORY_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
           echo "Updating openhands plugin-directory dependency to ${PLUGIN_DIRECTORY_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"plugin-directory\")).version = \"${PLUGIN_DIRECTORY_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"plugin-directory\")) |= (.version = \"${PLUGIN_DIRECTORY_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Update integrations-hub dependency version for openhands
         if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.integrations-hub == 'true'
@@ -361,7 +371,7 @@ jobs:
           INTEGRATIONS_HUB_PREVIEW="${INTEGRATIONS_HUB_VERSION}-alpha.${{ github.event.pull_request.number }}"
 
           echo "Updating openhands integrations-hub dependency to ${INTEGRATIONS_HUB_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")).version = \"${INTEGRATIONS_HUB_PREVIEW}\"" charts/openhands/Chart.yaml
+          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")) |= (.version = \"${INTEGRATIONS_HUB_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Lint ${{ matrix.chart.name }} chart
         run: |

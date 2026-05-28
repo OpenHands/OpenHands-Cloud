@@ -1,5 +1,13 @@
 allowedUsers: null
 
+# When false, the OpenHands chart's own templates (deployment, services,
+# ingresses, cronjobs, etc.) are skipped. Subcharts (litellm-helm, runtime-api,
+# postgresql, redis, minio, keycloak, automation, plugin-directory,
+# integrations-hub, laminar, replicated) still respect their individual
+# `enabled` flags, so this umbrella chart can be used to deploy any subset of
+# them without the OpenHands app itself.
+enabled: true
+
 autoscaling:
   enabled: false
   minReplicas: 1
@@ -14,6 +22,7 @@ appConfig:
   OPENHANDS_GITLAB_SERVICE_CLS: "integrations.gitlab.gitlab_service.SaaSGitLabService"
   OPENHANDS_BITBUCKET_SERVICE_CLS: "integrations.bitbucket.bitbucket_service.SaaSBitBucketService"
   OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS: "integrations.bitbucket_data_center.bitbucket_dc_service.SaaSBitbucketDCService"
+  OPENHANDS_AZURE_DEVOPS_SERVICE_CLS: "integrations.azure_devops.azure_devops_service.SaaSAzureDevOpsService"
   OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
@@ -107,6 +116,13 @@ bitbucketDataCenter:
   enabled: false
   host: ""
 
+azureDevOps:
+  enabled: false
+  tenantId: ""
+  organization: ""
+  auth:
+    existingSecret: azure-devops-app
+
 gitlabWebhookInstallation:
   enabled: false
   schedule: "* * * * *"
@@ -124,7 +140,7 @@ gitlabWebhookInstallation:
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: cloud-1.29.1
+  tag: cloud-1.34.0
 
 ingress:
   enabled: false
@@ -221,7 +237,7 @@ resendSync:
 runtime:
   image:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.21.1-python
+    tag: 1.22.1-python
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -491,6 +507,10 @@ litellm-helm:
     #   litellm_params:
     #     model: "anthropic/claude-3-7-sonnet-20250219"
     #     api_key: os.environ/ANTHROPIC_API_KEY
+    general_settings:
+      # When true, LiteLLM forwards client x-* headers and anthropic-beta to upstream LLM providers.
+      # Keep false unless you trust callers and need provider-visible custom headers.
+      forward_client_headers_to_llm_api: false
     litellm_settings:
       num_retries: 3
       request_timeout: 600
@@ -601,7 +621,7 @@ runtime-api:
     count: 1
     configs:
       - name: default
-        image: "ghcr.io/openhands/agent-server:1.21.1-python"
+        image: "ghcr.io/openhands/agent-server:1.22.1-python"
         working_dir: "/workspace"
         environment:
           LOG_JSON: "1"

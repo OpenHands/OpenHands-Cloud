@@ -303,6 +303,19 @@ env:
   LITELLM_DEFAULT_MODEL: "litellm_proxy/<your-model>"
 ```
 
+#### Forward client headers to LLM providers
+
+By default, the bundled LiteLLM proxy does not forward arbitrary client request headers to upstream LLM providers. If you trust callers and need provider-visible custom headers, enable LiteLLM's client header forwarding explicitly:
+
+```yaml
+litellm-helm:
+  proxy_config:
+    general_settings:
+      forward_client_headers_to_llm_api: true
+```
+
+This forwards LiteLLM-supported client headers such as `x-*` request headers and `anthropic-beta`. Leave this disabled unless you specifically need it.
+
 #### LiteLLM Team Configuration
 
 To use an existing team, provide the team ID.
@@ -321,7 +334,7 @@ Now we can install the helm chart.
 
 ```bash
 helm dependency update
-helm upgrade --install openhands --namespace openhands oci://ghcr.io/all-hands-ai/helm-charts/openhands -f site-values.yaml
+helm upgrade --install openhands --namespace openhands oci://ghcr.io/openhands/helm-charts/openhands -f site-values.yaml
 ```
 
 ### Verify your Setup
@@ -375,7 +388,7 @@ litellm-helm:
 Upgrade the release:
 
 ```bash
-helm upgrade --install openhands --namespace openhands oci://ghcr.io/all-hands-ai/helm-charts/openhands -f site-values.yaml
+helm upgrade --install openhands --namespace openhands oci://ghcr.io/openhands/helm-charts/openhands -f site-values.yaml
 ```
 
 ## Hardening

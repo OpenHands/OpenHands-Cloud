@@ -1,4 +1,4 @@
-{{- if .Values.resendSync.enabled }}
+{{- if and .Values.enabled .Values.resendSync.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
