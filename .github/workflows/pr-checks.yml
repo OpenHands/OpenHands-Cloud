@@ -3,19 +3,22 @@ name: Pull Request Checks
 on:
   pull_request:
     paths:
+      - '.github/workflows/pr-checks.yml'
       - 'charts/**'
-      - 'scripts/check_keycloak_realm_template.py'
+      - 'scripts/test_keycloak_realm_template.py'
 
 jobs:
-  validate-keycloak-realm-template:
+  test-keycloak-realm-template:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-      - name: Validate Keycloak realm template
-        run: python3 scripts/check_keycloak_realm_template.py
+      - name: Install test dependencies
+        run: python3 -m pip install pytest
+      - name: Test Keycloak realm template invariants
+        run: python3 -m pytest scripts/test_keycloak_realm_template.py
 
   validate-chart-versions:
     uses: ./.github/workflows/validate-chart-versions.yml
