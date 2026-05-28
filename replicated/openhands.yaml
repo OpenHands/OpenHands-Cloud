@@ -181,7 +181,9 @@ spec:
           OR_SITE_URL: "https://docs.all-hands.dev"
         model_list:
           # Keep this alias available through the proxy for
-          # openhands/claude-opus-4-7. LiteLLM 1.84.1 is the stable release
+          # openhands/claude-opus-4-7 (retained for backward compatibility
+          # with existing OpenHands installations that route this model
+          # through the proxy). LiteLLM 1.84.1 is the stable release
           # containing the thinking translation fix from
           # https://github.com/BerriAI/litellm/pull/27074.
           - model_name: "claude-opus-4-7"
