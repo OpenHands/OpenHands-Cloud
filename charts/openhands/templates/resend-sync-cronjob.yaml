@@ -52,7 +52,7 @@ spec:
                       name: keycloak-realm
                       key: realm-name
                 - name: BATCH_SIZE
-                  value: {{ .Values.resendSync.batchSize | quote }}
+                  value: {{ .Values.resendSync.batchSize | default "2000" | quote }}
                 - name: MAX_RETRIES
                   value: {{ .Values.resendSync.maxRetries | quote }}
                 - name: INITIAL_BACKOFF_SECONDS
