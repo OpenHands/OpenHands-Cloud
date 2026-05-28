@@ -11,7 +11,7 @@ data:
     keycloak_api_call() {
       COMMAND=$1
       export RESPONSE=$(eval $COMMAND)
-      ERROR=$(echo "$RESPONSE" | jq -r 'try if type == "array" then .[0].error else .error end')
+      ERROR=$(echo "$RESPONSE" | jq -r 'try if type == "array" then (.[0].error // .[0].errorMessage) else (.error // .errorMessage) end')
       if [ -n "$ERROR" ] && [ "null" != "$ERROR" ]; then
         echo "Error from Keycloak: $RESPONSE"
         exit 1
