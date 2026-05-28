@@ -17,7 +17,7 @@ spec:
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
-      tag: 'sha-be9afb7'
+      tag: 'sha-d1de523'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
@@ -149,7 +149,7 @@ spec:
         - --use_v2_migration_resolver
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/berriai/litellm-database'
-        tag: "v1.83.14-stable"
+        tag: "1.84.1"  # bare semver, no "v" prefix or "-stable" suffix (format used by BerriAI for 1.84.x+ stable images)
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       environmentSecrets:
@@ -175,10 +175,10 @@ spec:
         enabled: true
         className: traefik
         hosts:
-        - host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}}'
-          paths:
-          - path: /
-            pathType: Prefix
+          - host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}}'
+            paths:
+              - path: /
+                pathType: Prefix
         tls:
           - secretName: openhands-tls
             hosts:
@@ -190,10 +190,12 @@ spec:
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
         model_list:
-          # LiteLLM 1.83.14 workaround: expose this model through the
-          # proxy for openhands/claude-opus-4-7 because direct Anthropic calls
-          # break thinking translation in this release. Can consider removing after LiteLLM
-          # ships https://github.com/BerriAI/litellm/pull/27074.
+          # Keep this alias available through the proxy for
+          # openhands/claude-opus-4-7 (retained for backward compatibility
+          # with existing OpenHands installations that route this model
+          # through the proxy). LiteLLM 1.84.1 is the stable release
+          # containing the thinking translation fix from
+          # https://github.com/BerriAI/litellm/pull/27074.
           - model_name: "claude-opus-4-7"
             litellm_params:
               model: "anthropic/claude-opus-4-7"
@@ -257,7 +259,7 @@ spec:
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configs:
           - name: default
-            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.21.1-python{{repl end}}'
+            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.22.1-python{{repl end}}'
             working_dir: "/workspace"
             environment:
               LOG_JSON: "1"
@@ -325,10 +327,14 @@ spec:
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
     # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "jira_data_center_client_secret") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
+    azureDevOps:
+      enabled: repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}
+      tenantId: 'repl{{ ConfigOption "azure_devops_tenant_id" }}'
+      organization: 'repl{{ ConfigOption "azure_devops_organization" }}'
     jiraDc:
       enabled: repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}
       linkMethod: 'repl{{ ConfigOption "jira_data_center_link_method" }}'
@@ -506,11 +512,11 @@ spec:
         runtime:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.21.1-python'
+            tag: '1.22.1-python'
           warmRuntimes:
             configs:
               - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.21.1-python'
+                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.22.1-python'
                 working_dir: "/workspace"
                 environment:
                   LOG_JSON: "1"
@@ -676,6 +682,7 @@ spec:
                   model: 'openai/{{repl ConfigOption "custom_model"}}'
                   api_key: os.environ/CUSTOM_API_KEY
                   api_base: os.environ/CUSTOM_API_BASE
+                  extra_headers: repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson | mustToJson }}repl{{ else }}{}repl{{ end }}
 
     - when: '{{repl ConfigOptionEquals "google_api_type" "vertex" }}'
       recursiveMerge: true
@@ -817,7 +824,7 @@ spec:
               tls:
                 enabled: true
                 secretName: "openhands-tls"
-                clusterIssuer: ""  # leave empty — cert-manager not needed
+                clusterIssuer: "" # leave empty — cert-manager not needed
             env:
               nextauthUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
               nextPublicUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "analytics_hostname"}}{{repl end}}'

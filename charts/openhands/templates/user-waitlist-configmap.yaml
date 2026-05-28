@@ -1,4 +1,4 @@
-{{- if .Values.allowedUsers }}
+{{- if and .Values.enabled .Values.allowedUsers }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

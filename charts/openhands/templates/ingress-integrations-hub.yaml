@@ -17,7 +17,7 @@
   rule, container probes, and the SPA bundle's baked-in
   `NEXT_PUBLIC_BASE_PATH` always agree.
 */}}
-{{- if and .Values.ingress.enabled (index .Values "integrations-hub" "enabled") }}
+{{- if and .Values.enabled .Values.ingress.enabled (index .Values "integrations-hub" "enabled") }}
 {{- $rootPath := index .Values "integrations-hub" "rootPath" | default "/integrations-hub" }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
