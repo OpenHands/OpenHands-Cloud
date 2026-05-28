@@ -4,8 +4,19 @@ on:
   pull_request:
     paths:
       - 'charts/**'
+      - 'scripts/check_keycloak_realm_template.py'
 
 jobs:
+  validate-keycloak-realm-template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Validate Keycloak realm template
+        run: python3 scripts/check_keycloak_realm_template.py
+
   validate-chart-versions:
     uses: ./.github/workflows/validate-chart-versions.yml
     with:
