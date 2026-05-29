@@ -33,9 +33,9 @@ def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
 
 def keycloak_api_call_body(script_template: str) -> str:
     match = re.search(
-        r"keycloak_api_call\(\) \{\n(?P<body>.*?)\n    \}",
+        r"(?ms)^(?P<indent>[ \t]*)keycloak_api_call\(\) \{\n"
+        r"(?P<body>.*?)^(?P=indent)\}",
         script_template,
-        re.DOTALL,
     )
     assert match, "Could not find keycloak_api_call() in keycloak-config-script.yaml"
     return match.group("body")
@@ -86,6 +86,16 @@ def test_pkce_guard_catches_missing_method() -> None:
 def test_keycloak_api_call_checks_error_message_responses() -> None:
     script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
     assert_keycloak_api_call_detects_error_message(script_template)
+
+
+def test_keycloak_api_call_extraction_is_not_tied_to_yaml_indent() -> None:
+    script_template = """\
+  keycloak_api_call() {
+    ERROR=$(echo "$RESPONSE" | jq -r '.errorMessage')
+  }
+"""
+
+    assert "errorMessage" in keycloak_api_call_body(script_template)
 
 
 def test_keycloak_error_guard_catches_missing_error_message() -> None:
