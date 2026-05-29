@@ -529,6 +529,8 @@
   value: "saas"
 - name: OH_APP_CONVERSATION_INFO_KIND
   value: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
+- name: OH_LLM_MODEL_KIND
+  value: server.verified_models.verified_model_router.SaaSLLMModelServiceInjector
 - name: CONVERSATION_MANAGER_CLASS
   value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}
