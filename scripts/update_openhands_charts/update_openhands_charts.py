@@ -305,6 +305,8 @@ def update_dependency(
                 result.changes.append((result_key, old_version, new_version))
                 result.has_changes = True
             break
+    else:
+        result.errors.append(f"Could not find {dep_name} dependency in Chart.yaml")
 
 
 def update_all_tags_in_content(

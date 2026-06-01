@@ -300,6 +300,25 @@ class TestUpdateChartAcrossVariants:
 
         assert get_dependency_version(temp_chart_file, "automation") == NEW_AUTOMATION_VERSION
 
+    def test_missing_requested_dependency_reports_error(self, make_temp_yaml_file):
+        """Verify requested dependency updates fail loudly when the dependency is absent."""
+        chart_file = make_temp_yaml_file("""\
+apiVersion: v2
+name: test-chart
+description: Test chart
+type: application
+version: 0.1.0
+appVersion: cloud-1.0.0
+dependencies:
+  - name: runtime-api
+    version: 0.1.10
+""")
+
+        result = update_openhands_chart(chart_file, NEW_APP_VERSION, None, NEW_AUTOMATION_VERSION)
+
+        assert result.has_error_containing("Could not find automation dependency in Chart.yaml")
+        assert get_dependency_version(chart_file, "automation") is None
+
     @pytest.mark.parametrize("app_version,runtime_api_version,automation_version,unchanged_key", [
         # When appVersion already matches target, it should be reported as unchanged
         pytest.param(
