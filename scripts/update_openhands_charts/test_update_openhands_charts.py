@@ -37,7 +37,6 @@ from conftest import (
     OPENHANDS_CHART_AUTOMATION_VERSION,
     OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION,
     RUNTIME_API_CHART_FULL_VERSION,
-    RUNTIME_API_CHART_FULL_APP_VERSION,
     RUNTIME_API_CHART_MINIMAL_VERSION,
     # Test input constants for update operations
     NEW_APP_VERSION,
@@ -338,9 +337,10 @@ class TestUpdateChart:
     These tests require the with_deps fixture specifically because they test
     features only present in that variant (e.g., multiple dependencies, maintainers).
 
-    TDD Rationale: Tests drive selective dependency updates - only runtime-api
-    should be modified while other dependencies remain untouched. This prevents
-    accidental side effects when updating charts with multiple dependencies.
+    TDD Rationale: Tests drive selective dependency updates - only managed
+    dependencies should be modified while other dependencies remain untouched.
+    This prevents accidental side effects when updating charts with multiple
+    dependencies.
     """
 
     @pytest.fixture
@@ -348,7 +348,7 @@ class TestUpdateChart:
         """Create a temporary Chart.yaml file using shared fixtures."""
         return make_temp_yaml_file(sample_openhands_chart_with_deps)
 
-    def test_non_runtime_api_dependencies_remain_unchanged(self, temp_chart_file):
+    def test_unmanaged_dependencies_remain_unchanged(self, temp_chart_file):
         """Verify only runtime-api and automation dependencies are modified; other deps are preserved."""
         update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
 
@@ -1597,6 +1597,27 @@ class TestUpdateAutomationValues:
         assert temp_automation_values_file.read_text() == original_content
         assert result.has_changes is False
         assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
+
+    def test_direct_version_tag_is_not_treated_as_managed_automation_tag(self, make_temp_yaml_file):
+        """Test that automation only updates tags following the sha-<short> convention."""
+        values_file = make_temp_yaml_file("""\
+image:
+  repository: ghcr.io/openhands/automation
+  tag: 1.20.0
+
+deployment:
+  replicas: 1
+""")
+        original_content = values_file.read_text()
+
+        result = update_automation_values(
+            values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+        )
+
+        assert values_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("Could not find automation image tag in values.yaml")
 
 
 class TestUpdateAutomationChart:

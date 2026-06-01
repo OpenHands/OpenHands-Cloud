@@ -51,7 +51,7 @@ RUNTIME_API_TAG_PATTERN = (
     r'(image:\n\s+repository: ghcr\.io/openhands/runtime-api\n\s+tag: )(sha-[a-f0-9]+)'
 )
 AUTOMATION_TAG_PATTERN = (
-    r'(image:\n\s+repository: ghcr\.io/openhands/automation\n\s+tag: )(\S+)'
+    r'(image:\n\s+repository: ghcr\.io/openhands/automation\n\s+tag: )(sha-[a-f0-9]+)'
 )
 # The proxy-style refs wrap the agent-server image in the custom_sandbox_image_enabled
 # KOTS conditional ({{repl if ...}}...{{repl else}}<proxy image>{{repl end}}), so the
