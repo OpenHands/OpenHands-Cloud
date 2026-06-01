@@ -37,7 +37,7 @@ Usage Example
 import base64
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from ruamel.yaml import YAML
@@ -73,6 +73,9 @@ RUNTIME_API_CHART_MINIMAL_APP_VERSION = "0.1.0"
 # New versions used when testing chart updates
 NEW_APP_VERSION = "cloud-2.0.0"  # OpenHands appVersion uses cloud-X.Y.Z tags
 NEW_RUNTIME_API_VERSION = "0.2.0"
+# Runtime image tag constants — agent-server uses X.Y.Z-python format (no cloud- prefix)
+RUNTIME_IMAGE_TAG = "1.0.0-python"       # Baseline tag matching sample fixtures
+NEW_RUNTIME_IMAGE_TAG = "1.1.0-python"   # New tag used when testing updates
 
 
 def get_dependency_version(file_path: Path, dep_name: str) -> str | None:
@@ -339,8 +342,8 @@ image:
 
 runtime:
   image:
-    repository: ghcr.io/openhands/runtime
-    tag: cloud-1.0.0-nikolaik
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.0.0-python
   runAsRoot: true
 
 runtime-api:
@@ -351,7 +354,7 @@ runtime-api:
     count: 1
     configs:
       - name: default
-        image: "ghcr.io/openhands/runtime:cloud-1.0.0-nikolaik"
+        image: "ghcr.io/openhands/agent-server:1.0.0-python"
         working_dir: "/openhands/code/"
 """
 
@@ -366,15 +369,15 @@ image:
 
 runtime:
   image:
-    repository: ghcr.io/openhands/runtime
-    tag: cloud-1.0.0-nikolaik
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.0.0-python
 
 runtime-api:
   enabled: true
   warmRuntimes:
     configs:
       - name: default
-        image: "ghcr.io/openhands/runtime:cloud-1.0.0-nikolaik"
+        image: "ghcr.io/openhands/agent-server:1.0.0-python"
 """
 
 
@@ -398,10 +401,50 @@ warmRuntimes:
   count: 0
   configs:
     - name: default
-      image: "ghcr.io/openhands/runtime:cloud-1.0.0-nikolaik"
+      image: "ghcr.io/openhands/agent-server:1.0.0-python"
       working_dir: "/openhands/code/"
       environment: {}
 """
+
+
+@pytest.fixture
+def sample_replicated_openhands_wrapper_values():
+    """Sample replicated openhands wrapper YAML with agent-server image references.
+
+    The proxy block wraps its agent-server repository/tag/image refs in the
+    custom_sandbox_image_enabled KOTS conditional, mirroring the real
+    replicated/openhands.yaml: when the toggle is on an admin-supplied
+    repository/tag takes over, otherwise the Replicated-proxied image is used.
+    The proxy URL therefore no longer sits flush against the opening quote.
+
+    A commented-out alternate repository line sits between repository: and tag:
+    to exercise the pattern's tolerance of interleaved comments.
+    """
+    return """\
+spec:
+  values:
+    runtime:
+      image:
+        # this is what we need to use for real deployments
+        repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
+        # repository: 'ghcr.io/openhands/agent-server'
+        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.19.0-python{{repl end}}'
+      warmRuntimes:
+        configs:
+          - name: default
+            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.19.0-python{{repl end}}'
+    helmChart:
+      values:
+        runtime:
+          image:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
+            tag: '1.19.0-python'
+          warmRuntimes:
+            configs:
+              - name: default
+                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.0-python'
+"""
+
 
 
 # =============================================================================
@@ -460,7 +503,10 @@ def mock_main_early_exit(monkeypatch):
     Sets up all mocks needed to run main() in a controlled way where it
     exits early (when current appVersion matches latest cloud tag).
 
-    Returns a function that accepts a cloud_tag and sets up all necessary mocks.
+    Returns a function that accepts a cloud_tag and an optional
+    runtime_image_tag, and sets up all necessary mocks. Pass
+    runtime_image_tag (default: None) for tests that exercise the
+    --skip-version-check path past the early-exit guard.
 
     Usage:
         def test_something(mock_main_early_exit, capsys):
@@ -469,7 +515,7 @@ def mock_main_early_exit(monkeypatch):
             captured = capsys.readouterr()
             assert "cloud-1.20.0" in captured.out
     """
-    def _mock_main(cloud_tag: str):
+    def _mock_main(cloud_tag: str, runtime_image_tag: str | None = None):
         # Mock GITHUB_TOKEN environment variable
         monkeypatch.setenv("GITHUB_TOKEN", "dummy-token")
 
@@ -488,8 +534,70 @@ def mock_main_early_exit(monkeypatch):
             "update_openhands_charts.get_current_app_version",
             lambda path: cloud_tag
         )
+        # Mock sandbox spec fetch — required when callers skip the early-exit guard
+        monkeypatch.setattr(
+            "update_openhands_charts.get_runtime_image_tag_from_sandbox_spec",
+            lambda token, repo, ref: runtime_image_tag,
+        )
 
     return _mock_main
+
+
+@pytest.fixture
+def stub_cloud_tag_exists(monkeypatch):
+    """Factory fixture that stubs `update_openhands_charts.cloud_tag_exists` to return a fixed bool."""
+    def _stub(exists: bool):
+        monkeypatch.setattr(
+            "update_openhands_charts.cloud_tag_exists",
+            lambda token, repo, tag: exists,
+        )
+    return _stub
+
+
+@pytest.fixture
+def stub_latest_cloud_tag(monkeypatch):
+    """Factory fixture that stubs `update_openhands_charts.get_latest_cloud_tag` to return a fixed value."""
+    def _stub(tag: str | None):
+        monkeypatch.setattr(
+            "update_openhands_charts.get_latest_cloud_tag",
+            lambda token, repo: tag,
+        )
+    return _stub
+
+
+@pytest.fixture
+def stub_process_updates_chain(monkeypatch):
+    """Factory fixture for stubbing the call chain inside process_updates().
+
+    Defaults give a fully-successful chain up to the deploy-config fetch.
+    Pass None to any kwarg to simulate that step failing — this triggers the
+    corresponding early-return guard so tests can verify downstream calls
+    are skipped.
+
+    Usage:
+        def test_runtime_tag_guard(stub_process_updates_chain):
+            stub_process_updates_chain(runtime_image_tag=None)
+            process_updates("token")
+            # ... assert downstream call was NOT made
+    """
+    def _stub(
+        openhands_version: str | None = "cloud-1.20.0",
+        current_app_version: str | None = "cloud-1.19.0",
+        runtime_image_tag: str | None = "1.20.0-python",
+    ):
+        monkeypatch.setattr(
+            "update_openhands_charts.resolve_openhands_version",
+            lambda token, cloud_tag: openhands_version,
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.get_current_app_version",
+            lambda path: current_app_version,
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.get_runtime_image_tag_from_sandbox_spec",
+            lambda token, repo, ref: runtime_image_tag,
+        )
+    return _stub
 
 
 @pytest.fixture
@@ -515,6 +623,54 @@ def make_workflow_response():
         return mock_response
 
     return _make_response
+
+
+# =============================================================================
+# Mock response helpers for get_deploy_config error path tests
+# These plain functions (not fixtures) are used inside @pytest.mark.parametrize
+# decorators, which are evaluated at class scope where fixtures cannot be
+# injected. They centralize mock-response construction for error scenarios.
+# =============================================================================
+
+def make_http_error_response(status_code: int, message: str) -> Mock:
+    """Create a mock requests.get that raises an exception on raise_for_status()."""
+    mock_response = Mock()
+    mock_response.status_code = status_code
+    mock_response.raise_for_status.side_effect = Exception(f"HTTP {status_code}: {message}")
+    return Mock(return_value=mock_response)
+
+
+def make_json_error_response() -> Mock:
+    """Create a mock requests.get whose .json() call raises an exception."""
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_response.json.side_effect = Exception("Invalid JSON")
+    return Mock(return_value=mock_response)
+
+
+def make_missing_key_response(json_data: dict) -> Mock:
+    """Create a mock requests.get returning JSON with the given (possibly incomplete) data."""
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_response.json.return_value = json_data
+    return Mock(return_value=mock_response)
+
+
+def make_invalid_base64_response(invalid_content: str) -> Mock:
+    """Create a mock requests.get returning JSON with malformed base64 content."""
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_response.json.return_value = {"content": invalid_content}
+    return Mock(return_value=mock_response)
+
+
+def make_invalid_yaml_response(invalid_yaml: str) -> Mock:
+    """Create a mock requests.get returning valid base64 but invalid YAML content."""
+    encoded = base64.b64encode(invalid_yaml.encode()).decode()
+    mock_response = Mock()
+    mock_response.raise_for_status = Mock()
+    mock_response.json.return_value = {"content": encoded}
+    return Mock(return_value=mock_response)
 
 
 @pytest.fixture
