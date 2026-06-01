@@ -448,7 +448,7 @@ def sample_automation_values():
     return """\
 image:
   repository: ghcr.io/openhands/automation
-  tag: 1.20.0
+  tag: sha-c58faa1
 
 imagePullSecrets: []
 

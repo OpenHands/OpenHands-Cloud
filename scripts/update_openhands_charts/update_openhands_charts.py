@@ -22,7 +22,6 @@ from ruamel.yaml import YAML
 logging.getLogger("github").setLevel(logging.WARNING)
 
 CLOUD_SEMVER_PATTERN = re.compile(r"^cloud-(\d+\.\d+\.\d+)$")
-FULL_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHORT_SHA_LENGTH = 7
 OPENHANDS_REPO = "All-Hands-AI/OpenHands"
 OPENHANDS_ENTERPRISE_REPO = "OpenHands/OpenHands"
@@ -159,13 +158,6 @@ def get_current_app_version(chart_path: Path) -> str | None:
 def format_sha_tag(sha: str) -> str:
     """Format a SHA hash into a sha-SHORT_SHA tag format."""
     return f"sha-{get_short_sha(sha)}"
-
-
-def format_deploy_image_tag(tag_or_sha: str) -> str:
-    """Format a deploy config ref as the image tag used by deployment."""
-    if FULL_SHA_PATTERN.fullmatch(tag_or_sha):
-        return f"sha-{tag_or_sha}"
-    return tag_or_sha
 
 
 @dataclass
@@ -614,18 +606,21 @@ def update_automation_values(
 
     Args:
         values_path: Path to the values.yaml file
-        automation_sha: The automation deploy ref (40-char SHA or direct tag)
+        automation_sha: The automation commit SHA from deploy config
         dry_run: If True, don't write changes to file
 
     Returns UpdateResult containing changes made.
     """
     content = values_path.read_text()
     result = UpdateResult()
+    if not automation_sha:
+        result.errors.append("AUTOMATION_SHA missing from deploy config")
+        return result
 
     content = update_tag_in_content(
         content,
         AUTOMATION_TAG_PATTERN,
-        format_deploy_image_tag(automation_sha),
+        format_sha_tag(automation_sha),
         "automation image tag",
         result,
     )

@@ -52,7 +52,6 @@ from update_openhands_charts import (
     bump_patch_version,
     cloud_tag_exists,
     extract_version_from_cloud_tag,
-    format_deploy_image_tag,
     format_sha_tag,
     get_current_app_version,
     get_deploy_config,
@@ -179,19 +178,6 @@ class TestFormatShaTag:
     def test_sha_tag_format_is_sha_prefix_followed_by_short_sha(self, sha, expected):
         """Verify SHA tag format follows the 'sha-<7-char-hash>' convention used in container registries."""
         assert format_sha_tag(sha) == expected
-
-
-class TestFormatDeployImageTag:
-    """Tests for formatting deploy-config image refs."""
-
-    def test_full_sha_is_prefixed_without_truncation(self):
-        sha = "1234567890abcdef1234567890abcdef12345678"
-
-        assert format_deploy_image_tag(sha) == f"sha-{sha}"
-
-    @pytest.mark.parametrize("tag", ["1.20.0", "sha-c58faa1", "cloud-1.20.0-nikolaik"])
-    def test_non_full_sha_tags_are_preserved(self, tag):
-        assert format_deploy_image_tag(tag) == tag
 
 
 class TestGetCurrentAppVersion:
@@ -1556,12 +1542,23 @@ class TestUpdateAutomationValues:
 
         result = update_automation_values(temp_automation_values_file, automation_sha=sha)
 
-        assert_file_contains(temp_automation_values_file, f"tag: sha-{sha}")
+        assert_file_contains(temp_automation_values_file, "tag: sha-1234567\n")
         assert result.has_changes is True
+
+    def test_bare_short_automation_sha_matches_prefixed_chart_tag(self, temp_automation_values_file):
+        """Test that a short bare automation SHA still follows the sha-<short> tag convention."""
+        result = update_automation_values(temp_automation_values_file, automation_sha="c58faa1")
+
+        assert_file_contains(temp_automation_values_file, "tag: sha-c58faa1\n")
+        assert result.has_changes is False
+        assert result.is_unchanged("automation image tag")
 
     def test_idempotent_when_reapplying_same_values(self, temp_automation_values_file):
         """Test that reapplying the same automation tag reports no changes."""
-        result = update_automation_values(temp_automation_values_file, automation_sha="1.20.0")
+        result = update_automation_values(
+            temp_automation_values_file,
+            automation_sha="c58faa1000000000000000000000000000000000",
+        )
 
         assert result.has_changes is False
         assert result.is_unchanged("automation image tag")
@@ -1590,6 +1587,16 @@ class TestUpdateAutomationValues:
         )
 
         assert temp_automation_values_file.read_text() == original_content
+
+    def test_missing_automation_sha_reports_error_without_file_changes(self, temp_automation_values_file):
+        """Test that missing deploy config input does not corrupt the image tag."""
+        original_content = temp_automation_values_file.read_text()
+
+        result = update_automation_values(temp_automation_values_file, automation_sha="")
+
+        assert temp_automation_values_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
 
 
 class TestUpdateAutomationChart:
