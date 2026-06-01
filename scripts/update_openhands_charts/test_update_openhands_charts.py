@@ -1060,10 +1060,17 @@ class TestUpdateReplicatedOpenhandsValues:
         return make_temp_yaml_file(sample_replicated_openhands_wrapper_values)
 
     @pytest.mark.parametrize("expected_content", [
-        pytest.param("tag: '1.19.1-python'", id="proxy runtime tag"),
         pytest.param(
-            "image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue \"appSlug\"}}/ghcr.io/openhands/agent-server:1.19.1-python'",
-            id="proxy warmRuntimes image",
+            "tag: '{{repl if ConfigOptionEquals \"custom_sandbox_image_enabled\" \"1\"}}{{repl ConfigOption \"custom_sandbox_image_tag\"}}{{repl else}}1.19.1-python{{repl end}}'",
+            id="proxy runtime tag (conditional preserved)",
+        ),
+        pytest.param(
+            "{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue \"appSlug\"}}/ghcr.io/openhands/agent-server:1.19.1-python{{repl end}}'",
+            id="proxy warmRuntimes image (conditional preserved)",
+        ),
+        pytest.param(
+            "tag: '1.19.1-python'",
+            id="local registry tag",
         ),
         pytest.param(
             "image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.1-python'",
@@ -1119,6 +1126,34 @@ class TestUpdateReplicatedOpenhandsValues:
     def test_reapplying_same_replicated_wrapper_values_marks_key_unchanged(self, reapplied_replicated_wrapper_result, unchanged_key):
         """Each replicated wrapper tag key is reported as unchanged when reapplied."""
         assert reapplied_replicated_wrapper_result.is_unchanged(unchanged_key)
+
+
+class TestReplicatedPatternsMatchRealFile:
+    """Regression canary: the agent-server patterns must still anchor on the real
+    replicated/openhands.yaml, not just on the conftest fixture.
+
+    The proxy-pattern breakage that forced manual tag bumps slipped through because
+    the fixture lagged the real file: a feature wrapped the proxy image refs in a
+    {{repl if ...}} conditional, the regexes stopped matching, yet every fixture-based
+    test stayed green. This test removes that blind spot. Each updater pattern sets
+    error_if_missing=True, so if any future structural change (e.g. wrapping a ref in
+    a new conditional) breaks a pattern, the still-present ref it can no longer find
+    surfaces as a 'Could not find ...' error and this test goes red — pointing at the
+    pattern to fix before the script silently skips the ref in production.
+    """
+
+    def test_every_agent_server_ref_in_real_file_is_matched(self):
+        """Running the updater against the real file reports zero unmatched patterns."""
+        result = update_replicated_openhands_values(
+            update_openhands_charts.REPLICATED_OPENHANDS_PATH,
+            runtime_image_tag="0.0.0-canary",
+            dry_run=True,
+        )
+
+        assert result.errors == [], (
+            "A pattern stopped matching the real replicated/openhands.yaml — likely a "
+            "ref was wrapped in new templating. Loosen the affected pattern: " + "; ".join(result.errors)
+        )
 
 
 class TestConditionalChartVersionBump:

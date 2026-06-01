@@ -48,11 +48,21 @@ WARM_RUNTIMES_TAG_PATTERN = r'(image:\s*"ghcr\.io/openhands/agent-server:)([^"]+
 RUNTIME_API_TAG_PATTERN = (
     r'(image:\n\s+repository: ghcr\.io/openhands/runtime-api\n\s+tag: )(sha-[a-f0-9]+)'
 )
+# The proxy-style refs wrap the agent-server image in the custom_sandbox_image_enabled
+# KOTS conditional ({{repl if ...}}...{{repl else}}<proxy image>{{repl end}}), so the
+# proxy URL/tag no longer sits flush against the opening quote. Anchor on the
+# ghcr.io/openhands/agent-server marker (a single-quoted scalar never contains an inner
+# single quote, so [^']* stays within the value) and capture the version with [^'{]+ so
+# it stops before the trailing {{repl end}} or closing quote — both of which are then
+# left untouched (no replacement_suffix needed). The patterns also match the unwrapped
+# form, where [^']* and the optional groups collapse to empty.
 REPLICATED_PROXY_AGENT_SERVER_TAG_PATTERN = (
-    r"(repository:\s*'images\.r9\.all-hands\.dev/proxy/\{\{repl LicenseFieldValue \"appSlug\"\}\}/ghcr\.io/openhands/agent-server'\s*\n(?:\s*#[^\n]*\n)*\s*tag:\s*')([^']+)'"
+    r"(repository:\s*'[^']*ghcr\.io/openhands/agent-server(?:\{\{repl end\}\})?'\s*\n"
+    r"(?:\s*#[^\n]*\n)*"
+    r"\s*tag:\s*'(?:[^']*\{\{repl else\}\})?)([^'{]+)"
 )
 REPLICATED_PROXY_WARM_RUNTIME_IMAGE_PATTERN = (
-    r"(image:\s*'images\.r9\.all-hands\.dev/proxy/\{\{repl LicenseFieldValue \"appSlug\"\}\}/ghcr\.io/openhands/agent-server:)([^']+)'"
+    r"(image:\s*'[^']*ghcr\.io/openhands/agent-server:)([^'{]+)"
 )
 REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN = (
     r"(repository:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server'\s*\n\s*tag:\s*')([^']+)'"
@@ -463,7 +473,6 @@ def update_replicated_openhands_values(
         runtime_image_tag,
         "replicated runtime image tag",
         result,
-        replacement_suffix="'",
     )
     content = update_tag_in_content(
         content,
@@ -471,7 +480,6 @@ def update_replicated_openhands_values(
         runtime_image_tag,
         "replicated warmRuntimes image tag",
         result,
-        replacement_suffix="'",
     )
     content = update_all_tags_in_content(
         content,
