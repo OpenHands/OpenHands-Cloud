@@ -15,6 +15,10 @@
 - name: OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS
   value: {{ .Values.appConfig.OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS }}
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: OPENHANDS_AZURE_DEVOPS_SERVICE_CLS
+  value: {{ .Values.appConfig.OPENHANDS_AZURE_DEVOPS_SERVICE_CLS }}
+{{- end }}
 - name: OPENHANDS_MCP_CONFIG_CLS
   value: {{ .Values.appConfig.OPENHANDS_MCP_CONFIG_CLS }}
 - name: OPENHANDS_CONVERSATION_VALIDATOR_CLS
@@ -206,6 +210,30 @@
     secretKeyRef:
       name: bitbucket-data-center-app
       key: client-secret
+- name: BITBUCKET_DATA_CENTER_BOT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: bitbucket-data-center-app
+      key: bot-token
+      optional: true
+{{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: AZURE_DEVOPS_TENANT_ID
+  value: {{ .Values.azureDevOps.tenantId | quote }}
+- name: AZURE_DEVOPS_ORGANIZATION
+  value: {{ .Values.azureDevOps.organization | quote }}
+- name: AZURE_DEVOPS_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-id
+      optional: false
+- name: AZURE_DEVOPS_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-secret
+      optional: false
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
@@ -347,32 +375,32 @@
 - name: DD_TRACE_SAMPLING_RULES
   value: '[{"service":"deploy","name":"fastapi.request","resource":"/integration/*","sample_rate":0.05}, {"service":"deploy","name":"fastapi.request","resource":"/slack/on-*","sample_rate":0.05}]'
 {{- end }}
-{{- if .Values.laminar.enabled }}
-{{- if .Values.laminar.apiKeyFromSecret }}
+{{- if and .Values.laminar.enabled .Values.laminar.apiKeyFromSecret }}
 - name: LMNR_PROJECT_API_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.laminar.apiKeyFromSecret.name }}
       key: {{ .Values.laminar.apiKeyFromSecret.key }}
       optional: true
+{{- else }}
+- name: LMNR_PROJECT_API_KEY
+  value: ""
 {{- end }}
-{{- if .Values.laminar.baseUrlFromSecret }}
+{{- if and .Values.laminar.enabled .Values.laminar.baseUrlFromSecret }}
 - name: LMNR_BASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ .Values.laminar.baseUrlFromSecret.name }}
       key: {{ .Values.laminar.baseUrlFromSecret.key }}
       optional: true
+{{- else }}
+- name: LMNR_BASE_URL
+  value: ""
 {{- end }}
-{{- if .Values.laminar.forceHttp }}
 - name: LMNR_FORCE_HTTP
-  value: {{ .Values.laminar.forceHttp | quote }}
-{{- end }}
-{{- if .Values.laminar.httpPort }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
 - name: LMNR_HTTP_PORT
-  value: {{ .Values.laminar.httpPort | quote }}
-{{- end }}
-{{- end }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.httpPort }}{{ .Values.laminar.httpPort | quote }}{{ else }}""{{ end }}
 - name: DB_PASS
   valueFrom:
     secretKeyRef:
@@ -396,6 +424,23 @@
 {{- if .Values.jiraDc.enabled }}
 - name: ENABLE_JIRA_DC
   value: "true"
+- name: JIRA_DC_WEBHOOKS_ENABLED
+  value: "1"
+- name: JIRA_DC_SERVICE_ACCOUNT_EMAIL
+  valueFrom:
+    secretKeyRef:
+      name: jira-dc-app
+      key: service-account-email
+      optional: true
+- name: JIRA_DC_SERVICE_ACCOUNT_PAT
+  valueFrom:
+    secretKeyRef:
+      name: jira-dc-app
+      key: service-account-pat
+      optional: true
+{{- if eq .Values.jiraDc.linkMethod "oauth" }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_DC_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -411,6 +456,10 @@
     secretKeyRef:
       name: jira-dc-app
       key: base-url
+{{- else }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "0"
+{{- end }}
 {{- end }}
 
 {{- if .Values.linear.enabled }}
@@ -466,6 +515,9 @@
 {{- if .Values.bitbucketDataCenter.enabled }}
 {{- $providers = append $providers "bitbucket_data_center" }}
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+{{- $providers = append $providers "azure_devops" }}
+{{- end }}
 {{- if .Values.enterpriseSSO.enabled }}
 {{- $providers = append $providers "enterprise_sso" }}
 {{- end }}
@@ -477,6 +529,8 @@
   value: "saas"
 - name: OH_APP_CONVERSATION_INFO_KIND
   value: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
+- name: OH_LLM_MODEL_KIND
+  value: server.verified_models.verified_model_router.SaaSLLMModelServiceInjector
 - name: CONVERSATION_MANAGER_CLASS
   value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}

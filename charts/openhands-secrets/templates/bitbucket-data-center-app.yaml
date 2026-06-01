@@ -1,4 +1,4 @@
-{{- if or .Values.config.bitbucket_data_center_domain .Values.config.bitbucket_data_center_client_id .Values.config.bitbucket_data_center_client_secret }}
+{{- if or .Values.config.bitbucket_data_center_domain .Values.config.bitbucket_data_center_client_id .Values.config.bitbucket_data_center_client_secret .Values.config.bitbucket_data_center_bot_token }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -14,5 +14,8 @@ data:
   {{- end }}
   {{- if .Values.config.bitbucket_data_center_client_secret }}
   client-secret: {{ .Values.config.bitbucket_data_center_client_secret | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.bitbucket_data_center_bot_token }}
+  bot-token: {{ .Values.config.bitbucket_data_center_bot_token | b64enc | quote }}
   {{- end }}
 {{- end }}
