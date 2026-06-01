@@ -3,6 +3,8 @@
 - name: {{ $key }}
   value: {{ $value | quote }}
 {{- end }}
+- name: RUNTIME_IDLE_SECONDS
+  value: {{ .Values.cleanup.idle_seconds | default 1200 | quote }}
 - name: RUNTIME_DEAD_SECONDS
   value: {{ printf "%.0f" .Values.cleanup.dead_seconds | quote }}
 {{- if .Values.runtimeInSameCluster }}

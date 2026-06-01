@@ -1,4 +1,4 @@
-{{- if .Values.caBundle.enabled }}
+{{- if and .Values.enabled .Values.caBundle.enabled }}
 {{- $userCA := .Values.caBundle.userCA | trim }}
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle

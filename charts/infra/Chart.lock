@@ -6,7 +6,7 @@ dependencies:
   repository: oci://quay.io/jetstack/charts
   version: 0.22.1
 - name: crd-check
-  repository: oci://ghcr.io/all-hands-ai/helm-charts
+  repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
-digest: sha256:3e28e70aa364756fd5869cfe1dc85275396e4b87149932c1be8bef39b10ac6c5
-generated: "2026-05-13T15:45:12.067552-05:00"
+digest: sha256:ee6c9e0ba7c097cc59f0dc12409169a11831b548283b77ec7f8f90a94869ebf5
+generated: "2026-05-27T10:31:04.277099-04:00"

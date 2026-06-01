@@ -15,6 +15,10 @@
 - name: OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS
   value: {{ .Values.appConfig.OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS }}
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: OPENHANDS_AZURE_DEVOPS_SERVICE_CLS
+  value: {{ .Values.appConfig.OPENHANDS_AZURE_DEVOPS_SERVICE_CLS }}
+{{- end }}
 - name: OPENHANDS_MCP_CONFIG_CLS
   value: {{ .Values.appConfig.OPENHANDS_MCP_CONFIG_CLS }}
 - name: OPENHANDS_CONVERSATION_VALIDATOR_CLS
@@ -212,6 +216,24 @@
       name: bitbucket-data-center-app
       key: bot-token
       optional: true
+{{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: AZURE_DEVOPS_TENANT_ID
+  value: {{ .Values.azureDevOps.tenantId | quote }}
+- name: AZURE_DEVOPS_ORGANIZATION
+  value: {{ .Values.azureDevOps.organization | quote }}
+- name: AZURE_DEVOPS_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-id
+      optional: false
+- name: AZURE_DEVOPS_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-secret
+      optional: false
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
@@ -493,6 +515,9 @@
 {{- if .Values.bitbucketDataCenter.enabled }}
 {{- $providers = append $providers "bitbucket_data_center" }}
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+{{- $providers = append $providers "azure_devops" }}
+{{- end }}
 {{- if .Values.enterpriseSSO.enabled }}
 {{- $providers = append $providers "enterprise_sso" }}
 {{- end }}
@@ -504,6 +529,8 @@
   value: "saas"
 - name: OH_APP_CONVERSATION_INFO_KIND
   value: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
+- name: OH_LLM_MODEL_KIND
+  value: server.verified_models.verified_model_router.SaaSLLMModelServiceInjector
 - name: CONVERSATION_MANAGER_CLASS
   value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}

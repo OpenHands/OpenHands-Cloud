@@ -1,4 +1,4 @@
-{{- if .Values.keycloak.enabled }}
+{{- if and .Values.enabled .Values.keycloak.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,7 +11,7 @@ data:
     keycloak_api_call() {
       COMMAND=$1
       export RESPONSE=$(eval $COMMAND)
-      ERROR=$(echo "$RESPONSE" | jq -r 'try if type == "array" then .[0].error else .error end')
+      ERROR=$(echo "$RESPONSE" | jq -r 'try if type == "array" then (.[0].error // .[0].errorMessage) else (.error // .errorMessage) end')
       if [ -n "$ERROR" ] && [ "null" != "$ERROR" ]; then
         echo "Error from Keycloak: $RESPONSE"
         exit 1
@@ -94,7 +94,8 @@ data:
     # the OAuth2 provider creation fails with an invalid host.
     export BITBUCKET_DATA_CENTER_HOST=${BITBUCKET_DATA_CENTER_HOST:-"placeholder.invalid"}
     export GITLAB_HOST=${GITLAB_HOST:-"gitlab.com"}
-    envsubst '$WEB_HOST,$AUTH_WEB_HOST,$KEYCLOAK_REALM_NAME,$KEYCLOAK_CLIENT_ID,$KEYCLOAK_CLIENT_SECRET,$GITHUB_APP_CLIENT_ID,$GITHUB_APP_CLIENT_SECRET,$GITLAB_APP_CLIENT_ID,$GITLAB_APP_CLIENT_SECRET,$GITLAB_HOST,$BITBUCKET_APP_CLIENT_ID,$BITBUCKET_APP_CLIENT_SECRET,$GITHUB_BASE_URL,$KEYCLOAK_SMTP_PASSWORD,$BITBUCKET_DATA_CENTER_HOST,$BITBUCKET_DATA_CENTER_CLIENT_ID,$BITBUCKET_DATA_CENTER_CLIENT_SECRET'< /realm-template/allhands-realm-github-provider.json.tmpl > /tmp/allhands-realm-github-provider.json
+    export AZURE_DEVOPS_TENANT_ID=${AZURE_DEVOPS_TENANT_ID:-"common"}
+    envsubst '$WEB_HOST,$AUTH_WEB_HOST,$KEYCLOAK_REALM_NAME,$KEYCLOAK_CLIENT_ID,$KEYCLOAK_CLIENT_SECRET,$GITHUB_APP_CLIENT_ID,$GITHUB_APP_CLIENT_SECRET,$GITLAB_APP_CLIENT_ID,$GITLAB_APP_CLIENT_SECRET,$GITLAB_HOST,$BITBUCKET_APP_CLIENT_ID,$BITBUCKET_APP_CLIENT_SECRET,$GITHUB_BASE_URL,$KEYCLOAK_SMTP_PASSWORD,$BITBUCKET_DATA_CENTER_HOST,$BITBUCKET_DATA_CENTER_CLIENT_ID,$BITBUCKET_DATA_CENTER_CLIENT_SECRET,$AZURE_DEVOPS_TENANT_ID,$AZURE_DEVOPS_CLIENT_ID,$AZURE_DEVOPS_CLIENT_SECRET'< /realm-template/allhands-realm-github-provider.json.tmpl > /tmp/allhands-realm-github-provider.json
     REALM_JSON=/tmp/allhands-realm-github-provider.json
 
     if [ "$ERROR_MESSAGE" = "Realm not found." ]; then
@@ -166,6 +167,10 @@ data:
       for alias in $(jq -r '.identityProviders[].alias' $REALM_JSON); do
         EXISTING_MAPPERS=$(curl -s "$KC_REALM/identity-provider/instances/$alias/mappers" \
           -H "Authorization: Bearer $ACCESS_TOKEN")
+        if ! echo "$EXISTING_MAPPERS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+          echo "  Skipping mappers for $alias: $EXISTING_MAPPERS"
+          continue
+        fi
         for mapper_name in $(jq -r --arg a "$alias" \
           '.identityProviderMappers[] | select(.identityProviderAlias == $a) | .name' $REALM_JSON); do
 
@@ -174,7 +179,7 @@ data:
             $REALM_JSON > /tmp/mapper.json
 
           EXISTING_ID=$(echo "$EXISTING_MAPPERS" | jq -r --arg n "$mapper_name" \
-            '.[] | select(.name == $n) | .id')
+            '.[] | objects | select(.name == $n) | .id')
 
           if [ -n "$EXISTING_ID" ] && [ "$EXISTING_ID" != "null" ]; then
             jq --arg id "$EXISTING_ID" '. + {id: $id}' /tmp/mapper.json > /tmp/mapper-update.json
