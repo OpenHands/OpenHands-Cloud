@@ -613,11 +613,11 @@ def update_automation_values(
 
     Returns UpdateResult containing changes made.
     """
-    content = values_path.read_text()
     result = UpdateResult()
     if not automation_sha:
         result.errors.append("AUTOMATION_SHA missing from deploy config")
         return result
+    content = values_path.read_text()
 
     content = update_tag_in_content(
         content,
@@ -821,6 +821,7 @@ def process_updates(
     if not deploy_config:
         print(f"Could not fetch deploy config from tag {version_number}")
         return
+    # All charts are released together; abort if any deploy-config SHA is missing.
     if not deploy_config.automation_sha:
         print("AUTOMATION_SHA missing from deploy config")
         return

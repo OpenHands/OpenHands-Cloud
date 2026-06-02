@@ -1617,6 +1617,13 @@ class TestUpdateAutomationValues:
         assert result.has_changes is False
         assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
 
+    def test_missing_automation_sha_returns_before_reading_values_file(self, tmp_path):
+        """Test that missing deploy config input does not require values.yaml to exist."""
+        result = update_automation_values(tmp_path / "missing-values.yaml", automation_sha="")
+
+        assert result.has_changes is False
+        assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
+
     def test_direct_version_tag_is_not_treated_as_managed_automation_tag(self, make_temp_yaml_file):
         """Test that automation only updates tags following the sha-<short> convention."""
         values_file = make_temp_yaml_file("""\
