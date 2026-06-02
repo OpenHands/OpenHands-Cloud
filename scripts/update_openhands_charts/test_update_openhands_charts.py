@@ -2261,6 +2261,23 @@ class TestUpdateImageLoaderWorkflow:
         assert values_path.read_text() == original_values
         assert chart_path.read_text() == original_chart
 
+    def test_long_description_line_not_rewrapped_on_version_bump(self, image_loader_paths):
+        """The chart's >80-char description stays on one line after a version bump.
+
+        Edge case rationale: the YAML writer wraps long scalars at its default
+        width, which would rewrite the image-loader description as a folded
+        two-line scalar (with trailing whitespace) on every release — a noisy,
+        unrelated diff in each version-bump PR.
+        """
+        _, chart_path = image_loader_paths
+
+        update_image_loader_workflow(NEW_RUNTIME_IMAGE_TAG, dry_run=False)
+
+        assert_file_contains(
+            chart_path,
+            "description: A Helm chart for loading images on nodes using a DaemonSet with configurable runtime class\n",
+        )
+
 
 class TestUpdateOpenhandsWorkflow:
     """Tests for update_openhands_workflow orchestration.

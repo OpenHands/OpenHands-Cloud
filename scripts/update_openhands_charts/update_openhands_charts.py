@@ -265,6 +265,9 @@ def create_yaml_parser() -> YAML:
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.indent(mapping=2, sequence=4, offset=2)
+    # Never re-wrap long scalars (e.g. chart descriptions) at the default
+    # ~80-char width — that would rewrite untouched lines on every bump.
+    yaml.width = 4096
     return yaml
 
 
