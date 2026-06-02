@@ -37,7 +37,10 @@ RUNTIME_API_CHART_PATH = REPO_ROOT / "charts" / "runtime-api" / "Chart.yaml"
 RUNTIME_API_VALUES_PATH = REPO_ROOT / "charts" / "runtime-api" / "values.yaml"
 AUTOMATION_CHART_PATH = REPO_ROOT / "charts" / "automation" / "Chart.yaml"
 AUTOMATION_VALUES_PATH = REPO_ROOT / "charts" / "automation" / "values.yaml"
+IMAGE_LOADER_CHART_PATH = REPO_ROOT / "charts" / "image-loader" / "Chart.yaml"
+IMAGE_LOADER_VALUES_PATH = REPO_ROOT / "charts" / "image-loader" / "values.yaml"
 REPLICATED_OPENHANDS_PATH = REPO_ROOT / "replicated" / "openhands.yaml"
+REPLICATED_CONFIG_PATH = REPO_ROOT / "replicated" / "config.yaml"
 
 # Regex patterns for values.yaml image tag updates
 ENTERPRISE_SERVER_TAG_PATTERN = (
@@ -74,6 +77,26 @@ REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN = (
 )
 REPLICATED_LOCAL_WARM_RUNTIME_IMAGE_PATTERN = (
     r"(image:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server:)([^']+)'"
+)
+# Same shape as RUNTIME_TAG_PATTERN but without the runtime: prefix — image-loader's
+# values.yaml has the agent-server image at the top level.
+IMAGE_LOADER_TAG_PATTERN = (
+    r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
+)
+# The custom_sandbox_image_tag option in replicated/config.yaml shows the agent-server
+# tag to admins twice: as the help_text example and as the default value. Both patterns
+# anchor on the option name and skip the option's own attribute lines without crossing
+# into the next list item (the (?!\s*- name:) guard), so a reordered attribute keeps
+# matching while a sibling option's help_text/default can never be picked up instead.
+REPLICATED_CONFIG_SANDBOX_HELP_TEXT_PATTERN = (
+    r"(- name: custom_sandbox_image_tag\n"
+    r"(?:(?!\s*- name:)[^\n]*\n)*?"
+    r"\s*help_text: Image tag, e\.g\. )(\S+)"
+)
+REPLICATED_CONFIG_SANDBOX_DEFAULT_PATTERN = (
+    r"(- name: custom_sandbox_image_tag\n"
+    r"(?:(?!\s*- name:)[^\n]*\n)*?"
+    r'\s*default: ")([^"]+)"'
 )
 
 
@@ -518,6 +541,69 @@ def update_replicated_openhands_values(
     return result
 
 
+def update_replicated_config(
+    config_path: Path,
+    runtime_image_tag: str,
+    dry_run: bool = False,
+) -> UpdateResult:
+    """Update the sandbox image tag shown in the replicated/config.yaml KOTS config screen.
+
+    The custom_sandbox_image_tag option carries the agent-server tag twice:
+    as the help_text example and as the default value admins see when they
+    enable a custom sandbox image. Both must track the sandbox spec tag.
+    """
+    content = config_path.read_text()
+    result = UpdateResult()
+
+    content = update_tag_in_content(
+        content,
+        REPLICATED_CONFIG_SANDBOX_HELP_TEXT_PATTERN,
+        runtime_image_tag,
+        "replicated config sandbox image tag help text",
+        result,
+    )
+    content = update_tag_in_content(
+        content,
+        REPLICATED_CONFIG_SANDBOX_DEFAULT_PATTERN,
+        runtime_image_tag,
+        "replicated config sandbox image tag default",
+        result,
+        replacement_suffix='"',
+    )
+
+    if not dry_run and result.has_changes:
+        config_path.write_text(content)
+
+    return result
+
+
+def update_image_loader_values(
+    values_path: Path,
+    runtime_image_tag: str,
+    dry_run: bool = False,
+) -> UpdateResult:
+    """Update the agent-server image tag in image-loader values.yaml.
+
+    The image-loader DaemonSet pre-pulls the agent-server image onto nodes;
+    its tag must track the sandbox spec tag or nodes warm the wrong image.
+    """
+    content = values_path.read_text()
+    result = UpdateResult()
+
+    content = update_tag_in_content(
+        content,
+        IMAGE_LOADER_TAG_PATTERN,
+        runtime_image_tag,
+        "image-loader image tag",
+        result,
+    )
+
+    if not dry_run and result.has_changes:
+        values_path.write_text(content)
+
+    return result
+
+
 def bump_chart_version(
     chart_path: Path,
     chart_name: str,
@@ -643,7 +729,7 @@ def print_section_header(title: str) -> None:
 def parse_args(args=None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Update OpenHands, runtime-api, and automation charts based on a SaaS deploy."
+        description="Update OpenHands, runtime-api, automation, and image-loader charts based on a SaaS deploy."
     )
     parser.add_argument(
         "--dry-run",
@@ -743,12 +829,47 @@ def update_openhands_workflow(
     replicated_result.print_summary()
 
     print()
+    print("Updating replicated/config.yaml...")
+    replicated_config_result = update_replicated_config(
+        REPLICATED_CONFIG_PATH,
+        runtime_image_tag,
+        dry_run=dry_run,
+    )
+    replicated_config_result.print_summary()
+
+    print()
     print("Updating openhands Chart.yaml...")
     chart_result = update_openhands_chart(
         CHART_PATH,
         openhands_version,
         runtime_api_version,
         automation_version,
+        has_changes=values_result.has_changes,
+        dry_run=dry_run,
+    )
+    chart_result.print_summary()
+
+
+def update_image_loader_workflow(
+    runtime_image_tag: str,
+    dry_run: bool,
+) -> None:
+    """Update image-loader chart values and bump chart version."""
+    print_section_header("Updating image-loader chart...")
+
+    print("Updating image-loader values.yaml...")
+    values_result = update_image_loader_values(
+        IMAGE_LOADER_VALUES_PATH,
+        runtime_image_tag,
+        dry_run=dry_run,
+    )
+    values_result.print_summary()
+
+    print()
+    print("Updating image-loader Chart.yaml...")
+    _, chart_result = bump_chart_version(
+        IMAGE_LOADER_CHART_PATH,
+        "image-loader",
         has_changes=values_result.has_changes,
         dry_run=dry_run,
     )
@@ -836,6 +957,9 @@ def process_updates(
 
     print()
     automation_version = update_automation_workflow(deploy_config, dry_run)
+
+    print()
+    update_image_loader_workflow(runtime_image_tag, dry_run)
 
     print()
     update_openhands_workflow(

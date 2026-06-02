@@ -2514,9 +2514,12 @@ class TestParseArgs:
             parse_args(["--help"])
 
         assert exc_info.value.code == 0
+        # argparse wraps the description to the terminal width, so normalize
+        # whitespace before matching to stay independent of where it breaks lines.
+        normalized_output = " ".join(capsys.readouterr().out.split())
         assert (
             "Update OpenHands, runtime-api, automation, and image-loader charts based on a SaaS deploy."
-            in capsys.readouterr().out
+            in normalized_output
         )
 
 
