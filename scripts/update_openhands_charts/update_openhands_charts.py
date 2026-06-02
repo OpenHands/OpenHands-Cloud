@@ -391,7 +391,7 @@ def update_openhands_chart(
         result.unchanged.append(("appVersion", f"{old_app_version} (no value changes)"))
         update_dependency(chart_data, "runtime-api", new_runtime_api_version, result)
         update_dependency(chart_data, "automation", new_automation_version, result)
-        if not dry_run and result.has_changes:
+        if not dry_run and result.has_changes and not result.errors:
             yaml.dump(chart_data, chart_path)
         return result
 
@@ -412,7 +412,7 @@ def update_openhands_chart(
     update_dependency(chart_data, "runtime-api", new_runtime_api_version, result)
     update_dependency(chart_data, "automation", new_automation_version, result)
 
-    if not dry_run and result.has_changes:
+    if not dry_run and result.has_changes and not result.errors:
         yaml.dump(chart_data, chart_path)
 
     return result

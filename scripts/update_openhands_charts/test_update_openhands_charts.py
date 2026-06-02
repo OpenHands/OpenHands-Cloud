@@ -319,6 +319,8 @@ dependencies:
 
         assert result.has_error_containing("Could not find automation dependency in Chart.yaml")
         assert get_dependency_version(chart_file, "automation") is None
+        assert get_chart_value(chart_file, "appVersion") == OPENHANDS_CHART_APP_VERSION
+        assert get_chart_value(chart_file, "version") == OPENHANDS_CHART_VERSION
 
     @pytest.mark.parametrize("app_version,runtime_api_version,automation_version,unchanged_key", [
         # When appVersion already matches target, it should be reported as unchanged
