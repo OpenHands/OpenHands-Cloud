@@ -109,6 +109,8 @@ REPLICATED_CONFIG_SANDBOX_HELP_TEXT_PATTERN = (
     r"(?:(?!\s*- name:)[^\n]*\n)*?"
     r"\s*help_text: Image tag, e\.g\. )(\S+)"
 )
+# The default pattern captures only the tag in group 2; the closing quote stays
+# outside the capture and is restored by passing replacement_suffix='"'.
 REPLICATED_CONFIG_SANDBOX_DEFAULT_PATTERN = (
     r"(- name: custom_sandbox_image_tag\n"
     r"(?:(?!\s*- name:)[^\n]*\n)*?"
