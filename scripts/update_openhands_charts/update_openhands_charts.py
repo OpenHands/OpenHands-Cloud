@@ -643,7 +643,7 @@ def print_section_header(title: str) -> None:
 def parse_args(args=None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Update OpenHands and runtime-api charts based on a SaaS deploy."
+        description="Update OpenHands, runtime-api, and automation charts based on a SaaS deploy."
     )
     parser.add_argument(
         "--dry-run",

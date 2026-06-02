@@ -58,6 +58,7 @@ from update_openhands_charts import (
     get_runtime_image_tag_from_sandbox_spec,
     get_short_sha,
     main,
+    parse_args,
     process_updates,
     resolve_openhands_version,
     update_automation_values,
@@ -2107,6 +2108,18 @@ class TestUpdateOpenhandsWorkflowReplicated:
         )
 
         assert mock_replicated.call_args.kwargs["dry_run"] is dry_run
+
+
+class TestParseArgs:
+    """Tests for command-line argument parsing."""
+
+    def test_help_description_lists_all_managed_charts(self, capsys):
+        """The --help text describes every chart the script updates."""
+        with pytest.raises(SystemExit) as exc_info:
+            parse_args(["--help"])
+
+        assert exc_info.value.code == 0
+        assert "Update OpenHands, runtime-api, and automation charts based on a SaaS deploy." in capsys.readouterr().out
 
 
 class TestMainOutputMessages:
