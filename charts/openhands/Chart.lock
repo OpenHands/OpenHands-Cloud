@@ -22,10 +22,10 @@ dependencies:
   version: 1.9.0
 - name: runtime-api
   repository: oci://ghcr.io/openhands/helm-charts
-  version: 0.3.5
+  version: 0.3.6
 - name: automation
   repository: oci://ghcr.io/openhands/helm-charts
-  version: 0.1.10
+  version: 0.1.11
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
@@ -35,5 +35,5 @@ dependencies:
 - name: integrations-hub
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
-digest: sha256:1f4476080a68f1cd331046e59f312836700958ac2a23bf95a6368abf28656712
-generated: "2026-05-27T10:30:34.584689-04:00"
+digest: sha256:3aa58e62234135be9e589ecd5ea5ac975586d2d5cd944378d6c5136b2427f03c
+generated: "2026-06-02T19:50:58.928102Z"
