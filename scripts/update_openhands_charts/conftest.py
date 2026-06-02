@@ -52,6 +52,7 @@ from ruamel.yaml import YAML
 OPENHANDS_CHART_VERSION = "0.1.0"  # Chart version (semver)
 OPENHANDS_CHART_APP_VERSION = "cloud-1.0.0"  # OpenHands uses cloud-X.Y.Z tags
 OPENHANDS_CHART_RUNTIME_API_VERSION = "0.1.10"  # runtime-api dependency version
+OPENHANDS_CHART_AUTOMATION_VERSION = "0.1.1"  # automation dependency version
 
 # Variant-specific openhands chart values (only in with_deps variant)
 OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION = "1.0.0"
@@ -64,6 +65,10 @@ RUNTIME_API_CHART_FULL_APP_VERSION = "1.0.0"
 RUNTIME_API_CHART_MINIMAL_VERSION = "0.2.6"
 RUNTIME_API_CHART_MINIMAL_APP_VERSION = "0.1.0"
 
+# sample_automation_chart fixture values
+AUTOMATION_CHART_VERSION = "0.1.1"
+AUTOMATION_CHART_APP_VERSION = "0.1.0"
+
 # =============================================================================
 # Test input constants
 # These values are used as inputs when testing update operations.
@@ -73,6 +78,7 @@ RUNTIME_API_CHART_MINIMAL_APP_VERSION = "0.1.0"
 # New versions used when testing chart updates
 NEW_APP_VERSION = "cloud-2.0.0"  # OpenHands appVersion uses cloud-X.Y.Z tags
 NEW_RUNTIME_API_VERSION = "0.2.0"
+NEW_AUTOMATION_VERSION = "0.1.2"
 # Runtime image tag constants — agent-server uses X.Y.Z-python format (no cloud- prefix)
 RUNTIME_IMAGE_TAG = "1.0.0-python"       # Baseline tag matching sample fixtures
 NEW_RUNTIME_IMAGE_TAG = "1.1.0-python"   # New tag used when testing updates
@@ -243,7 +249,7 @@ def make_temp_yaml_file(tmp_path):
 
 @pytest.fixture
 def sample_openhands_chart_with_deps():
-    """Sample openhands Chart.yaml with runtime-api dependency."""
+    """Sample openhands Chart.yaml with runtime-api and automation dependencies."""
     return """\
 apiVersion: v2
 description: Test chart
@@ -257,6 +263,10 @@ dependencies:
     repository: oci://ghcr.io/openhands/helm-charts
     version: 0.1.10
     condition: runtime-api.enabled
+  - name: automation
+    repository: oci://ghcr.io/openhands/helm-charts
+    version: 0.1.1
+    condition: automation.enabled
   - name: other-dep
     version: 1.0.0
 """
@@ -273,6 +283,8 @@ name: openhands
 dependencies:
   - name: runtime-api
     version: 0.1.10
+  - name: automation
+    version: 0.1.1
 """
 
 
@@ -291,6 +303,7 @@ def openhands_chart_variant(request, sample_openhands_chart_with_deps, sample_op
         - OPENHANDS_CHART_VERSION
         - OPENHANDS_CHART_APP_VERSION
         - OPENHANDS_CHART_RUNTIME_API_VERSION
+        - OPENHANDS_CHART_AUTOMATION_VERSION
     """
     variant_name = request.param
     content = sample_openhands_chart_with_deps if variant_name == "with_deps" else sample_openhands_chart_minimal
@@ -323,6 +336,28 @@ apiVersion: v2
 appVersion: 0.1.0
 version: 0.2.6
 name: runtime-api
+"""
+
+
+@pytest.fixture
+def sample_automation_chart():
+    """Sample automation Chart.yaml with dependencies."""
+    return """\
+apiVersion: v2
+name: automation
+description: OpenHands Automations Service
+type: application
+version: 0.1.1
+appVersion: "0.1.0"
+dependencies:
+  - name: postgresql
+    version: 15.x.x
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: minio
+    version: 5.0.10
+    repository: https://charts.min.io/
+    condition: minio.enabled
 """
 
 
@@ -404,6 +439,28 @@ warmRuntimes:
       image: "ghcr.io/openhands/agent-server:1.0.0-python"
       working_dir: "/openhands/code/"
       environment: {}
+"""
+
+
+@pytest.fixture
+def sample_automation_values():
+    """Sample automation values.yaml."""
+    return """\
+image:
+  repository: ghcr.io/openhands/automation
+  tag: sha-c58faa1
+
+imagePullSecrets: []
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
 """
 
 

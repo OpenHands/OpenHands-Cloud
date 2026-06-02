@@ -29,21 +29,25 @@ from conftest import (
     make_json_error_response,
     make_missing_key_response,
     # Fixture baseline constants for self-documenting assertions
+    AUTOMATION_CHART_APP_VERSION,
+    AUTOMATION_CHART_VERSION,
     OPENHANDS_CHART_VERSION,
     OPENHANDS_CHART_APP_VERSION,
     OPENHANDS_CHART_RUNTIME_API_VERSION,
+    OPENHANDS_CHART_AUTOMATION_VERSION,
     OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION,
     RUNTIME_API_CHART_FULL_VERSION,
-    RUNTIME_API_CHART_FULL_APP_VERSION,
     RUNTIME_API_CHART_MINIMAL_VERSION,
     # Test input constants for update operations
     NEW_APP_VERSION,
+    NEW_AUTOMATION_VERSION,
     NEW_RUNTIME_API_VERSION,
     NEW_RUNTIME_IMAGE_TAG,
     RUNTIME_IMAGE_TAG,
 )
 from update_openhands_charts import (
     DeployConfig,
+    bump_chart_version,
     bump_patch_version,
     cloud_tag_exists,
     extract_version_from_cloud_tag,
@@ -54,8 +58,10 @@ from update_openhands_charts import (
     get_runtime_image_tag_from_sandbox_spec,
     get_short_sha,
     main,
+    parse_args,
     process_updates,
     resolve_openhands_version,
+    update_automation_values,
     update_openhands_chart,
     update_openhands_values,
     update_openhands_workflow,
@@ -63,6 +69,7 @@ from update_openhands_charts import (
     update_runtime_api_chart,
     update_runtime_api_values,
     update_runtime_api_workflow,
+    update_automation_workflow,
 )
 
 
@@ -288,20 +295,52 @@ class TestUpdateChartAcrossVariants:
 
         assert get_dependency_version(temp_chart_file, "runtime-api") == NEW_RUNTIME_API_VERSION
 
-    @pytest.mark.parametrize("app_version,runtime_api_version,unchanged_key", [
+    def test_automation_dependency_version_updates(self, temp_chart_file):
+        """Verify automation dependency version is updated in Chart.yaml."""
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None, NEW_AUTOMATION_VERSION)
+
+        assert get_dependency_version(temp_chart_file, "automation") == NEW_AUTOMATION_VERSION
+
+    def test_missing_requested_dependency_reports_error(self, make_temp_yaml_file):
+        """Verify requested dependency updates fail loudly when the dependency is absent."""
+        chart_file = make_temp_yaml_file("""\
+apiVersion: v2
+name: test-chart
+description: Test chart
+type: application
+version: 0.1.0
+appVersion: cloud-1.0.0
+dependencies:
+  - name: runtime-api
+    version: 0.1.10
+""")
+
+        result = update_openhands_chart(chart_file, NEW_APP_VERSION, None, NEW_AUTOMATION_VERSION)
+
+        assert result.has_error_containing("Could not find automation dependency in Chart.yaml")
+        assert get_dependency_version(chart_file, "automation") is None
+        assert get_chart_value(chart_file, "appVersion") == OPENHANDS_CHART_APP_VERSION
+        assert get_chart_value(chart_file, "version") == OPENHANDS_CHART_VERSION
+
+    @pytest.mark.parametrize("app_version,runtime_api_version,automation_version,unchanged_key", [
         # When appVersion already matches target, it should be reported as unchanged
         pytest.param(
-            OPENHANDS_CHART_APP_VERSION, NEW_RUNTIME_API_VERSION, "appVersion",
+            OPENHANDS_CHART_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, "appVersion",
             id="appVersion unchanged when already current"
         ),
         # When runtime-api version already matches target, it should be reported as unchanged
         pytest.param(
-            NEW_APP_VERSION, OPENHANDS_CHART_RUNTIME_API_VERSION, "runtime-api version",
+            NEW_APP_VERSION, OPENHANDS_CHART_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, "runtime-api version",
             id="runtime-api version unchanged when already current"
+        ),
+        # When automation version already matches target, it should be reported as unchanged
+        pytest.param(
+            NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, OPENHANDS_CHART_AUTOMATION_VERSION, "automation version",
+            id="automation version unchanged when already current"
         ),
     ])
     def test_version_unchanged_when_already_current(
-        self, temp_chart_file, app_version, runtime_api_version, unchanged_key
+        self, temp_chart_file, app_version, runtime_api_version, automation_version, unchanged_key
     ):
         """Verify no change is recorded when a version already matches target.
 
@@ -309,7 +348,7 @@ class TestUpdateChartAcrossVariants:
         when values are already at their target state, preventing spurious version
         bumps and unnecessary commits in CI/CD pipelines.
         """
-        result = update_openhands_chart(temp_chart_file, app_version, runtime_api_version)
+        result = update_openhands_chart(temp_chart_file, app_version, runtime_api_version, automation_version)
 
         assert result.is_unchanged(unchanged_key)
 
@@ -320,9 +359,10 @@ class TestUpdateChart:
     These tests require the with_deps fixture specifically because they test
     features only present in that variant (e.g., multiple dependencies, maintainers).
 
-    TDD Rationale: Tests drive selective dependency updates - only runtime-api
-    should be modified while other dependencies remain untouched. This prevents
-    accidental side effects when updating charts with multiple dependencies.
+    TDD Rationale: Tests drive selective dependency updates - only managed
+    dependencies should be modified while other dependencies remain untouched.
+    This prevents accidental side effects when updating charts with multiple
+    dependencies.
     """
 
     @pytest.fixture
@@ -330,9 +370,9 @@ class TestUpdateChart:
         """Create a temporary Chart.yaml file using shared fixtures."""
         return make_temp_yaml_file(sample_openhands_chart_with_deps)
 
-    def test_non_runtime_api_dependencies_remain_unchanged(self, temp_chart_file):
-        """Verify only runtime-api dependency is modified; other deps are preserved."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+    def test_unmanaged_dependencies_remain_unchanged(self, temp_chart_file):
+        """Verify only runtime-api and automation dependencies are modified; other deps are preserved."""
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
 
         assert get_dependency_version(temp_chart_file, "other-dep") == OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION
 
@@ -559,6 +599,7 @@ class TestGetDeployConfig:
     VALID_WORKFLOW_YAML = """\
 env:
   RUNTIME_API_SHA: abc123def456
+  AUTOMATION_SHA: 1234567890abcdef1234567890abcdef12345678
   OTHER_VAR: value
 """
 
@@ -595,6 +636,17 @@ env:
         result = get_deploy_config("fake-token", "owner/repo", ref="1.0.0")
 
         assert result.runtime_api_sha == "abc123def456"
+
+    def test_automation_sha_parsed_from_workflow_env(self, monkeypatch, make_workflow_response):
+        """Test that automation_sha is correctly extracted from the workflow env section."""
+        monkeypatch.setattr(
+            "update_openhands_charts.requests.get",
+            Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
+        )
+
+        result = get_deploy_config("fake-token", "owner/repo", ref="1.0.0")
+
+        assert result.automation_sha == "1234567890abcdef1234567890abcdef12345678"
 
     def test_constructs_correct_url_without_ref(self, monkeypatch, make_workflow_response):
         """Test that URL is constructed correctly without ref parameter."""
@@ -643,6 +695,7 @@ env:
 
         assert result is not None
         assert result.runtime_api_sha == ""
+        assert result.automation_sha == ""
 
     def test_returns_empty_string_when_env_section_missing(self, monkeypatch, make_workflow_response):
         """Test that missing env section returns empty string.
@@ -661,6 +714,7 @@ env:
 
         assert result is not None
         assert result.runtime_api_sha == ""
+        assert result.automation_sha == ""
 
     # =========================================================================
     # Parameterized error path tests
@@ -1496,6 +1550,158 @@ class TestUpdateRuntimeApiValues:
         assert result.has_changes is True
 
 
+class TestUpdateAutomationValues:
+    """Tests for update_automation_values function."""
+
+    @pytest.fixture
+    def temp_automation_values_file(self, make_temp_yaml_file, sample_automation_values):
+        """Create a temporary automation values.yaml file."""
+        return make_temp_yaml_file(sample_automation_values)
+
+    def test_updates_automation_image_tag(self, temp_automation_values_file):
+        """Test that automation image tag is updated from deploy-config SHA."""
+        sha = "1234567890abcdef1234567890abcdef12345678"
+
+        result = update_automation_values(temp_automation_values_file, automation_sha=sha)
+
+        assert_file_contains(temp_automation_values_file, "tag: sha-1234567\n")
+        assert result.has_changes is True
+
+    def test_bare_short_automation_sha_matches_prefixed_chart_tag(self, temp_automation_values_file):
+        """Test that a short bare automation SHA still follows the sha-<short> tag convention."""
+        result = update_automation_values(temp_automation_values_file, automation_sha="c58faa1")
+
+        assert_file_contains(temp_automation_values_file, "tag: sha-c58faa1\n")
+        assert result.has_changes is False
+        assert result.is_unchanged("automation image tag")
+
+    def test_idempotent_when_reapplying_same_values(self, temp_automation_values_file):
+        """Test that reapplying the same automation tag reports no changes."""
+        result = update_automation_values(
+            temp_automation_values_file,
+            automation_sha="c58faa1000000000000000000000000000000000",
+        )
+
+        assert result.has_changes is False
+        assert result.is_unchanged("automation image tag")
+
+    def test_preserves_other_content(self, temp_automation_values_file):
+        """Test that other content is preserved."""
+        update_automation_values(
+            temp_automation_values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+        )
+
+        assert_file_contains_all(temp_automation_values_file, [
+            "repository: ghcr.io/openhands/automation",
+            "replicas: 1",
+            "memory: 256Mi",
+        ])
+
+    def test_dry_run_no_file_changes(self, temp_automation_values_file):
+        """Test that dry-run doesn't modify the file."""
+        original_content = temp_automation_values_file.read_text()
+
+        update_automation_values(
+            temp_automation_values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+            dry_run=True,
+        )
+
+        assert temp_automation_values_file.read_text() == original_content
+
+    def test_missing_automation_sha_reports_error_without_file_changes(self, temp_automation_values_file):
+        """Test that missing deploy config input does not corrupt the image tag."""
+        original_content = temp_automation_values_file.read_text()
+
+        result = update_automation_values(temp_automation_values_file, automation_sha="")
+
+        assert temp_automation_values_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
+
+    def test_missing_automation_sha_returns_before_reading_values_file(self, tmp_path):
+        """Test that missing deploy config input does not require values.yaml to exist."""
+        result = update_automation_values(tmp_path / "missing-values.yaml", automation_sha="")
+
+        assert result.has_changes is False
+        assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
+
+    def test_direct_version_tag_is_not_treated_as_managed_automation_tag(self, make_temp_yaml_file):
+        """Test that automation only updates tags following the sha-<short> convention."""
+        values_file = make_temp_yaml_file("""\
+image:
+  repository: ghcr.io/openhands/automation
+  tag: 1.20.0
+
+deployment:
+  replicas: 1
+""")
+        original_content = values_file.read_text()
+
+        result = update_automation_values(
+            values_file,
+            automation_sha="1234567890abcdef1234567890abcdef12345678",
+        )
+
+        assert values_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("Could not find automation image tag in values.yaml")
+
+
+class TestUpdateAutomationChart:
+    """Tests for bump_chart_version with automation chart."""
+
+    @pytest.fixture
+    def temp_automation_chart_file(self, make_temp_yaml_file, sample_automation_chart):
+        """Create a temporary automation Chart.yaml file."""
+        return make_temp_yaml_file(sample_automation_chart)
+
+    def test_bumps_automation_chart_version(self, temp_automation_chart_file):
+        """Test that automation chart version is bumped correctly."""
+        new_version, result = bump_chart_version(temp_automation_chart_file, "automation")
+
+        assert get_chart_value(temp_automation_chart_file, "version") == "0.1.2"
+        assert new_version == "0.1.2"
+        assert result.has_change_for("automation chart version")
+
+    def test_no_version_bump_when_no_changes(self, temp_automation_chart_file):
+        """Test that automation chart version is not bumped when values are unchanged."""
+        new_version, result = bump_chart_version(
+            temp_automation_chart_file, "automation", has_changes=False
+        )
+
+        assert get_chart_value(temp_automation_chart_file, "version") == AUTOMATION_CHART_VERSION
+        assert new_version == AUTOMATION_CHART_VERSION
+        assert result.is_unchanged("automation chart version")
+
+    def test_preserves_other_fields(self, temp_automation_chart_file):
+        """Test that non-version chart fields are preserved."""
+        bump_chart_version(temp_automation_chart_file, "automation")
+
+        assert get_chart_value(temp_automation_chart_file, "apiVersion") == "v2"
+        assert get_chart_value(temp_automation_chart_file, "name") == "automation"
+        assert get_chart_value(temp_automation_chart_file, "appVersion") == AUTOMATION_CHART_APP_VERSION
+        assert len(get_chart_value(temp_automation_chart_file, "dependencies")) == 2
+
+    def test_dry_run_no_file_changes(self, temp_automation_chart_file):
+        """Test that dry-run doesn't modify the file."""
+        original_content = temp_automation_chart_file.read_text()
+
+        bump_chart_version(temp_automation_chart_file, "automation", dry_run=True)
+
+        assert temp_automation_chart_file.read_text() == original_content
+
+    def test_dry_run_returns_new_version(self, temp_automation_chart_file):
+        """Test that dry-run still returns the new version."""
+        new_version, result = bump_chart_version(
+            temp_automation_chart_file, "automation", dry_run=True
+        )
+
+        assert new_version == "0.1.2"
+        assert result.has_change_for("automation chart version")
+
+
 class TestSkipVersionCheck:
     """Tests for --skip-version-check flag behavior.
 
@@ -1568,6 +1774,27 @@ class TestProcessUpdates:
 
         mock_update_runtime_api.assert_not_called()
         assert "Could not fetch deploy config" in capsys.readouterr().out
+
+    def test_returns_early_when_automation_sha_missing(self, monkeypatch, stub_process_updates_chain, capsys):
+        """When AUTOMATION_SHA is missing, no partial chart updates are attempted."""
+        stub_process_updates_chain()
+        monkeypatch.setattr(
+            "update_openhands_charts.get_deploy_config",
+            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha=""),
+        )
+        mock_update_runtime_api = MagicMock(return_value="0.1.21")
+        mock_update_automation = MagicMock(return_value="0.1.2")
+        mock_update_openhands = MagicMock()
+        monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", mock_update_runtime_api)
+        monkeypatch.setattr("update_openhands_charts.update_automation_workflow", mock_update_automation)
+        monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", mock_update_openhands)
+
+        process_updates("token")
+
+        mock_update_runtime_api.assert_not_called()
+        mock_update_automation.assert_not_called()
+        mock_update_openhands.assert_not_called()
+        assert "AUTOMATION_SHA missing from deploy config" in capsys.readouterr().out
 
 
 class TestUpdateRuntimeApiWorkflow:
@@ -1649,6 +1876,35 @@ class TestUpdateRuntimeApiWorkflow:
 
         assert mock_values.call_args.kwargs["dry_run"] is dry_run
         assert mock_chart.call_args.kwargs["dry_run"] is dry_run
+
+
+class TestUpdateAutomationWorkflow:
+    """Tests for update_automation_workflow orchestration."""
+
+    def test_updates_values_bumps_chart_and_returns_new_chart_version(
+        self,
+        monkeypatch,
+        make_temp_yaml_file,
+        sample_automation_values,
+        sample_automation_chart,
+    ):
+        """When values change, the automation chart version is bumped and returned."""
+        values_path = make_temp_yaml_file(sample_automation_values)
+        chart_path = make_temp_yaml_file(sample_automation_chart)
+        monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
+        monkeypatch.setattr("update_openhands_charts.AUTOMATION_CHART_PATH", chart_path)
+
+        new_version = update_automation_workflow(
+            DeployConfig(
+                runtime_api_sha="unused",
+                automation_sha="1234567890abcdef1234567890abcdef12345678",
+            ),
+            dry_run=False,
+        )
+
+        assert_file_contains(values_path, "tag: sha-1234567\n")
+        assert get_chart_value(chart_path, "version") == "0.1.2"
+        assert new_version == "0.1.2"
 
 
 class TestUpdateOpenhandsWorkflow:
@@ -1854,6 +2110,18 @@ class TestUpdateOpenhandsWorkflowReplicated:
         )
 
         assert mock_replicated.call_args.kwargs["dry_run"] is dry_run
+
+
+class TestParseArgs:
+    """Tests for command-line argument parsing."""
+
+    def test_help_description_lists_all_managed_charts(self, capsys):
+        """The --help text describes every chart the script updates."""
+        with pytest.raises(SystemExit) as exc_info:
+            parse_args(["--help"])
+
+        assert exc_info.value.code == 0
+        assert "Update OpenHands, runtime-api, and automation charts based on a SaaS deploy." in capsys.readouterr().out
 
 
 class TestMainOutputMessages:
