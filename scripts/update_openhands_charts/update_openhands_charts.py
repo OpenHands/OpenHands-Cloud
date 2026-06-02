@@ -821,6 +821,9 @@ def process_updates(
     if not deploy_config:
         print(f"Could not fetch deploy config from tag {version_number}")
         return
+    if not deploy_config.automation_sha:
+        print("AUTOMATION_SHA missing from deploy config")
+        return
 
     print(f"Deploy config (from {version_number}):")
     print(f"  RUNTIME_API_SHA: {deploy_config.runtime_api_sha}")

@@ -1765,6 +1765,27 @@ class TestProcessUpdates:
         mock_update_runtime_api.assert_not_called()
         assert "Could not fetch deploy config" in capsys.readouterr().out
 
+    def test_returns_early_when_automation_sha_missing(self, monkeypatch, stub_process_updates_chain, capsys):
+        """When AUTOMATION_SHA is missing, no partial chart updates are attempted."""
+        stub_process_updates_chain()
+        monkeypatch.setattr(
+            "update_openhands_charts.get_deploy_config",
+            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha=""),
+        )
+        mock_update_runtime_api = MagicMock(return_value="0.1.21")
+        mock_update_automation = MagicMock(return_value="0.1.2")
+        mock_update_openhands = MagicMock()
+        monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", mock_update_runtime_api)
+        monkeypatch.setattr("update_openhands_charts.update_automation_workflow", mock_update_automation)
+        monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", mock_update_openhands)
+
+        process_updates("token")
+
+        mock_update_runtime_api.assert_not_called()
+        mock_update_automation.assert_not_called()
+        mock_update_openhands.assert_not_called()
+        assert "AUTOMATION_SHA missing from deploy config" in capsys.readouterr().out
+
 
 class TestUpdateRuntimeApiWorkflow:
     """Tests for update_runtime_api_workflow orchestration.
@@ -1845,6 +1866,35 @@ class TestUpdateRuntimeApiWorkflow:
 
         assert mock_values.call_args.kwargs["dry_run"] is dry_run
         assert mock_chart.call_args.kwargs["dry_run"] is dry_run
+
+
+class TestUpdateAutomationWorkflow:
+    """Tests for update_automation_workflow orchestration."""
+
+    def test_updates_values_bumps_chart_and_returns_new_chart_version(
+        self,
+        monkeypatch,
+        make_temp_yaml_file,
+        sample_automation_values,
+        sample_automation_chart,
+    ):
+        """When values change, the automation chart version is bumped and returned."""
+        values_path = make_temp_yaml_file(sample_automation_values)
+        chart_path = make_temp_yaml_file(sample_automation_chart)
+        monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
+        monkeypatch.setattr("update_openhands_charts.AUTOMATION_CHART_PATH", chart_path)
+
+        new_version = update_automation_workflow(
+            DeployConfig(
+                runtime_api_sha="unused",
+                automation_sha="1234567890abcdef1234567890abcdef12345678",
+            ),
+            dry_run=False,
+        )
+
+        assert_file_contains(values_path, "tag: sha-1234567\n")
+        assert get_chart_value(chart_path, "version") == "0.1.2"
+        assert new_version == "0.1.2"
 
 
 class TestUpdateOpenhandsWorkflow:
