@@ -15,3 +15,6 @@ build/
 
 # create_github_app script
 scripts/create_github_app/keys/
+# mutmut mutation-testing artifacts (scripts/update_openhands_charts/setup.cfg)
+mutants/
+mutmut-stats.json

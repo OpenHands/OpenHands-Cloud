@@ -30,7 +30,23 @@ SANDBOX_SPEC_PATH = "openhands/app_server/sandbox/sandbox_spec_service.py"
 AGENT_SERVER_IMAGE_PATTERN = re.compile(r"AGENT_SERVER_IMAGE\s*=\s*'[^:]+:([^']+)'")
 SEPARATOR = "=" * 60
 SCRIPT_DIR = Path(__file__).parent
-REPO_ROOT = SCRIPT_DIR.parent.parent
+
+
+def find_repo_root(start: Path) -> Path:
+    """Walk up from start to the directory containing the managed trees.
+
+    The path constants below must resolve to the repo root even when the module
+    runs from a relocated copy (mutmut executes mutants from a mutants/
+    subdirectory). Falls back to the historical scripts/<name>/ grandparent
+    layout when no marker directories are found.
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / "charts").is_dir() and (candidate / "replicated").is_dir():
+            return candidate
+    return start.parent.parent
+
+
+REPO_ROOT = find_repo_root(SCRIPT_DIR)
 CHART_PATH = REPO_ROOT / "charts" / "openhands" / "Chart.yaml"
 VALUES_PATH = REPO_ROOT / "charts" / "openhands" / "values.yaml"
 RUNTIME_API_CHART_PATH = REPO_ROOT / "charts" / "runtime-api" / "Chart.yaml"

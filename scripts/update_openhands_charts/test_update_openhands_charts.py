@@ -184,6 +184,63 @@ class TestFormatShaTag:
         assert format_sha_tag(sha) == expected
 
 
+class TestFindRepoRoot:
+    """Tests for find_repo_root function.
+
+    The chart/config path constants must resolve to the repo root even when the
+    module runs from a relocated copy (mutmut executes mutants from a mutants/
+    subdirectory). A fixed parent.parent walk breaks there; discovery must walk
+    up to the directory that actually contains charts/ and replicated/.
+    """
+
+    def test_finds_marker_directory_above_relocated_module(self, tmp_path):
+        """Walking up from a nested copy finds the dir holding charts/ and replicated/."""
+        (tmp_path / "charts").mkdir()
+        (tmp_path / "replicated").mkdir()
+        relocated_dir = tmp_path / "scripts" / "update_openhands_charts" / "mutants"
+        relocated_dir.mkdir(parents=True)
+
+        assert update_openhands_charts.find_repo_root(relocated_dir) == tmp_path
+
+    def test_finds_marker_directory_from_canonical_script_location(self, tmp_path):
+        """The canonical scripts/<name>/ location resolves to the repo root."""
+        (tmp_path / "charts").mkdir()
+        (tmp_path / "replicated").mkdir()
+        script_dir = tmp_path / "scripts" / "update_openhands_charts"
+        script_dir.mkdir(parents=True)
+
+        assert update_openhands_charts.find_repo_root(script_dir) == tmp_path
+
+    @pytest.mark.parametrize("decoy_marker", ["charts", "replicated"])
+    def test_directory_with_single_marker_is_skipped(self, tmp_path, decoy_marker):
+        """A directory holding only one of the two managed trees is not the repo root.
+
+        Edge case rationale: scripts/ (or any intermediate dir) could plausibly
+        contain a charts/ or replicated/ folder of its own; the walk must require
+        BOTH markers, or path constants would anchor to the wrong directory.
+        """
+        (tmp_path / "charts").mkdir()
+        (tmp_path / "replicated").mkdir()
+        scripts_dir = tmp_path / "scripts"
+        (scripts_dir / decoy_marker).mkdir(parents=True)
+        script_dir = scripts_dir / "update_openhands_charts"
+        script_dir.mkdir()
+
+        assert update_openhands_charts.find_repo_root(script_dir) == tmp_path
+
+    def test_falls_back_to_grandparent_when_no_markers_found(self, tmp_path):
+        """Without marker dirs anywhere, fall back to the historical parent.parent layout."""
+        script_dir = tmp_path / "scripts" / "update_openhands_charts"
+        script_dir.mkdir(parents=True)
+
+        assert update_openhands_charts.find_repo_root(script_dir) == tmp_path
+
+    def test_module_repo_root_contains_real_chart_dirs(self):
+        """The module-level REPO_ROOT resolves to a directory with the managed trees."""
+        assert (update_openhands_charts.REPO_ROOT / "charts").is_dir()
+        assert (update_openhands_charts.REPO_ROOT / "replicated").is_dir()
+
+
 class TestGetCurrentAppVersion:
     """Tests for get_current_app_version function.
 
@@ -2260,6 +2317,24 @@ class TestUpdateImageLoaderWorkflow:
 
         assert values_path.read_text() == original_values
         assert chart_path.read_text() == original_chart
+
+    def test_narration_names_the_image_loader_chart_and_files(self, image_loader_paths, capsys):
+        """The workflow's output names the chart, both files, and the version bump.
+
+        This narration is operator-facing: release PR descriptions paste the
+        script output verbatim (e.g. PR #679), so reviewers rely on these lines
+        to see which chart and files were touched.
+        """
+        update_image_loader_workflow(NEW_RUNTIME_IMAGE_TAG, dry_run=False)
+
+        # Match whole lines (not substrings) so corrupted narration like
+        # "XXUpdating ...XX" can't satisfy the assertion.
+        out_lines = capsys.readouterr().out.splitlines()
+        assert "Updating image-loader chart..." in out_lines
+        assert "Updating image-loader values.yaml..." in out_lines
+        assert "Updating image-loader Chart.yaml..." in out_lines
+        expected_version = bump_patch_version(IMAGE_LOADER_CHART_VERSION)
+        assert f"Updated image-loader chart version: {IMAGE_LOADER_CHART_VERSION} -> {expected_version}" in out_lines
 
     def test_long_description_line_not_rewrapped_on_version_bump(self, image_loader_paths):
         """The chart's >80-char description stays on one line after a version bump.
