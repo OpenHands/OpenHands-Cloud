@@ -1292,6 +1292,37 @@ class TestUpdateReplicatedConfig:
         assert result.has_change_for("replicated config sandbox image tag help text")
         assert result.has_change_for("replicated config sandbox image tag default")
 
+    def test_never_crosses_into_sibling_option_when_fields_missing(self, make_temp_yaml_file):
+        """When the target option lacks the tag fields, sibling options are never rewritten.
+
+        Edge case rationale: the patterns skip lines lazily after the option name.
+        Without a guard stopping at the next `- name:` item, a custom_sandbox_image_tag
+        option missing its help_text/default would silently match — and corrupt — the
+        next option that happens to carry those fields.
+        """
+        config_file = make_temp_yaml_file("""\
+spec:
+  groups:
+    - name: sandbox
+      items:
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          type: text
+        - name: other_image_option
+          title: Other Image Option
+          help_text: Image tag, e.g. 9.9.9-other
+          type: text
+          default: "9.9.9-other"
+""")
+        original_content = config_file.read_text()
+
+        result = update_replicated_config(config_file, runtime_image_tag=NEW_RUNTIME_IMAGE_TAG)
+
+        assert config_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("replicated config sandbox image tag help text")
+        assert result.has_error_containing("replicated config sandbox image tag default")
+
     def test_reports_errors_when_sandbox_tag_option_missing(self, make_temp_yaml_file):
         """Test that a config without the custom_sandbox_image_tag option fails loudly.
 
@@ -1454,6 +1485,15 @@ class TestReplicatedPatternsMatchRealFile:
             "The agent-server image pattern stopped matching the real "
             "charts/image-loader/values.yaml. Fix the pattern: " + "; ".join(result.errors)
         )
+
+    def test_image_loader_chart_path_points_at_image_loader_chart(self):
+        """The chart-bump path constant must resolve to the real image-loader chart.
+
+        The workflow bumps whatever chart sits at IMAGE_LOADER_CHART_PATH; if the
+        constant drifted to another chart, releases would silently bump the wrong
+        chart's version while image-loader stayed stale.
+        """
+        assert get_chart_value(update_openhands_charts.IMAGE_LOADER_CHART_PATH, "name") == "image-loader"
 
 
 class TestConditionalChartVersionBump:
