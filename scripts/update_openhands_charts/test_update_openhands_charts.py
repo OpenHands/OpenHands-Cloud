@@ -2378,11 +2378,12 @@ class TestUpdateOpenhandsWorkflow:
 
     @pytest.fixture
     def patched_inner_calls(self, monkeypatch):
-        """Mock all four inner update functions and return MagicMocks for values/chart.
+        """Mock all four inner update functions.
 
-        Mocking update_replicated_openhands_values and update_replicated_config
-        is mandatory: without it, the workflow writes to the real
-        replicated/openhands.yaml and replicated/config.yaml on disk.
+        Return only the values/chart mocks asserted by this workflow-contract
+        test class. The replicated mocks are intentionally not returned here;
+        they are patched only to prevent writes to the real replicated files and
+        have dedicated assertions in the focused replicated workflow test classes.
         """
         mock_values = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
         mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult())
