@@ -1501,12 +1501,26 @@ class TestReplicatedPatternsMatchRealFile:
     a new conditional) breaks a pattern, the still-present ref it can no longer find
     surfaces as a 'Could not find ...' error and this test goes red — pointing at the
     pattern to fix before the script silently skips the ref in production.
+
+    Each canary copies the real file into tmp_path and runs the updater on the
+    copy: the patterns are still validated against real production content, but
+    nothing — not even a dry-run-bypassing mutation under mutation testing —
+    can write into the working tree.
     """
 
-    def test_every_agent_server_ref_in_real_file_is_matched(self):
+    @pytest.fixture
+    def copy_of_real_file(self, tmp_path):
+        """Factory: copy a real repo file into tmp_path and return the copy's path."""
+        def _copy(real_path):
+            copy_path = tmp_path / real_path.name
+            copy_path.write_text(real_path.read_text())
+            return copy_path
+        return _copy
+
+    def test_every_agent_server_ref_in_real_file_is_matched(self, copy_of_real_file):
         """Running the updater against the real file reports zero unmatched patterns."""
         result = update_replicated_openhands_values(
-            update_openhands_charts.REPLICATED_OPENHANDS_PATH,
+            copy_of_real_file(update_openhands_charts.REPLICATED_OPENHANDS_PATH),
             runtime_image_tag="0.0.0-canary",
             dry_run=True,
         )
@@ -1516,10 +1530,10 @@ class TestReplicatedPatternsMatchRealFile:
             "ref was wrapped in new templating. Loosen the affected pattern: " + "; ".join(result.errors)
         )
 
-    def test_every_sandbox_tag_ref_in_real_replicated_config_is_matched(self):
+    def test_every_sandbox_tag_ref_in_real_replicated_config_is_matched(self, copy_of_real_file):
         """Running the config updater against the real replicated/config.yaml reports zero unmatched patterns."""
         result = update_replicated_config(
-            update_openhands_charts.REPLICATED_CONFIG_PATH,
+            copy_of_real_file(update_openhands_charts.REPLICATED_CONFIG_PATH),
             runtime_image_tag="0.0.0-canary",
             dry_run=True,
         )
@@ -1530,10 +1544,10 @@ class TestReplicatedPatternsMatchRealFile:
             "affected pattern: " + "; ".join(result.errors)
         )
 
-    def test_agent_server_ref_in_real_image_loader_values_is_matched(self):
+    def test_agent_server_ref_in_real_image_loader_values_is_matched(self, copy_of_real_file):
         """Running the image-loader updater against the real values.yaml reports zero unmatched patterns."""
         result = update_image_loader_values(
-            update_openhands_charts.IMAGE_LOADER_VALUES_PATH,
+            copy_of_real_file(update_openhands_charts.IMAGE_LOADER_VALUES_PATH),
             runtime_image_tag="0.0.0-canary",
             dry_run=True,
         )
