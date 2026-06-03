@@ -69,6 +69,10 @@ RUNTIME_API_CHART_MINIMAL_APP_VERSION = "0.1.0"
 AUTOMATION_CHART_VERSION = "0.1.1"
 AUTOMATION_CHART_APP_VERSION = "0.1.0"
 
+# sample_image_loader_chart fixture values
+IMAGE_LOADER_CHART_VERSION = "0.1.6"
+IMAGE_LOADER_CHART_APP_VERSION = "1.0.0"
+
 # =============================================================================
 # Test input constants
 # These values are used as inputs when testing update operations.
@@ -361,6 +365,18 @@ dependencies:
 """
 
 
+@pytest.fixture
+def sample_image_loader_chart():
+    """Sample image-loader Chart.yaml (no dependencies, mirrors the real chart)."""
+    return """\
+apiVersion: v2
+name: image-loader
+description: A Helm chart for loading images on nodes using a DaemonSet with configurable runtime class
+version: 0.1.6
+appVersion: "1.0.0"
+"""
+
+
 # =============================================================================
 # Common values.yaml fixtures
 # =============================================================================
@@ -461,6 +477,65 @@ deployment:
     limits:
       memory: 512Mi
       cpu: 500m
+"""
+
+
+@pytest.fixture
+def sample_image_loader_values():
+    """Sample image-loader values.yaml with the agent-server image pre-loaded on nodes."""
+    return """\
+image:
+  repository: ghcr.io/openhands/agent-server
+  tag: 1.0.0-python
+  pullPolicy: Always
+
+runtimeClass: sysbox-runc
+
+nodeSelector:
+  sysbox-install: "yes"
+"""
+
+
+@pytest.fixture
+def sample_replicated_config():
+    """Sample replicated config.yaml with the custom_sandbox_image_tag option.
+
+    Mirrors the real replicated/config.yaml structure: the option carries the
+    agent-server tag in two places (the help_text example and the default
+    value), and sits between sibling options that also have defaults — those
+    must never be touched by the updater.
+    """
+    return """\
+apiVersion: kots.io/v1beta1
+kind: Config
+metadata:
+  name: openhands-config
+spec:
+  groups:
+    - name: sandbox
+      title: Sandbox
+      items:
+        - name: custom_sandbox_image_enabled
+          title: Use Custom Sandbox Image
+          type: bool
+          default: "0"
+        - name: custom_sandbox_image_repository
+          title: Sandbox Image Repository
+          help_text: 'Full repository path with no tag, e.g. my-registry.example.com/openhands/agent-server'
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          help_text: Image tag, e.g. 1.0.0-python
+          type: text
+          default: "1.0.0-python"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: sandbox_warm_runtime_count
+          title: Warm Runtime Count
+          type: text
+          default: "1"
 """
 
 
