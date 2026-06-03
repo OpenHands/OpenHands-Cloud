@@ -31,6 +31,7 @@ from conftest import (
     # Fixture baseline constants for self-documenting assertions
     AUTOMATION_CHART_APP_VERSION,
     AUTOMATION_CHART_VERSION,
+    IMAGE_LOADER_CHART_VERSION,
     OPENHANDS_CHART_VERSION,
     OPENHANDS_CHART_APP_VERSION,
     OPENHANDS_CHART_RUNTIME_API_VERSION,
@@ -62,9 +63,12 @@ from update_openhands_charts import (
     process_updates,
     resolve_openhands_version,
     update_automation_values,
+    update_image_loader_values,
+    update_image_loader_workflow,
     update_openhands_chart,
     update_openhands_values,
     update_openhands_workflow,
+    update_replicated_config,
     update_replicated_openhands_values,
     update_runtime_api_chart,
     update_runtime_api_values,
@@ -178,6 +182,63 @@ class TestFormatShaTag:
     def test_sha_tag_format_is_sha_prefix_followed_by_short_sha(self, sha, expected):
         """Verify SHA tag format follows the 'sha-<7-char-hash>' convention used in container registries."""
         assert format_sha_tag(sha) == expected
+
+
+class TestFindRepoRoot:
+    """Tests for find_repo_root function.
+
+    The chart/config path constants must resolve to the repo root even when the
+    module runs from a relocated copy (mutmut executes mutants from a mutants/
+    subdirectory). A fixed parent.parent walk breaks there; discovery must walk
+    up to the directory that actually contains charts/ and replicated/.
+    """
+
+    def test_finds_marker_directory_above_relocated_module(self, tmp_path):
+        """Walking up from a nested copy finds the dir holding charts/ and replicated/."""
+        (tmp_path / "charts").mkdir()
+        (tmp_path / "replicated").mkdir()
+        relocated_dir = tmp_path / "scripts" / "update_openhands_charts" / "mutants"
+        relocated_dir.mkdir(parents=True)
+
+        assert update_openhands_charts.find_repo_root(relocated_dir) == tmp_path
+
+    def test_finds_marker_directory_from_canonical_script_location(self, tmp_path):
+        """The canonical scripts/<name>/ location resolves to the repo root."""
+        (tmp_path / "charts").mkdir()
+        (tmp_path / "replicated").mkdir()
+        script_dir = tmp_path / "scripts" / "update_openhands_charts"
+        script_dir.mkdir(parents=True)
+
+        assert update_openhands_charts.find_repo_root(script_dir) == tmp_path
+
+    @pytest.mark.parametrize("decoy_marker", ["charts", "replicated"])
+    def test_directory_with_single_marker_is_skipped(self, tmp_path, decoy_marker):
+        """A directory holding only one of the two managed trees is not the repo root.
+
+        Edge case rationale: scripts/ (or any intermediate dir) could plausibly
+        contain a charts/ or replicated/ folder of its own; the walk must require
+        BOTH markers, or path constants would anchor to the wrong directory.
+        """
+        (tmp_path / "charts").mkdir()
+        (tmp_path / "replicated").mkdir()
+        scripts_dir = tmp_path / "scripts"
+        (scripts_dir / decoy_marker).mkdir(parents=True)
+        script_dir = scripts_dir / "update_openhands_charts"
+        script_dir.mkdir()
+
+        assert update_openhands_charts.find_repo_root(script_dir) == tmp_path
+
+    def test_falls_back_to_grandparent_when_no_markers_found(self, tmp_path):
+        """Without marker dirs anywhere, fall back to the historical parent.parent layout."""
+        script_dir = tmp_path / "scripts" / "update_openhands_charts"
+        script_dir.mkdir(parents=True)
+
+        assert update_openhands_charts.find_repo_root(script_dir) == tmp_path
+
+    def test_module_repo_root_contains_real_chart_dirs(self):
+        """The module-level REPO_ROOT resolves to a directory with the managed trees."""
+        assert (update_openhands_charts.REPO_ROOT / "charts").is_dir()
+        assert (update_openhands_charts.REPO_ROOT / "replicated").is_dir()
 
 
 class TestGetCurrentAppVersion:
@@ -1182,6 +1243,252 @@ class TestUpdateReplicatedOpenhandsValues:
         assert reapplied_replicated_wrapper_result.is_unchanged(unchanged_key)
 
 
+class TestUpdateReplicatedConfig:
+    """Tests for replicated/config.yaml sandbox image tag updates.
+
+    The KOTS config screen carries its own copy of the agent-server tag in the
+    custom_sandbox_image_tag option: once as the help_text example and once as
+    the default value shown to admins. PR #679 had to bump both by hand because
+    the script didn't reach this file.
+    """
+
+    @pytest.fixture
+    def temp_replicated_config_file(self, make_temp_yaml_file, sample_replicated_config):
+        """Create a temporary replicated config.yaml file."""
+        return make_temp_yaml_file(sample_replicated_config)
+
+    @pytest.mark.parametrize("expected_content", [
+        pytest.param(f"help_text: Image tag, e.g. {NEW_RUNTIME_IMAGE_TAG}\n", id="help_text example tag"),
+        pytest.param(f'default: "{NEW_RUNTIME_IMAGE_TAG}"\n', id="default tag"),
+    ])
+    def test_sandbox_image_tag_locations_updated(self, temp_replicated_config_file, expected_content):
+        """Test that both sandbox image tag locations in the config option are updated."""
+        update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+        assert_file_contains(temp_replicated_config_file, expected_content)
+
+    @pytest.mark.parametrize("change_key", [
+        "replicated config sandbox image tag help text",
+        "replicated config sandbox image tag default",
+    ])
+    def test_result_records_replicated_config_change(self, temp_replicated_config_file, change_key):
+        """Test that each sandbox image tag key is recorded as changed in the result."""
+        result = update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+        assert result.has_change_for(change_key)
+
+    def test_sibling_option_defaults_untouched(self, temp_replicated_config_file):
+        """Test that defaults of neighboring config options are never modified.
+
+        Edge case rationale: config.yaml holds dozens of options with their own
+        default values. A pattern that matches too broadly (e.g. any default:
+        after the option name, crossing into the next list item) would silently
+        rewrite unrelated admin-facing defaults.
+        """
+        update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+        assert_file_contains_all(temp_replicated_config_file, [
+            'default: "0"',   # custom_sandbox_image_enabled
+            'default: "1"',   # sandbox_warm_runtime_count
+            "my-registry.example.com/openhands/agent-server",  # repository help_text
+        ])
+
+    @pytest.fixture
+    def reapplied_replicated_config_result(self, temp_replicated_config_file):
+        """Apply identical config values twice and return the second-call UpdateResult."""
+        update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+        return update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+    def test_reapplying_same_config_values_reports_no_changes(self, reapplied_replicated_config_result):
+        """Reapplying the identical tag sets has_changes=False."""
+        assert reapplied_replicated_config_result.has_changes is False
+
+    @pytest.mark.parametrize("unchanged_key", [
+        "replicated config sandbox image tag help text",
+        "replicated config sandbox image tag default",
+    ])
+    def test_reapplying_same_config_values_marks_key_unchanged(self, reapplied_replicated_config_result, unchanged_key):
+        """Each sandbox image tag key is reported as unchanged when reapplied."""
+        assert reapplied_replicated_config_result.is_unchanged(unchanged_key)
+
+    def test_dry_run_no_file_changes(self, temp_replicated_config_file):
+        """Test that dry-run doesn't modify the file."""
+        original_content = temp_replicated_config_file.read_text()
+
+        update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+            dry_run=True,
+        )
+
+        assert temp_replicated_config_file.read_text() == original_content
+
+    def test_dry_run_still_records_changes(self, temp_replicated_config_file):
+        """Test that dry-run still records what would be changed."""
+        result = update_replicated_config(
+            temp_replicated_config_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+            dry_run=True,
+        )
+
+        assert result.has_change_for("replicated config sandbox image tag help text")
+        assert result.has_change_for("replicated config sandbox image tag default")
+
+    def test_never_crosses_into_sibling_option_when_fields_missing(self, make_temp_yaml_file):
+        """When the target option lacks the tag fields, sibling options are never rewritten.
+
+        Edge case rationale: the patterns skip lines lazily after the option name.
+        Without a guard stopping at the next `- name:` item, a custom_sandbox_image_tag
+        option missing its help_text/default would silently match — and corrupt — the
+        next option that happens to carry those fields.
+        """
+        config_file = make_temp_yaml_file("""\
+spec:
+  groups:
+    - name: sandbox
+      items:
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          type: text
+        - name: other_image_option
+          title: Other Image Option
+          help_text: Image tag, e.g. 9.9.9-other
+          type: text
+          default: "9.9.9-other"
+""")
+        original_content = config_file.read_text()
+
+        result = update_replicated_config(config_file, runtime_image_tag=NEW_RUNTIME_IMAGE_TAG)
+
+        assert config_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("replicated config sandbox image tag help text")
+        assert result.has_error_containing("replicated config sandbox image tag default")
+
+    def test_reports_errors_when_sandbox_tag_option_missing(self, make_temp_yaml_file):
+        """Test that a config without the custom_sandbox_image_tag option fails loudly.
+
+        Edge case rationale: if the option is renamed or restructured, the script
+        must not silently skip it — that is exactly the gap that forced the manual
+        edit in PR #679.
+        """
+        config_file = make_temp_yaml_file("""\
+spec:
+  groups:
+    - name: sandbox
+      items:
+        - name: some_other_option
+          type: text
+          default: "value"
+""")
+        original_content = config_file.read_text()
+
+        result = update_replicated_config(config_file, runtime_image_tag=NEW_RUNTIME_IMAGE_TAG)
+
+        assert config_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("replicated config sandbox image tag help text")
+        assert result.has_error_containing("replicated config sandbox image tag default")
+
+
+class TestUpdateImageLoaderValues:
+    """Tests for charts/image-loader/values.yaml agent-server image updates.
+
+    The image-loader DaemonSet pre-pulls the agent-server image onto nodes; its
+    tag must track the sandbox spec tag or nodes warm the wrong image. PR #679
+    had to bump it by hand because the script didn't reach this chart.
+    """
+
+    @pytest.fixture
+    def temp_image_loader_values_file(self, make_temp_yaml_file, sample_image_loader_values):
+        """Create a temporary image-loader values.yaml file."""
+        return make_temp_yaml_file(sample_image_loader_values)
+
+    def test_updates_agent_server_image_tag(self, temp_image_loader_values_file):
+        """Test that the agent-server image tag is updated."""
+        result = update_image_loader_values(
+            temp_image_loader_values_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+        assert_file_contains(temp_image_loader_values_file, f"tag: {NEW_RUNTIME_IMAGE_TAG}\n")
+        assert result.has_changes is True
+
+    def test_result_records_image_loader_change(self, temp_image_loader_values_file):
+        """Test that the image-loader tag key is recorded as changed in the result."""
+        result = update_image_loader_values(
+            temp_image_loader_values_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+        assert result.has_change_for("image-loader image tag")
+
+    def test_idempotent_when_reapplying_same_tag(self, temp_image_loader_values_file):
+        """Test that applying the tag already in the file reports no changes."""
+        result = update_image_loader_values(
+            temp_image_loader_values_file,
+            runtime_image_tag=RUNTIME_IMAGE_TAG,
+        )
+
+        assert result.has_changes is False
+        assert result.is_unchanged("image-loader image tag")
+
+    def test_preserves_other_content(self, temp_image_loader_values_file):
+        """Test that other content in values.yaml is preserved."""
+        update_image_loader_values(
+            temp_image_loader_values_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
+        assert_file_contains_all(temp_image_loader_values_file, [
+            "pullPolicy: Always",
+            "runtimeClass: sysbox-runc",
+            'sysbox-install: "yes"',
+        ])
+
+    def test_dry_run_no_file_changes(self, temp_image_loader_values_file):
+        """Test that dry-run doesn't modify the file."""
+        original_content = temp_image_loader_values_file.read_text()
+
+        update_image_loader_values(
+            temp_image_loader_values_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+            dry_run=True,
+        )
+
+        assert temp_image_loader_values_file.read_text() == original_content
+
+    def test_reports_error_when_agent_server_image_missing(self, make_temp_yaml_file):
+        """Test that a values.yaml without the agent-server image fails loudly."""
+        values_file = make_temp_yaml_file("""\
+image:
+  repository: ghcr.io/other/image
+  tag: v1.0.0
+""")
+        original_content = values_file.read_text()
+
+        result = update_image_loader_values(values_file, runtime_image_tag=NEW_RUNTIME_IMAGE_TAG)
+
+        assert values_file.read_text() == original_content
+        assert result.has_changes is False
+        assert result.has_error_containing("Could not find image-loader image tag")
+
+
 class TestReplicatedPatternsMatchRealFile:
     """Regression canary: the agent-server patterns must still anchor on the real
     replicated/openhands.yaml, not just on the conftest fixture.
@@ -1194,12 +1501,26 @@ class TestReplicatedPatternsMatchRealFile:
     a new conditional) breaks a pattern, the still-present ref it can no longer find
     surfaces as a 'Could not find ...' error and this test goes red — pointing at the
     pattern to fix before the script silently skips the ref in production.
+
+    Each canary copies the real file into tmp_path and runs the updater on the
+    copy: the patterns are still validated against real production content, but
+    nothing — not even a dry-run-bypassing mutation under mutation testing —
+    can write into the working tree.
     """
 
-    def test_every_agent_server_ref_in_real_file_is_matched(self):
+    @pytest.fixture
+    def copy_of_real_file(self, tmp_path):
+        """Factory: copy a real repo file into tmp_path and return the copy's path."""
+        def _copy(real_path):
+            copy_path = tmp_path / real_path.name
+            copy_path.write_text(real_path.read_text())
+            return copy_path
+        return _copy
+
+    def test_every_agent_server_ref_in_real_file_is_matched(self, copy_of_real_file):
         """Running the updater against the real file reports zero unmatched patterns."""
         result = update_replicated_openhands_values(
-            update_openhands_charts.REPLICATED_OPENHANDS_PATH,
+            copy_of_real_file(update_openhands_charts.REPLICATED_OPENHANDS_PATH),
             runtime_image_tag="0.0.0-canary",
             dry_run=True,
         )
@@ -1208,6 +1529,42 @@ class TestReplicatedPatternsMatchRealFile:
             "A pattern stopped matching the real replicated/openhands.yaml — likely a "
             "ref was wrapped in new templating. Loosen the affected pattern: " + "; ".join(result.errors)
         )
+
+    def test_every_sandbox_tag_ref_in_real_replicated_config_is_matched(self, copy_of_real_file):
+        """Running the config updater against the real replicated/config.yaml reports zero unmatched patterns."""
+        result = update_replicated_config(
+            copy_of_real_file(update_openhands_charts.REPLICATED_CONFIG_PATH),
+            runtime_image_tag="0.0.0-canary",
+            dry_run=True,
+        )
+
+        assert result.errors == [], (
+            "A pattern stopped matching the real replicated/config.yaml — likely the "
+            "custom_sandbox_image_tag option was renamed or restructured. Fix the "
+            "affected pattern: " + "; ".join(result.errors)
+        )
+
+    def test_agent_server_ref_in_real_image_loader_values_is_matched(self, copy_of_real_file):
+        """Running the image-loader updater against the real values.yaml reports zero unmatched patterns."""
+        result = update_image_loader_values(
+            copy_of_real_file(update_openhands_charts.IMAGE_LOADER_VALUES_PATH),
+            runtime_image_tag="0.0.0-canary",
+            dry_run=True,
+        )
+
+        assert result.errors == [], (
+            "The agent-server image pattern stopped matching the real "
+            "charts/image-loader/values.yaml. Fix the pattern: " + "; ".join(result.errors)
+        )
+
+    def test_image_loader_chart_path_points_at_image_loader_chart(self):
+        """The chart-bump path constant must resolve to the real image-loader chart.
+
+        The workflow bumps whatever chart sits at IMAGE_LOADER_CHART_PATH; if the
+        constant drifted to another chart, releases would silently bump the wrong
+        chart's version while image-loader stayed stale.
+        """
+        assert get_chart_value(update_openhands_charts.IMAGE_LOADER_CHART_PATH, "name") == "image-loader"
 
 
 class TestConditionalChartVersionBump:
@@ -1784,17 +2141,41 @@ class TestProcessUpdates:
         )
         mock_update_runtime_api = MagicMock(return_value="0.1.21")
         mock_update_automation = MagicMock(return_value="0.1.2")
+        mock_update_image_loader = MagicMock()
         mock_update_openhands = MagicMock()
         monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", mock_update_runtime_api)
         monkeypatch.setattr("update_openhands_charts.update_automation_workflow", mock_update_automation)
+        monkeypatch.setattr("update_openhands_charts.update_image_loader_workflow", mock_update_image_loader)
         monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", mock_update_openhands)
 
         process_updates("token")
 
         mock_update_runtime_api.assert_not_called()
         mock_update_automation.assert_not_called()
+        mock_update_image_loader.assert_not_called()
         mock_update_openhands.assert_not_called()
         assert "AUTOMATION_SHA missing from deploy config" in capsys.readouterr().out
+
+    def test_invokes_image_loader_workflow_with_runtime_image_tag(self, monkeypatch, stub_process_updates_chain):
+        """When all upstream data is available, the image-loader workflow runs with the sandbox tag.
+
+        PR #679 gap: the image-loader chart pins the same agent-server image that
+        nodes pre-pull; process_updates must include it in the release sweep.
+        """
+        stub_process_updates_chain()
+        monkeypatch.setattr(
+            "update_openhands_charts.get_deploy_config",
+            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha="auto-sha"),
+        )
+        monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", MagicMock(return_value="0.1.21"))
+        monkeypatch.setattr("update_openhands_charts.update_automation_workflow", MagicMock(return_value="0.1.2"))
+        monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", MagicMock())
+        mock_update_image_loader = MagicMock()
+        monkeypatch.setattr("update_openhands_charts.update_image_loader_workflow", mock_update_image_loader)
+
+        process_updates("token", dry_run=True)
+
+        mock_update_image_loader.assert_called_once_with("1.20.0-python", True)
 
 
 class TestUpdateRuntimeApiWorkflow:
@@ -1907,6 +2288,86 @@ class TestUpdateAutomationWorkflow:
         assert new_version == "0.1.2"
 
 
+class TestUpdateImageLoaderWorkflow:
+    """Tests for update_image_loader_workflow orchestration.
+
+    Like the other per-chart workflows: update values.yaml, then bump the
+    chart version only when values actually changed.
+    """
+
+    @pytest.fixture
+    def image_loader_paths(self, monkeypatch, make_temp_yaml_file, sample_image_loader_values, sample_image_loader_chart):
+        """Point the workflow at temporary copies of the image-loader chart files."""
+        values_path = make_temp_yaml_file(sample_image_loader_values)
+        chart_path = make_temp_yaml_file(sample_image_loader_chart)
+        monkeypatch.setattr("update_openhands_charts.IMAGE_LOADER_VALUES_PATH", values_path)
+        monkeypatch.setattr("update_openhands_charts.IMAGE_LOADER_CHART_PATH", chart_path)
+        return values_path, chart_path
+
+    def test_updates_values_and_bumps_chart_version(self, image_loader_paths):
+        """When the tag changes, values.yaml is updated and the chart version is bumped."""
+        values_path, chart_path = image_loader_paths
+
+        update_image_loader_workflow(NEW_RUNTIME_IMAGE_TAG, dry_run=False)
+
+        assert_file_contains(values_path, f"tag: {NEW_RUNTIME_IMAGE_TAG}\n")
+        assert get_chart_value(chart_path, "version") == bump_patch_version(IMAGE_LOADER_CHART_VERSION)
+
+    def test_no_chart_bump_when_values_already_current(self, image_loader_paths):
+        """When the tag already matches, the chart version is not bumped."""
+        _, chart_path = image_loader_paths
+
+        update_image_loader_workflow(RUNTIME_IMAGE_TAG, dry_run=False)
+
+        assert get_chart_value(chart_path, "version") == IMAGE_LOADER_CHART_VERSION
+
+    def test_dry_run_no_file_changes(self, image_loader_paths):
+        """Dry-run leaves both image-loader files untouched."""
+        values_path, chart_path = image_loader_paths
+        original_values = values_path.read_text()
+        original_chart = chart_path.read_text()
+
+        update_image_loader_workflow(NEW_RUNTIME_IMAGE_TAG, dry_run=True)
+
+        assert values_path.read_text() == original_values
+        assert chart_path.read_text() == original_chart
+
+    def test_narration_names_the_image_loader_chart_and_files(self, image_loader_paths, capsys):
+        """The workflow's output names the chart, both files, and the version bump.
+
+        This narration is operator-facing: release PR descriptions paste the
+        script output verbatim (e.g. PR #679), so reviewers rely on these lines
+        to see which chart and files were touched.
+        """
+        update_image_loader_workflow(NEW_RUNTIME_IMAGE_TAG, dry_run=False)
+
+        # Match whole lines (not substrings) so corrupted narration like
+        # "XXUpdating ...XX" can't satisfy the assertion.
+        out_lines = capsys.readouterr().out.splitlines()
+        assert "Updating image-loader chart..." in out_lines
+        assert "Updating image-loader values.yaml..." in out_lines
+        assert "Updating image-loader Chart.yaml..." in out_lines
+        expected_version = bump_patch_version(IMAGE_LOADER_CHART_VERSION)
+        assert f"Updated image-loader chart version: {IMAGE_LOADER_CHART_VERSION} -> {expected_version}" in out_lines
+
+    def test_long_description_line_not_rewrapped_on_version_bump(self, image_loader_paths):
+        """The chart's >80-char description stays on one line after a version bump.
+
+        Edge case rationale: the YAML writer wraps long scalars at its default
+        width, which would rewrite the image-loader description as a folded
+        two-line scalar (with trailing whitespace) on every release — a noisy,
+        unrelated diff in each version-bump PR.
+        """
+        _, chart_path = image_loader_paths
+
+        update_image_loader_workflow(NEW_RUNTIME_IMAGE_TAG, dry_run=False)
+
+        assert_file_contains(
+            chart_path,
+            "description: A Helm chart for loading images on nodes using a DaemonSet with configurable runtime class\n",
+        )
+
+
 class TestUpdateOpenhandsWorkflow:
     """Tests for update_openhands_workflow orchestration.
 
@@ -1917,16 +2378,20 @@ class TestUpdateOpenhandsWorkflow:
 
     @pytest.fixture
     def patched_inner_calls(self, monkeypatch):
-        """Mock all three inner update functions and return their MagicMocks.
+        """Mock all four inner update functions.
 
-        Mocking update_replicated_openhands_values is mandatory: without it,
-        the workflow writes to the real replicated/openhands.yaml on disk.
+        Return only the values/chart mocks asserted by this workflow-contract
+        test class. The replicated mocks are intentionally not returned here;
+        they are patched only to prevent writes to the real replicated files and
+        have dedicated assertions in the focused replicated workflow test classes.
         """
         mock_values = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
         mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult())
+        mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
         mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
         monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
         monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
+        monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
         monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
         return mock_values, mock_chart
 
@@ -1938,6 +2403,10 @@ class TestUpdateOpenhandsWorkflow:
         )
         monkeypatch.setattr(
             "update_openhands_charts.update_replicated_openhands_values",
+            MagicMock(return_value=update_openhands_charts.UpdateResult()),
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.update_replicated_config",
             MagicMock(return_value=update_openhands_charts.UpdateResult()),
         )
         mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
@@ -1961,6 +2430,10 @@ class TestUpdateOpenhandsWorkflow:
         )
         monkeypatch.setattr(
             "update_openhands_charts.update_replicated_openhands_values",
+            MagicMock(return_value=update_openhands_charts.UpdateResult()),
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.update_replicated_config",
             MagicMock(return_value=update_openhands_charts.UpdateResult()),
         )
         mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
@@ -2059,12 +2532,14 @@ class TestUpdateOpenhandsWorkflowReplicated:
 
     @pytest.fixture
     def patched_inner_calls(self, monkeypatch):
-        """Mock all three inner update functions and return their MagicMocks."""
+        """Mock all four inner update functions and return the first three MagicMocks."""
         mock_values = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
         mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
+        mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
         mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
         monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
         monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
+        monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
         monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
         return mock_values, mock_replicated, mock_chart
 
@@ -2112,6 +2587,71 @@ class TestUpdateOpenhandsWorkflowReplicated:
         assert mock_replicated.call_args.kwargs["dry_run"] is dry_run
 
 
+class TestUpdateOpenhandsWorkflowReplicatedConfig:
+    """Tests that update_openhands_workflow also updates replicated/config.yaml.
+
+    The KOTS config screen embeds the agent-server tag in the
+    custom_sandbox_image_tag option (help_text example + default). The workflow
+    must update that file too, or Replicated admins see a stale default tag.
+    """
+
+    @pytest.fixture
+    def patched_inner_calls(self, monkeypatch):
+        """Mock all four inner update functions; return the replicated-config MagicMock."""
+        monkeypatch.setattr(
+            "update_openhands_charts.update_openhands_values",
+            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.update_replicated_openhands_values",
+            MagicMock(return_value=update_openhands_charts.UpdateResult()),
+        )
+        mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
+        monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
+        monkeypatch.setattr(
+            "update_openhands_charts.update_openhands_chart",
+            MagicMock(return_value=update_openhands_charts.UpdateResult()),
+        )
+        return mock_replicated_config
+
+    def test_replicated_config_updater_invoked_with_replicated_config_path(self, patched_inner_calls):
+        """The workflow points the config updater at replicated/config.yaml."""
+        update_openhands_workflow(
+            DeployConfig(runtime_api_sha="abc"),
+            openhands_version="cloud-1.0.0",
+            runtime_api_version="0.1.0",
+            runtime_image_tag="tag",
+            dry_run=False,
+        )
+
+        assert patched_inner_calls.call_args.args[0] == update_openhands_charts.REPLICATED_CONFIG_PATH
+
+    def test_replicated_config_updater_receives_runtime_image_tag(self, patched_inner_calls):
+        """runtime_image_tag is forwarded to the config updater."""
+        update_openhands_workflow(
+            DeployConfig(runtime_api_sha="abc"),
+            openhands_version="cloud-1.0.0",
+            runtime_api_version="0.1.0",
+            runtime_image_tag="9.9.9-python",
+            dry_run=False,
+        )
+
+        assert patched_inner_calls.call_args.args[1] == "9.9.9-python"
+
+    @pytest.mark.parametrize("dry_run", [True, False])
+    def test_replicated_config_updater_receives_dry_run(self, patched_inner_calls, dry_run):
+        """The dry_run flag is forwarded to the config updater."""
+        update_openhands_workflow(
+            DeployConfig(runtime_api_sha="abc"),
+            openhands_version="cloud-1.0.0",
+            runtime_api_version="0.1.0",
+            runtime_image_tag="tag",
+            dry_run=dry_run,
+        )
+
+        assert patched_inner_calls.call_args.kwargs["dry_run"] is dry_run
+
+
 class TestParseArgs:
     """Tests for command-line argument parsing."""
 
@@ -2121,7 +2661,13 @@ class TestParseArgs:
             parse_args(["--help"])
 
         assert exc_info.value.code == 0
-        assert "Update OpenHands, runtime-api, and automation charts based on a SaaS deploy." in capsys.readouterr().out
+        # argparse wraps the description to the terminal width, so normalize
+        # whitespace before matching to stay independent of where it breaks lines.
+        normalized_output = " ".join(capsys.readouterr().out.split())
+        assert (
+            "Update OpenHands, runtime-api, automation, and image-loader charts based on a SaaS deploy."
+            in normalized_output
+        )
 
 
 class TestMainOutputMessages:
