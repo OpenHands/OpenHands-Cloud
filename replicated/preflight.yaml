@@ -1,0 +1,280 @@
+# Validates, at the pre-install preflight gate (and re-runnable from the Admin
+# Console), that the uploaded TLS certificate covers every hostname OpenHands
+# will serve and that those hostnames resolve in DNS. The cert regex in
+# config.yaml only checks the PEM shape; this checks the cert actually matches
+# the provisioned domains, so a missing SAN or forgotten DNS record surfaces
+# before it becomes broken TLS / stuck runtimes.
+#
+# A single runPod runs `openssl` + busybox `nslookup` (the built-in certificates
+# analyzer checks expiry only, not SAN/hostname coverage). The cert and hostnames
+# are injected from KOTS config — the openhands-tls secret does not exist yet at
+# the gate. The pod prints stable SAN_<svc>=OK|FAIL / DNS_<svc>=OK|FAIL tokens
+# that the textAnalyze analyzers below turn into per-hostname warnings.
+#
+# Hostnames mirror replicated/openhands.yaml. Sandbox runtime routing decides the
+# runtime-domain SAN (config.yaml): subdomain routing serves {id}.{runtime_base}
+# and needs a wildcard "*.{runtime_base}"; path routing serves {runtime_base}/{id}
+# and needs the exact "{runtime_base}".
+apiVersion: troubleshoot.sh/v1beta2
+kind: Preflight
+metadata:
+  name: openhands-tls-hostname-preflight
+spec:
+  collectors:
+    - runPod:
+        name: tls-hostname-check
+        # default exists at the pre-install gate (the openhands namespace may not
+        # yet); KOTS injects the proxy pull secret onto the pod regardless of ns.
+        namespace: default
+        timeout: 90s
+        podSpec:
+          restartPolicy: Never
+          # Satisfy restricted Pod Security Standards (also satisfies baseline);
+          # the probe reads the cert from an env var, so no writable filesystem.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: probe
+              # alpine/openssl ships openssl + busybox (sh, base64, nslookup). Its
+              # ENTRYPOINT is `openssl`, so we override command with /bin/sh -c.
+              # Hardcoded proxy URL; airgap installs are rewritten to the local
+              # registry by KOTS automatically.
+              image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug" }}/docker.io/alpine/openssl:3.5.6'
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+
+                  # Decode the uploaded cert (ConfigOption returns base64 of the
+                  # file) and pull the leaf cert's DNS SANs into a newline list.
+                  # openssl x509 reads only the first PEM block, so a full chain
+                  # still yields the leaf's SANs.
+                  CERT_PEM=$(printf '%s' "${CERT_B64:-}" | base64 -d 2>/dev/null)
+                  SANS=$(printf '%s' "$CERT_PEM" | openssl x509 -noout -ext subjectAltName 2>/dev/null \
+                    | tr ',' '\n' | sed -n 's/.*DNS:\([^,[:space:]]*\).*/\1/p')
+
+                  # Exact literal SAN present (used for the "*.{base}" requirement).
+                  has_literal() { printf '%s\n' "$SANS" | grep -qxF "$1"; }
+
+                  # Does any SAN cover $1? Exact match, or a "*.parent" wildcard
+                  # matching exactly one left-most label (RFC 6125: *.example.com
+                  # matches a.example.com, not a.b.example.com and not example.com).
+                  covers() {
+                    _host="$1"
+                    printf '%s\n' "$SANS" | while IFS= read -r _s; do
+                      [ -z "$_s" ] && continue
+                      if [ "$_s" = "$_host" ]; then echo M; break; fi
+                      case "$_s" in
+                        \*.*)
+                          _suf=${_s#\*}
+                          _rest=${_host%"$_suf"}
+                          if [ "$_rest" != "$_host" ] && [ -n "$_rest" ]; then
+                            case "$_rest" in
+                              *.*) ;;
+                              *) echo M; break ;;
+                            esac
+                          fi
+                          ;;
+                      esac
+                    done | grep -q M
+                  }
+
+                  # Resolve $1. busybox nslookup exit codes are unreliable, so
+                  # parse stdout: answers follow the "Name:" line (the first
+                  # Address line is the resolver itself).
+                  dns_ok() {
+                    printf '%s\n' "$(nslookup "$1" 2>/dev/null)" | sed -n '/^Name:/,$p' | grep -qE '^Address'
+                  }
+
+                  check_san() { if covers "$2"; then echo "SAN_$1=OK"; else echo "SAN_$1=FAIL"; fi; }
+                  check_dns() { if dns_ok "$2"; then echo "DNS_$1=OK"; else echo "DNS_$1=FAIL"; fi; }
+
+                  check_san APP   "$H_APP";   check_dns APP   "$H_APP"
+                  check_san AUTH  "$H_AUTH";  check_dns AUTH  "$H_AUTH"
+                  check_san LLM   "$H_LLM";   check_dns LLM   "$H_LLM"
+                  check_san RTAPI "$H_RTAPI"; check_dns RTAPI "$H_RTAPI"
+
+                  # Runtime base: subdomain needs a literal "*.{base}" SAN and a
+                  # wildcard DNS record (probe a synthetic subdomain); path needs
+                  # the exact "{base}" SAN and "{base}" itself to resolve.
+                  if [ "$ROUTING" = "subdomain" ]; then
+                    if has_literal "*.$H_RTBASE"; then echo "SAN_RTBASE=OK"; else echo "SAN_RTBASE=FAIL"; fi
+                    check_dns RTBASE "dns-preflight-probe.$H_RTBASE"
+                  else
+                    check_san RTBASE "$H_RTBASE"
+                    check_dns RTBASE "$H_RTBASE"
+                  fi
+
+                  # Analytics ingress only exists when analytics is enabled; the
+                  # matching analyzers are excluded otherwise.
+                  if [ "$ANALYTICS_ON" = "1" ]; then
+                    check_san ANALYTICS "$H_ANALYTICS"; check_dns ANALYTICS "$H_ANALYTICS"
+                  fi
+              env:
+                - name: CERT_B64
+                  value: '{{repl ConfigOption "tls_certificate" }}'
+                - name: ROUTING
+                  value: '{{repl ConfigOption "runtime_routing_mode" }}'
+                - name: ANALYTICS_ON
+                  value: '{{repl ConfigOption "analytics_enabled" }}'
+                - name: H_APP
+                  value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
+                - name: H_AUTH
+                  value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}}'
+                - name: H_LLM
+                  value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}}'
+                - name: H_RTAPI
+                  value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime-api.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_api_hostname"}}{{repl end}}'
+                - name: H_RTBASE
+                  value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}'
+                - name: H_ANALYTICS
+                  value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+  analyzers:
+    # --- Application ---
+    - textAnalyze:
+        checkName: "TLS certificate covers the application hostname"
+        fileName: tls-hostname-check
+        regex: '(?m)^SAN_APP=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The application hostname is included in the certificate SANs."
+          - warn:
+              when: "false"
+              message: 'The TLS certificate has no SAN covering {{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}. HTTPS to the OpenHands app will fail until the certificate includes this name (or a matching wildcard).'
+    - textAnalyze:
+        checkName: "Application hostname resolves in DNS"
+        fileName: tls-hostname-check
+        regex: '(?m)^DNS_APP=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The application hostname resolves."
+          - warn:
+              when: "false"
+              message: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress before users connect.'
+    # --- Authentication (Keycloak) ---
+    - textAnalyze:
+        checkName: "TLS certificate covers the authentication hostname"
+        fileName: tls-hostname-check
+        regex: '(?m)^SAN_AUTH=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The authentication hostname is included in the certificate SANs."
+          - warn:
+              when: "false"
+              message: 'The TLS certificate has no SAN covering {{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}}. Keycloak sign-in will fail until the certificate includes this name (or a matching wildcard).'
+    - textAnalyze:
+        checkName: "Authentication hostname resolves in DNS"
+        fileName: tls-hostname-check
+        regex: '(?m)^DNS_AUTH=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The authentication hostname resolves."
+          - warn:
+              when: "false"
+              message: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress before users connect.'
+    # --- LiteLLM proxy ---
+    - textAnalyze:
+        checkName: "TLS certificate covers the LLM proxy hostname"
+        fileName: tls-hostname-check
+        regex: '(?m)^SAN_LLM=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The LLM proxy hostname is included in the certificate SANs."
+          - warn:
+              when: "false"
+              message: 'The TLS certificate has no SAN covering {{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}}. The LiteLLM proxy ingress will fail TLS until the certificate includes this name (or a matching wildcard).'
+    - textAnalyze:
+        checkName: "LLM proxy hostname resolves in DNS"
+        fileName: tls-hostname-check
+        regex: '(?m)^DNS_LLM=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The LLM proxy hostname resolves."
+          - warn:
+              when: "false"
+              message: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress.'
+    # --- Runtime API ---
+    - textAnalyze:
+        checkName: "TLS certificate covers the runtime API hostname"
+        fileName: tls-hostname-check
+        regex: '(?m)^SAN_RTAPI=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The runtime API hostname is included in the certificate SANs."
+          - warn:
+              when: "false"
+              message: 'The TLS certificate has no SAN covering {{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime-api.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_api_hostname"}}{{repl end}}. The runtime API ingress will fail TLS until the certificate includes this name (or a matching wildcard).'
+    - textAnalyze:
+        checkName: "Runtime API hostname resolves in DNS"
+        fileName: tls-hostname-check
+        regex: '(?m)^DNS_RTAPI=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The runtime API hostname resolves."
+          - warn:
+              when: "false"
+              message: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime-api.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_api_hostname"}}{{repl end}} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress.'
+    # --- Sandbox runtime domain (wildcard for subdomain routing, exact for path) ---
+    - textAnalyze:
+        checkName: "TLS certificate covers the sandbox runtime domain"
+        fileName: tls-hostname-check
+        regex: '(?m)^SAN_RTBASE=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The sandbox runtime domain is covered by the certificate."
+          - warn:
+              when: "false"
+              message: 'The TLS certificate is missing the SAN required for sandbox runtimes: {{repl if ConfigOptionEquals "runtime_routing_mode" "subdomain"}}a wildcard "*.{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}" — subdomain routing serves each sandbox at {id}.{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}{{repl else}}an exact "{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}" entry — path routing serves sandboxes under {{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}/{id}{{repl end}}. Sandboxes will fail to start until the certificate includes it.'
+    - textAnalyze:
+        checkName: "Sandbox runtime domain resolves in DNS"
+        fileName: tls-hostname-check
+        regex: '(?m)^DNS_RTBASE=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The sandbox runtime domain resolves."
+          - warn:
+              when: "false"
+              message: '{{repl if ConfigOptionEquals "runtime_routing_mode" "subdomain"}}A wildcard DNS record "*.{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}" did not resolve (tested via a synthetic subdomain). Create a wildcard A/AAAA record so each {id}.{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}} sandbox resolves{{repl else}}{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress{{repl end}}.'
+    # --- Analytics (Laminar) — only present/checked when analytics is enabled ---
+    - textAnalyze:
+        checkName: "TLS certificate covers the analytics hostname"
+        exclude: repl{{ ConfigOptionNotEquals "analytics_enabled" "1" }}
+        fileName: tls-hostname-check
+        regex: '(?m)^SAN_ANALYTICS=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The analytics hostname is included in the certificate SANs."
+          - warn:
+              when: "false"
+              message: 'The TLS certificate has no SAN covering {{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}. The analytics ingress will fail TLS until the certificate includes this name (or a matching wildcard).'
+    - textAnalyze:
+        checkName: "Analytics hostname resolves in DNS"
+        exclude: repl{{ ConfigOptionNotEquals "analytics_enabled" "1" }}
+        fileName: tls-hostname-check
+        regex: '(?m)^DNS_ANALYTICS=OK$'
+        outcomes:
+          - pass:
+              when: "true"
+              message: "The analytics hostname resolves."
+          - warn:
+              when: "false"
+              message: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress.'
