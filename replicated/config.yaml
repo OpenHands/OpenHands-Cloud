@@ -76,17 +76,36 @@ spec:
           help_text: Upload your TLS certificate file (.crt or .pem)
           type: file
           required: true
+          # Validation runs against the base64-decoded file contents, so we can
+          # check for the PEM header directly. This catches the common mistake of
+          # uploading the private key (or a key/cert swap) into the certificate field.
+          validation:
+            regex:
+              pattern: '-----BEGIN CERTIFICATE-----'
+              message: 'This file does not look like a PEM certificate (expected a "-----BEGIN CERTIFICATE-----" block).'
         - name: tls_private_key
           title: TLS Private Key
           help_text: Upload your TLS private key file (.key or .pem)
           type: file
           required: true
+          # Matches PRIVATE KEY, RSA/EC/DSA/ENCRYPTED/OPENSSH PRIVATE KEY, but NOT
+          # "BEGIN CERTIFICATE" -- so a cert accidentally uploaded here is rejected.
+          validation:
+            regex:
+              pattern: '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+              message: 'This file does not look like a PEM private key (expected a "-----BEGIN PRIVATE KEY-----" block).'
         - name: tls_ca_certificate
           title: Additional Trusted CA Certificates
           help_text: Upload a root CA certificate in PEM format. Concatenate multiple PEM-encoded certificates in the same file to add them all to the cluster's default trust store. If the TLS certificate provided above is self-signed, include the CA that signed it here so components inside the cluster can validate it.
           type: file
           required: false
           recommended: true
+          # Optional, so this only runs when a file is provided (empty values skip
+          # validation). Guards against pasting a key into the CA bundle field.
+          validation:
+            regex:
+              pattern: '-----BEGIN CERTIFICATE-----'
+              message: 'This file does not look like a PEM certificate (expected a "-----BEGIN CERTIFICATE-----" block).'
 
     - name: llm_configuration
       title: LLM Configuration
