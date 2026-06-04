@@ -12,6 +12,37 @@
     password:
       secretName: {{ .existingSecret | default "postgres-password" }}
       secretKey: {{ .existingSecretPasswordKey | default "password" }}
+- runPod:
+    name: postgres-permissions-check
+    namespace: {{ $.Release.Namespace }}
+    podSpec:
+      containers:
+        - name: postgres-check
+          image: postgres:14-alpine
+          command:
+            - /bin/sh
+            - -c
+            - >-
+              psql -t -A -c
+              "SELECT 'SCHEMA_CREATE: ' || has_schema_privilege(current_user, 'public', 'CREATE')::text
+              UNION ALL
+              SELECT 'SCHEMA_USAGE: ' || has_schema_privilege(current_user, 'public', 'USAGE')::text
+              UNION ALL
+              SELECT 'DB_CREATE: ' || has_database_privilege(current_user, current_database(), 'CREATE')::text"
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret | default "postgres-password" }}
+                  key: {{ .existingSecretPasswordKey | default "password" }}
+            - name: PGUSER
+              value: {{ .username | default "postgres" }}
+            - name: PGHOST
+              value: {{ .host }}
+            - name: PGPORT
+              value: "{{ .port | default 5432 }}"
+            - name: PGDATABASE
+              value: {{ .database | default "openhands" }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -71,5 +102,38 @@
       - pass:
           when: "connected == true"
           message: "External PostgreSQL database is healthy"
+- textAnalyze:
+    checkName: "External PostgreSQL Schema CREATE Permission"
+    fileName: postgres-permissions-check/postgres-permissions-check.log
+    regex: "SCHEMA_CREATE: true"
+    outcomes:
+      - pass:
+          when: "true"
+          message: "{{ .Values.externalDatabase.username | default "postgres" }} has CREATE on public schema ({{ .Values.externalDatabase.database | default "openhands" }})"
+      - fail:
+          when: "false"
+          message: "{{ .Values.externalDatabase.username | default "postgres" }} missing CREATE on public schema ({{ .Values.externalDatabase.database | default "openhands" }})"
+- textAnalyze:
+    checkName: "External PostgreSQL Schema USAGE Permission"
+    fileName: postgres-permissions-check/postgres-permissions-check.log
+    regex: "SCHEMA_USAGE: true"
+    outcomes:
+      - pass:
+          when: "true"
+          message: "{{ .Values.externalDatabase.username | default "postgres" }} has USAGE on public schema ({{ .Values.externalDatabase.database | default "openhands" }})"
+      - fail:
+          when: "false"
+          message: "{{ .Values.externalDatabase.username | default "postgres" }} missing USAGE on public schema ({{ .Values.externalDatabase.database | default "openhands" }})"
+- textAnalyze:
+    checkName: "External PostgreSQL Database CREATE Permission"
+    fileName: postgres-permissions-check/postgres-permissions-check.log
+    regex: "DB_CREATE: true"
+    outcomes:
+      - pass:
+          when: "true"
+          message: "{{ .Values.externalDatabase.username | default "postgres" }} has CREATE on database ({{ .Values.externalDatabase.database | default "openhands" }})"
+      - fail:
+          when: "false"
+          message: "{{ .Values.externalDatabase.username | default "postgres" }} missing CREATE on database ({{ .Values.externalDatabase.database | default "openhands" }})"
 {{- end }}
 {{- end -}}
