@@ -10,7 +10,7 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-8eec12a
+  tag: sha-53e1769
   pullPolicy: Always
 
 imagePullSecrets:
@@ -117,14 +117,14 @@ postgresql:
   primary:
     persistence:
       enabled: false
+    service:
+      ports:
+        postgresql: 5432
   auth:
     username: postgres
     password: "" # This should be set externally for security reasons
     existingSecret: postgres-password
     database: runtime_api_db
-  service:
-    ports:
-      postgresql: 5432
   image:
     repository: bitnamilegacy/postgresql
 

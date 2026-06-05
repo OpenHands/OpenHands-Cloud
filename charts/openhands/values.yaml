@@ -549,12 +549,12 @@ postgresql:
       scriptsConfigMap: ""
     persistence:
       enabled: false
+    service:
+      ports:
+        postgresql: 5432
     # Add the following if using Karpenter with persistence
     # podAnnotations:
     #   karpenter.sh/do-not-evict: "true"
-  service:
-    ports:
-      postgresql: 5432
   image:
     repository: bitnamilegacy/postgresql
 

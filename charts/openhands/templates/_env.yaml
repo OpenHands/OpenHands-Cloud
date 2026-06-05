@@ -345,7 +345,7 @@
 - name: DB_HOST
   value: "{{ .Release.Name }}-postgresql"
 - name: DB_PORT
-  value: "{{ .Values.postgresql.service.ports.postgresql | default 5432 }}"
+  value: "{{ .Values.postgresql.primary.service.ports.postgresql | default 5432 }}"
 - name: DB_USER
   value: "{{ .Values.postgresql.auth.username }}"
 - name: DB_NAME
