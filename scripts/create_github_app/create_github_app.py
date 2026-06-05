@@ -37,6 +37,11 @@ def generate_unique_app_name() -> str:
     return f"{APP_NAME_PREFIX}-{secrets.token_hex(4)}"
 
 
+def is_safe_app_name(app_name: str) -> bool:
+    """Check if app_name is safe for use as a filename (no path separators or special values)."""
+    return bool(app_name) and "/" not in app_name and "\\" not in app_name and app_name not in (".", "..")
+
+
 class GithubClient(Protocol):
     """Protocol for GitHub client to enable dependency injection."""
 
@@ -336,8 +341,7 @@ def main(
     """Main entry point for creating a GitHub App."""
     if app_name is None:
         app_name = generate_unique_app_name()
-    # app_name becomes a filename (keys/<app_name>.pem); reject path components.
-    if not app_name or "/" in app_name or "\\" in app_name or app_name in (".", ".."):
+    if not is_safe_app_name(app_name):
         print(f"Error: invalid --app-name '{app_name}': must be a plain name without '/', '\\', or '..'.")
         sys.exit(1)
     target = f"the {org} org" if org else "your personal account"
@@ -347,14 +351,14 @@ def main(
 
     # Start callback server to capture the code from GitHub redirect
     server_handle, code_holder = start_callback_server(port=callback_port)
-    manifest_file = None
+    manifest_html_path = None
 
     try:
         # Open browser for user to create app (they're already logged into GitHub)
         print(f"\nOpening browser to create GitHub App '{app_name}' on {target}...")
         print("Click 'Create GitHub App for <your-username>' to continue.")
         print("Waiting for GitHub callback...\n")
-        manifest_file = open_manifest_in_browser(
+        manifest_html_path = open_manifest_in_browser(
             base_domain,
             app_name,
             callback_port=callback_port,
@@ -424,8 +428,8 @@ def main(
     finally:
         # Always stop the callback server
         stop_callback_server(server_handle)
-        if manifest_file:
-            Path(manifest_file).unlink(missing_ok=True)
+        if manifest_html_path:
+            Path(manifest_html_path).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
