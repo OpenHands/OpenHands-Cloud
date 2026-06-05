@@ -1,21 +1,8 @@
 {{/*
-TLS SAN + DNS hostname preflight.
-
-Validates, at the pre-install preflight gate (and re-runnable from the Admin
-Console), that the uploaded TLS certificate covers every hostname OpenHands will
-serve and that those hostnames resolve in DNS. The cert regex in the Replicated
-config only checks the PEM shape; this checks the cert actually matches the
-provisioned domains, so a missing SAN or forgotten DNS record surfaces before it
-becomes broken TLS / stuck runtimes.
-
-Everything is read from values that already flow into the chart for the real
-ingress/keycloak/laminar features — no extra config is plumbed through (see
-troubleshoot.tlsHostname.vars below for the exact value paths). A single runPod
-runs openssl + busybox nslookup (the built-in certificates analyzer checks
-expiry only, not SAN/hostname coverage) and prints stable SAN_<svc>=OK|FAIL /
-DNS_<svc>=OK|FAIL tokens that the analyzers below turn into per-hostname
-warnings. The whole check is gated in preflights.yaml on the cert being present,
-so non-KOTS renders (where these values are empty) skip it.
+TLS SAN + DNS hostname preflight: checks the uploaded cert covers every hostname
+OpenHands serves and that those names resolve. A runPod runs openssl + nslookup
+and prints SAN_<svc>=OK|FAIL / DNS_<svc>=OK|FAIL tokens that the analyzers turn
+into per-hostname warnings. Gated in preflights.yaml on the cert being present.
 */}}
 
 {{/*
