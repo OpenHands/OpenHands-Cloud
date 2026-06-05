@@ -1168,3 +1168,26 @@ integrations-hub:
   # PostgreSQL subchart - disabled when using parent's PostgreSQL
   postgresql:
     enabled: false
+
+# ───────────────────────────────────────────────────────────────────────
+# Agent Canvas (subchart): frontend-only deployment
+# ───────────────────────────────────────────────────────────────────────
+# When enabled, the agent-canvas subchart deploys the static frontend
+# behind its own ingress (rendered by `templates/ingress-agent-canvas.yaml`
+# below). `ingress.host` here is read by that template; the subchart's
+# `ingress.enabled` is left off because the parent renders the Ingress.
+agent-canvas:
+  enabled: false
+
+  image:
+    repository: ghcr.io/openhands/agent-canvas
+    # tag: supplied at deploy time via the OpenHands deploy workflow.
+
+  ingress:
+    enabled: false
+    # Hostname for the agent-canvas ingress, e.g. canvas.openhands.dev
+    host: ""
+    tls:
+      enabled: true
+      secretName: agent-canvas-tls
+
