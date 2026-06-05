@@ -316,6 +316,7 @@ def wait_for_app_installation(
                 return True
         except Exception as exc:
             print(f"Warning: Error checking installations: {exc}")
+            # Retry on transient errors rather than failing immediately.
         time.sleep(poll_interval)
     return False
 
