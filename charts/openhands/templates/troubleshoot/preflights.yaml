@@ -1,9 +1,18 @@
 {{- define "troubleshoot.preflights" -}}
+{{- $tls := include "troubleshoot.tlsHostname.vars" . | fromYaml -}}
 apiVersion: troubleshoot.sh/v1beta2
 kind: Preflight
 metadata:
   name: {{ .Release.Name }}-preflight
 spec:
-  collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
-  analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
+  collectors:
+    {{- include "troubleshoot.collectors.shared" . | nindent 4 }}
+    {{- if $tls.cert }}
+    {{- include "troubleshoot.collectors.tlsHostname" . | nindent 4 }}
+    {{- end }}
+  analyzers:
+    {{- include "troubleshoot.analyzers.shared" . | nindent 4 }}
+    {{- if $tls.cert }}
+    {{- include "troubleshoot.analyzers.tlsHostname" . | nindent 4 }}
+    {{- end }}
 {{- end -}}
