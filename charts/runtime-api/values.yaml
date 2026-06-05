@@ -10,7 +10,7 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-f74dce0
+  tag: sha-0385b6b
   pullPolicy: Always
 
 imagePullSecrets:
@@ -117,14 +117,14 @@ postgresql:
   primary:
     persistence:
       enabled: false
+    service:
+      ports:
+        postgresql: 5432
   auth:
     username: postgres
     password: "" # This should be set externally for security reasons
     existingSecret: postgres-password
     database: runtime_api_db
-  service:
-    ports:
-      postgresql: 5432
   image:
     repository: bitnamilegacy/postgresql
 
@@ -136,6 +136,7 @@ externalDatabase:
 database:
   create: false # Will only be true for AWS as it can't create the DB in terraform
   secretName: runtime-api-db-credentials # Secret containing external database credentials
+  port: "5432"
   poolSize:
     api: 5 # Pool size for API deployment (default)
     cronjobs: 2 # Pool size for cronjobs (default)
