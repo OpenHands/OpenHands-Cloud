@@ -352,7 +352,6 @@ def main(
 
     # Start callback server to capture the code from GitHub redirect
     server_handle, code_holder = start_callback_server(port=callback_port)
-    manifest_html_path = None
 
     try:
         # Open browser for user to create app (they're already logged into GitHub)
