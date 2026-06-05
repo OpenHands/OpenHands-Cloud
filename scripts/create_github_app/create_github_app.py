@@ -8,7 +8,9 @@
 import argparse
 import html
 import json
+import os
 import secrets
+import sys
 import tempfile
 import threading
 import time
@@ -26,6 +28,8 @@ from github import Auth, GithubIntegration
 SCRIPT_DIR = Path(__file__).parent
 
 APP_NAME_PREFIX = "openhands"
+DEFAULT_CALLBACK_PORT = 9876  # Using high port that doesn't require root
+GITHUB_API_TIMEOUT_SECONDS = 30
 
 
 def generate_unique_app_name() -> str:
@@ -61,10 +65,19 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Base domain for the GitHub App (e.g., mycompany.com).",
     )
+    parser.add_argument(
+        "--org",
+        default=None,
+        help="Org to create the app in (default: your personal account).",
+    )
+    parser.add_argument(
+        "--callback-port",
+        type=int,
+        default=DEFAULT_CALLBACK_PORT,
+        help=f"Local port for the app-creation callback server "
+        f"(default: {DEFAULT_CALLBACK_PORT}); use this if that port is in use.",
+    )
     return parser.parse_args()
-
-
-DEFAULT_CALLBACK_PORT = 9876  # Using high port that doesn't require root
 
 
 def build_app_manifest(
@@ -105,17 +118,22 @@ def build_app_manifest(
     }
 
 
-def generate_manifest_html(manifest: dict[str, Any]) -> str:
+def generate_manifest_html(manifest: dict[str, Any], org: str | None = None) -> str:
     """Generate HTML form that POSTs to GitHub to create app from manifest."""
     manifest_json = json.dumps(manifest)
     # HTML-escape the JSON to safely embed in the value attribute
     escaped_json = html.escape(manifest_json)
+    action = (
+        f"https://github.com/organizations/{org}/settings/apps/new"
+        if org
+        else "https://github.com/settings/apps/new"
+    )
     return f"""<!DOCTYPE html>
 <html>
 <head><title>Creating GitHub App...</title></head>
 <body>
 <p>Redirecting to GitHub to create your app...</p>
-<form id="manifest-form" action="https://github.com/settings/apps/new" method="post">
+<form id="manifest-form" action="{html.escape(action)}" method="post">
 <input type="hidden" name="manifest" value="{escaped_json}">
 </form>
 <script>document.getElementById('manifest-form').submit();</script>
@@ -127,14 +145,20 @@ def open_manifest_in_browser(
     base_domain: str,
     app_name: str | None = None,
     callback_port: int = DEFAULT_CALLBACK_PORT,
+    org: str | None = None,
 ) -> str:
     """Write manifest HTML to temp file and open in browser. Returns file path."""
     manifest = build_app_manifest(base_domain, app_name, callback_port=callback_port)
-    html = generate_manifest_html(manifest)
+    html = generate_manifest_html(manifest, org=org)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
         f.write(html)
         filepath = f.name
-    webbrowser.open(f"file://{filepath}")
+    try:
+        webbrowser.open(f"file://{filepath}")
+    except Exception:
+        # No browser (for example, headless shell): do not leak the temp file.
+        Path(filepath).unlink(missing_ok=True)
+        raise
     return filepath
 
 
@@ -216,7 +240,9 @@ class ServerHandle:
         self.thread = thread
 
 
-def start_callback_server(port: int = 80) -> tuple[ServerHandle, CodeHolder]:
+def start_callback_server(
+    port: int = DEFAULT_CALLBACK_PORT,
+) -> tuple[ServerHandle, CodeHolder]:
     """Start the callback server in a background thread."""
     app, code_holder = create_callback_app()
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
@@ -225,6 +251,20 @@ def start_callback_server(port: int = 80) -> tuple[ServerHandle, CodeHolder]:
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
+    # Fail fast when the port is unavailable instead of waiting for the
+    # 5-minute GitHub callback timeout.
+    deadline = time.time() + 10
+    while not server.started:
+        if not thread.is_alive():
+            raise RuntimeError(
+                f"Callback server failed to start on port {port} (already in use?)."
+            )
+        if time.time() > deadline:
+            raise RuntimeError(
+                f"Callback server did not start on port {port} within 10s (already in use?)."
+            )
+        time.sleep(0.05)
+
     return ServerHandle(server, thread), code_holder
 
 
@@ -232,6 +272,8 @@ def stop_callback_server(handle: ServerHandle) -> None:
     """Stop the callback server."""
     handle.server.should_exit = True
     handle.thread.join(timeout=5)
+    if handle.thread.is_alive():
+        print("Warning: Callback server thread did not exit within 5s; cleanup may be incomplete.")
 
 
 def exchange_code_for_credentials(code: str) -> dict:
@@ -239,6 +281,7 @@ def exchange_code_for_credentials(code: str) -> dict:
     response = requests.post(
         f"https://api.github.com/app-manifests/{code}/conversions",
         headers={"Accept": "application/vnd.github+json"},
+        timeout=GITHUB_API_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     return response.json()
@@ -258,14 +301,16 @@ def wait_for_app_installation(
         print(f"Warning: Could not authenticate with GitHub API: {exc}")
         return False
 
-    deadline = time.time() + timeout
+    start = time.time()
+    deadline = start + timeout
     while time.time() < deadline:
         try:
-            if list(gi.get_installations()):
+            # get_installations() returns a PaginatedList: iterable, not always
+            # an iterator, so wrap it before checking for the first result.
+            if next(iter(gi.get_installations()), None) is not None:
                 return True
         except Exception as exc:
             print(f"Warning: Error checking installations: {exc}")
-            return False
         time.sleep(poll_interval)
     return False
 
@@ -286,23 +331,35 @@ def main(
     github_client: GithubClient | None = None,
     app_name: str | None = None,
     callback_port: int = DEFAULT_CALLBACK_PORT,
+    org: str | None = None,
 ) -> None:
     """Main entry point for creating a GitHub App."""
     if app_name is None:
         app_name = generate_unique_app_name()
+    # app_name becomes a filename (keys/<app_name>.pem); reject path components.
+    if not app_name or "/" in app_name or "\\" in app_name or app_name in (".", ".."):
+        print(f"Error: invalid --app-name '{app_name}': must be a plain name without '/', '\\', or '..'.")
+        sys.exit(1)
+    target = f"the {org} org" if org else "your personal account"
     if dry_run:
-        print(f"Would create GitHub App '{app_name}' for domain '{base_domain}'")
+        print(f"Would create GitHub App '{app_name}' for domain '{base_domain}' on {target}")
         return
 
     # Start callback server to capture the code from GitHub redirect
     server_handle, code_holder = start_callback_server(port=callback_port)
+    manifest_file = None
 
     try:
         # Open browser for user to create app (they're already logged into GitHub)
-        print(f"\nOpening browser to create GitHub App '{app_name}'...")
+        print(f"\nOpening browser to create GitHub App '{app_name}' on {target}...")
         print("Click 'Create GitHub App for <your-username>' to continue.")
         print("Waiting for GitHub callback...\n")
-        open_manifest_in_browser(base_domain, app_name, callback_port=callback_port)
+        manifest_file = open_manifest_in_browser(
+            base_domain,
+            app_name,
+            callback_port=callback_port,
+            org=org,
+        )
 
         # Wait for the code to be received via callback
         print("Waiting for authorization code...")
@@ -311,11 +368,16 @@ def main(
 
         if code is None:
             print("Error: Timed out waiting for authorization code.")
-            return
+            sys.exit(1)
 
         print("Authorization code received!")
 
-        credentials = exchange_code_for_credentials(code)
+        try:
+            credentials = exchange_code_for_credentials(code)
+        except (requests.RequestException, ValueError) as exc:
+            # ValueError covers json.JSONDecodeError (HTTP 200 with non-JSON body).
+            print(f"Error: failed to exchange the code for app credentials: {exc}")
+            sys.exit(1)
         print(f"\nGitHub App created successfully!")
 
         if "slug" in credentials:
@@ -330,34 +392,40 @@ def main(
                 print("GitHub App installed successfully!")
             else:
                 print("Warning: Timed out waiting for app installation.")
+
+        # Save pem to keys/ directory relative to script location
+        pem_path = None
+        if "pem" in credentials:
+            keys_dir = SCRIPT_DIR / "keys"
+            keys_dir.mkdir(exist_ok=True)
+            pem_path = keys_dir / f"{app_name}.pem"
+            # Create the private key 0o600 from the first byte; chmod too in
+            # case the file already existed with looser permissions.
+            fd = os.open(pem_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(credentials["pem"])
+            pem_path.chmod(0o600)
+
+        print(f"\nCredentials:")
+        display_names = {
+            "id": "GitHub App ID",
+            "slug": "GitHub App Slug",
+            "client_id": "GitHub App Client ID",
+            "client_secret": "GitHub App Client Secret",
+            "webhook_secret": "GitHub App Webhook Secret",
+        }
+        for key in ["client_id", "client_secret", "id", "slug", "webhook_secret"]:
+            if key in credentials:
+                display_key = display_names.get(key, key)
+                print(f"  {display_key}: {credentials[key]}")
+        if pem_path:
+            display_path = f"./scripts/create_github_app/keys/{app_name}.pem"
+            print(f"  GitHub App Private Key: {display_path}")
     finally:
         # Always stop the callback server
         stop_callback_server(server_handle)
-
-    # Save pem to keys/ directory relative to script location
-    pem_path = None
-    if "pem" in credentials:
-        script_dir = Path(__file__).parent
-        keys_dir = script_dir / "keys"
-        keys_dir.mkdir(exist_ok=True)
-        pem_path = keys_dir / f"{app_name}.pem"
-        pem_path.write_text(credentials["pem"])
-
-    print(f"\nCredentials:")
-    display_names = {
-        "id": "GitHub App ID",
-        "slug": "GitHub App Slug",
-        "client_id": "GitHub App Client ID",
-        "client_secret": "GitHub App Client Secret",
-        "webhook_secret": "GitHub App Webhook Secret",
-    }
-    for key in ["client_id", "client_secret", "id", "slug", "webhook_secret"]:
-        if key in credentials:
-            display_key = display_names.get(key, key)
-            print(f"  {display_key}: {credentials[key]}")
-    if pem_path:
-        display_path = f"./scripts/create_github_app/keys/{app_name}.pem"
-        print(f"  GitHub App Private Key: {display_path}")
+        if manifest_file:
+            Path(manifest_file).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
@@ -366,4 +434,6 @@ if __name__ == "__main__":
         base_domain=args.base_domain,
         dry_run=args.dry_run,
         app_name=args.app_name,
+        callback_port=args.callback_port,
+        org=args.org,
     )
