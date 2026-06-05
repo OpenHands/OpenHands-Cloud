@@ -10,7 +10,7 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-f74dce0
+  tag: sha-8eec12a
   pullPolicy: Always
 
 imagePullSecrets:
