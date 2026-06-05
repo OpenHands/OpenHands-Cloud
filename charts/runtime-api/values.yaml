@@ -136,6 +136,7 @@ externalDatabase:
 database:
   create: false # Will only be true for AWS as it can't create the DB in terraform
   secretName: runtime-api-db-credentials # Secret containing external database credentials
+  port: "5432"
   poolSize:
     api: 5 # Pool size for API deployment (default)
     cronjobs: 2 # Pool size for cronjobs (default)

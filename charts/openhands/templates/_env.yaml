@@ -344,6 +344,8 @@
 {{- if .Values.postgresql.enabled }}
 - name: DB_HOST
   value: "{{ .Release.Name }}-postgresql"
+- name: DB_PORT
+  value: "{{ .Values.postgresql.service.ports.postgresql | default 5432 }}"
 - name: DB_USER
   value: "{{ .Values.postgresql.auth.username }}"
 - name: DB_NAME
@@ -351,6 +353,8 @@
 {{- else }}
 - name: DB_HOST
   value: "{{ .Values.externalDatabase.host }}"
+- name: DB_PORT
+  value: "{{ .Values.externalDatabase.port | default 5432 }}"
 - name: DB_USER
   value: "{{ .Values.externalDatabase.username }}"
 - name: DB_NAME

@@ -560,6 +560,7 @@ postgresql:
 
 externalDatabase:
   enabled: false
+  port: "5432"
   existingSecret: postgres-password
 
 redis:
@@ -664,6 +665,7 @@ runtime-api:
     tls: true
   env:
     DB_HOST: oh-main-postgresql
+    DB_PORT: "5432"
     DB_USER: postgres
     DB_NAME: runtime_api_db
     K8S_NAMESPACE: "openhands"
