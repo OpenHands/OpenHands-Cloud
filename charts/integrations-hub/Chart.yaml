@@ -2,7 +2,7 @@ apiVersion: v2
 name: integrations-hub
 description: OpenHands Integrations Hub - Agent context layer with managed connectors and MCP integrations
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "0.1.0"
 dependencies:
   - name: postgresql

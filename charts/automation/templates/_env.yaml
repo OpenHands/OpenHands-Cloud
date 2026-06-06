@@ -14,6 +14,10 @@
   value: {{ .Values.database.host | quote }}
 - name: AUTOMATION_DB_PORT
   value: {{ .Values.database.port | quote }}
+- name: AUTOMATION_DB_SSL_MODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
+- name: PGSSLMODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
 - name: AUTOMATION_DB_USER
   value: {{ .Values.database.user | quote }}
 - name: AUTOMATION_DB_NAME

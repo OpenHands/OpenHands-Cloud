@@ -95,6 +95,7 @@ spec:
       externalDatabase:
         host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
         port: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
+        sslMode: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         existingSecret: postgres-password
         existingSecretUserKey: username
         existingSecretPasswordKey: password
@@ -120,6 +121,8 @@ spec:
           value: "true"
         - name: KC_TRUSTSTORE_PATHS
           value: /etc/openhands/ca-bundle/ca-bundle.crt
+        - name: KC_DB_URL_PROPERTIES
+          value: 'sslmode={{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
       extraVolumes:
         - name: openhands-ca-bundle
           configMap:
@@ -137,7 +140,7 @@ spec:
       db:
         # TODO: should the fallback be openhands-postgresql here?
         endpoint: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
-        url: 'postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST):{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}/$(DATABASE_NAME)'
+        url: 'postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST):{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}/$(DATABASE_NAME)?sslmode={{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         secret:
           name: postgres-password
           usernameKey: username
@@ -242,6 +245,8 @@ spec:
       env:
         DB_HOST: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
         DB_PORT: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
+        DB_SSL_MODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
+        PGSSLMODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
         RUNTIME_BASE_URL: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}'
@@ -410,6 +415,7 @@ spec:
         externalDatabase:
           host: '{{repl ConfigOption "external_postgres_host"}}'
           port: '{{repl ConfigOption "external_postgres_port"}}'
+          sslMode: '{{repl ConfigOption "external_postgres_ssl_mode"}}'
           database: '{{repl ConfigOption "external_postgres_database"}}'
           username: '{{repl ConfigOption "external_postgres_username"}}'
           password: '{{repl ConfigOption "external_postgres_password"}}'
@@ -419,20 +425,25 @@ spec:
         keycloak:
           externalDatabase:
             port: '{{repl ConfigOption "external_postgres_port"}}'
+            sslMode: '{{repl ConfigOption "external_postgres_ssl_mode"}}'
             database: '{{repl ConfigOption "external_postgres_keycloak_database"}}'
         litellm-helm:
           db:
-            url: 'postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST):{{repl ConfigOption "external_postgres_port"}}/$(DATABASE_NAME)'
+            url: 'postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST):{{repl ConfigOption "external_postgres_port"}}/$(DATABASE_NAME)?sslmode={{repl ConfigOption "external_postgres_ssl_mode"}}'
             database: '{{repl ConfigOption "external_postgres_litellm_database"}}'
         runtime-api:
           databaseMigrations:
             createDatabases: repl{{ ConfigOptionEquals "external_postgres_create_databases" "1" }}
           env:
             DB_PORT: '{{repl ConfigOption "external_postgres_port"}}'
+            DB_SSL_MODE: '{{repl ConfigOption "external_postgres_ssl_mode"}}'
+            PGSSLMODE: '{{repl ConfigOption "external_postgres_ssl_mode"}}'
             DB_NAME: '{{repl ConfigOption "external_postgres_runtime_api_database"}}'
         plugin-directory:
           databaseMigrations:
             createDatabases: repl{{ ConfigOptionEquals "external_postgres_create_databases" "1" }}
+          database:
+            sslMode: '{{repl ConfigOption "external_postgres_ssl_mode"}}'
     - when: '{{repl ConfigOptionEquals "github_auth_enabled" "1" }}'
       recursiveMerge: true
       values:
@@ -497,6 +508,7 @@ spec:
             createDatabaseUser: true
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'
             port: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
+            sslMode: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
             superuserName: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
 
     - when: '{{repl ConfigOptionEquals "postgres_type" "embedded_postgres" }}'
@@ -625,6 +637,8 @@ spec:
               value: "true"
             - name: KC_TRUSTSTORE_PATHS
               value: /etc/openhands/ca-bundle/ca-bundle.crt
+            - name: KC_DB_URL_PROPERTIES
+              value: 'sslmode={{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
             # Proxy env vars
             - name: HTTP_PROXY
               value: '{{repl ConfigOption "http_proxy"}}'

@@ -346,6 +346,10 @@
   value: "{{ .Release.Name }}-postgresql"
 - name: DB_PORT
   value: "{{ .Values.postgresql.primary.service.ports.postgresql | default 5432 }}"
+- name: DB_SSL_MODE
+  value: {{ .Values.externalDatabase.sslMode | default "prefer" | quote }}
+- name: PGSSLMODE
+  value: {{ .Values.externalDatabase.sslMode | default "prefer" | quote }}
 - name: DB_USER
   value: "{{ .Values.postgresql.auth.username }}"
 - name: DB_NAME
@@ -355,6 +359,10 @@
   value: "{{ .Values.externalDatabase.host }}"
 - name: DB_PORT
   value: "{{ .Values.externalDatabase.port | default 5432 }}"
+- name: DB_SSL_MODE
+  value: {{ .Values.externalDatabase.sslMode | default "prefer" | quote }}
+- name: PGSSLMODE
+  value: {{ .Values.externalDatabase.sslMode | default "prefer" | quote }}
 - name: DB_USER
   value: "{{ .Values.externalDatabase.username }}"
 - name: DB_NAME

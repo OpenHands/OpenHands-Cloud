@@ -6,9 +6,7 @@
 {{- if .host }}
 - postgresql:
     collectorName: external-postgresql
-    uri: postgresql://{{ .username | default "postgres" }}:@{{ .host }}:{{ .port | default 5432 }}/{{ .database | default "openhands" }}?sslmode=disable
-    tls:
-      disabled: true
+    uri: postgresql://{{ .username | default "postgres" }}:@{{ .host }}:{{ .port | default 5432 }}/{{ .database | default "openhands" }}?sslmode={{ .sslMode | default "prefer" }}
     password:
       secretName: {{ .existingSecret | default "postgres-password" }}
       secretKey: {{ .existingSecretPasswordKey | default "password" }}

@@ -68,6 +68,7 @@ database:
   #   - Feature env: "openhands-feature-branch-postgresql"
   host: ""
   port: "5432"
+  sslMode: "prefer"
   user: "automation_user"
   name: "automations"
   # Secret containing the automation database password
