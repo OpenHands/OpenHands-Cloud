@@ -38,6 +38,8 @@ spec:
             value: {{ .Values.database.host | quote }}
           - name: DB_PORT
             value: {{ .Values.database.port | quote }}
+          - name: PGSSLMODE
+            value: {{ .Values.database.sslMode | default "prefer" | quote }}
           - name: DB_NAME
             value: {{ .Values.database.name | quote }}
           - name: DB_USER

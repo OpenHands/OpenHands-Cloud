@@ -10,7 +10,7 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-0385b6b
+  tag: sha-573b515
   pullPolicy: Always
 
 imagePullSecrets:
@@ -137,6 +137,7 @@ database:
   create: false # Will only be true for AWS as it can't create the DB in terraform
   secretName: runtime-api-db-credentials # Secret containing external database credentials
   port: "5432"
+  sslMode: "prefer"
   poolSize:
     api: 5 # Pool size for API deployment (default)
     cronjobs: 2 # Pool size for cronjobs (default)

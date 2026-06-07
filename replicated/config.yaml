@@ -699,6 +699,19 @@ spec:
           type: text
           default: "5432"
           when: 'repl{{ ConfigOptionEquals "postgres_type" "external_postgres" }}'
+        - name: external_postgres_ssl_mode
+          title: External PostgreSQL SSL Mode
+          help_text: Choose whether OpenHands should require SSL when connecting to your external PostgreSQL server.
+          type: select_one
+          default: "prefer"
+          when: 'repl{{ ConfigOptionEquals "postgres_type" "external_postgres" }}'
+          items:
+            - name: "prefer"
+              title: "Prefer SSL"
+            - name: "require"
+              title: "Require SSL"
+            - name: "disable"
+              title: "Disable SSL"
         - name: external_postgres_username
           title: External PostgreSQL Username
           help_text: Username for connecting to your external PostgreSQL server

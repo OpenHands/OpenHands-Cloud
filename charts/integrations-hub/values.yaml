@@ -129,6 +129,7 @@ database:
   #   - Feature env: "integrations-hub-feature-branch-postgresql"
   host: ""
   port: "5432"
+  sslMode: "prefer"
   user: "integrations_hub_user"
   name: "integrations_hub"
   # Secret containing the database password

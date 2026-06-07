@@ -341,6 +341,10 @@
   value: "1"
 {{- end }}
 
+{{- $dbSslMode := "prefer" }}
+{{- if not .Values.postgresql.enabled }}
+{{- $dbSslMode = .Values.externalDatabase.sslMode | default "prefer" }}
+{{- end }}
 {{- if .Values.postgresql.enabled }}
 - name: DB_HOST
   value: "{{ .Release.Name }}-postgresql"
@@ -360,6 +364,10 @@
 - name: DB_NAME
   value: "{{ .Values.externalDatabase.database }}"
 {{- end }}
+- name: DB_SSL_MODE
+  value: {{ $dbSslMode | quote }}
+- name: PGSSLMODE
+  value: {{ $dbSslMode | quote }}
 {{- if .Values.datadog.enabled }}
 # Datadog configuration
 - name: DD_AGENT_HOST

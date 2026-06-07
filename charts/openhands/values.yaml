@@ -140,7 +140,7 @@ gitlabWebhookInstallation:
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: cloud-1.37.2
+  tag: sha-d765b0b
 
 ingress:
   enabled: false
@@ -324,6 +324,7 @@ keycloak:
     enabled: false
   externalDatabase:
     host: oh-main-postgresql
+    sslMode: "prefer"
     database: bitnami_keycloak
     existingSecret: postgres-password
     existingSecretUserKey: username
@@ -337,6 +338,10 @@ keycloak:
       value: "xforwarded"
     - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
       value: "true"
+    # Bitnami Keycloak renders extraEnvVars with common.tplvalues.render, so
+    # this is evaluated in the Keycloak subchart context at render time.
+    - name: KC_DB_URL_PROPERTIES
+      value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
   image:
     repository: bitnamilegacy/keycloak
   waitForDb:
@@ -376,6 +381,8 @@ keycloak:
             secretKeyRef:
               name: postgres-password
               key: password
+        - name: PGSSLMODE
+          value: '{{ .Values.externalDatabase.sslMode | default "prefer" }}'
 
 laminar:
   # Enable this if you want to use laminar
@@ -561,6 +568,7 @@ postgresql:
 externalDatabase:
   enabled: false
   port: "5432"
+  sslMode: "prefer"
   existingSecret: postgres-password
 
 redis:
@@ -666,6 +674,8 @@ runtime-api:
   env:
     DB_HOST: oh-main-postgresql
     DB_PORT: "5432"
+    DB_SSL_MODE: "prefer"
+    PGSSLMODE: "prefer"
     DB_USER: postgres
     DB_NAME: runtime_api_db
     K8S_NAMESPACE: "openhands"
@@ -730,6 +740,7 @@ plugin-directory:
     # When deployed as subchart, this is set by parent chart
     host: ""
     port: "5432"
+    sslMode: "prefer"
     user: "postgres"
     name: "plugindir"
     secretName: "postgres-password"
@@ -853,6 +864,7 @@ automation:
     #   - Feature env: "openhands-feature-branch-postgresql"
     host: ""
     port: "5432"
+    sslMode: "prefer"
     user: "automation_user"
     name: "automations"
     # Secret containing the automation database password
@@ -1105,6 +1117,7 @@ integrations-hub:
     url: ""
     host: ""
     port: "5432"
+    sslMode: "prefer"
     user: "integrations_hub_user"
     name: "integrations_hub"
     secretName: "integrations-hub-db-secret"

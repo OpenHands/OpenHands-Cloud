@@ -7,6 +7,10 @@
   value: {{ .Values.database.host | quote }}
 - name: DB_PORT
   value: {{ .Values.database.port | quote }}
+- name: DB_SSL_MODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
+- name: PGSSLMODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
 - name: DB_USER
   value: {{ .Values.database.user | quote }}
 - name: DB_NAME
@@ -17,7 +21,7 @@
       name: {{ .Values.database.secretName }}
       key: {{ .Values.database.secretKey }}
 - name: DATABASE_URL
-  value: "postgresql://$(DB_USER):$(DB_PASS)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+  value: "postgresql://$(DB_USER):$(DB_PASS)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSL_MODE)"
 
 # Application configuration
 - name: MARKETPLACE_SOURCE

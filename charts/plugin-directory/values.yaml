@@ -101,6 +101,7 @@ database:
   # Full hostname of the PostgreSQL server
   host: ""
   port: "5432"
+  sslMode: "prefer"
   user: "postgres"
   name: "plugindir"
   # Secret containing the database password

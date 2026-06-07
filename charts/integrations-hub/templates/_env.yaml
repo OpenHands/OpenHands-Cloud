@@ -36,6 +36,10 @@
   value: {{ .Values.database.host | quote }}
 - name: INTHUB_DB_PORT
   value: {{ .Values.database.port | quote }}
+- name: INTHUB_DB_SSL_MODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
+- name: PGSSLMODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
 - name: INTHUB_DB_USER
   value: {{ .Values.database.user | quote }}
 - name: INTHUB_DB_NAME
@@ -46,7 +50,7 @@
       name: {{ .Values.database.secretName }}
       key: {{ .Values.database.secretKey }}
 - name: INTHUB_POSTGRES_URL
-  value: "postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)"
+  value: "postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)"
 {{- end }}
 
 # OpenHands identity provider used to validate session cookies / API keys.
