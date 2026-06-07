@@ -338,6 +338,8 @@ keycloak:
       value: "xforwarded"
     - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
       value: "true"
+    # Bitnami Keycloak renders extraEnvVars with common.tplvalues.render, so
+    # this is evaluated in the Keycloak subchart context at render time.
     - name: KC_DB_URL_PROPERTIES
       value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
   image:
