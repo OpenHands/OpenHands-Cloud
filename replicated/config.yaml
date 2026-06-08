@@ -430,6 +430,34 @@ spec:
           hidden: true
           value: '{{repl RandomString 32}}'
 
+    - name: default_openhands_organization
+      title: Default OpenHands Organization
+      description: 'Bootstrap a default OpenHands organization for this instance. Note: this config is additive and never deletes organizations, removes members, or demotes users; these actions can be done in the app.'
+      items:
+        - name: default_openhands_org_enabled
+          title: Enable Default OpenHands Organization
+          help_text: Turn on default OpenHands organization setup.
+          type: bool
+          default: "0"
+        - name: default_openhands_org_name
+          title: Organization Name
+          help_text: Enter the name of the default organization. New organizations are created after a configured owner signs in.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
+          required: true
+        - name: default_openhands_org_owner_emails
+          title: Owner Emails
+          help_text: 'Enter one or more owner email addresses, separated by commas (e.g., user1@example.com, user2@example.com). Note: removing an email from this field does not remove or demote existing owners; existing owners can be managed in the app.'
+          type: textarea
+          when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
+          required: true
+        - name: default_openhands_org_auto_add_users
+          title: Automatically Add Signed-In Users
+          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, new users land in the default organization automatically; existing users can switch to the default organization via the UI.
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
+
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
       description: Configure Bitbucket Data Center OAuth for user authentication
