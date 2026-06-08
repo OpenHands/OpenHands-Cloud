@@ -1,0 +1,20 @@
+{{/*
+Whether the Keycloak realm-config resources (the keycloak-config init container
+and its keycloak-config-script / keycloak-realm-template ConfigMaps) should
+render.
+
+True when this chart deploys the bundled Keycloak subchart
+(`.Values.keycloak.enabled`), OR when `.Values.keycloak.provisionRealm` is set
+to provision the realm against an external Keycloak (`.Values.keycloak.url`)
+that this chart does not deploy. This decouples realm provisioning from the
+bundled subchart so split deployments (Keycloak as a separate release) can still
+create and update the realm without standing up a second Keycloak.
+
+Emits "true" when enabled and an empty string otherwise, so it can be used
+directly in `if` / `and` expressions.
+*/}}
+{{- define "openhands.keycloakProvisionRealm" -}}
+{{- if or .Values.keycloak.enabled .Values.keycloak.provisionRealm -}}
+true
+{{- end -}}
+{{- end -}}

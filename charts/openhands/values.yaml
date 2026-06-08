@@ -297,6 +297,15 @@ uvicorn:
 
 keycloak:
   enabled: false
+  # Parent-chart flag (not consumed by the Keycloak subchart): run the
+  # realm-config init container that creates the OpenHands realm, its OIDC
+  # client, and identity providers if missing, and updates them otherwise.
+  # When `enabled` is true this already runs against the bundled Keycloak, so
+  # `provisionRealm` is only needed for split deployments where Keycloak runs as
+  # a separate release/chart: leave `enabled: false`, point `url` (plus the
+  # keycloak-admin and keycloak-realm secrets) at that external server, and set
+  # this to true.
+  provisionRealm: false
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
