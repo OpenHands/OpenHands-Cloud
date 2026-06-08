@@ -316,7 +316,7 @@ spec:
           required: false
         - name: custom_model
           title: Custom LLM Model Name
-          help_text: Model identifier as accepted by the endpoint (e.g., anthropic/claude-sonnet-4-5 for OpenRouter, llama-3.1-70b-instruct for vLLM)
+          help_text: Model identifier as accepted by the endpoint. Bare names are routed as OpenAI-compatible models (e.g., llama-3.1-70b-instruct becomes openai/llama-3.1-70b-instruct). To use a non-OpenAI-shaped LiteLLM provider, enter the full provider/model string (e.g., anthropic/claude-opus-4-7).
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
