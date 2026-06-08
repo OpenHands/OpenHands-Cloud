@@ -321,6 +321,16 @@ spec:
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
 
+    - name: litellm_admin_console
+      title: LiteLLM Admin Console
+      description: Configure credentials for the bundled LiteLLM Admin UI.
+      items:
+        - name: litellm_admin_password
+          title: LiteLLM Admin Password
+          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. Changing this password restarts LiteLLM.
+          type: password
+          required: true
+
     - name: security_secrets
       title: Security & Authentication
       description: Configure passwords and secrets for various services
