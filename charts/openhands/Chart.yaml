@@ -2,7 +2,7 @@ apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
 appVersion: sha-d765b0b
-version: 0.7.42
+version: 0.7.43
 maintainers:
   - name: rbren
   - name: xingyao
