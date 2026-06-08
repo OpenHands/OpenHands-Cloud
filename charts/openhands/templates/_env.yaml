@@ -411,8 +411,10 @@
 {{- end }}
 - name: LMNR_FORCE_HTTP
   value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
+{{- if and .Values.laminar.enabled .Values.laminar.httpPort }}
 - name: LMNR_HTTP_PORT
-  value: {{ if and .Values.laminar.enabled .Values.laminar.httpPort }}{{ .Values.laminar.httpPort | quote }}{{ else }}""{{ end }}
+  value: {{ .Values.laminar.httpPort | quote }}
+{{- end }}
 - name: DB_PASS
   valueFrom:
     secretKeyRef:
