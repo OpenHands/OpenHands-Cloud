@@ -691,11 +691,10 @@ spec:
                   client_id: os.environ/AZURE_CLIENT_ID
                   client_secret: os.environ/AZURE_CLIENT_SECRET
 
-    # Custom / Local LLM — OpenAI-compatible endpoints use the generic
-    # `openai/<model>` LiteLLM provider for bare model names. If the configured
-    # model already includes a provider prefix (for example
-    # `anthropic/claude-opus-4-7`), pass it through as a full LiteLLM model
-    # string so non-OpenAI-shaped custom gateways can be configured.
+    # Custom / Local LLM — pass the configured model through as a full LiteLLM
+    # model string. OpenAI-compatible custom endpoints should be configured as
+    # `openai/<model>`; non-OpenAI-shaped gateways should use their provider
+    # prefix, for example `anthropic/claude-opus-4-7`.
     - when: '{{repl ConfigOptionEquals "llm_provider" "custom" }}'
       recursiveMerge: true
       values:
@@ -707,7 +706,7 @@ spec:
             model_list:
               - model_name: 'custom-llm'
                 litellm_params:
-                  model: '{{repl if contains "/" (ConfigOption "custom_model")}}{{repl ConfigOption "custom_model"}}{{repl else}}openai/{{repl ConfigOption "custom_model"}}{{repl end}}'
+                  model: '{{repl ConfigOption "custom_model"}}'
                   api_key: os.environ/CUSTOM_API_KEY
                   api_base: os.environ/CUSTOM_API_BASE
                   extra_headers: repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson | mustToJson }}repl{{ else }}{}repl{{ end }}

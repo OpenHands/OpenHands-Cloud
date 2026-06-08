@@ -46,11 +46,12 @@ def rendered_llm_model(custom_model: str) -> str:
 @pytest.mark.parametrize(
     ("custom_model", "expected_llm_model"),
     [
-        ("llama-3.1-70b-instruct", "openai/llama-3.1-70b-instruct"),
+        ("openai/llama-3.1-70b-instruct", "openai/llama-3.1-70b-instruct"),
         ("anthropic/claude-opus-4-7", "anthropic/claude-opus-4-7"),
+        ("bare-model-name", "bare-model-name"),
     ],
 )
-def test_custom_llm_model_rendering(
+def test_custom_llm_model_renders_as_configured(
     custom_model: str, expected_llm_model: str
 ) -> None:
     assert rendered_llm_model(custom_model) == expected_llm_model

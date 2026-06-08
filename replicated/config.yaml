@@ -304,7 +304,7 @@ spec:
           required: true
         - name: custom_base_url
           title: Custom LLM Base URL
-          help_text: Base URL of your OpenAI-compatible LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
+          help_text: Base URL of your custom LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
@@ -316,7 +316,7 @@ spec:
           required: false
         - name: custom_model
           title: Custom LLM Model Name
-          help_text: Model identifier as accepted by the endpoint. Bare names are routed as OpenAI-compatible models (e.g., llama-3.1-70b-instruct becomes openai/llama-3.1-70b-instruct). To use a non-OpenAI-shaped LiteLLM provider, enter the full provider/model string (e.g., anthropic/claude-opus-4-7).
+          help_text: Full LiteLLM model string for the custom endpoint. For OpenAI-compatible endpoints, prefix the model with openai/ (e.g., openai/llama-3.1-70b-instruct). For non-OpenAI-shaped endpoints, use that provider prefix (e.g., anthropic/claude-opus-4-7).
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
