@@ -143,10 +143,24 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
           required: true
+        - name: anthropic_models
+          title: Anthropic Models
+          help_text: Enter one or more Anthropic model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "claude-sonnet-4-5-20250929, claude-opus-4-7"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
+          required: true
         - name: openai_api_key
           title: OpenAI API Key
           help_text: Your OpenAI API key for GPT models
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
+          required: true
+        - name: openai_models
+          title: OpenAI Models
+          help_text: Enter one or more OpenAI model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "gpt-5.2"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
           required: true
         - name: google_api_type
@@ -164,6 +178,13 @@ spec:
           title: Google Gemini API Key
           help_text: Your Google AI Studio API key for Gemini models
           type: password
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
+          required: true
+        - name: google_gemini_models
+          title: Google Gemini Models
+          help_text: Enter one or more Gemini API model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "gemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
           required: true
         - name: google_vertex_project_id
@@ -185,16 +206,37 @@ spec:
           type: file
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
           required: true
+        - name: google_vertex_models
+          title: Google Vertex AI Models
+          help_text: Enter one or more Vertex AI model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "gemini-2.5-flash"
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
+          required: true
         - name: deepseek_api_key
           title: DeepSeek API Key
           help_text: Your DeepSeek API key
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
           required: true
+        - name: deepseek_models
+          title: DeepSeek Models
+          help_text: Enter one or more DeepSeek model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "deepseek-chat"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
+          required: true
         - name: mistral_api_key
           title: Mistral API Key
           help_text: Your Mistral AI API key
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
+          required: true
+        - name: mistral_models
+          title: Mistral Models
+          help_text: Enter one or more Mistral model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "mistral-large-latest"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
           required: true
         - name: azure_auth_method
@@ -247,9 +289,9 @@ spec:
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
         - name: azure_deployment_name
-          title: Azure OpenAI Deployment Name
-          help_text: The name of your Azure OpenAI model deployment (set when you deployed the model in Azure)
-          type: text
+          title: Azure OpenAI Deployments
+          help_text: Enter one or more Azure OpenAI deployment names, separated by commas or new lines. These are deployment names from Azure AI Foundry / Azure OpenAI, not the underlying model names. The first entry is used as the default. Optionally use display-name=deployment-name for shorter names in the OpenHands dropdown.
+          type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
         - name: groq_api_key
@@ -258,10 +300,23 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
           required: true
+        - name: groq_models
+          title: Groq Models
+          help_text: Enter one or more Groq model IDs to make available in OpenHands, separated by commas or new lines. The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
+          default: "llama-3.3-70b-versatile"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
+          required: true
         - name: openrouter_api_key
           title: OpenRouter API Key
           help_text: Your OpenRouter API key
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
+          required: true
+        - name: openrouter_models
+          title: OpenRouter Models
+          help_text: Enter one or more OpenRouter model IDs to make available in OpenHands, separated by commas or new lines (for example, anthropic/claude-sonnet-4.5). The first entry is used as the default. Optionally use display-name=model-id for shorter names in the OpenHands dropdown.
+          type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
           required: true
         - name: aws_auth_method
@@ -296,9 +351,9 @@ spec:
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
           required: true
         - name: bedrock_model_id
-          title: Bedrock Model ID
-          help_text: Bedrock model ID or cross-region inference profile ID. Cross-region profiles (prefix `us.`) work in any US region; standard model IDs are region-specific. Most current Claude models on Bedrock are inference-profile only (e.g., `us.anthropic.claude-sonnet-4-5-20250929-v1:0`).
-          type: text
+          title: Bedrock Models
+          help_text: Enter one or more Bedrock model IDs or inference profile IDs, separated by commas or new lines. The first entry is used as the default. For long IDs, use display-name=model-id (for example, sonnet=us.anthropic.claude-sonnet-4-5-20250929-v1:0).
+          type: textarea
           default: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
           required: true
@@ -315,9 +370,9 @@ spec:
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: false
         - name: custom_model
-          title: Custom LLM Model Name
-          help_text: Full LiteLLM model string for the custom endpoint. For OpenAI-compatible endpoints, prefix the model with openai/ (e.g., openai/llama-3.1-70b-instruct). For non-OpenAI-shaped endpoints, use that provider prefix (e.g., anthropic/claude-opus-4-7).
-          type: text
+          title: Custom LLM Model Names
+          help_text: Enter one or more full LiteLLM model strings accepted by your endpoint, separated by commas or new lines. The first entry is used as the default. For OpenAI-compatible endpoints, prefix each model with openai/ (for example, openai/llama-3.1-70b-instruct). For shorter names in the OpenHands dropdown, use display-name=model-string.
+          type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
 
