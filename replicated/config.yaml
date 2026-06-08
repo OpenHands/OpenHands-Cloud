@@ -327,7 +327,7 @@ spec:
       items:
         - name: litellm_admin_password
           title: LiteLLM Admin Password
-          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is admin. Changing this password restarts LiteLLM.
+          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. Changing this password restarts LiteLLM.
           type: password
           required: true
 
