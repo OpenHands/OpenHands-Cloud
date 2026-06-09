@@ -137,6 +137,11 @@ spec:
               title: "AWS Bedrock"
             - name: "custom"
               title: "Custom/Local LLM"
+        - name: allow_user_llm_configuration
+          title: Allow User-Configured LLM Providers
+          help_text: Allow OpenHands users to configure LLM providers outside the default models configured here. Leave disabled for governed deployments where users should only use administrator-approved models.
+          type: bool
+          default: "0"
         - name: anthropic_api_key
           title: Anthropic API Key
           help_text: Your Anthropic API key for Claude models
