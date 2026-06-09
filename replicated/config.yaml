@@ -137,11 +137,6 @@ spec:
               title: "AWS Bedrock"
             - name: "custom"
               title: "Custom/Local LLM"
-        - name: allow_user_llm_configuration
-          title: Allow User-Configured LLM Providers
-          help_text: Allow OpenHands users to configure LLM providers outside the default models configured here. Leave disabled for governed deployments where users should only use administrator-approved models.
-          type: bool
-          default: "0"
         - name: anthropic_api_key
           title: Anthropic API Key
           help_text: Your Anthropic API key for Claude models
@@ -290,7 +285,6 @@ spec:
           title: Azure OpenAI API Version
           help_text: The API version for your Azure OpenAI deployment
           type: text
-          default: "2024-10-21"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
         - name: azure_deployment_name
@@ -359,7 +353,6 @@ spec:
           title: Bedrock Models
           help_text: Enter one or more Bedrock model IDs or inference profile IDs, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
-          default: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
           required: true
         - name: custom_base_url
@@ -380,6 +373,11 @@ spec:
           type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
+        - name: allow_user_llm_configuration
+          title: Enable Bring Your Own Key for Users
+          help_text: Allow users to configure their own LLM providers outside of the default models configured here. Leave disabled for governed deployments where users should only use administrator-approved models.
+          type: bool
+          default: "0"
 
     - name: litellm_admin_console
       title: LiteLLM Admin Console
