@@ -150,7 +150,7 @@ spec:
           required: true
         - name: anthropic_models
           title: Anthropic Models
-          help_text: Enter one or more Anthropic model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more Anthropic model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "claude-sonnet-4-5-20250929, claude-opus-4-7"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
@@ -163,7 +163,7 @@ spec:
           required: true
         - name: openai_models
           title: OpenAI Models
-          help_text: Enter one or more OpenAI model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more OpenAI model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "gpt-5.2"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
@@ -187,7 +187,7 @@ spec:
           required: true
         - name: google_gemini_models
           title: Google Gemini Models
-          help_text: Enter one or more Gemini API model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more Gemini API model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "gemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
@@ -213,7 +213,7 @@ spec:
           required: true
         - name: google_vertex_models
           title: Google Vertex AI Models
-          help_text: Enter one or more Vertex AI model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more Vertex AI model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "gemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
@@ -226,7 +226,7 @@ spec:
           required: true
         - name: deepseek_models
           title: DeepSeek Models
-          help_text: Enter one or more DeepSeek model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more DeepSeek model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "deepseek-chat"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
@@ -239,7 +239,7 @@ spec:
           required: true
         - name: mistral_models
           title: Mistral Models
-          help_text: Enter one or more Mistral model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more Mistral model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "mistral-large-latest"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
@@ -295,7 +295,7 @@ spec:
           required: true
         - name: azure_deployment_name
           title: Azure OpenAI Deployments
-          help_text: Enter one or more Azure OpenAI deployment names, separated by commas or new lines. These are deployment names from Azure AI Foundry / Azure OpenAI, not the underlying model names. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=deployment-name for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more Azure OpenAI deployment names, separated by commas or new lines. These are deployment names from Azure AI Foundry / Azure OpenAI, not the underlying model names. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
@@ -307,7 +307,7 @@ spec:
           required: true
         - name: groq_models
           title: Groq Models
-          help_text: Enter one or more Groq model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more Groq model IDs to make available in OpenHands, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "llama-3.3-70b-versatile"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
@@ -320,7 +320,7 @@ spec:
           required: true
         - name: openrouter_models
           title: OpenRouter Models
-          help_text: Enter one or more OpenRouter model IDs to make available in OpenHands, separated by commas or new lines (for example, anthropic/claude-sonnet-4.5). The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. Optionally use display-name=model-id for shorter names in the OpenHands model dropdown.
+          help_text: Enter one or more OpenRouter model IDs to make available in OpenHands, separated by commas or new lines (for example, anthropic/claude-sonnet-4.5). The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
           required: true
@@ -357,7 +357,7 @@ spec:
           required: true
         - name: bedrock_model_id
           title: Bedrock Models
-          help_text: Enter one or more Bedrock model IDs or inference profile IDs, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. For long IDs, use display-name=model-id (for example, sonnet=us.anthropic.claude-sonnet-4-5-20250929-v1:0).
+          help_text: Enter one or more Bedrock model IDs or inference profile IDs, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated.
           type: textarea
           default: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
@@ -376,7 +376,7 @@ spec:
           required: false
         - name: custom_model
           title: Custom LLM Model Names
-          help_text: Enter one or more full LiteLLM model strings accepted by your endpoint, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. For OpenAI-compatible endpoints, prefix each model with openai/ (for example, openai/llama-3.1-70b-instruct). For shorter names in the OpenHands model dropdown, use display-name=model-string.
+          help_text: Enter one or more full LiteLLM model strings accepted by your endpoint, separated by commas or new lines. The first entry seeds the initial Default LLM profile for new organizations. Existing LLM profiles are managed in OpenHands and are not changed when this list is updated. For OpenAI-compatible endpoints, prefix each model with openai/ (for example, openai/llama-3.1-70b-instruct).
           type: textarea
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true

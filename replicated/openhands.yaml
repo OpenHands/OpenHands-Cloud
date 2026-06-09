@@ -203,9 +203,8 @@ spec:
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
         model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "anthropic_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "anthropic/%s" $model) "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
-          # Entries accept either `model-id` or `display-name=model-id`.
-          # The display name becomes the LiteLLM route shown in OpenHands as
-          # `openhands/<display-name>`.
+          # Entries are split from the KOTS model list and exposed to OpenHands
+          # through the bundled LiteLLM proxy.
 
     runtime-api:
       enabled: true
