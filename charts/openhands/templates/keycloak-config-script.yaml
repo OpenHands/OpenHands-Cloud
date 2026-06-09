@@ -96,6 +96,17 @@ data:
     export GITLAB_HOST=${GITLAB_HOST:-"gitlab.com"}
     export AZURE_DEVOPS_TENANT_ID=${AZURE_DEVOPS_TENANT_ID:-"common"}
     envsubst '$WEB_HOST,$AUTH_WEB_HOST,$KEYCLOAK_REALM_NAME,$KEYCLOAK_CLIENT_ID,$KEYCLOAK_CLIENT_SECRET,$GITHUB_APP_CLIENT_ID,$GITHUB_APP_CLIENT_SECRET,$GITLAB_APP_CLIENT_ID,$GITLAB_APP_CLIENT_SECRET,$GITLAB_HOST,$BITBUCKET_APP_CLIENT_ID,$BITBUCKET_APP_CLIENT_SECRET,$GITHUB_BASE_URL,$KEYCLOAK_SMTP_PASSWORD,$BITBUCKET_DATA_CENTER_HOST,$BITBUCKET_DATA_CENTER_CLIENT_ID,$BITBUCKET_DATA_CENTER_CLIENT_SECRET,$AZURE_DEVOPS_TENANT_ID,$AZURE_DEVOPS_CLIENT_ID,$AZURE_DEVOPS_CLIENT_SECRET'< /realm-template/allhands-realm-github-provider.json.tmpl > /tmp/allhands-realm-github-provider.json
+    # Apply realm SSO session lifetimes (seconds) on top of the rendered realm
+    # JSON. These are numeric realm-level fields, so they are set with jq (the
+    # template must stay valid JSON) and flow through both the create path and
+    # the realm-settings update path below, meaning changes take effect on a
+    # live install at the next restart.
+    SSO_SESSION_IDLE_TIMEOUT={{ .Values.keycloak.ssoSessionIdleTimeout | default 1800 | int }}
+    SSO_SESSION_MAX_LIFESPAN={{ .Values.keycloak.ssoSessionMaxLifespan | default 36000 | int }}
+    jq --argjson idle "$SSO_SESSION_IDLE_TIMEOUT" --argjson max "$SSO_SESSION_MAX_LIFESPAN" \
+      '.ssoSessionIdleTimeout = $idle | .ssoSessionMaxLifespan = $max' \
+      /tmp/allhands-realm-github-provider.json > /tmp/allhands-realm-with-sessions.json
+    mv /tmp/allhands-realm-with-sessions.json /tmp/allhands-realm-github-provider.json
     REALM_JSON=/tmp/allhands-realm-github-provider.json
 
     if [ "$ERROR_MESSAGE" = "Realm not found." ]; then
