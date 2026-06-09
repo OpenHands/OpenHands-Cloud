@@ -21,19 +21,19 @@ dependencies:
   repository: oci://registry.replicated.com/library
   version: 1.9.0
 - name: runtime-api
-  repository: oci://ghcr.io/openhands/helm-charts
-  version: 0.3.6
+  repository: ""
+  version: '*'
 - name: automation
-  repository: oci://ghcr.io/openhands/helm-charts
-  version: 0.1.11
+  repository: ""
+  version: '*'
 - name: crd-check
-  repository: oci://ghcr.io/openhands/helm-charts
+  repository: file://../crd-check
   version: 0.1.0
 - name: plugin-directory
-  repository: oci://ghcr.io/openhands/helm-charts
-  version: 0.1.1
+  repository: ""
+  version: '*'
 - name: integrations-hub
-  repository: oci://ghcr.io/openhands/helm-charts
-  version: 0.1.0
-digest: sha256:3aa58e62234135be9e589ecd5ea5ac975586d2d5cd944378d6c5136b2427f03c
-generated: "2026-06-02T19:50:58.928102Z"
+  repository: ""
+  version: '*'
+digest: sha256:f835c23caa0a802a9d735412fdc824d173b9db21363f76330584058760d1c5ad
+generated: "2026-06-09T16:57:31.905634-04:00"

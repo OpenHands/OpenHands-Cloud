@@ -36,22 +36,21 @@ dependencies:
     repository: oci://registry.replicated.com/library
     version: 1.9.0
     condition: replicated.enabled
+  # The entries below have no repository: they are embedded subcharts that
+  # live in this chart's charts/ directory and version with the openhands
+  # chart itself. The dependency entries exist only for the condition flags.
   - name: runtime-api
-    repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.3.8
+    version: "*"
     condition: runtime-api.enabled
   - name: automation
-    repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.1.13
+    version: "*"
     condition: automation.enabled
   - name: crd-check
     repository: oci://ghcr.io/openhands/helm-charts
     version: 0.1.0
   - name: plugin-directory
-    repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.1.2
+    version: "*"
     condition: plugin-directory.enabled
   - name: integrations-hub
-    repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.1.1
+    version: "*"
     condition: integrations-hub.enabled

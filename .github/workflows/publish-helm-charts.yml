@@ -27,20 +27,14 @@ jobs:
     strategy:
       matrix:
         chart:
-          # Order matters: openhands depends on crd-check, runtime-api, automation,
-          # plugin-directory, and integrations-hub, so those must publish first.
+          # runtime-api, automation, plugin-directory, and integrations-hub live
+          # inside charts/openhands/charts/ as embedded subcharts and are not
+          # published on their own. crd-check stays published because
+          # charts/infra pulls it by OCI reference.
           - name: crd-check
             path: charts/crd-check
-          - name: runtime-api
-            path: charts/runtime-api
           - name: image-loader
             path: charts/image-loader
-          - name: automation
-            path: charts/automation
-          - name: plugin-directory
-            path: charts/plugin-directory
-          - name: integrations-hub
-            path: charts/integrations-hub
           - name: openhands
             path: charts/openhands
           - name: openhands-secrets
@@ -56,6 +50,18 @@ jobs:
         uses: azure/setup-helm@v3
         with:
           version: 'latest'
+
+      - name: Build embedded subchart dependencies
+        run: |
+          # helm does not recurse into embedded subcharts when updating
+          # dependencies, so vendor each embedded subchart's own dependencies
+          # (postgresql, minio, helm-release-pruner, ...) before packaging.
+          for subchart in ${{ matrix.chart.path }}/charts/*/; do
+            if [ -f "${subchart}Chart.yaml" ]; then
+              echo "Updating dependencies for embedded subchart ${subchart}"
+              helm dependency update "${subchart}"
+            fi
+          done
 
       - name: Test ${{ matrix.chart.name }} chart with default values
         run: |

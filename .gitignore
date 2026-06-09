@@ -1,4 +1,6 @@
-charts/**/charts
+# Chart dependencies vendored by `helm dependency update`. Only the archives
+# are ignored — embedded subchart sources (charts/openhands/charts/*/) are tracked.
+charts/**/charts/*.tgz
 
 **/.DS_Store
 __pycache__/
