@@ -306,6 +306,15 @@ keycloak:
   # keycloak-admin and keycloak-realm secrets) at that external server, and set
   # this to true.
   provisionRealm: false
+  # Parent-chart realm settings (not consumed by the Keycloak subchart),
+  # applied by the keycloak-config init container on create and on every
+  # update, so changes take effect on a live install.
+  # SSO session lifetimes for the OpenHands realm, in seconds. Idle timeout is
+  # how long a login session survives inactivity; max lifespan caps the total
+  # session duration before the user is sent back through the identity
+  # provider (e.g. Bitbucket Data Center) to log in again.
+  ssoSessionIdleTimeout: 1800
+  ssoSessionMaxLifespan: 36000
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1

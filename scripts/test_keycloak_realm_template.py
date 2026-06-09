@@ -98,6 +98,68 @@ def test_keycloak_api_call_extraction_is_not_tied_to_yaml_indent() -> None:
     assert "errorMessage" in keycloak_api_call_body(script_template)
 
 
+def sso_session_jq_filter(script_template: str) -> str:
+    match = re.search(
+        r"jq --argjson idle \"\$SSO_SESSION_IDLE_TIMEOUT\" "
+        r"--argjson max \"\$SSO_SESSION_MAX_LIFESPAN\" \\\n"
+        r"\s*'([^']+)'",
+        script_template,
+    )
+    assert match, (
+        "Could not find the SSO session lifetime jq override in "
+        "keycloak-config-script.yaml"
+    )
+    return match.group(1)
+
+
+def test_keycloak_config_script_applies_sso_session_lifetimes() -> None:
+    """The config script must apply keycloak.ssoSession* values to the realm JSON.
+
+    The realm template itself must stay valid JSON, so the numeric session
+    lifetimes are applied with jq after envsubst rather than templated in.
+    """
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+
+    assert ".Values.keycloak.ssoSessionIdleTimeout" in script_template
+    assert ".Values.keycloak.ssoSessionMaxLifespan" in script_template
+
+    jq_filter = sso_session_jq_filter(script_template)
+    assert ".ssoSessionIdleTimeout = $idle" in jq_filter
+    assert ".ssoSessionMaxLifespan = $max" in jq_filter
+
+
+def test_sso_session_jq_filter_rewrites_realm_lifetimes() -> None:
+    """Run the script's actual jq filter against the realm template."""
+    import shutil
+    import subprocess
+
+    if shutil.which("jq") is None:
+        pytest.skip("jq not available")
+
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    jq_filter = sso_session_jq_filter(script_template)
+
+    result = subprocess.run(
+        [
+            "jq",
+            "--argjson",
+            "idle",
+            "28800",
+            "--argjson",
+            "max",
+            "2592000",
+            jq_filter,
+            str(REALM_TEMPLATE),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    realm = json.loads(result.stdout)
+    assert realm["ssoSessionIdleTimeout"] == 28800
+    assert realm["ssoSessionMaxLifespan"] == 2592000
+
+
 def test_keycloak_error_guard_catches_missing_error_message() -> None:
     script_template = """\
     keycloak_api_call() {

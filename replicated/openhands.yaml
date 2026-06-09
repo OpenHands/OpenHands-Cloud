@@ -72,6 +72,8 @@ spec:
     keycloak:
       enabled: true
       url: 'http://keycloak'
+      ssoSessionIdleTimeout: 'repl{{ ConfigOption "keycloak_sso_session_idle_timeout" }}'
+      ssoSessionMaxLifespan: 'repl{{ ConfigOption "keycloak_sso_session_max_lifespan" }}'
       resourcesPreset: none
       resources:
         requests:

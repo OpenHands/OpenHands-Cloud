@@ -1054,3 +1054,25 @@ spec:
             regex:
               pattern: '(?s)^\s*(\{\s*\}|\{\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*(,\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*)*\})?\s*$'
               message: Must be blank or a JSON object with string values, such as {"Header-Name":"value"}
+        - name: keycloak_sso_session_idle_timeout
+          title: Login Session Idle Timeout (seconds)
+          help_text: >-
+            How long a login session stays valid without activity before the user must sign in again. Default is 1800 (30 minutes).
+          type: text
+          default: "1800"
+          required: true
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*$'
+              message: Must be a positive number of seconds
+        - name: keycloak_sso_session_max_lifespan
+          title: Login Session Max Duration (seconds)
+          help_text: >-
+            Maximum total lifetime of a login session before the user must sign in again, regardless of activity. Default is 36000 (10 hours). Each forced re-login also re-authorizes the configured identity provider (for example, Bitbucket Data Center records a new authorized-application grant), so raising this reduces how often that happens.
+          type: text
+          default: "36000"
+          required: true
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*$'
+              message: Must be a positive number of seconds
