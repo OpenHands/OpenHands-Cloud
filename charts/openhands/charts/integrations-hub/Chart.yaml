@@ -6,8 +6,3 @@ type: application
 # published on its own. Ships at whatever openhands version bundles it.
 version: 0.0.0
 appVersion: "0.1.0"
-dependencies:
-  - name: postgresql
-    version: 15.x.x
-    repository: https://charts.bitnami.com/bitnami
-    condition: postgresql.enabled

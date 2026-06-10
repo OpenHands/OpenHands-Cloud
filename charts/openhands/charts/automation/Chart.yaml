@@ -6,12 +6,3 @@ type: application
 # published on its own. Ships at whatever openhands version bundles it.
 version: 0.0.0
 appVersion: "0.1.0"
-dependencies:
-  - name: postgresql
-    version: 15.5.38
-    repository: oci://registry-1.docker.io/bitnamicharts
-    condition: postgresql.enabled
-  - name: minio
-    version: 5.0.10
-    repository: https://charts.min.io/
-    condition: minio.enabled
