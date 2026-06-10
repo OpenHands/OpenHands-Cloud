@@ -237,7 +237,7 @@ resendSync:
 runtime:
   image:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.26.0-python
+    tag: 1.28.0-python
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
