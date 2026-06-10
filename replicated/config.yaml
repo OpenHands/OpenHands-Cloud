@@ -451,7 +451,7 @@ spec:
           default: "0"
         - name: default_openhands_org_name
           title: Organization Name
-          help_text: Enter the name of the default organization. New organizations are created after a configured owner signs in.
+          help_text: 'Enter the name of the default organization. New organizations are created after a configured owner signs in. Note: renaming creates a new organization with the new name; the previous organization and its data remain, and members are moved into the new organization on their next sign-in.'
           type: text
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
           required: true
@@ -463,10 +463,16 @@ spec:
           required: true
         - name: default_openhands_org_auto_add_users
           title: Automatically Add Signed-In Users
-          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, new users land in the default organization automatically; existing users can switch to the default organization via the UI.
+          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in (they can switch workspaces afterwards in the app).
           type: bool
           default: "1"
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
+        - name: default_openhands_org_hide_personal_workspaces
+          title: Hide Personal Workspaces
+          help_text: 'Make the default organization the only workspace users see. Users'' existing personal-workspace conversations, secrets, API keys, and automations are hidden — not deleted — and equivalents can be recreated in the organization; disabling this option restores them. Organization LLM settings and billing are managed by organization admins. Users who are not yet members of the default organization keep seeing their personal workspace until they are added.'
+          type: bool
+          default: "0"
+          when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
 
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
