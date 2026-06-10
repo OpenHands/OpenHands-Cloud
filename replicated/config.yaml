@@ -446,21 +446,9 @@ spec:
       items:
         - name: default_openhands_org_enabled
           title: Enable Default OpenHands Organization
-          help_text: Turn on default OpenHands organization setup.
+          help_text: 'Turn on default OpenHands organization setup. The organization is created by the first user to sign in after enabling, and that user becomes its owner. Enable this and sign in yourself to claim ownership. The owner can rename the organization and manage members and roles in the app.'
           type: bool
           default: "0"
-        - name: default_openhands_org_name
-          title: Organization Name
-          help_text: 'Enter the name of the default organization. It is created after a configured owner signs in. Note: renaming an org here, after already bootstrapping, will create a new org; the previous org and its data remain. To rename an existing org, use its organization settings in the app.'
-          type: text
-          when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
-          required: true
-        - name: default_openhands_org_owner_emails
-          title: Owner Emails
-          help_text: 'Enter one or more owner email addresses, separated by commas (e.g., user1@example.com, user2@example.com). Note: removing an email from this field does not remove or demote existing owners; existing owners can be managed in the app.'
-          type: textarea
-          when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
-          required: true
         - name: default_openhands_org_auto_add_users
           title: Automatically Add Signed-In Users
           help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in.
@@ -471,7 +459,7 @@ spec:
           title: Hide Personal Workspaces
           help_text: 'Make the default organization the only workspace users see. Existing personal workspace data (conversations, secrets, API keys, automations) is hidden, not deleted; disabling this option restores it.'
           type: bool
-          default: "0"
+          default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
 
     - name: bitbucket_data_center_authentication
