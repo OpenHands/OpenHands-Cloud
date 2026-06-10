@@ -648,7 +648,7 @@ runtime-api:
     count: 1
     configs:
       - name: default
-        image: "ghcr.io/openhands/agent-server:1.26.0-python"
+        image: "ghcr.io/openhands/agent-server:1.28.0-python"
         working_dir: "/workspace"
         environment:
           LOG_JSON: "1"
