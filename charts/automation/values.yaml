@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/openhands/automation
-  tag: sha-eac5478
+  tag: sha-a3ad2b7
 
 imagePullSecrets: []
 
