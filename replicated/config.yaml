@@ -893,7 +893,7 @@ spec:
           title: Sandbox Image Tag
           help_text: Image tag, e.g. 1.28.0-python
           type: text
-          default: "1.26.0-python"
+          default: "1.28.0-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
