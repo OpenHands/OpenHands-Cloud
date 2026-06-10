@@ -60,13 +60,6 @@ $(foreach element,$(MANIFESTS),$(eval $(call make-manifest-target,$(element))))
 define make-chart-target
 $(eval VER := $(shell yq .version $(CHARTDIR)/$1/Chart.yaml))
 $(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.yaml' -o -name '*.yml' -o -name "*.tpl" -o -name "NOTES.txt" -o -name "values.schema.json") | $$(BUILDDIR)
-	@# Embedded subcharts (charts/$1/charts/*/) need their own dependencies
-	@# vendored first — helm does not recurse into them when packaging.
-	@for sub in $(CHARTDIR)/$1/charts/*/; do \
-		if [ -f "$$$$sub/Chart.yaml" ]; then \
-			helm dependency update "$$$$sub"; \
-		fi; \
-	done
 	@# Rewrite any dependency that points to a remote registry but exists as a
 	@# sibling chart to use a local file:// reference instead. This lets
 	@# `helm package -u` resolve unpublished chart versions during local builds.

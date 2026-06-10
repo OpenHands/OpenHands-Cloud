@@ -51,18 +51,6 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Build embedded subchart dependencies
-        run: |
-          # helm does not recurse into embedded subcharts when updating
-          # dependencies, so vendor each embedded subchart's own dependencies
-          # (postgresql, minio, helm-release-pruner, ...) before packaging.
-          for subchart in ${{ matrix.chart.path }}/charts/*/; do
-            if [ -f "${subchart}Chart.yaml" ]; then
-              echo "Updating dependencies for embedded subchart ${subchart}"
-              helm dependency update "${subchart}"
-            fi
-          done
-
       - name: Test ${{ matrix.chart.name }} chart with default values
         run: |
           echo "Testing ${{ matrix.chart.name }} chart with default values"

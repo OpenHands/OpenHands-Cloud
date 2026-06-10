@@ -145,19 +145,6 @@ jobs:
           # Update Chart.yaml with preview version
           yq -i ".version = \"${PREVIEW_VERSION}\"" charts/${{ matrix.chart.name }}/Chart.yaml
 
-      - name: Build embedded subchart dependencies
-        if: steps.check.outputs.should_publish == 'true'
-        run: |
-          # helm does not recurse into embedded subcharts when updating
-          # dependencies, so vendor each embedded subchart's own dependencies
-          # before packaging.
-          for subchart in ${{ matrix.chart.path }}/charts/*/; do
-            if [ -f "${subchart}Chart.yaml" ]; then
-              echo "Updating dependencies for embedded subchart ${subchart}"
-              helm dependency update "${subchart}"
-            fi
-          done
-
       - name: Test ${{ matrix.chart.name }} chart with default values
         if: steps.check.outputs.should_publish == 'true'
         run: |
@@ -243,18 +230,6 @@ jobs:
         uses: azure/setup-helm@v3
         with:
           version: 'latest'
-
-      - name: Build embedded subchart dependencies
-        run: |
-          # helm does not recurse into embedded subcharts when updating
-          # dependencies, so vendor each embedded subchart's own dependencies
-          # before packaging.
-          for subchart in ${{ matrix.chart.path }}/charts/*/; do
-            if [ -f "${subchart}Chart.yaml" ]; then
-              echo "Updating dependencies for embedded subchart ${subchart}"
-              helm dependency update "${subchart}"
-            fi
-          done
 
       - name: Lint ${{ matrix.chart.name }} chart
         run: |
