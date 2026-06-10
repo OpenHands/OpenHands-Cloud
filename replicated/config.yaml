@@ -451,7 +451,7 @@ spec:
           default: "0"
         - name: default_openhands_org_name
           title: Organization Name
-          help_text: 'Enter the name of the default organization. New organizations are created after a configured owner signs in. Note: renaming creates a new organization with the new name; the previous organization and its data remain, and members are moved into the new organization on their next sign-in.'
+          help_text: 'Enter the name of the default organization. It is created after a configured owner signs in. Note: renaming an org here will create a new org; the previous org and its data remain.'
           type: text
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
           required: true
