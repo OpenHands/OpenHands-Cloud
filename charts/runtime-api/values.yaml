@@ -132,12 +132,14 @@ externalDatabase:
   enabled: false
   existingSecret: postgres-password
 
-# External database configuration (used when postgresql.enabled=false)
+# External-database settings. NOTE: for a plain external Postgres the
+# connection DB_HOST/DB_PORT/DB_USER/DB_NAME are supplied via `env` (see
+# templates/_env.yaml) — the keys below are not a full connection block.
 database:
-  create: false # Will only be true for AWS as it can't create the DB in terraform
+  create: false # AWS-only: provisions the DB + user via the create-postgres-user job
   secretName: runtime-api-db-credentials # Secret containing external database credentials
-  port: "5432"
-  sslMode: "prefer"
+  port: "5432" # only used on the create=true (AWS) path
+  sslMode: "prefer" # sets DB_SSL_MODE: prefer | require | disable
   poolSize:
     api: 5 # Pool size for API deployment (default)
     cronjobs: 2 # Pool size for cronjobs (default)

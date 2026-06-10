@@ -681,6 +681,10 @@ runtime-api:
   externalDatabase:
     enabled: false
     existingSecret: postgres-password
+  # SSL mode for the runtime-api -> Postgres connection (sets DB_SSL_MODE).
+  # prefer | require | disable
+  database:
+    sslMode: "prefer"
   ingress:
     enabled: false
     # REQUIRED: Update to a hostname in a DNS domain you own
@@ -692,8 +696,9 @@ runtime-api:
   env:
     DB_HOST: oh-main-postgresql
     DB_PORT: "5432"
-    DB_SSL_MODE: "prefer"
-    PGSSLMODE: "prefer"
+    # DB_SSL_MODE is driven by runtime-api.database.sslMode above (do not pin
+    # it here, or the knob is overridden). PGSSLMODE is no longer set — the
+    # chart standardizes on DB_SSL_MODE.
     DB_USER: postgres
     DB_NAME: runtime_api_db
     K8S_NAMESPACE: "openhands"

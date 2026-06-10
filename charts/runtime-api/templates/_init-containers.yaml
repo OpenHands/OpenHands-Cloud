@@ -5,6 +5,9 @@
   command: ['sh', '-c']
   args:
     - |
+      # libpq tools (pg_isready) read PGSSLMODE; source it from DB_SSL_MODE
+      # (the standard knob), falling back to any PGSSLMODE already set.
+      export PGSSLMODE="${DB_SSL_MODE:-${PGSSLMODE:-}}"
       echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT to be ready..."
       # pg_isready succeeds even if the database doesn't exist yet;
       # we pass credentials and database to avoid failed auth log entries.
@@ -23,6 +26,9 @@
   args:
     - |
       export PGPASSWORD=$DB_PASS
+      # libpq (psql) reads PGSSLMODE; source it from DB_SSL_MODE (the standard
+      # knob), falling back to any PGSSLMODE already set.
+      export PGSSLMODE="${DB_SSL_MODE:-${PGSSLMODE:-}}"
       PSQL="psql -h $DB_HOST -p $DB_PORT -U $DB_USER"
 
       echo "Ensuring database \"$DB_NAME\" exists..."

@@ -28,12 +28,16 @@ spec:
             secretKeyRef:
               name: postgres-password
               key: password
+        - name: DB_SSL_MODE
+          value: {{ .Values.database.sslMode | default "prefer" | quote }}
         resources:
           {{- toYaml .Values.jobSettings.resources | nindent 10 }}
         command:
           - sh
           - -c
           - |
+            # libpq (psql) reads PGSSLMODE; source it from DB_SSL_MODE.
+            export PGSSLMODE="${DB_SSL_MODE:-${PGSSLMODE:-}}"
             # Create the database if it doesn't exist
             psql -h {{.Values.database.host}} -p {{.Values.database.port}} -U {{.Values.database.user}} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='{{.Values.database.name}}'" | grep -q 1 || \
             psql -h {{.Values.database.host}} -p {{.Values.database.port}} -U {{.Values.database.user}} -d postgres -c "CREATE DATABASE {{.Values.database.name}};"

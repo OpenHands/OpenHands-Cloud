@@ -1,15 +1,21 @@
 {{- define "runtime-api.env" }}
-{{- $dbSslMode := (get .Values.env "DB_SSL_MODE") | default (.Values.database.sslMode | default "prefer") }}
+{{- /*
+  Standardize on DB_SSL_MODE as the single Postgres SSL-mode knob.
+  Precedence: explicit env.DB_SSL_MODE, then a legacy env.PGSSLMODE, then the
+  database.sslMode chart value, then "prefer". We intentionally do NOT emit a
+  separate PGSSLMODE env var (it used to mirror DB_SSL_MODE and could silently
+  diverge); libpq tools that need PGSSLMODE derive it from DB_SSL_MODE in their
+  container shell (see _init-containers.yaml).
+*/}}
+{{- $dbSslMode := (get .Values.env "DB_SSL_MODE") | default (get .Values.env "PGSSLMODE") | default (.Values.database.sslMode | default "prefer") }}
 {{- range $key, $value := .Values.env }}
+{{- if ne $key "PGSSLMODE" }}
 - name: {{ $key }}
   value: {{ $value | quote }}
 {{- end }}
+{{- end }}
 {{- if not (hasKey .Values.env "DB_SSL_MODE") }}
 - name: DB_SSL_MODE
-  value: {{ $dbSslMode | quote }}
-{{- end }}
-{{- if not (hasKey .Values.env "PGSSLMODE") }}
-- name: PGSSLMODE
   value: {{ $dbSslMode | quote }}
 {{- end }}
 - name: RUNTIME_IDLE_SECONDS
