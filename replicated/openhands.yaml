@@ -17,7 +17,7 @@ spec:
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
-      tag: 'sha-56e9936'
+      tag: 'sha-34b2716'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
@@ -33,6 +33,7 @@ spec:
       # ignored, so the flag falls back to the model default (false) and the Jira DC
       # integration card never renders. Mirror jira_data_center_enabled here.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA_DC: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+      OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
       OH_AGENT_SERVER_ENV: '{"SSL_CERT_FILE": "/etc/openhands/ca-bundle/ca-bundle.crt", "REQUESTS_CA_BUNDLE": "/etc/openhands/ca-bundle/ca-bundle.crt", "GIT_SSL_CAINFO": "/etc/openhands/ca-bundle/ca-bundle.crt", "CURL_CA_BUNDLE": "/etc/openhands/ca-bundle/ca-bundle.crt", "NODE_EXTRA_CA_CERTS": "/etc/openhands/ca-bundle/ca-bundle.crt"}'
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
@@ -201,10 +202,9 @@ spec:
           OR_SITE_URL: "https://docs.all-hands.dev"
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
-        model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "anthropic_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "anthropic/%s" $model) "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
-          # Entries accept either `model-id` or `display-name=model-id`.
-          # The display name becomes the LiteLLM route shown in OpenHands as
-          # `openhands/<display-name>`.
+        model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "anthropic_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "anthropic/%s" $model) "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+          # Entries are split from the KOTS model list and exposed to OpenHands
+          # through the bundled LiteLLM proxy.
 
     runtime-api:
       enabled: true
@@ -655,7 +655,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "openai_models" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "openai_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "openai/%s" $model) "api_key" "os.environ/OPENAI_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "openai_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "openai/%s" $model) "api_key" "os.environ/OPENAI_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
       recursiveMerge: true
       values:
@@ -663,7 +663,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "google_gemini_models" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "google_gemini_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "gemini/%s" $model) "api_key" "os.environ/GOOGLE_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "google_gemini_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "gemini/%s" $model) "api_key" "os.environ/GOOGLE_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl ConfigOptionEquals "llm_provider" "deepseek" }}'
       recursiveMerge: true
       values:
@@ -671,7 +671,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "deepseek_models" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "deepseek_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "deepseek/%s" $model) "api_key" "os.environ/DEEPSEEK_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "deepseek_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "deepseek/%s" $model) "api_key" "os.environ/DEEPSEEK_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl ConfigOptionEquals "llm_provider" "mistral" }}'
       recursiveMerge: true
       values:
@@ -679,7 +679,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "mistral_models" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "mistral_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "mistral/%s" $model) "api_key" "os.environ/MISTRAL_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "mistral_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "mistral/%s" $model) "api_key" "os.environ/MISTRAL_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl ConfigOptionEquals "llm_provider" "groq" }}'
       recursiveMerge: true
       values:
@@ -687,7 +687,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "groq_models" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "groq_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "groq/%s" $model) "api_key" "os.environ/GROQ_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "groq_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "groq/%s" $model) "api_key" "os.environ/GROQ_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl ConfigOptionEquals "llm_provider" "openrouter" }}'
       recursiveMerge: true
       values:
@@ -695,7 +695,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "openrouter_models" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "openrouter_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "openrouter/%s" $model) "api_key" "os.environ/OPENROUTER_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "openrouter_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "openrouter/%s" $model) "api_key" "os.environ/OPENROUTER_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "api_key") }}'
       recursiveMerge: true
       values:
@@ -704,7 +704,7 @@ spec:
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"AZURE_API_KEY\": \"%s\", \"AZURE_API_BASE\": \"%s\", \"AZURE_API_VERSION\": \"%s\"}" (ConfigOption "azure_api_key") (ConfigOption "azure_endpoint") (ConfigOption "azure_api_version") }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "azure_deployment_name" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "azure/%s" $model) "api_key" "os.environ/AZURE_API_KEY" "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "azure_deployment_name" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "azure/%s" $model) "api_key" "os.environ/AZURE_API_KEY" "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
       recursiveMerge: true
       values:
@@ -712,7 +712,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "azure_deployment_name" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "azure_deployment_name" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "azure/%s" $model) "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION" "tenant_id" "os.environ/AZURE_TENANT_ID" "client_id" "os.environ/AZURE_CLIENT_ID" "client_secret" "os.environ/AZURE_CLIENT_SECRET")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "azure_deployment_name" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "azure/%s" $model) "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION" "tenant_id" "os.environ/AZURE_TENANT_ID" "client_id" "os.environ/AZURE_CLIENT_ID" "client_secret" "os.environ/AZURE_CLIENT_SECRET")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
 
     # Custom / Local LLM — pass the configured model through as a full LiteLLM
     # model string. OpenAI-compatible custom endpoints should be configured as
@@ -726,7 +726,7 @@ spec:
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"CUSTOM_API_KEY\": \"%s\", \"CUSTOM_API_BASE\": \"%s\", \"SSL_CERT_FILE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"REQUESTS_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"GIT_SSL_CAINFO\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"CURL_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"NODE_EXTRA_CA_CERTS\": \"/etc/openhands/ca-bundle/ca-bundle.crt\"}" (ConfigOption "custom_api_key") (ConfigOption "custom_base_url") }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "custom_model" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "custom_model" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
 
     - when: '{{repl and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
       recursiveMerge: true
@@ -759,7 +759,7 @@ spec:
           envVars:
             GOOGLE_APPLICATION_CREDENTIALS: "/etc/gcloud/vertex_credentials.json"
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "google_vertex_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "vertex_ai/%s" $model) "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "google_vertex_models" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "vertex_ai/%s" $model) "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
           vertexAI:
             enabled: true
             project: '{{repl ConfigOption "google_vertex_project_id"}}'
@@ -776,7 +776,7 @@ spec:
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"AWS_ACCESS_KEY_ID\": \"%s\", \"AWS_SECRET_ACCESS_KEY\": \"%s\", \"AWS_REGION_NAME\": \"%s\"}" (ConfigOption "aws_access_key_id") (ConfigOption "aws_secret_access_key") (ConfigOption "aws_region_name") }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "bedrock_model_id" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "bedrock/%s" $model) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "bedrock_model_id" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "bedrock/%s" $model) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     # AWS Bedrock — instance profile / IRSA. Omit AWS_ACCESS_KEY_ID/SECRET so
     # boto3 falls back to its default credential chain (IMDS on EC2, web
     # identity token on EKS). Region still injected explicitly.
@@ -787,7 +787,7 @@ spec:
           OPENHANDS_MANAGED_LITELLM_MODELS: 'repl{{ ConfigOption "bedrock_model_id" | replace "\r" "," | replace "\n" "," }}'
         litellm-helm:
           proxy_config:
-            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "bedrock_model_id" | replace "\r" "," | replace "\n" ",") }}repl{{ $entry := trim $raw }}repl{{ if $entry }}repl{{ $parts := splitList "=" $entry }}repl{{ $alias := trim (first $parts) }}repl{{ $model := trim (last $parts) }}repl{{ if and $alias $model }}repl{{ $models = append $models (dict "model_name" $alias "litellm_params" (dict "model" (printf "bedrock/%s" $model) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ range $raw := splitList "," (ConfigOption "bedrock_model_id" | replace "\r" "," | replace "\n" ",") }}repl{{ $model := trim $raw }}repl{{ if $model }}repl{{ $models = append $models (dict "model_name" $model "litellm_params" (dict "model" (printf "bedrock/%s" $model) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs
