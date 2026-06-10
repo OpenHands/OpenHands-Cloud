@@ -463,7 +463,7 @@ spec:
           required: true
         - name: default_openhands_org_auto_add_users
           title: Automatically Add Signed-In Users
-          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in (they can switch workspaces afterwards in the app).
+          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in.
           type: bool
           default: "1"
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
