@@ -2,7 +2,9 @@ apiVersion: v2
 name: automation
 description: OpenHands Automations Service — scheduled and event-driven automation execution
 type: application
-version: 0.1.13
+# Inert: embedded subchart of the openhands umbrella, not versioned or
+# published on its own. Ships at whatever openhands version bundles it.
+version: 0.0.0
 appVersion: "0.1.0"
 dependencies:
   - name: postgresql

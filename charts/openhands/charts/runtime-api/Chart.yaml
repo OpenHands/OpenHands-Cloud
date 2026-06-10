@@ -1,7 +1,9 @@
 apiVersion: v2
 name: runtime-api
 description: A Helm chart for the FastAPI application
-version: 0.3.8 # Change this to trigger a new helm chart version being published
+# Inert: embedded subchart of the openhands umbrella, not versioned or
+# published on its own. Ships at whatever openhands version bundles it.
+version: 0.0.0
 appVersion: "1.0.0"
 dependencies:
   - name: postgresql

@@ -27,7 +27,7 @@ dependencies:
   repository: ""
   version: '*'
 - name: crd-check
-  repository: file://../crd-check
+  repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
 - name: plugin-directory
   repository: ""
@@ -35,5 +35,5 @@ dependencies:
 - name: integrations-hub
   repository: ""
   version: '*'
-digest: sha256:f835c23caa0a802a9d735412fdc824d173b9db21363f76330584058760d1c5ad
-generated: "2026-06-09T16:57:31.905634-04:00"
+digest: sha256:c61bc16f4b3c2dafc37c6ba217e380523404ef0328eba0b66373390e37cc311e
+generated: "2026-06-10T07:14:26.002838-04:00"
