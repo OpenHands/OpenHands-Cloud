@@ -451,7 +451,7 @@ spec:
           default: "0"
         - name: default_openhands_org_name
           title: Organization Name
-          help_text: 'Enter the name of the default organization. It is created after a configured owner signs in. Note: renaming an org here will create a new org; the previous org and its data remain.'
+          help_text: 'Enter the name of the default organization. It is created after a configured owner signs in. Note: renaming an org here, after already bootstrapping, will create a new org; the previous org and its data remain. To rename an existing org, use its organization settings in the app.'
           type: text
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
           required: true
