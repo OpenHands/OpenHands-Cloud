@@ -36,21 +36,6 @@ jobs:
           tar -xzf replicated_*_linux_amd64.tar.gz -C /tmp/replicated-cli replicated
           sudo mv /tmp/replicated-cli/replicated /usr/local/bin/
 
-      - name: Update chart dependencies to use local paths for PR validation
-        run: |
-          # For PR validation, we need to use file:// dependencies instead of OCI
-          # because the updated chart versions don't exist in the registry yet.
-          #
-          # Note: openhands-secrets and image-loader are NOT dependencies of any chart.
-          # They are standalone Replicated HelmChart resources (see replicated/secrets.yaml
-          # and replicated/image-loader.yaml). Only runtime-api is a dependency of openhands.
-          #
-          # Check if runtime-api is a dependency in openhands chart and update it to use local path
-          if yq -e '.dependencies[] | select(.name == "runtime-api")' charts/openhands/Chart.yaml > /dev/null 2>&1; then
-            echo "Updating openhands chart to use local runtime-api dependency"
-            yq -i '(.dependencies[] | select(.name == "runtime-api")).repository = "file://../runtime-api"' charts/openhands/Chart.yaml
-          fi
-
       - name: Lint Replicated release
         env:
           REPLICATED_APP: ${{ secrets.REPLICATED_APP }}

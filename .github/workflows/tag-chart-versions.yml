@@ -28,8 +28,10 @@ jobs:
 
       - name: Tag chart versions
         run: |
-          # Define the charts to process
-          CHARTS=("automation" "image-loader" "openhands" "openhands-secrets" "runtime-api")
+          # Define the charts to process. Embedded subcharts of openhands
+          # (runtime-api, automation, plugin-directory, integrations-hub)
+          # version with the openhands chart and are not tagged separately.
+          CHARTS=("image-loader" "openhands" "openhands-secrets")
           
           for chart in "${CHARTS[@]}"; do
             CHART_PATH="charts/${chart}/Chart.yaml"
