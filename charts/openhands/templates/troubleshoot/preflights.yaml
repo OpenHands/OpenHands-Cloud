@@ -1,6 +1,5 @@
 {{- define "troubleshoot.preflights" -}}
 {{- $tls := include "troubleshoot.tlsHostname.vars" . | fromYaml -}}
-{{- $defaultOrg := include "troubleshoot.defaultOrg.enabled" . -}}
 apiVersion: troubleshoot.sh/v1beta2
 kind: Preflight
 metadata:
@@ -11,15 +10,9 @@ spec:
     {{- if $tls.cert }}
     {{- include "troubleshoot.collectors.tlsHostname" . | nindent 4 }}
     {{- end }}
-    {{- if $defaultOrg }}
-    {{- include "troubleshoot.collectors.defaultOrg" . | nindent 4 }}
-    {{- end }}
   analyzers:
     {{- include "troubleshoot.analyzers.shared" . | nindent 4 }}
     {{- if $tls.cert }}
     {{- include "troubleshoot.analyzers.tlsHostname" . | nindent 4 }}
-    {{- end }}
-    {{- if $defaultOrg }}
-    {{- include "troubleshoot.analyzers.defaultOrg" . | nindent 4 }}
     {{- end }}
 {{- end -}}
