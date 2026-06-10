@@ -39,6 +39,13 @@ spec:
       OPENHANDS_DEFAULT_ORG_NAME: 'repl{{ ConfigOption "default_openhands_org_name" }}'
       OPENHANDS_DEFAULT_ORG_OWNER_EMAILS: 'repl{{ ConfigOption "default_openhands_org_owner_emails" }}'
       OPENHANDS_DEFAULT_ORG_AUTO_ADD_USERS: 'repl{{ ConfigOptionEquals "default_openhands_org_auto_add_users" "1" }}'
+      # Hiding personal workspaces needs both forms: the structured flag drives
+      # the web client (plain envs are ignored once any OH_WEB_CLIENT_FEATURE_FLAGS_*
+      # is set — see the ENABLE_JIRA_DC note above), and the plain env drives the
+      # server-side default-org bootstrap that moves users off personal workspaces
+      # on login.
+      OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES: 'repl{{ ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1" }}'
+      HIDE_PERSONAL_WORKSPACES: 'repl{{ ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1" }}'
 
     ingress:
       enabled: true
