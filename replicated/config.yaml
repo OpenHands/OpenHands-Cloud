@@ -469,7 +469,7 @@ spec:
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
         - name: default_openhands_org_hide_personal_workspaces
           title: Hide Personal Workspaces
-          help_text: 'Make the default organization the only workspace users see. Users'' existing personal-workspace conversations, secrets, API keys, and automations are hidden — not deleted — and equivalents can be recreated in the organization; disabling this option restores them. Organization LLM settings and billing are managed by organization admins. Users who are not yet members of the default organization keep seeing their personal workspace until they are added.'
+          help_text: 'Make the default organization the only workspace users see. Existing personal workspace data (conversations, secrets, API keys, automations) is hidden, not deleted; disabling this option restores it.'
           type: bool
           default: "0"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
