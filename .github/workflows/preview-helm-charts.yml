@@ -9,7 +9,7 @@ jobs:
     uses: ./.github/workflows/validate-chart-versions.yml
     with:
       base_ref: origin/${{ github.event.pull_request.base.ref }}
-      enforce_version_bump: false
+      enforce_version_bump: true
 
   detect-changes:
     runs-on: ubuntu-latest
