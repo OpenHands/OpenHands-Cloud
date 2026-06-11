@@ -1026,23 +1026,22 @@ spec:
         - name: litellm_forward_client_headers
           title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
           help_text: >-
-            Forward selected headers from each client request through LiteLLM to upstream LLM providers. When enabled, LiteLLM forwards the anthropic-beta header and client x-* headers, except x-stainless-* headers. It does not forward Authorization or non-x-* gateway headers such as Ocp-Apim-Subscription-Key. Leave disabled unless you need provider-visible client headers. Use Custom LLM Extra HTTP Headers for static gateway auth or routing headers.
+            Forward selected headers from each client request through LiteLLM to upstream LLM providers. When enabled, LiteLLM forwards the anthropic-beta header and client x-* headers, except x-stainless-* headers. It does not forward Authorization or non-x-* gateway headers such as Ocp-Apim-Subscription-Key. Leave disabled unless you need provider-visible client headers. Use Extra Upstream HTTP Headers for static gateway auth or routing headers.
           type: bool
           default: "0"
-        - name: custom_llm_extra_headers_enabled
-          title: Enable Custom LLM Extra HTTP Headers (JSON)
+        - name: extra_request_headers_enabled
+          title: Enable Extra Upstream HTTP Headers (JSON)
           help_text: >-
-            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every request to the custom upstream gateway for all users in this deployment. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the standard Authorization bearer header.
+            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every outbound request to the upstream LLM provider for all users in this deployment. Provider-managed headers such as Authorization or x-api-key are constructed by LiteLLM and cannot be overridden here. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the provider's standard authentication.
           type: bool
           default: "0"
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
-        - name: custom_llm_extra_headers
-          title: Custom LLM Extra HTTP Headers (JSON)
+        - name: extra_request_headers
+          title: Extra Upstream HTTP Headers (JSON)
           help_text: >-
             Format: JSON object mapping header names to values. Example: {"Ocp-Apim-Subscription-Key": "abc123", "X-Tenant-Id": "prod"}
           type: textarea
           default: ""
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "custom_llm_extra_headers_enabled" "1") }}'
+          when: 'repl{{ ConfigOptionEquals "extra_request_headers_enabled" "1" }}'
           required: false
           validation:
             regex:
