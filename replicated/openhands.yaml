@@ -41,9 +41,12 @@ spec:
       # the web client (plain envs are ignored once any OH_WEB_CLIENT_FEATURE_FLAGS_*
       # is set — see the ENABLE_JIRA_DC note above), and the plain env drives the
       # server-side default-org bootstrap that moves users off personal workspaces
-      # on login.
-      OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES: 'repl{{ ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1" }}'
-      HIDE_PERSONAL_WORKSPACES: 'repl{{ ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1" }}'
+      # on login. Both repeat the checkbox's `when` gating (default org enabled +
+      # auto-add on) because KOTS keeps a hidden item's stored value: unchecking
+      # auto-add or disabling the default org must also switch hiding off, or users
+      # would lose their personal workspace with no auto-membership to land in.
+      OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") (ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1") }}'
+      HIDE_PERSONAL_WORKSPACES: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") (ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1") }}'
 
     ingress:
       enabled: true
