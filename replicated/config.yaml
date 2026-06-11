@@ -327,9 +327,9 @@ spec:
       items:
         - name: litellm_admin_password
           title: LiteLLM Admin Password
-          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. Changing this password restarts LiteLLM.
+          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. A random password is generated at install; to use the LiteLLM Admin UI, set your own password here and deploy. Changing this password restarts LiteLLM.
           type: password
-          required: true
+          value: '{{repl RandomString 32}}'
 
     - name: security_secrets
       title: Security & Authentication
