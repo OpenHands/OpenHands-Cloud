@@ -143,13 +143,18 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
           required: true
-        - name: anthropic_additional_models
-          title: Additional Anthropic Models
-          help_text: Optional. Additional Anthropic model IDs to expose through the bundled LiteLLM proxy, one per line (e.g., claude-haiku-4-5). Names must be unique. The default Claude models remain the org default models.
+        # The models textareas below are `required` with a templated/literal
+        # `value:`. KOTS applies `value` whenever the item is unset (and keeps
+        # it across updates because the items are not readonly), so the
+        # prefilled value satisfies `required` on both fresh installs and
+        # upgrades; admins can edit it freely.
+        - name: anthropic_models
+          title: Anthropic Models
+          help_text: Anthropic model IDs served through the bundled LiteLLM proxy, one per line (e.g., claude-haiku-4-5). The first line is the default model for new users and orgs (org admins can change the default in-app afterwards). Names must be unique. Removing a model that existing users or orgs have selected leaves their settings pointing at an unavailable model (the app shows an unavailable badge) until they pick another one.
           type: textarea
-          default: ""
+          value: "claude-sonnet-4-5-20250929\nclaude-opus-4-7"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
-          required: false
+          required: true
         - name: openai_api_key
           title: OpenAI API Key
           help_text: Your OpenAI API key for GPT models
@@ -192,13 +197,13 @@ spec:
           type: file
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
           required: true
-        - name: vertex_additional_models
-          title: Additional Vertex AI Models
-          help_text: Optional. Additional Vertex AI model IDs to expose through the bundled LiteLLM proxy, one per line (e.g., gemini-2.5-pro). Names must be unique. gemini-2.5-flash remains the org default model.
+        - name: vertex_models
+          title: Vertex AI Models
+          help_text: Vertex AI model IDs served through the bundled LiteLLM proxy, one per line (e.g., gemini-2.5-pro). The first line is the default model for new users and orgs (org admins can change the default in-app afterwards). Names must be unique. Removing a model that existing users or orgs have selected leaves their settings pointing at an unavailable model (the app shows an unavailable badge) until they pick another one.
           type: textarea
-          default: ""
+          value: "gemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
-          required: false
+          required: true
         - name: deepseek_api_key
           title: DeepSeek API Key
           help_text: Your DeepSeek API key
@@ -260,19 +265,21 @@ spec:
           default: "2024-10-21"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
+        # Legacy single-deployment field, superseded by azure_deployments.
+        # Kept hidden (not removed) so the stored value of upgraded installs
+        # persists and seeds the first line of azure_deployments below.
         - name: azure_deployment_name
-          title: Azure OpenAI Deployment Name
-          help_text: The name of your Azure OpenAI model deployment (set when you deployed the model in Azure)
+          title: Azure OpenAI Deployment Name (legacy)
           type: text
+          hidden: true
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+        - name: azure_deployments
+          title: Azure OpenAI Deployments
+          help_text: Azure OpenAI deployment names served through the bundled LiteLLM proxy, one per line (set when you deployed the models in Azure). The first line is the default model for new users and orgs (org admins can change the default in-app afterwards). Names must be unique. All deployments must be reachable at the endpoint and API version configured above. Removing a deployment that existing users or orgs have selected leaves their settings pointing at an unavailable model (the app shows an unavailable badge) until they pick another one.
+          type: textarea
+          value: '{{repl ConfigOption "azure_deployment_name"}}'
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
-        - name: azure_additional_deployments
-          title: Additional Azure OpenAI Deployments
-          help_text: Optional. Additional Azure OpenAI deployment names to expose through the bundled LiteLLM proxy, one per line. Names must be unique. The deployment name above remains the org default model. All deployments must be reachable at the endpoint and API version configured above.
-          type: textarea
-          default: ""
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
-          required: false
         - name: groq_api_key
           title: Groq API Key
           help_text: Your Groq API key
@@ -316,20 +323,23 @@ spec:
           default: "us-west-2"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
           required: true
+        # Legacy single-model field, superseded by bedrock_model_ids. Kept
+        # hidden (not removed) so the stored value of upgraded installs (or
+        # this default, for installs that never changed it) persists and seeds
+        # the first line of bedrock_model_ids below.
         - name: bedrock_model_id
-          title: Bedrock Model ID
-          help_text: Bedrock model ID or cross-region inference profile ID. Cross-region profiles (prefix `us.`) work in any US region; standard model IDs are region-specific. Most current Claude models on Bedrock are inference-profile only (e.g., `us.anthropic.claude-sonnet-4-5-20250929-v1:0`).
+          title: Bedrock Model ID (legacy)
           type: text
+          hidden: true
           default: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
-          required: true
-        - name: bedrock_additional_model_ids
-          title: Additional Bedrock Model IDs
-          help_text: Optional. Additional Bedrock model IDs or cross-region inference profile IDs to expose through the bundled LiteLLM proxy, one per line. Names must be unique. The Bedrock Model ID above remains the org default model.
+        - name: bedrock_model_ids
+          title: Bedrock Model IDs
+          help_text: Bedrock model IDs or cross-region inference profile IDs served through the bundled LiteLLM proxy, one per line. Cross-region profiles (prefix `us.`) work in any US region; standard model IDs are region-specific. Most current Claude models on Bedrock are inference-profile only (e.g., `us.anthropic.claude-sonnet-4-5-20250929-v1:0`). The first line is the default model for new users and orgs (org admins can change the default in-app afterwards). Names must be unique. Removing a model that existing users or orgs have selected leaves their settings pointing at an unavailable model (the app shows an unavailable badge) until they pick another one.
           type: textarea
-          default: ""
+          value: '{{repl ConfigOption "bedrock_model_id"}}'
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
-          required: false
+          required: true
         - name: custom_base_url
           title: Custom LLM Base URL
           help_text: Base URL of your custom LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
@@ -342,19 +352,21 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: false
+        # Legacy single-model field, superseded by custom_models. Kept hidden
+        # (not removed) so the stored value of upgraded installs persists and
+        # seeds the first line of custom_models below.
         - name: custom_model
-          title: Custom LLM Model Name
-          help_text: Full LiteLLM model string for the custom endpoint. For OpenAI-compatible endpoints, prefix the model with openai/ (e.g., openai/llama-3.1-70b-instruct). For non-OpenAI-shaped endpoints, use that provider prefix (e.g., anthropic/claude-opus-4-7).
+          title: Custom LLM Model Name (legacy)
           type: text
+          hidden: true
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+        - name: custom_models
+          title: Custom LLM Models
+          help_text: Models served by the custom endpoint, one per line. The first line is the default model for new users and orgs (org admins can change the default in-app afterwards). Names must be unique. A line containing a slash is used as the full LiteLLM model string verbatim (e.g., anthropic/claude-opus-4-7); a bare name is treated as OpenAI-compatible (openai/<name>); the in-app model name is the segment after the last slash. Removing a model that existing users or orgs have selected leaves their settings pointing at an unavailable model (the app shows an unavailable badge) until they pick another one.
+          type: textarea
+          value: '{{repl ConfigOption "custom_model"}}'
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
-        - name: custom_additional_models
-          title: Additional Custom LLM Models
-          help_text: Optional. Additional models served by the same custom endpoint, one per line. Names must be unique. A line containing a slash is used as the full LiteLLM model string verbatim (e.g., anthropic/claude-opus-4-7); a bare name is treated as OpenAI-compatible (openai/<name>). The Custom LLM Model Name above remains the org default model.
-          type: textarea
-          default: ""
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
-          required: false
         - name: allow_user_llm_configuration
           title: Allow users to configure their own LLM providers (BYOK)
           help_text: When enabled, users can bring their own LLM API keys and configure custom models in their settings, in addition to the managed models above. Disable to restrict all users to the admin-managed models served through the bundled LiteLLM proxy.
