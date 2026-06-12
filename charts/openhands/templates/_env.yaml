@@ -415,6 +415,13 @@
 - name: LMNR_HTTP_PORT
   value: {{ .Values.laminar.httpPort | quote }}
 {{- end }}
+{{- if and .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
+- name: LAMINAR_WEB_HOST
+  value: {{ .Values.laminar.frontend.ingress.hostname }}
+{{- else }}
+- name: LAMINAR_WEB_HOST
+  value: laminar.{{ .Values.ingress.host }}
+{{- end }}
 - name: DB_PASS
   valueFrom:
     secretKeyRef:

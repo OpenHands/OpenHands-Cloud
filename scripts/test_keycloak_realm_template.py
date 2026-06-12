@@ -174,3 +174,27 @@ def test_keycloak_error_guard_catches_missing_error_message() -> None:
 
     with pytest.raises(AssertionError, match="errorMessage"):
         assert_keycloak_api_call_detects_error_message(script_template)
+
+
+def test_realm_template_uses_laminar_web_host_variable() -> None:
+    """The realm template must use $LAMINAR_WEB_HOST instead of hardcoded laminar URLs.
+
+    This allows customers with custom Laminar domains to configure the redirect
+    URLs correctly without being reset on pod restarts.
+    """
+    realm_template = REALM_TEMPLATE.read_text(encoding="utf-8")
+    assert "$LAMINAR_WEB_HOST" in realm_template, (
+        "Realm template must use $LAMINAR_WEB_HOST variable for laminar redirect URLs"
+    )
+    # Ensure the hardcoded laminar.$WEB_HOST pattern is not present
+    assert "laminar.$WEB_HOST" not in realm_template, (
+        "Realm template must not use hardcoded 'laminar.$WEB_HOST' pattern"
+    )
+
+
+def test_keycloak_config_script_includes_laminar_web_host_in_envsubst() -> None:
+    """The keycloak config script must include LAMINAR_WEB_HOST in envsubst."""
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    assert "$LAMINAR_WEB_HOST" in script_template, (
+        "keycloak-config-script.yaml must include $LAMINAR_WEB_HOST in envsubst"
+    )
