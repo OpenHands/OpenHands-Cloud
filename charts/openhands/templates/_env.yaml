@@ -415,7 +415,7 @@
 - name: LMNR_HTTP_PORT
   value: {{ .Values.laminar.httpPort | quote }}
 {{- end }}
-{{- if .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
+{{- if and .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
 - name: LAMINAR_WEB_HOST
   value: {{ .Values.laminar.frontend.ingress.hostname }}
 {{- else }}
