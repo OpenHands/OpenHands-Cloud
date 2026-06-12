@@ -379,7 +379,7 @@ spec:
       items:
         - name: litellm_admin_password
           title: LiteLLM Admin Password
-          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. A random password is generated at install; to use the LiteLLM Admin UI, set your own password here and deploy. Changing this password restarts LiteLLM.
+          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. A random password is generated at install; to use the LiteLLM Admin UI, set your own password here and deploy. Changing this password restarts LiteLLM. Models can be added and managed in the LiteLLM dashboard; they appear in the OpenHands model selector automatically (within about a minute). When adding a model, leave the "Team" field blank so it is available to all users, and do not reuse a model name already listed in this Admin Console config — LiteLLM load-balances same-name entries as one model group.
           type: password
           value: '{{repl RandomString 32}}'
 
