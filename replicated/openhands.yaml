@@ -744,10 +744,12 @@ spec:
             # single-model config served — is appended pointing at the SAME
             # litellm_params as the first line, tagged with model_info
             # openhands_hidden: true (the app-side discovery filters that tag
-            # out of the model dropdown), so user/org settings from before the
-            # textarea existed keep resolving. The alias is skipped only if a
-            # line already produces a route literally named custom-llm.
-            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $model := $m }}repl{{ if not (contains "/" $m) }}repl{{ $model = printf "openai/%s" $m }}repl{{ end }}repl{{ $name := splitList "/" $m | last }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "custom-llm")) }}repl{{ $models = append $models (dict "model_name" "custom-llm" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true)) }}repl{{ end }}repl{{ $models | mustToJson }}
+            # out of the model dropdown) and openhands_canonical: <first
+            # line's route name> (lets the app display the alias under its
+            # canonical name), so user/org settings from before the textarea
+            # existed keep resolving. The alias is skipped only if a line
+            # already produces a route literally named custom-llm.
+            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $model := $m }}repl{{ if not (contains "/" $m) }}repl{{ $model = printf "openai/%s" $m }}repl{{ end }}repl{{ $name := splitList "/" $m | last }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "custom-llm")) }}repl{{ $models = append $models (dict "model_name" "custom-llm" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
 
     - when: '{{repl ConfigOptionEquals "google_api_type" "vertex" }}'
       recursiveMerge: true
@@ -821,10 +823,12 @@ spec:
             # name the old single-model config served — is appended pointing
             # at the SAME litellm_params as the first line, tagged with
             # model_info openhands_hidden: true (the app-side discovery
-            # filters that tag out of the model dropdown), so user/org
+            # filters that tag out of the model dropdown) and
+            # openhands_canonical: <first line's route name> (lets the app
+            # display the alias under its canonical name), so user/org
             # settings from before the textarea existed keep resolving. The
             # alias is skipped only if a line is literally named bedrock.
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true)) }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # AWS Bedrock — instance profile / IRSA. Omit AWS_ACCESS_KEY_ID/SECRET so
     # boto3 falls back to its default credential chain (IMDS on EC2, web
     # identity token on EKS). Region still injected explicitly.
@@ -841,7 +845,7 @@ spec:
             # line of "Bedrock Model IDs" plus the hidden bedrock alias,
             # region-only litellm_params (credentials come from the instance
             # profile).
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true)) }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs
