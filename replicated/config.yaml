@@ -143,6 +143,13 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
           required: true
+        - name: anthropic_additional_models
+          title: Additional Anthropic Models
+          help_text: Optional. Additional Anthropic model IDs to expose through the bundled LiteLLM proxy, one per line (e.g., claude-haiku-4-5). Names must be unique. The default Claude models remain the org default models.
+          type: textarea
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
+          required: false
         - name: openai_api_key
           title: OpenAI API Key
           help_text: Your OpenAI API key for GPT models
@@ -185,6 +192,13 @@ spec:
           type: file
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
           required: true
+        - name: vertex_additional_models
+          title: Additional Vertex AI Models
+          help_text: Optional. Additional Vertex AI model IDs to expose through the bundled LiteLLM proxy, one per line (e.g., gemini-2.5-pro). Names must be unique. gemini-2.5-flash remains the org default model.
+          type: textarea
+          default: ""
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
+          required: false
         - name: deepseek_api_key
           title: DeepSeek API Key
           help_text: Your DeepSeek API key
@@ -252,6 +266,13 @@ spec:
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
+        - name: azure_additional_deployments
+          title: Additional Azure OpenAI Deployments
+          help_text: Optional. Additional Azure OpenAI deployment names to expose through the bundled LiteLLM proxy, one per line. Names must be unique. The deployment name above remains the org default model. All deployments must be reachable at the endpoint and API version configured above.
+          type: textarea
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          required: false
         - name: groq_api_key
           title: Groq API Key
           help_text: Your Groq API key
@@ -302,6 +323,13 @@ spec:
           default: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
           required: true
+        - name: bedrock_additional_model_ids
+          title: Additional Bedrock Model IDs
+          help_text: Optional. Additional Bedrock model IDs or cross-region inference profile IDs to expose through the bundled LiteLLM proxy, one per line. Names must be unique. The Bedrock Model ID above remains the org default model.
+          type: textarea
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
+          required: false
         - name: custom_base_url
           title: Custom LLM Base URL
           help_text: Base URL of your custom LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
@@ -320,6 +348,18 @@ spec:
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
+        - name: custom_additional_models
+          title: Additional Custom LLM Models
+          help_text: Optional. Additional models served by the same custom endpoint, one per line. Names must be unique. A line containing a slash is used as the full LiteLLM model string verbatim (e.g., anthropic/claude-opus-4-7); a bare name is treated as OpenAI-compatible (openai/<name>). The Custom LLM Model Name above remains the org default model.
+          type: textarea
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+          required: false
+        - name: allow_user_llm_configuration
+          title: Allow users to configure their own LLM providers (BYOK)
+          help_text: When enabled, users can bring their own LLM API keys and configure custom models in their settings, in addition to the managed models above. Disable to restrict all users to the admin-managed models served through the bundled LiteLLM proxy.
+          type: bool
+          default: "1"
 
     - name: litellm_admin_console
       title: LiteLLM Admin Console
@@ -386,6 +426,12 @@ spec:
         - name: litellm_api_key
           title: LiteLLM API Key
           help_text: API key for LiteLLM service
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
+        - name: litellm_salt_key
+          title: LiteLLM Salt Key
+          help_text: Salt key LiteLLM uses to encrypt provider credentials stored in its database (e.g., models added via the LiteLLM dashboard). Must never change once set — changing it makes previously stored credentials undecryptable.
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
