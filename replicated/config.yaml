@@ -362,7 +362,7 @@ spec:
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
         - name: custom_models
           title: Custom LLM Models
-          help_text: One model per line. A line containing a slash is used as the full LiteLLM model string; a bare name is sent as openai/<name>.
+          help_text: One model per line, as the full LiteLLM model string. For OpenAI-compatible endpoints, prefix the model with openai/ (e.g., openai/llama-3.1-70b-instruct). For non-OpenAI-shaped endpoints, use that provider prefix (e.g., anthropic/claude-opus-4-7).
           type: textarea
           value: '{{repl ConfigOption "custom_model"}}'
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
