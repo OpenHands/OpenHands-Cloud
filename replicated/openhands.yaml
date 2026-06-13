@@ -22,7 +22,13 @@ spec:
       - name: '{{repl ImagePullSecretName }}'
 
     env:
-      LITELLM_DEFAULT_MODEL: 'litellm_proxy/claude-sonnet-4-5-20250929'
+      # Default model for new users/orgs: the first non-empty line of the
+      # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
+      # other providers' optionalValues blocks below override this env var).
+      # Falls back to claude-sonnet-4-5-20250929 — today's hardcoded default
+      # and the textarea's prefilled first line — if the textarea resolves
+      # empty (e.g. while another provider is selected).
+      LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "claude-sonnet-4-5-20250929" }}'
       REQUIRE_PAYMENT: 0
       ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: false
@@ -47,6 +53,11 @@ spec:
       # would lose their personal workspace with no auto-membership to land in.
       OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") (ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1") }}'
       HIDE_PERSONAL_WORKSPACES: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") (ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1") }}'
+      # BYOK: whether users may configure their own LLM providers/keys in
+      # their settings, in addition to the admin-managed proxy models.
+      # Enterprise reads the FEATURE_FLAGS-prefixed name; bare name kept for OSS.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
+      OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
 
     ingress:
       enabled: true
@@ -174,7 +185,7 @@ spec:
       environmentSecrets:
         - litellm-env-secrets
       podAnnotations:
-        checksum/litellm-credentials: 'repl{{ sha256sum (printf "%s|%s" (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password")) }}'
+        checksum/litellm-credentials: 'repl{{ sha256sum (printf "%s|%s|%s" (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key")) }}'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # the Python SSL stack (httpx + requests) at the merged PEM. envVars
       # is a map (merges with proxy/vertex blocks), but volumes/volumeMounts
@@ -211,21 +222,25 @@ spec:
           OR_SITE_URL: "https://docs.all-hands.dev"
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
-        model_list:
-          # Keep this alias available through the proxy for
-          # openhands/claude-opus-4-7 (retained for backward compatibility
-          # with existing OpenHands installations that route this model
-          # through the proxy). LiteLLM 1.84.1 is the stable release
-          # containing the thinking translation fix from
-          # https://github.com/BerriAI/litellm/pull/27074.
-          - model_name: "claude-opus-4-7"
-            litellm_params:
-              model: "anthropic/claude-opus-4-7"
-              api_key: os.environ/ANTHROPIC_API_KEY
-          - model_name: "claude-sonnet-4-5-20250929"
-            litellm_params:
-              model: "anthropic/claude-sonnet-4-5-20250929"
-              api_key: os.environ/ANTHROPIC_API_KEY
+        # One <id> -> anthropic/<id> entry per non-empty line of the
+        # "Anthropic Models" KOTS textarea (trimmed, blanks skipped), emitted
+        # as JSON. KOTS recursiveMerge REPLACES arrays, so the provider
+        # optionalValues blocks below each carry their own complete
+        # model_list. The textarea is prefilled with claude-sonnet-4-5-20250929
+        # and claude-opus-4-7 — exactly the two routes this list used to
+        # hardcode — so upgraded installs keep serving the same route names
+        # and existing user/org settings (no aliases needed; an admin who
+        # later removes those lines orphans settings still referencing them —
+        # accepted, the app shows an unavailable badge). claude-opus-4-7 is
+        # retained in the prefill for backward compatibility with existing
+        # OpenHands installations that route openhands/claude-opus-4-7 through
+        # the proxy. LiteLLM 1.84.1 is the stable release containing the
+        # thinking translation fix from
+        # https://github.com/BerriAI/litellm/pull/27074.
+        # If the textarea resolves empty (e.g. while another provider is
+        # selected — this base block renders unconditionally), fall back to
+        # those same two routes so the proxy always has a non-empty list.
+        model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "anthropic/%s" $m) "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (dict "model" "anthropic/claude-sonnet-4-5-20250929" "api_key" "os.environ/ANTHROPIC_API_KEY")) (dict "model_name" "claude-opus-4-7" "litellm_params" (dict "model" "anthropic/claude-opus-4-7" "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ $models | mustToJson }}
 
     runtime-api:
       enabled: true
@@ -352,7 +367,7 @@ spec:
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
     # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -673,33 +688,34 @@ spec:
       recursiveMerge: true
       values:
         env:
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-{{repl ConfigOption "azure_deployment_name"}}'
+          # azure-<first line of "Azure OpenAI Deployments">. Upgrades seed the
+          # textarea's first line from the legacy azure_deployment_name value,
+          # so this stays byte-identical to today's azure-<deployment> default.
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"AZURE_API_KEY\": \"%s\", \"AZURE_API_BASE\": \"%s\", \"AZURE_API_VERSION\": \"%s\"}" (ConfigOption "azure_api_key") (ConfigOption "azure_endpoint") (ConfigOption "azure_api_version") }}'
         litellm-helm:
           proxy_config:
-            model_list:
-              - model_name: 'azure-{{repl ConfigOption "azure_deployment_name"}}'
-                litellm_params:
-                  model: 'azure/{{repl ConfigOption "azure_deployment_name"}}'
-                  api_key: os.environ/AZURE_API_KEY
-                  api_base: os.environ/AZURE_API_BASE
-                  api_version: os.environ/AZURE_API_VERSION
+            # One azure-<name> -> azure/<name> entry per non-empty line of the
+            # "Azure OpenAI Deployments" KOTS textarea (trimmed, blanks
+            # skipped). The route names follow the same azure-<deployment>
+            # scheme as the old single-deployment field, and upgrades seed the
+            # first line from the legacy value, so existing user/org settings
+            # keep resolving without aliases (an admin who later removes that
+            # line orphans settings still referencing it — accepted, the app
+            # shows an unavailable badge).
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $name := printf "azure-%s" $m }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" (printf "azure/%s" $m) "api_key" "os.environ/AZURE_API_KEY" "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
       recursiveMerge: true
       values:
         env:
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-{{repl ConfigOption "azure_deployment_name"}}'
+          # Same first-line rule as the api_key block above.
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
         litellm-helm:
           proxy_config:
-            model_list:
-              - model_name: 'azure-{{repl ConfigOption "azure_deployment_name"}}'
-                litellm_params:
-                  model: 'azure/{{repl ConfigOption "azure_deployment_name"}}'
-                  api_base: os.environ/AZURE_API_BASE
-                  api_version: os.environ/AZURE_API_VERSION
-                  tenant_id: os.environ/AZURE_TENANT_ID
-                  client_id: os.environ/AZURE_CLIENT_ID
-                  client_secret: os.environ/AZURE_CLIENT_SECRET
+            # Same structure as the api_key block above: one azure-<name>
+            # entry per line of "Azure OpenAI Deployments", all using
+            # service-principal litellm_params.
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $name := printf "azure-%s" $m }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" (printf "azure/%s" $m) "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION" "tenant_id" "os.environ/AZURE_TENANT_ID" "client_id" "os.environ/AZURE_CLIENT_ID" "client_secret" "os.environ/AZURE_CLIENT_SECRET")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
 
     # Custom / Local LLM — pass the configured model through as a full LiteLLM
     # model string. OpenAI-compatible custom endpoints should be configured as
@@ -709,23 +725,42 @@ spec:
       recursiveMerge: true
       values:
         env:
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/custom-llm'
+          # litellm_proxy/<route name of the first line of "Custom LLM
+          # Models">, where the route name is the segment after the last
+          # slash. For upgraded installs the env value changes from the old
+          # fixed litellm_proxy/custom-llm, but it resolves to the same
+          # backend model (the first line is seeded from the legacy
+          # custom_model value), and the old custom-llm route name is still
+          # served via the hidden alias in the model_list below, so existing
+          # user/org settings keep working.
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = splitList "/" $m | last }}repl{{ end }}repl{{ end }}repl{{ $first }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"CUSTOM_API_KEY\": \"%s\", \"CUSTOM_API_BASE\": \"%s\", \"SSL_CERT_FILE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"REQUESTS_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"GIT_SSL_CAINFO\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"CURL_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"NODE_EXTRA_CA_CERTS\": \"/etc/openhands/ca-bundle/ca-bundle.crt\"}" (ConfigOption "custom_api_key") (ConfigOption "custom_base_url") }}'
         litellm-helm:
           proxy_config:
-            model_list:
-              - model_name: 'custom-llm'
-                litellm_params:
-                  model: '{{repl ConfigOption "custom_model"}}'
-                  api_key: os.environ/CUSTOM_API_KEY
-                  api_base: os.environ/CUSTOM_API_BASE
-                  extra_headers: repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson | mustToJson }}repl{{ else }}{}repl{{ end }}
+            # One entry per non-empty line of the "Custom LLM Models" KOTS
+            # textarea: a line containing a slash is used as the full LiteLLM
+            # model string verbatim, a bare name becomes openai/<name>; the
+            # route name is the part after the last slash. All entries share
+            # the same api_key / api_base / extra_headers params. A hidden
+            # alias entry named custom-llm — the route name the old
+            # single-model config served — is appended pointing at the SAME
+            # litellm_params as the first line, tagged with model_info
+            # openhands_hidden: true (the app-side discovery filters that tag
+            # out of the model dropdown) and openhands_canonical: <first
+            # line's route name> (lets the app display the alias under its
+            # canonical name), so user/org settings from before the textarea
+            # existed keep resolving. The alias is skipped only if a line
+            # already produces a route literally named custom-llm.
+            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $model := $m }}repl{{ if not (contains "/" $m) }}repl{{ $model = printf "openai/%s" $m }}repl{{ end }}repl{{ $name := splitList "/" $m | last }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "custom-llm")) }}repl{{ $models = append $models (dict "model_name" "custom-llm" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
 
     - when: '{{repl ConfigOptionEquals "google_api_type" "vertex" }}'
       recursiveMerge: true
       values:
         env:
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/gemini-2.5-flash'
+          # First non-empty line of the "Vertex AI Models" KOTS textarea,
+          # falling back to gemini-2.5-flash — today's hardcoded default and
+          # the textarea's prefilled line — if it resolves empty.
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "gemini-2.5-flash" }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"VERTEXAI_CREDENTIALS\": %s, \"VERTEXAI_PROJECT\": \"%s\", \"VERTEXAI_LOCATION\": \"%s\", \"SSL_CERT_FILE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"REQUESTS_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"GIT_SSL_CAINFO\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"CURL_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"NODE_EXTRA_CA_CERTS\": \"/etc/openhands/ca-bundle/ca-bundle.crt\"}" (ConfigOptionData "google_vertex_credentials" | toJson) (ConfigOption "google_vertex_project_id") (ConfigOption "google_vertex_location") }}'
         litellm-helm:
           # volumes / volumeMounts are arrays — recursiveMerge replaces them,
@@ -752,12 +787,15 @@ spec:
           envVars:
             GOOGLE_APPLICATION_CREDENTIALS: "/etc/gcloud/vertex_credentials.json"
           proxy_config:
-            model_list:
-              - model_name: "gemini-2.5-flash"
-                litellm_params:
-                  model: "vertex_ai/gemini-2.5-flash"
-                  vertex_project: os.environ/VERTEXAI_PROJECT
-                  vertex_location: os.environ/VERTEXAI_LOCATION
+            # One <name> -> vertex_ai/<name> entry per non-empty line of the
+            # "Vertex AI Models" KOTS textarea. The route names follow the
+            # same scheme as the old hardcoded gemini-2.5-flash route, and the
+            # textarea is prefilled with that exact line, so existing user/org
+            # settings keep resolving without aliases (an admin who later
+            # removes it orphans settings still referencing it — accepted, the
+            # app shows an unavailable badge). If the textarea resolves empty,
+            # fall back to the old hardcoded route.
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "vertex_ai/%s" $m) "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "gemini-2.5-flash" "litellm_params" (dict "model" "vertex_ai/gemini-2.5-flash" "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ $models | mustToJson }}
           vertexAI:
             enabled: true
             project: '{{repl ConfigOption "google_vertex_project_id"}}'
@@ -770,17 +808,29 @@ spec:
       recursiveMerge: true
       values:
         env:
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/bedrock'
+          # litellm_proxy/<first line of "Bedrock Model IDs">. For upgraded
+          # installs the env value changes from the old fixed
+          # litellm_proxy/bedrock, but it resolves to the same backend model
+          # (the first line is seeded from the legacy bedrock_model_id value),
+          # and the old bedrock route name is still served via the hidden
+          # alias in the model_list below, so existing user/org settings keep
+          # working.
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"AWS_ACCESS_KEY_ID\": \"%s\", \"AWS_SECRET_ACCESS_KEY\": \"%s\", \"AWS_REGION_NAME\": \"%s\"}" (ConfigOption "aws_access_key_id") (ConfigOption "aws_secret_access_key") (ConfigOption "aws_region_name") }}'
         litellm-helm:
           proxy_config:
-            model_list:
-              - model_name: 'bedrock'
-                litellm_params:
-                  model: 'bedrock/{{repl ConfigOption "bedrock_model_id"}}'
-                  aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
-                  aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
-                  aws_region_name: os.environ/AWS_REGION_NAME
+            # One <id> -> bedrock/<id> entry per non-empty line of the
+            # "Bedrock Model IDs" KOTS textarea, with static-key
+            # litellm_params. A hidden alias entry named bedrock — the route
+            # name the old single-model config served — is appended pointing
+            # at the SAME litellm_params as the first line, tagged with
+            # model_info openhands_hidden: true (the app-side discovery
+            # filters that tag out of the model dropdown) and
+            # openhands_canonical: <first line's route name> (lets the app
+            # display the alias under its canonical name), so user/org
+            # settings from before the textarea existed keep resolving. The
+            # alias is skipped only if a line is literally named bedrock.
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # AWS Bedrock — instance profile / IRSA. Omit AWS_ACCESS_KEY_ID/SECRET so
     # boto3 falls back to its default credential chain (IMDS on EC2, web
     # identity token on EKS). Region still injected explicitly.
@@ -788,14 +838,16 @@ spec:
       recursiveMerge: true
       values:
         env:
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/bedrock'
+          # Same first-line rule and hidden bedrock alias as the static-keys
+          # block above.
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
         litellm-helm:
           proxy_config:
-            model_list:
-              - model_name: 'bedrock'
-                litellm_params:
-                  model: 'bedrock/{{repl ConfigOption "bedrock_model_id"}}'
-                  aws_region_name: os.environ/AWS_REGION_NAME
+            # Same structure as the static-keys block above: one entry per
+            # line of "Bedrock Model IDs" plus the hidden bedrock alias,
+            # region-only litellm_params (credentials come from the instance
+            # profile).
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs

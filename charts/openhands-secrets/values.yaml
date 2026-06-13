@@ -18,6 +18,7 @@ config:
   keycloak_client_secret: ""
   litellm_api_key: ""
   litellm_admin_password: ""
+  litellm_salt_key: ""
   default_api_key: ""
   sandbox_api_key: ""
   
