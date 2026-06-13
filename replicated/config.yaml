@@ -451,13 +451,13 @@ spec:
           default: "0"
         - name: default_openhands_org_auto_add_users
           title: Automatically Add Signed-In Users
-          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in.
+          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in. With this enabled, in-app invitations are only needed to grant a role such as admin up front. With this disabled, the organization is invitation-only and admins share invite links from the members page.
           type: bool
           default: "1"
           when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
         - name: default_openhands_org_hide_personal_workspaces
           title: Hide Personal Workspaces
-          help_text: 'Make the default organization the only workspace users see. Existing personal workspace data (conversations, secrets, API keys, automations) is hidden, not deleted; disabling this option restores it.'
+          help_text: 'Make the default organization the only workspace users see. Existing personal workspace data (conversations, secrets, API keys, automations) is hidden, not deleted; disabling this option restores it. Requires automatic adding of signed-in users, so no one is left without a visible workspace; a user who belongs to no organization keeps their personal workspace either way.'
           type: bool
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
