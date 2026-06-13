@@ -55,6 +55,8 @@ spec:
       HIDE_PERSONAL_WORKSPACES: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") (ConfigOptionEquals "default_openhands_org_hide_personal_workspaces" "1") }}'
       # BYOK: whether users may configure their own LLM providers/keys in
       # their settings, in addition to the admin-managed proxy models.
+      # Enterprise reads the FEATURE_FLAGS-prefixed name; bare name kept for OSS.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
 
     ingress:
