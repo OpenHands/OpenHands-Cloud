@@ -1,0 +1,74 @@
+{{- if eq (toString .Values.kvm.enabled) "true" }}
+# smarter-device-manager advertises /dev/kvm as an extended resource so sandbox
+# pods can request it and run hardware-accelerated QEMU without being privileged.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "runtime-api.fullname" . }}-kvm-device-plugin
+  labels:
+    {{- include "runtime-api.labels" . | nindent 4 }}
+data:
+  conf.yaml: |
+    - devicematch: ^kvm$
+      nummaxdevices: {{ .Values.kvm.maxDevices }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "runtime-api.fullname" . }}-kvm-device-plugin
+  labels:
+    {{- include "runtime-api.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "runtime-api.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kvm-device-plugin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "runtime-api.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kvm-device-plugin
+    spec:
+      priorityClassName: system-node-critical
+      {{- with .Values.kvm.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kvm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kvm-device-plugin
+          image: "{{ .Values.kvm.image.repository }}:{{ .Values.kvm.image.tag }}"
+          imagePullPolicy: {{ .Values.kvm.image.pullPolicy }}
+          # smarter-device-manager needs to read host devices and register with
+          # the kubelet, so it runs privileged (the device plugin only, not sandboxes).
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.kvm.resources | nindent 12 }}
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev-dir
+              mountPath: /dev
+            - name: config
+              mountPath: /root/config
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev-dir
+          hostPath:
+            path: /dev
+        - name: config
+          configMap:
+            name: {{ include "runtime-api.fullname" . }}-kvm-device-plugin
+{{- end }}

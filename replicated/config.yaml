@@ -938,6 +938,17 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: sandbox_kvm_enabled
+          title: Enable /dev/kvm passthrough (QEMU/KVM)
+          help_text: >-
+            Pass /dev/kvm into sandboxes so they can run hardware-accelerated QEMU/KVM
+            (the OSS SANDBOX_KVM_ENABLED equivalent). Deploys a small device-plugin
+            DaemonSet and requests the device on each sandbox WITHOUT making sandboxes
+            privileged. The cluster node(s) MUST expose /dev/kvm — i.e. bare metal or a
+            nested-virtualization-capable VM (on Azure, a Dv3+/Ev3+/v4/v5 size, not
+            B-series; on AWS, a .metal instance). Verify with `ls -l /dev/kvm` on the node.
+          type: bool
+          default: "0"
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.
