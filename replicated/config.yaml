@@ -371,7 +371,9 @@ spec:
           title: Allow users to configure their own LLM providers (BYOK)
           help_text: When enabled, users can bring their own LLM API keys and configure custom models in their settings, in addition to the managed models above. Disable to restrict all users to the admin-managed models served through the bundled LiteLLM proxy.
           type: bool
-          default: "1"
+          # Default off: self-hosted installs are admin-governed, so BYOK is an
+          # explicit opt-in. Existing installs keep whatever value they set.
+          default: "0"
 
     - name: litellm_admin_console
       title: LiteLLM Admin Console
