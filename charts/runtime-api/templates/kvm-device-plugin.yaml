@@ -40,6 +40,20 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.kvm.relaxDevicePermissions }}
+      initContainers:
+        # Device plugin advertises /dev/kvm, but its 0660 root:kvm perms block the
+        # non-root sandbox UID; relax to 0666 so unprivileged sandboxes can open it.
+        - name: chmod-kvm
+          image: "{{ .Values.kvm.initImage.repository }}:{{ .Values.kvm.initImage.tag }}"
+          imagePullPolicy: {{ .Values.kvm.initImage.pullPolicy }}
+          securityContext:
+            privileged: true
+          command: ["sh", "-c", "if [ -e /dev/kvm ]; then chmod 0666 /dev/kvm; fi"]
+          volumeMounts:
+            - name: dev-dir
+              mountPath: /dev
+      {{- end }}
       containers:
         - name: kvm-device-plugin
           image: "{{ .Values.kvm.image.repository }}:{{ .Values.kvm.image.tag }}"
