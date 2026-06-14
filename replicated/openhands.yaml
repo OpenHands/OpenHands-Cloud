@@ -196,6 +196,12 @@ spec:
         SSL_CERT_FILE: /etc/openhands/ca-bundle/ca-bundle.crt
         REQUESTS_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
         UI_USERNAME: admin
+        # general_settings.store_model_in_db gates the management API, but
+        # the startup loader that re-adds DB-stored models to the router
+        # after a pod restart only honors this environment variable.
+        # Verified on litellm-database:1.84.1 — without it, dashboard-added
+        # models persist in the DB but vanish from routing on restart.
+        STORE_MODEL_IN_DB: "True"
       volumes:
         - name: openhands-ca-bundle
           configMap:
@@ -222,6 +228,14 @@ spec:
           OR_SITE_URL: "https://docs.all-hands.dev"
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
+          # Let admins add/manage models at runtime through the LiteLLM
+          # dashboard. DB-stored models are encrypted with LITELLM_SALT_KEY,
+          # merge with (never replace) the config-rendered model_list below,
+          # hot-reload roughly every 30s, and survive KOTS upgrades. No
+          # optionalValues block overrides general_settings, and
+          # recursiveMerge merges maps, so this stays set for every provider
+          # selection.
+          store_model_in_db: true
         # One <id> -> anthropic/<id> entry per non-empty line of the
         # "Anthropic Models" KOTS textarea (trimmed, blanks skipped), emitted
         # as JSON. KOTS recursiveMerge REPLACES arrays, so the provider
