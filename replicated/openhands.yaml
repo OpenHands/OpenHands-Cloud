@@ -309,6 +309,17 @@ spec:
         LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
         ADDITIONAL_CONFIGMAPS: "openhands-ca-bundle:/etc/openhands/ca-bundle"
         ADDITIONAL_HOST_PATHS: 'repl{{ ConfigOption "sandbox_additional_host_paths" }}'
+        SANDBOX_KVM_ENABLED: 'repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}'
+        KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
+      kvm:
+        enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+        resourceName: smarter-devices/kvm
+        image:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/smarter-project/smarter-device-manager'
+          tag: v1.20.11
+        initImage:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+          tag: "1.36"
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
