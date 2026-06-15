@@ -263,6 +263,7 @@ spec:
         enabled: false
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
+        tag: 'sha-8919a43'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       ingress:
