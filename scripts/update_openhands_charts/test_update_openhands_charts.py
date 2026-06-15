@@ -2447,25 +2447,6 @@ class TestUpdateOpenhandsWorkflow:
     has_changes propagates from values into the chart's bump decision.
     """
 
-    @pytest.fixture
-    def patched_inner_calls(self, monkeypatch):
-        """Mock all four inner update functions.
-
-        Return only the values/chart mocks asserted by this workflow-contract
-        test class. The replicated mocks are intentionally not returned here;
-        they are patched only to prevent writes to the real replicated files and
-        have dedicated assertions in the focused replicated workflow test classes.
-        """
-        mock_values = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
-        mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
-        monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
-        monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
-        monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
-        return mock_values, mock_chart
-
     def test_chart_call_receives_has_changes_true_when_values_changed(self, monkeypatch):
         """When values has changes, the chart is invoked with has_changes=True so version bumps."""
         monkeypatch.setattr(
@@ -2520,10 +2501,8 @@ class TestUpdateOpenhandsWorkflow:
 
         assert mock_chart.call_args.kwargs["has_changes"] is False
 
-    def test_values_call_receives_openhands_version(self, patched_inner_calls):
+    def test_values_call_receives_openhands_version(self, openhands_workflow_mocks):
         """openhands_version is passed positionally to update_openhands_values as the 2nd argument."""
-        mock_values, _ = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-9.9.9",
@@ -2532,12 +2511,10 @@ class TestUpdateOpenhandsWorkflow:
             dry_run=False,
         )
 
-        assert mock_values.call_args.args[1] == "cloud-9.9.9"
+        assert openhands_workflow_mocks.values.call_args.args[1] == "cloud-9.9.9"
 
-    def test_values_call_receives_runtime_image_tag(self, patched_inner_calls):
+    def test_values_call_receives_runtime_image_tag(self, openhands_workflow_mocks):
         """runtime_image_tag is passed positionally to update_openhands_values as the 3rd argument."""
-        mock_values, _ = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
@@ -2546,12 +2523,10 @@ class TestUpdateOpenhandsWorkflow:
             dry_run=False,
         )
 
-        assert mock_values.call_args.args[2] == "image-tag-v9"
+        assert openhands_workflow_mocks.values.call_args.args[2] == "image-tag-v9"
 
-    def test_chart_call_receives_openhands_version(self, patched_inner_calls):
+    def test_chart_call_receives_openhands_version(self, openhands_workflow_mocks):
         """openhands_version is passed positionally to update_openhands_chart as the 2nd argument."""
-        _, mock_chart = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-9.9.9",
@@ -2560,12 +2535,10 @@ class TestUpdateOpenhandsWorkflow:
             dry_run=False,
         )
 
-        assert mock_chart.call_args.args[1] == "cloud-9.9.9"
+        assert openhands_workflow_mocks.chart.call_args.args[1] == "cloud-9.9.9"
 
-    def test_chart_call_receives_runtime_api_version(self, patched_inner_calls):
+    def test_chart_call_receives_runtime_api_version(self, openhands_workflow_mocks):
         """runtime_api_version is passed positionally to update_openhands_chart as the 3rd argument."""
-        _, mock_chart = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
@@ -2574,13 +2547,11 @@ class TestUpdateOpenhandsWorkflow:
             dry_run=False,
         )
 
-        assert mock_chart.call_args.args[2] == "0.9.99"
+        assert openhands_workflow_mocks.chart.call_args.args[2] == "0.9.99"
 
     @pytest.mark.parametrize("dry_run", [True, False])
-    def test_dry_run_is_propagated_to_both_inner_calls(self, patched_inner_calls, dry_run):
+    def test_dry_run_is_propagated_to_both_inner_calls(self, openhands_workflow_mocks, dry_run):
         """The dry_run flag is forwarded to both update_openhands_values and update_openhands_chart."""
-        mock_values, mock_chart = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
@@ -2589,8 +2560,8 @@ class TestUpdateOpenhandsWorkflow:
             dry_run=dry_run,
         )
 
-        assert mock_values.call_args.kwargs["dry_run"] is dry_run
-        assert mock_chart.call_args.kwargs["dry_run"] is dry_run
+        assert openhands_workflow_mocks.values.call_args.kwargs["dry_run"] is dry_run
+        assert openhands_workflow_mocks.chart.call_args.kwargs["dry_run"] is dry_run
 
 
 class TestUpdateOpenhandsWorkflowReplicated:
@@ -2601,23 +2572,8 @@ class TestUpdateOpenhandsWorkflowReplicated:
     The workflow must update that file too, or Replicated installs ship a stale tag.
     """
 
-    @pytest.fixture
-    def patched_inner_calls(self, monkeypatch):
-        """Mock all four inner update functions and return the first three MagicMocks."""
-        mock_values = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
-        mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
-        mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
-        monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
-        monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
-        monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
-        return mock_values, mock_replicated, mock_chart
-
-    def test_replicated_updater_invoked_with_replicated_openhands_path(self, patched_inner_calls):
+    def test_replicated_updater_invoked_with_replicated_openhands_path(self, openhands_workflow_mocks):
         """The workflow points the replicated updater at replicated/openhands.yaml."""
-        _, mock_replicated, _ = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
@@ -2626,12 +2582,10 @@ class TestUpdateOpenhandsWorkflowReplicated:
             dry_run=False,
         )
 
-        assert mock_replicated.call_args.args[0] == update_openhands_charts.REPLICATED_OPENHANDS_PATH
+        assert openhands_workflow_mocks.replicated.call_args.args[0] == update_openhands_charts.REPLICATED_OPENHANDS_PATH
 
-    def test_replicated_updater_receives_runtime_image_tag(self, patched_inner_calls):
+    def test_replicated_updater_receives_runtime_image_tag(self, openhands_workflow_mocks):
         """runtime_image_tag is forwarded to the replicated updater."""
-        _, mock_replicated, _ = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
@@ -2640,13 +2594,11 @@ class TestUpdateOpenhandsWorkflowReplicated:
             dry_run=False,
         )
 
-        assert mock_replicated.call_args.args[1] == "9.9.9-python"
+        assert openhands_workflow_mocks.replicated.call_args.args[1] == "9.9.9-python"
 
     @pytest.mark.parametrize("dry_run", [True, False])
-    def test_replicated_updater_receives_dry_run(self, patched_inner_calls, dry_run):
+    def test_replicated_updater_receives_dry_run(self, openhands_workflow_mocks, dry_run):
         """The dry_run flag is forwarded to the replicated updater."""
-        _, mock_replicated, _ = patched_inner_calls
-
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
@@ -2655,7 +2607,7 @@ class TestUpdateOpenhandsWorkflowReplicated:
             dry_run=dry_run,
         )
 
-        assert mock_replicated.call_args.kwargs["dry_run"] is dry_run
+        assert openhands_workflow_mocks.replicated.call_args.kwargs["dry_run"] is dry_run
 
 
 class TestUpdateOpenhandsWorkflowReplicatedConfig:
@@ -2666,26 +2618,7 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
     must update that file too, or Replicated admins see a stale default tag.
     """
 
-    @pytest.fixture
-    def patched_inner_calls(self, monkeypatch):
-        """Mock all four inner update functions; return the replicated-config MagicMock."""
-        monkeypatch.setattr(
-            "update_openhands_charts.update_openhands_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_replicated_openhands_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult()),
-        )
-        mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
-        monkeypatch.setattr(
-            "update_openhands_charts.update_openhands_chart",
-            MagicMock(return_value=update_openhands_charts.UpdateResult()),
-        )
-        return mock_replicated_config
-
-    def test_replicated_config_updater_invoked_with_replicated_config_path(self, patched_inner_calls):
+    def test_replicated_config_updater_invoked_with_replicated_config_path(self, openhands_workflow_mocks):
         """The workflow points the config updater at replicated/config.yaml."""
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
@@ -2695,9 +2628,9 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
             dry_run=False,
         )
 
-        assert patched_inner_calls.call_args.args[0] == update_openhands_charts.REPLICATED_CONFIG_PATH
+        assert openhands_workflow_mocks.replicated_config.call_args.args[0] == update_openhands_charts.REPLICATED_CONFIG_PATH
 
-    def test_replicated_config_updater_receives_runtime_image_tag(self, patched_inner_calls):
+    def test_replicated_config_updater_receives_runtime_image_tag(self, openhands_workflow_mocks):
         """runtime_image_tag is forwarded to the config updater."""
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
@@ -2707,10 +2640,10 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
             dry_run=False,
         )
 
-        assert patched_inner_calls.call_args.args[1] == "9.9.9-python"
+        assert openhands_workflow_mocks.replicated_config.call_args.args[1] == "9.9.9-python"
 
     @pytest.mark.parametrize("dry_run", [True, False])
-    def test_replicated_config_updater_receives_dry_run(self, patched_inner_calls, dry_run):
+    def test_replicated_config_updater_receives_dry_run(self, openhands_workflow_mocks, dry_run):
         """The dry_run flag is forwarded to the config updater."""
         update_openhands_workflow(
             DeployConfig(runtime_api_sha="abc"),
@@ -2720,7 +2653,7 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
             dry_run=dry_run,
         )
 
-        assert patched_inner_calls.call_args.kwargs["dry_run"] is dry_run
+        assert openhands_workflow_mocks.replicated_config.call_args.kwargs["dry_run"] is dry_run
 
 
 class TestParseArgs:
