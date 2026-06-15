@@ -985,6 +985,16 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: false
+        - name: sandbox_additional_host_paths
+          title: Additional Host Path Mounts
+          help_text: >-
+            Mount node host paths into every sandbox, one per line as
+            host_path:container_path[:mode] (mode ro or rw, default rw), e.g.
+            /mnt/nfs-artifacts:/nfs:ro. The host_path must already exist on the node.
+            For NFS, pre-mount the export at that path on every node. On multi-node
+            clusters the path must exist on all nodes.
+          type: textarea
+          default: ""
 
     - name: proxy_configuration
       title: Proxy Configuration
