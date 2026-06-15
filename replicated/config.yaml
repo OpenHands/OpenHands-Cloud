@@ -938,16 +938,6 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
-        - name: sandbox_additional_host_paths
-          title: Additional Host Path Mounts
-          help_text: >-
-            Mount node host paths into every sandbox (the OSS SANDBOX_VOLUMES equivalent).
-            Comma-separated host_path:container_path[:mode] entries; mode is ro or rw
-            (default rw), e.g. /mnt/nfs-artifacts:/nfs:ro. The host_path must already exist
-            on the node — for NFS, pre-mount the export at that path on every node. On
-            multi-node clusters the path must exist on all nodes. Leave blank to disable.
-          type: textarea
-          default: ""
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.
@@ -995,6 +985,16 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: false
+        - name: sandbox_additional_host_paths
+          title: Additional Host Path Mounts
+          help_text: >-
+            Mount node host paths into every sandbox (the OSS SANDBOX_VOLUMES equivalent).
+            Comma-separated host_path:container_path[:mode] entries; mode is ro or rw
+            (default rw), e.g. /mnt/nfs-artifacts:/nfs:ro. The host_path must already exist
+            on the node — for NFS, pre-mount the export at that path on every node. On
+            multi-node clusters the path must exist on all nodes. Leave blank to disable.
+          type: textarea
+          default: ""
 
     - name: proxy_configuration
       title: Proxy Configuration
