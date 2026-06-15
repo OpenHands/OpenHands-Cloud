@@ -11,7 +11,7 @@ import io
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
@@ -122,17 +122,9 @@ REPLICATED_CONFIG_SANDBOX_DEFAULT_PATTERN = (
 class UpdateResult:
     """Stores the outcome of a file update operation."""
     has_changes: bool = False
-    changes: list[tuple[str, str, str]] = None  # [(key, old, new)]
-    unchanged: list[tuple[str, str]] = None     # [(key, val)]
-    errors: list[str] = None                    # [error_message]
-
-    def __post_init__(self):
-        if self.changes is None:
-            self.changes = []
-        if self.unchanged is None:
-            self.unchanged = []
-        if self.errors is None:
-            self.errors = []
+    changes: list[tuple[str, str, str]] = field(default_factory=list)  # [(key, old, new)]
+    unchanged: list[tuple[str, str]] = field(default_factory=list)     # [(key, val)]
+    errors: list[str] = field(default_factory=list)                    # [error_message]
 
     def is_unchanged(self, key: str) -> bool:
         """Check if a key exists in the unchanged list."""
