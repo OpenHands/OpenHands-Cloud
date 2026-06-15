@@ -234,18 +234,28 @@ def cloud_tag_exists(token: str, repo_name: str, tag_name: str) -> bool:
         return False
 
 
-def get_deploy_config(token: str, repo_name: str, ref: str | None = None) -> DeployConfig | None:
-    """Fetch deployment config values from deploy.yaml workflow."""
+def fetch_github_file_content(token: str, repo_name: str, path: str, ref: str | None = None) -> str:
+    """Fetch and UTF-8 decode a file from the GitHub contents API.
+
+    Raises on HTTP failure, a missing "content" key, or a decode error; callers
+    wrap this in their own try/except to surface a context-specific message.
+    """
     headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://api.github.com/repos/{repo_name}/contents/.github/workflows/deploy.yaml"
+    url = f"https://api.github.com/repos/{repo_name}/contents/{path}"
     if ref:
         url += f"?ref={ref}"
 
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return base64.b64decode(response.json()["content"]).decode("utf-8")
 
-        content = base64.b64decode(response.json()["content"]).decode("utf-8")
+
+def get_deploy_config(token: str, repo_name: str, ref: str | None = None) -> DeployConfig | None:
+    """Fetch deployment config values from deploy.yaml workflow."""
+    try:
+        content = fetch_github_file_content(
+            token, repo_name, ".github/workflows/deploy.yaml", ref
+        )
         yaml = YAML()
         workflow = yaml.load(io.StringIO(content))
 
@@ -261,14 +271,8 @@ def get_deploy_config(token: str, repo_name: str, ref: str | None = None) -> Dep
 
 def get_runtime_image_tag_from_sandbox_spec(token: str, repo_name: str, ref: str) -> str | None:
     """Fetch the agent-server image tag from sandbox_spec_service.py at the given cloud tag."""
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://api.github.com/repos/{repo_name}/contents/{SANDBOX_SPEC_PATH}?ref={ref}"
-
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        content = base64.b64decode(response.json()["content"]).decode("utf-8")
+        content = fetch_github_file_content(token, repo_name, SANDBOX_SPEC_PATH, ref)
         match = AGENT_SERVER_IMAGE_PATTERN.search(content)
         if not match:
             raise ValueError(f"AGENT_SERVER_IMAGE constant not found in {SANDBOX_SPEC_PATH}")
