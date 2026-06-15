@@ -995,6 +995,14 @@ spec:
             clusters the path must exist on all nodes.
           type: textarea
           default: ""
+        - name: sandbox_kvm_enabled
+          title: Enable /dev/kvm passthrough (QEMU/KVM)
+          help_text: >-
+            Pass /dev/kvm into sandboxes so they can run hardware-accelerated QEMU/KVM
+            (the OSS SANDBOX_KVM_ENABLED equivalent). The cluster node(s) MUST expose
+            /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
+          type: bool
+          default: "0"
 
     - name: proxy_configuration
       title: Proxy Configuration

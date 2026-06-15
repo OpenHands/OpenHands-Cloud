@@ -107,6 +107,39 @@ nodeSelector: {}
 
 securityContext: {}
 
+# KVM device plugin (OSS SANDBOX_KVM_ENABLED parity). When enabled, runs a
+# smarter-device-manager DaemonSet that advertises /dev/kvm as an extended
+# resource (kvm.resourceName) so sandbox pods can use hardware-accelerated QEMU
+# WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
+# nested-virt-capable VM). The plugin DaemonSet itself runs privileged, like
+# other device plugins; the sandbox pods do not.
+kvm:
+  enabled: false
+  resourceName: smarter-devices/kvm
+  maxDevices: 20
+  image:
+    repository: ghcr.io/smarter-project/smarter-device-manager
+    tag: v1.20.11
+    pullPolicy: IfNotPresent
+  # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
+  # perms still block the non-root sandbox UID from opening it. An init container
+  # relaxes /dev/kvm to 0666 so unprivileged sandboxes can use it. Disable only if
+  # you grant access another way (e.g. a node udev rule or supplementalGroups).
+  relaxDevicePermissions: true
+  initImage:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
+  nodeSelector: {}
+  tolerations: []
+
 tolerations: []
 
 affinity: {}
