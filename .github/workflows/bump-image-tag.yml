@@ -73,60 +73,6 @@ on:
         description: 'URL of the created/updated PR (empty if no change was needed).'
         value: ${{ jobs.bump.outputs.pull-request-url }}
 
-  # ===== TEMP: testing scaffold — remove before merge (see bottom of file) =====
-  # Lets the workflow be run manually from the Actions tab. These inputs mirror
-  # the workflow_call inputs above; the `inputs` context serves both triggers.
-  workflow_dispatch:
-    inputs:
-      component:
-        description: 'Component name (e.g. runtime-api).'
-        required: true
-        type: string
-      chart_file:
-        description: 'YAML file to edit (e.g. charts/runtime-api/values.yaml).'
-        required: true
-        type: string
-      tag:
-        description: 'New image tag to set (e.g. sha-61fc535).'
-        required: true
-        type: string
-      image_tag_path:
-        description: 'yq-style path to the image tag scalar.'
-        required: false
-        default: '.image.tag'
-        type: string
-      base_branch:
-        description: 'Branch to open the PR against.'
-        required: false
-        default: 'main'
-        type: string
-      chart_repo:
-        description: 'Chart repo to update, owner/name.'
-        required: false
-        default: 'OpenHands/OpenHands-Cloud'
-        type: string
-      pr_branch:
-        description: 'Head branch for the PR (blank = bump-image-tag/<component>).'
-        required: false
-        default: ''
-        type: string
-      pr_labels:
-        description: 'Comma- or newline-separated PR labels.'
-        required: false
-        default: 'automated,image-bump'
-        type: string
-      draft:
-        description: 'Open the PR as a draft.'
-        required: false
-        default: false
-        type: boolean
-  # Pushing this branch produces one run, which registers the workflow so the
-  # "Run workflow" (workflow_dispatch) button appears for it.
-  push:
-    branches:
-      - jl/bump-image-tag-workflow
-  # ===== END TEMP =====
-
 # One in-flight bump per component+repo, so two near-simultaneous releases can't
 # clobber each other's branch. Don't cancel: a running bump should finish.
 concurrency:
@@ -134,19 +80,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ===== TEMP: testing scaffold — remove before merge =====
-  # The registration push runs this no-op so the workflow gets a run and shows up
-  # in the Actions UI; the real `bump` job is skipped on push.
-  register:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Registered. Actions ▸ Bump chart image tag ▸ Run workflow (pick this branch) to test."
-  # ===== END TEMP =====
-
   bump:
-    # TEMP (remove before merge): skip the real bump on the registration push.
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # We act on the chart repo exclusively via the App token minted below, never
