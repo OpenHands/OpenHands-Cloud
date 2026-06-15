@@ -1454,13 +1454,21 @@ class TestUpdateImageLoaderValues:
         return make_temp_yaml_file(sample_image_loader_values)
 
     def test_updates_agent_server_image_tag(self, temp_image_loader_values_file):
-        """Test that the agent-server image tag is updated."""
-        result = update_image_loader_values(
+        """Test that the agent-server image tag is written to the file."""
+        update_image_loader_values(
             temp_image_loader_values_file,
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
         assert_file_contains(temp_image_loader_values_file, f"tag: {NEW_RUNTIME_IMAGE_TAG}\n")
+
+    def test_reports_has_changes_when_tag_updated(self, temp_image_loader_values_file):
+        """Test that updating the tag reports has_changes is True."""
+        result = update_image_loader_values(
+            temp_image_loader_values_file,
+            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
+        )
+
         assert result.has_changes is True
 
     def test_result_records_image_loader_change(self, temp_image_loader_values_file):
@@ -1950,12 +1958,19 @@ class TestUpdateAutomationValues:
         return make_temp_yaml_file(sample_automation_values)
 
     def test_updates_automation_image_tag(self, temp_automation_values_file):
-        """Test that automation image tag is updated from deploy-config SHA."""
+        """Test that automation image tag is written from the deploy-config SHA."""
+        sha = "1234567890abcdef1234567890abcdef12345678"
+
+        update_automation_values(temp_automation_values_file, automation_sha=sha)
+
+        assert_file_contains(temp_automation_values_file, "tag: sha-1234567\n")
+
+    def test_reports_has_changes_when_automation_tag_updated(self, temp_automation_values_file):
+        """Test that updating the automation tag reports has_changes is True."""
         sha = "1234567890abcdef1234567890abcdef12345678"
 
         result = update_automation_values(temp_automation_values_file, automation_sha=sha)
 
-        assert_file_contains(temp_automation_values_file, "tag: sha-1234567\n")
         assert result.has_changes is True
 
     def test_bare_short_automation_sha_matches_prefixed_chart_tag(self, temp_automation_values_file):
@@ -2296,20 +2311,24 @@ class TestUpdateRuntimeApiWorkflow:
 class TestUpdateAutomationWorkflow:
     """Tests for update_automation_workflow orchestration."""
 
-    def test_updates_values_bumps_chart_and_returns_new_chart_version(
+    @pytest.fixture
+    def automation_paths(
         self,
         monkeypatch,
         make_temp_yaml_file,
         sample_automation_values,
         sample_automation_chart,
     ):
-        """When values change, the automation chart version is bumped and returned."""
+        """Point the workflow at temporary copies of the automation chart files."""
         values_path = make_temp_yaml_file(sample_automation_values)
         chart_path = make_temp_yaml_file(sample_automation_chart)
         monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
         monkeypatch.setattr("update_openhands_charts.AUTOMATION_CHART_PATH", chart_path)
+        return values_path, chart_path
 
-        new_version = update_automation_workflow(
+    def _run(self):
+        """Invoke the workflow with a changed automation SHA; return its result."""
+        return update_automation_workflow(
             DeployConfig(
                 runtime_api_sha="unused",
                 automation_sha="1234567890abcdef1234567890abcdef12345678",
@@ -2317,8 +2336,26 @@ class TestUpdateAutomationWorkflow:
             dry_run=False,
         )
 
+    def test_updates_values_file(self, automation_paths):
+        """When values change, the automation values.yaml receives the new tag."""
+        values_path, _ = automation_paths
+
+        self._run()
+
         assert_file_contains(values_path, "tag: sha-1234567\n")
+
+    def test_bumps_chart_version(self, automation_paths):
+        """When values change, the automation chart version is bumped in the file."""
+        _, chart_path = automation_paths
+
+        self._run()
+
         assert get_chart_value(chart_path, "version") == "0.1.2"
+
+    def test_returns_new_chart_version(self, automation_paths):
+        """When values change, the workflow returns the bumped chart version."""
+        new_version = self._run()
+
         assert new_version == "0.1.2"
 
 
