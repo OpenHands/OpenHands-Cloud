@@ -617,8 +617,8 @@ def get_agent_server_image():
         called_headers = mock_get.call_args[1]["headers"]
         assert called_headers["Authorization"] == "Bearer my-secret-token"
 
-    def test_returns_none_and_prints_error_on_http_failure(self, monkeypatch, capsys):
-        """Test graceful handling when the GitHub API request fails."""
+    def test_returns_none_on_http_failure(self, monkeypatch):
+        """Returns None (rather than raising) when the GitHub API request fails."""
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = Exception("HTTP 404: Not Found")
         monkeypatch.setattr(
@@ -629,12 +629,24 @@ def get_agent_server_image():
         result = get_runtime_image_tag_from_sandbox_spec("token", "owner/repo", ref="cloud-1.26.1")
 
         assert result is None
+
+    def test_prints_error_on_http_failure(self, monkeypatch, capsys):
+        """Prints a diagnostic message when the GitHub API request fails."""
+        mock_response = Mock()
+        mock_response.raise_for_status.side_effect = Exception("HTTP 404: Not Found")
+        monkeypatch.setattr(
+            "update_openhands_charts.requests.get",
+            Mock(return_value=mock_response)
+        )
+
+        get_runtime_image_tag_from_sandbox_spec("token", "owner/repo", ref="cloud-1.26.1")
+
         assert "Error fetching sandbox spec" in capsys.readouterr().out
 
-    def test_returns_none_and_prints_error_when_image_constant_missing(
-        self, monkeypatch, make_workflow_response, capsys
+    def test_returns_none_when_image_constant_missing(
+        self, monkeypatch, make_workflow_response
     ):
-        """Test graceful handling when AGENT_SERVER_IMAGE constant is absent."""
+        """Returns None when the AGENT_SERVER_IMAGE constant is absent."""
         response = make_workflow_response("# No image constant here\n")
         monkeypatch.setattr(
             "update_openhands_charts.requests.get",
@@ -644,6 +656,19 @@ def get_agent_server_image():
         result = get_runtime_image_tag_from_sandbox_spec("token", "owner/repo", ref="cloud-1.26.1")
 
         assert result is None
+
+    def test_prints_error_naming_missing_constant(
+        self, monkeypatch, make_workflow_response, capsys
+    ):
+        """Prints an error naming AGENT_SERVER_IMAGE when the constant is absent."""
+        response = make_workflow_response("# No image constant here\n")
+        monkeypatch.setattr(
+            "update_openhands_charts.requests.get",
+            Mock(return_value=response)
+        )
+
+        get_runtime_image_tag_from_sandbox_spec("token", "owner/repo", ref="cloud-1.26.1")
+
         out = capsys.readouterr().out
         assert "Error fetching sandbox spec" in out
         assert "AGENT_SERVER_IMAGE" in out
@@ -786,7 +811,7 @@ env:
     # The printed error message enables operators to diagnose issues from logs.
     # =========================================================================
 
-    @pytest.mark.parametrize("error_name,setup_mock", [
+    _error_scenarios = pytest.mark.parametrize("error_name,setup_mock", [
         # =====================================================================
         # Network-level errors (transient, typically retryable)
         # Recovery: Caller should retry with exponential backoff or skip update
@@ -876,16 +901,12 @@ env:
             lambda: make_invalid_yaml_response("env:\n\t\tinvalid_indent: true"),
         ),
     ])
-    def test_returns_none_and_prints_error(self, error_name, setup_mock, monkeypatch, capsys):
-        """Test that error scenarios return None and print an error message.
+    @_error_scenarios
+    def test_returns_none_on_error(self, error_name, setup_mock, monkeypatch):
+        """Every error path returns None (not raising), enabling graceful degradation.
 
-        All error paths in get_deploy_config should:
-        1. Return None (not raise an exception) - enables graceful degradation
-        2. Print an error message containing "Error fetching deploy config" - enables debugging
-
-        This fail-safe design ensures CI/CD pipelines can continue even when
-        deploy config is temporarily unavailable, while providing clear diagnostic
-        output for operators to investigate and resolve the underlying issue.
+        This fail-safe design lets CI/CD pipelines continue even when the deploy
+        config is temporarily unavailable.
         """
         mock_get = setup_mock()
         monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
@@ -893,6 +914,19 @@ env:
         result = get_deploy_config("fake-token", "owner/repo")
 
         assert result is None, f"Expected None for {error_name}, got {result}"
+
+    @_error_scenarios
+    def test_prints_error_on_error(self, error_name, setup_mock, monkeypatch, capsys):
+        """Every error path prints a message containing "Error fetching deploy config".
+
+        Clear diagnostic output lets operators investigate and resolve the
+        underlying issue.
+        """
+        mock_get = setup_mock()
+        monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
+
+        get_deploy_config("fake-token", "owner/repo")
+
         captured = capsys.readouterr()
         assert "Error fetching deploy config" in captured.out, (
             f"Expected error message for {error_name}, got: {captured.out}"
