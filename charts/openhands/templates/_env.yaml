@@ -548,10 +548,11 @@
 {{- end }}
 - name: OH_APP_MODE
   value: "saas"
-- name: OH_APP_CONVERSATION_INFO_KIND
-  value: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
-- name: OH_LLM_MODEL_KIND
-  value: server.verified_models.verified_model_router.SaaSLLMModelServiceInjector
+# OHE is always self-hosted; pin it so deployment_mode isn't host-inferred.
+- name: OH_DEPLOYMENT_MODE
+  value: "self_hosted"
+# OH_APP_CONVERSATION_INFO_KIND / OH_LLM_MODEL_KIND are baked into the enterprise
+# image (OpenHands#14811), so the chart no longer sets them — keeps the two in sync.
 - name: CONVERSATION_MANAGER_CLASS
   value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}

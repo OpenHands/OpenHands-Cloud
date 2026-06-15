@@ -128,6 +128,31 @@ spec:
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
           maxAge: 168h
+    # Live LiteLLM proxy model list (/model/info): config-rendered models
+    # plus any models added at runtime via the LiteLLM dashboard
+    # (store_model_in_db). Authenticates with the proxy's own
+    # PROXY_MASTER_KEY env var (wired from the lite-llm-api-key secret by
+    # the litellm-helm chart). LiteLLM redacts api_key values server-side;
+    # api_base values may appear, which is acceptable. The image has no
+    # curl, so use the bundled python3.
+    - exec:
+        name: app/{{ .Release.Name }}-litellm
+        collectorName: litellm-model-info
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name=litellm
+          - app.kubernetes.io/instance={{ .Release.Name }}
+        containerName: litellm
+        command: ["python3", "-c"]
+        args:
+          - |
+            import os, urllib.request
+            req = urllib.request.Request(
+                "http://localhost:4000/model/info",
+                headers={"Authorization": "Bearer " + os.environ["PROXY_MASTER_KEY"]},
+            )
+            print(urllib.request.urlopen(req, timeout=15).read().decode())
+        timeout: 30s
     {{- end }}
     # Ingress NGINX controller logs
     - logs:
