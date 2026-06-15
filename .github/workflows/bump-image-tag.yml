@@ -229,11 +229,6 @@ jobs:
             Opened by the `bump-image-tag` reusable workflow after a release in the
             `${{ inputs.component }}` repository.
 
-            > [!NOTE]
-            > This PR updates **only** the image tag. It does not bump the chart
-            > `version` in `Chart.yaml`, so **Validate Chart Versions** will fail
-            > until the chart version is bumped as part of merging. This is by design.
-
       - name: Summary
         if: ${{ steps.cpr.outputs.pull-request-number != '' }}
         env:

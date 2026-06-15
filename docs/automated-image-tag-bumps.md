@@ -21,7 +21,7 @@ bump the chart `version` in `Chart.yaml` and does nothing else.
 Because of that, the **Validate Chart Versions** check (`enforce_version_bump:
 true`) will **fail** on these PRs: a chart file changed without a version bump.
 This is intentional — a maintainer bumps the chart version while reviewing/merging
-the bump. The PR body states this so reviewers aren't surprised.
+the bump.
 
 The edit is path-aware and minimal by design. `runtime-api/values.yaml` has three
 `tag:` keys (`image.tag`, `kvm.image.tag`, `kvm.initImage.tag`); the script edits
