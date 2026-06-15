@@ -1,0 +1,172 @@
+name: Bump chart image tag
+
+# Reusable workflow. A component repo (runtime-api, automation, ...) calls this
+# from its own release workflow to open a PR in the chart repo that points a
+# chart's image tag at the newly released image.
+#
+# It updates ONLY the tag scalar — it deliberately does not bump the chart
+# `version` in Chart.yaml or change anything else. (As a result the
+# "Validate Chart Versions" check will fail on the PR until a maintainer bumps
+# the chart version while merging; this is intentional.)
+#
+# See docs/automated-image-tag-bumps.md for caller setup and the auth model.
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: 'Component name; used in the branch, PR title, and commit message (e.g. "runtime-api").'
+        required: true
+        type: string
+      chart_file:
+        description: 'YAML file to edit, relative to the chart repo root (e.g. charts/runtime-api/values.yaml).'
+        required: true
+        type: string
+      tag:
+        description: 'New image tag to set (e.g. sha-61fc535).'
+        required: true
+        type: string
+      image_tag_path:
+        description: 'yq-style path to the image tag scalar within chart_file.'
+        required: false
+        default: '.image.tag'
+        type: string
+      base_branch:
+        description: 'Branch to open the PR against.'
+        required: false
+        default: 'main'
+        type: string
+      chart_repo:
+        description: 'Chart repository to update, in owner/name form.'
+        required: false
+        default: 'OpenHands/OpenHands-Cloud'
+        type: string
+      pr_branch:
+        description: 'Head branch for the PR. The default rolls a single open PR per component, advancing it to the latest tag. Include the tag to get one PR per release.'
+        required: false
+        default: ''
+        type: string
+      pr_labels:
+        description: 'Comma- or newline-separated labels to add to the PR.'
+        required: false
+        default: |
+          automated
+          image-bump
+        type: string
+      draft:
+        description: 'Open the PR as a draft.'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      RELEASE_APP_ID:
+        description: 'App ID of the shared release GitHub App (the same one OpenHands/release-actions uses). The App must be installed on chart_repo with Contents + Pull requests read/write. Pass it via `secrets: inherit`.'
+        required: true
+      RELEASE_APP_PRIVATE_KEY:
+        description: 'Private key (PEM) for that App. Pass it via `secrets: inherit`.'
+        required: true
+    outputs:
+      pull-request-number:
+        description: 'Number of the created/updated PR (empty if no change was needed).'
+        value: ${{ jobs.bump.outputs.pull-request-number }}
+      pull-request-url:
+        description: 'URL of the created/updated PR (empty if no change was needed).'
+        value: ${{ jobs.bump.outputs.pull-request-url }}
+
+# One in-flight bump per component+repo, so two near-simultaneous releases can't
+# clobber each other's branch. Don't cancel: a running bump should finish.
+concurrency:
+  group: bump-image-tag-${{ inputs.chart_repo }}-${{ inputs.component }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # We act on the chart repo exclusively via the App token minted below, never
+    # via the caller's GITHUB_TOKEN, so it needs no permissions.
+    permissions: {}
+    outputs:
+      pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+      pull-request-url: ${{ steps.cpr.outputs.pull-request-url }}
+
+    steps:
+      - name: Parse chart repo
+        id: repo
+        env:
+          CHART_REPO: ${{ inputs.chart_repo }}
+        run: |
+          echo "owner=${CHART_REPO%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${CHART_REPO#*/}" >> "$GITHUB_OUTPUT"
+
+      # Mint a short-lived token for the shared release App, the same App
+      # OpenHands/release-actions uses. Unlike that repo (which operates on the
+      # repo it runs in), we run in the COMPONENT repo but write to the chart
+      # repo, so we scope the token to chart_repo via owner/repositories. This
+      # requires the App to be installed on chart_repo. There is deliberately no
+      # GITHUB_TOKEN fallback: a PR opened by GITHUB_TOKEN would not trigger the
+      # chart repo's required checks.
+      - name: Mint GitHub App token (scoped to the chart repo)
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ steps.repo.outputs.owner }}
+          repositories: ${{ steps.repo.outputs.name }}
+
+      - name: Checkout chart repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.chart_repo }}
+          ref: ${{ inputs.base_branch }}
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Bump image tag
+        env:
+          CHART_FILE: ${{ inputs.chart_file }}
+          IMAGE_TAG_PATH: ${{ inputs.image_tag_path }}
+          NEW_TAG: ${{ inputs.tag }}
+        run: |
+          uv run scripts/bump_image_tag/bump_image_tag.py \
+            --file "$CHART_FILE" \
+            --path "$IMAGE_TAG_PATH" \
+            --tag "$NEW_TAG"
+
+      - name: Create or update pull request
+        id: cpr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          # Commit only the file we edited — never anything else the runner touched.
+          add-paths: ${{ inputs.chart_file }}
+          base: ${{ inputs.base_branch }}
+          branch: ${{ inputs.pr_branch != '' && inputs.pr_branch || format('bump-image-tag/{0}', inputs.component) }}
+          delete-branch: true
+          commit-message: 'chore(${{ inputs.component }}): bump image tag to ${{ inputs.tag }}'
+          title: 'chore(${{ inputs.component }}): bump image tag to ${{ inputs.tag }}'
+          labels: ${{ inputs.pr_labels }}
+          draft: ${{ inputs.draft }}
+          body: |
+            Automated image tag bump for **${{ inputs.component }}**.
+
+            |        |                              |
+            | ------ | ---------------------------- |
+            | File   | `${{ inputs.chart_file }}`     |
+            | Path   | `${{ inputs.image_tag_path }}` |
+            | New tag | `${{ inputs.tag }}`           |
+
+            Opened by the `bump-image-tag` reusable workflow after a release in the
+            `${{ inputs.component }}` repository.
+
+      - name: Summary
+        if: ${{ steps.cpr.outputs.pull-request-number != '' }}
+        env:
+          URL: ${{ steps.cpr.outputs.pull-request-url }}
+          OP: ${{ steps.cpr.outputs.pull-request-operation }}
+        run: |
+          echo "PR ${OP}: ${URL}" >> "$GITHUB_STEP_SUMMARY"
