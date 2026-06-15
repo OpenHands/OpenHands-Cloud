@@ -36,11 +36,14 @@ Usage Example
 
 import base64
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import pytest
 from ruamel.yaml import YAML
+
+import update_openhands_charts
 
 # =============================================================================
 # Fixture baseline constants
@@ -841,3 +844,27 @@ def mock_github_ref(monkeypatch):
         return mock_github, mock_github.get_repo.return_value
 
     return _mock_github
+
+
+@pytest.fixture
+def openhands_workflow_mocks(monkeypatch):
+    """Patch the four inner functions called by update_openhands_workflow.
+
+    Returns a namespace exposing each MagicMock by name (`.values`,
+    `.replicated`, `.replicated_config`, `.chart`) so each workflow-contract
+    test asserts on the calls it focuses on without depending on a positional
+    return shape. The values mock reports has_changes=True so the chart-bump
+    path is exercised; the others return a no-change UpdateResult and exist to
+    prevent writes to the real files.
+    """
+    mocks = SimpleNamespace(
+        values=MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
+        replicated=MagicMock(return_value=update_openhands_charts.UpdateResult()),
+        replicated_config=MagicMock(return_value=update_openhands_charts.UpdateResult()),
+        chart=MagicMock(return_value=update_openhands_charts.UpdateResult()),
+    )
+    monkeypatch.setattr("update_openhands_charts.update_openhands_values", mocks.values)
+    monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mocks.replicated)
+    monkeypatch.setattr("update_openhands_charts.update_replicated_config", mocks.replicated_config)
+    monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mocks.chart)
+    return mocks
