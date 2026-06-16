@@ -21,17 +21,9 @@ keycloak:
   # CRITICAL: Set authHost to point to shared Keycloak (not derived from ingress.host)
   # Without this, the chart computes AUTH_URL as auth.console-message.ohe-staging... which doesn't exist
   authHost: auth.ohe-staging.platform-team.all-hands.dev
-  # Register this branch's redirect URI with the shared Keycloak
-  # This is required because Keycloak doesn't support wildcard subdomains
+  # Redirect URIs already registered via shared-auth terraform - disable hook to avoid job failures
   redirectUriRegistration:
-    enabled: true
-    keycloakUrl: "https://auth.ohe-staging.platform-team.all-hands.dev"
-    realmName: "allhands"
-    clientId: "allhands"
-    adminUser: "admin"
-    adminPasswordSecret:
-      name: "keycloak-admin"
-      key: "admin-password"
+    enabled: false
 keycloakConfig:
   enabled: false
 
