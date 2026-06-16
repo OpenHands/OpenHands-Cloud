@@ -57,5 +57,5 @@ dependencies:
     condition: integrations-hub.enabled
   - name: agent-canvas
     repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.1.0
+    version: 0.1.1
     condition: agent-canvas.enabled
