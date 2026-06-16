@@ -40,6 +40,11 @@ spec:
       # integration card never renders. Mirror jira_data_center_enabled here.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA_DC: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
       LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
+      # The chart's fallback for LAMINAR_WEB_HOST is laminar.<ingress.host>, but
+      # Replicated installs expose Laminar at the analytics hostname. Set it
+      # unconditionally (not gated on analytics_enabled) so the Keycloak realm
+      # redirect URIs stay on the analytics domain either way.
+      LAMINAR_WEB_HOST: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
       OH_AGENT_SERVER_ENV: '{"SSL_CERT_FILE": "/etc/openhands/ca-bundle/ca-bundle.crt", "REQUESTS_CA_BUNDLE": "/etc/openhands/ca-bundle/ca-bundle.crt", "GIT_SSL_CAINFO": "/etc/openhands/ca-bundle/ca-bundle.crt", "CURL_CA_BUNDLE": "/etc/openhands/ca-bundle/ca-bundle.crt", "NODE_EXTRA_CA_CERTS": "/etc/openhands/ca-bundle/ca-bundle.crt"}'
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
       OPENHANDS_DEFAULT_ORG_AUTO_ADD_USERS: 'repl{{ ConfigOptionEquals "default_openhands_org_auto_add_users" "1" }}'
