@@ -99,6 +99,7 @@ resource "google_container_cluster" "cluster" {
     ignore_changes = [
       node_config,
       initial_node_count,
+      node_locations,  # GKE auto-manages this based on regional availability
     ]
   }
 }
@@ -228,18 +229,22 @@ resource "google_container_node_pool" "runtime" {
     )
 
     # Taint to prevent non-runtime workloads from scheduling on these nodes
-    # Runtime pods, image-loader, and sysbox installer must tolerate this taint
-    taint {
-      key    = var.enable_gke_sandbox ? "sandbox.gke.io/runtime" : "sysbox-runtime"
-      value  = var.enable_gke_sandbox ? "gvisor" : "true"
-      effect = "NO_SCHEDULE"
+    # For gVisor: GKE auto-applies sandbox.gke.io/runtime=gvisor taint (must NOT be specified manually)
+    # For sysbox: sysbox-runtime=true taint applied here
+    dynamic "taint" {
+      for_each = var.enable_gke_sandbox ? [] : [1]
+      content {
+        key    = "sysbox-runtime"
+        value  = "true"
+        effect = "NO_SCHEDULE"
+      }
     }
 
     # GKE Sandbox (gVisor) configuration
     dynamic "sandbox_config" {
       for_each = var.enable_gke_sandbox ? [1] : []
       content {
-        sandbox_type = "gvisor"
+        type = "GVISOR"  # Must be uppercase per Google provider 7.29.0+
       }
     }
 
