@@ -32,6 +32,9 @@ on:
       integrations-hub-publishable:
         description: 'Whether integrations-hub chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.integrations-hub-publishable }}
+      agent-canvas-publishable:
+        description: 'Whether agent-canvas chart is publishable (no changes or version bumped)'
+        value: ${{ jobs.validate-chart-versions.outputs.agent-canvas-publishable }}
       openhands-publishable:
         description: 'Whether openhands chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.openhands-publishable }}
@@ -51,6 +54,7 @@ jobs:
       automation-publishable: ${{ steps.validate.outputs.automation-publishable }}
       plugin-directory-publishable: ${{ steps.validate.outputs.plugin-directory-publishable }}
       integrations-hub-publishable: ${{ steps.validate.outputs.integrations-hub-publishable }}
+      agent-canvas-publishable: ${{ steps.validate.outputs.agent-canvas-publishable }}
       openhands-publishable: ${{ steps.validate.outputs.openhands-publishable }}
       openhands-secrets-publishable: ${{ steps.validate.outputs.openhands-secrets-publishable }}
 
