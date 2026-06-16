@@ -1,0 +1,84 @@
+# Agent Canvas Helm Chart Values
+#
+# Frontend-only deployment of OpenHands Agent Canvas. This chart runs the
+# pre-built static frontend bundled in the ghcr.io/openhands/agent-canvas
+# image, served by scripts/static-server.mjs in --auth-required mode with
+# /api, /sockets, /server_info, and other backend paths rejected. Users
+# point the UI at their own backend(s) via the in-app "Manage Backends"
+# screen.
+
+image:
+  repository: ghcr.io/openhands/agent-canvas
+  # Tag is supplied at deploy time via the OpenHands deploy workflow.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+service:
+  port: 8000
+
+# Ingress for the agent-canvas service. When deployed as a subchart of
+# `openhands`, the parent chart's `templates/ingress-agent-canvas.yaml`
+# renders the Ingress resource using these values.
+ingress:
+  enabled: false
+  host: ""
+  tls:
+    enabled: true
+    secretName: agent-canvas-tls
+
+# Static-server runtime flags. By default the deployment runs in
+# frontend-only / auth-required mode and rejects any path that would
+# normally proxy to a local backend (since this deployment has none).
+staticServer:
+  authRequired: true
+  rejectPrefixes:
+    - /api
+    - /server_info
+    - /sockets
+    - /alive
+    - /health
+    - /ready
+    - /docs
+    - /redoc
+    - /openapi.json
+
+# Pod-level security context
+securityContext:
+  runAsUser: 42420
+  runAsGroup: 42420
+  runAsNonRoot: true
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: agent-canvas-sa
+  annotations: {}
+
+# Liveness / readiness probes hit the static server on / (SPA fallback).
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 5
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 2
+    periodSeconds: 10
+    failureThreshold: 3
+
+# Extra environment variables to pass to the container.
+env: {}

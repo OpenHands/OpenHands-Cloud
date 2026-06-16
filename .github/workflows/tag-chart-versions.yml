@@ -29,7 +29,7 @@ jobs:
       - name: Tag chart versions
         run: |
           # Define the charts to process
-          CHARTS=("automation" "image-loader" "openhands" "openhands-secrets" "runtime-api")
+          CHARTS=("automation" "agent-canvas" "image-loader" "openhands" "openhands-secrets" "runtime-api")
           
           for chart in "${CHARTS[@]}"; do
             CHART_PATH="charts/${chart}/Chart.yaml"
