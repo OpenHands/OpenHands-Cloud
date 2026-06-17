@@ -285,7 +285,7 @@ spec:
                 # IS NOT NULL presence flags — never the encrypted values.
                 ("org llm config",
                  "SELECT id, name, org_version, is_default, v1_enabled, byor_export_enabled, "
-                 "max_budget_per_task, max_concurrent_sandboxes, sandbox_base_container_image, "
+                 "max_budget_per_task, sandbox_base_container_image, "
                  "sandbox_runtime_container_image, agent_settings->>'agent' AS agent, "
                  "agent_settings->'llm'->>'model' AS llm_model, "
                  "agent_settings->'llm'->>'base_url' AS llm_base_url, "
