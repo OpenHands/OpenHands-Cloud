@@ -1129,9 +1129,9 @@ spec:
         - name: keycloak_sso_session_idle_timeout
           title: Login Session Idle Timeout (seconds)
           help_text: >-
-            How long a login session stays valid without activity before the user must sign in again. Default is 1800 (30 minutes).
+            How long a login session stays valid without activity before the user must sign in again. Default is 259200 (3 days).
           type: text
-          default: "1800"
+          default: "259200"
           required: true
           validation:
             regex:
@@ -1140,9 +1140,9 @@ spec:
         - name: keycloak_sso_session_max_lifespan
           title: Login Session Max Duration (seconds)
           help_text: >-
-            Maximum total lifetime of a login session before the user must sign in again, regardless of activity. Default is 36000 (10 hours). Each forced re-login also re-authorizes the configured identity provider (for example, Bitbucket Data Center records a new authorized-application grant), so raising this reduces how often that happens.
+            Maximum total lifetime of a login session before the user must sign in again, regardless of activity. Default is 604800 (7 days). Each forced re-login also re-authorizes the configured identity provider (for example, Bitbucket Data Center records a new authorized-application grant), so raising this reduces how often that happens.
           type: text
-          default: "36000"
+          default: "604800"
           required: true
           validation:
             regex:
