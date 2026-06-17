@@ -64,7 +64,7 @@ spec:
           maxAge: 168h
     {{- end }}
     {{- if .Values.redis.enabled }}
-    # Redis logs (Bitnami chart)
+    # Redis logs (Bitnami chart). 720h to match app pods: session bugs are slow-burn.
     - logs:
         name: app/{{ .Release.Name }}-redis/logs
         namespace: {{ .Release.Namespace }}
@@ -72,10 +72,10 @@ spec:
           - app.kubernetes.io/name=redis
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 720h
     {{- end }}
     {{- if .Values.keycloak.enabled }}
-    # Keycloak logs (Bitnami chart)
+    # Keycloak logs (Bitnami chart). 720h to match app pods: auth/session bugs are slow-burn.
     - logs:
         name: app/{{ .Release.Name }}-keycloak/logs
         namespace: {{ .Release.Namespace }}
@@ -83,7 +83,7 @@ spec:
           - app.kubernetes.io/name=keycloak
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 720h
     {{- end }}
     {{- if .Values.filestore.ephemeral }}
     # MinIO logs (MinIO chart)
@@ -154,6 +154,122 @@ spec:
             print(urllib.request.urlopen(req, timeout=15).read().decode())
         timeout: 30s
     {{- end }}
+    # Read-only integration STATE via the openhands pod's own DB creds. Dumps
+    # webhook/connection ids, repos and timestamps to spot duplicate
+    # registrations; SELECTs only non-secret columns (never tokens/secrets).
+    - exec:
+        name: app/openhands-db-diagnostics
+        collectorName: openhands-db-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os, psycopg2
+            conn = psycopg2.connect(
+                host=os.environ["DB_HOST"],
+                port=os.environ.get("DB_PORT", "5432"),
+                dbname=os.environ["DB_NAME"],
+                user=os.environ["DB_USER"],
+                password=os.environ.get("DB_PASS", ""),
+                sslmode=os.environ.get("DB_SSL_MODE", "prefer"),
+                connect_timeout=10,
+            )
+            conn.set_session(readonly=True, autocommit=True)
+            cur = conn.cursor()
+            def run(label, sql):
+                print("== " + label + " ==")
+                try:
+                    cur.execute(sql)
+                    print(json.dumps([d[0] for d in cur.description]))
+                    for r in cur.fetchall():
+                        print(json.dumps(r, default=str))
+                except Exception as e:
+                    print("ERROR: " + repr(e))
+                print()
+            queries = [
+                ("bitbucket_dc_webhook rows",
+                 "SELECT id, project_key, repo_slug, user_id, webhook_id, last_synced "
+                 "FROM bitbucket_dc_webhook ORDER BY project_key, repo_slug, id"),
+                ("bitbucket_dc_webhook duplicate repos",
+                 "SELECT project_key, repo_slug, COUNT(*) AS registrations "
+                 "FROM bitbucket_dc_webhook GROUP BY project_key, repo_slug HAVING COUNT(*) > 1"),
+                ("bitbucket_webhook rows",
+                 "SELECT id, workspace, repo_slug, user_id, webhook_uuid, last_synced "
+                 "FROM bitbucket_webhook ORDER BY workspace, repo_slug, id"),
+                ("bitbucket_webhook duplicate repos",
+                 "SELECT workspace, repo_slug, COUNT(*) AS registrations "
+                 "FROM bitbucket_webhook GROUP BY workspace, repo_slug HAVING COUNT(*) > 1"),
+                ("gitlab_webhook rows",
+                 "SELECT id, group_id, project_id, user_id, webhook_exists, webhook_uuid, last_synced "
+                 "FROM gitlab_webhook ORDER BY group_id, project_id, id"),
+                ("gitlab_webhook duplicate projects",
+                 "SELECT group_id, project_id, COUNT(*) AS registrations "
+                 "FROM gitlab_webhook GROUP BY group_id, project_id HAVING COUNT(*) > 1"),
+                ("github_app_installations rows",
+                 "SELECT id, installation_id, created_at, updated_at "
+                 "FROM github_app_installations ORDER BY installation_id, id"),
+                ("github_app_installations duplicate installation_id",
+                 "SELECT installation_id, COUNT(*) AS n "
+                 "FROM github_app_installations GROUP BY installation_id HAVING COUNT(*) > 1"),
+                ("jira_dc_workspaces rows",
+                 "SELECT id, name, org_id, admin_user_id, status, svc_acc_email, created_at, updated_at "
+                 "FROM jira_dc_workspaces ORDER BY name, id"),
+                ("offline_tokens freshness summary",
+                 "SELECT COUNT(*) AS token_count, MIN(updated_at) AS oldest_refresh, "
+                 "MAX(updated_at) AS newest_refresh FROM offline_tokens"),
+                ("offline_tokens per-user metadata",
+                 "SELECT user_id, created_at, updated_at FROM offline_tokens "
+                 "ORDER BY updated_at DESC LIMIT 500"),
+            ]
+            for label, sql in queries:
+                run(label, sql)
+        timeout: 30s
+    # Non-secret config/feature snapshot from the running pod: values for flags,
+    # presence-only ("set"/"empty_or_unset") for secret-backed vars (never values).
+    - exec:
+        name: app/openhands-config-snapshot
+        collectorName: openhands-config-snapshot
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os
+            NONSECRET = [
+                "OH_APP_MODE", "OH_DEPLOYMENT_MODE", "OH_WEB_CLIENT_PROVIDERS_CONFIGURED",
+                "RUNTIME", "CONVERSATION_MANAGER_CLASS", "RUN_AS_OPENHANDS", "NO_SETUP",
+                "REQUIRE_PAYMENT", "ADD_DEBUGGING_ROUTES",
+                "AUTOMATION_EVENT_FORWARDING_ENABLED", "AUTOMATION_SERVICE_URL",
+                "ENABLE_JIRA", "ENABLE_JIRA_DC", "ENABLE_LINEAR",
+                "JIRA_DC_WEBHOOKS_ENABLED", "JIRA_DC_ENABLE_OAUTH", "JIRA_DC_BASE_URL",
+                "SLACK_WEBHOOKS_ENABLED", "BITBUCKET_DATA_CENTER_HOST", "GITLAB_HOST",
+                "AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_TENANT_ID",
+                "GITHUB_APP_ID", "GITHUB_APP_SLUG",
+                "SANDBOX_CLOSE_DELAY", "SANDBOX_KEEP_RUNTIME_ALIVE",
+                "FILE_STORE", "SHARED_EVENT_STORAGE_PROVIDER",
+                "LITE_LLM_API_URL", "LITE_LLM_TEAM_ID",
+                "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_SSL_MODE",
+                "REDIS_HOST", "REDIS_PORT",
+                "KEYCLOAK_SERVER_URL", "KEYCLOAK_REALM_NAME", "KEYCLOAK_CLIENT_ID",
+                "WEB_HOST", "AUTH_WEB_HOST", "MCP_HOST",
+            ]
+            SECRET_PRESENCE = [
+                "BITBUCKET_DATA_CENTER_BOT_TOKEN", "BITBUCKET_DATA_CENTER_CLIENT_SECRET",
+                "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET",
+                "GITLAB_APP_CLIENT_SECRET", "AZURE_DEVOPS_CLIENT_SECRET",
+                "JIRA_DC_CLIENT_SECRET", "JIRA_DC_SERVICE_ACCOUNT_PAT",
+                "AUTOMATION_WEBHOOK_SECRET", "AUTOMATIONS_SERVICE_KEY",
+                "LITE_LLM_API_KEY", "SANDBOX_API_KEY", "JWT_SECRET",
+            ]
+            config = {k: os.environ.get(k) for k in NONSECRET}
+            presence = {k: ("set" if os.environ.get(k) else "empty_or_unset") for k in SECRET_PRESENCE}
+            print(json.dumps({"config": config, "secret_presence": presence}, indent=2, default=str))
+        timeout: 30s
     # Ingress NGINX controller logs
     - logs:
         name: ingress-nginx/logs
