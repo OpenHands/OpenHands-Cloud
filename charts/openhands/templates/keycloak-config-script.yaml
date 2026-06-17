@@ -101,8 +101,8 @@ data:
     # template must stay valid JSON) and flow through both the create path and
     # the realm-settings update path below, meaning changes take effect on a
     # live install at the next restart.
-    SSO_SESSION_IDLE_TIMEOUT={{ .Values.keycloak.ssoSessionIdleTimeout | default 1800 | int }}
-    SSO_SESSION_MAX_LIFESPAN={{ .Values.keycloak.ssoSessionMaxLifespan | default 36000 | int }}
+    SSO_SESSION_IDLE_TIMEOUT={{ .Values.keycloak.ssoSessionIdleTimeout | default 259200 | int }}
+    SSO_SESSION_MAX_LIFESPAN={{ .Values.keycloak.ssoSessionMaxLifespan | default 604800 | int }}
     jq --argjson idle "$SSO_SESSION_IDLE_TIMEOUT" --argjson max "$SSO_SESSION_MAX_LIFESPAN" \
       '.ssoSessionIdleTimeout = $idle | .ssoSessionMaxLifespan = $max' \
       /tmp/allhands-realm-github-provider.json > /tmp/allhands-realm-with-sessions.json

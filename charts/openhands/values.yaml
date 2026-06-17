@@ -321,8 +321,8 @@ keycloak:
   # how long a login session survives inactivity; max lifespan caps the total
   # session duration before the user is sent back through the identity
   # provider (e.g. Bitbucket Data Center) to log in again.
-  ssoSessionIdleTimeout: 1800
-  ssoSessionMaxLifespan: 36000
+  ssoSessionIdleTimeout: 259200
+  ssoSessionMaxLifespan: 604800
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
