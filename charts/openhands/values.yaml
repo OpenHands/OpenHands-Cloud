@@ -36,6 +36,14 @@ datadog:
 debuggingRoutes:
   enabled: false
 
+# Admin POST /api/organizations/provision-user endpoint. When enabled,
+# the enterprise app server registers the user-provisioning router and
+# sets USER_PROVISIONING_ENABLED=true. This endpoint should only be
+# enabled for OHE deployments when the customer needs to create users
+# without any user input.
+userProvisioning:
+  enabled: false
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false
