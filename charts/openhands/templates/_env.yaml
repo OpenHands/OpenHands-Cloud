@@ -341,6 +341,11 @@
   value: "1"
 {{- end }}
 
+{{- if .Values.userProvisioning.enabled }}
+- name: USER_PROVISIONING_ENABLED
+  value: "true"
+{{- end }}
+
 {{- $dbSslMode := "prefer" }}
 {{- if not .Values.postgresql.enabled }}
 {{- $dbSslMode = .Values.externalDatabase.sslMode | default "prefer" }}
