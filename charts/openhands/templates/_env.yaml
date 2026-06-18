@@ -100,16 +100,16 @@
 - name: GITHUB_USERS_SHEET_ID
   value: {{ .Values.allowedUsersSheet }}
 {{- end }}
-{{- if .Values.redis.enabled }}
+{{- if or .Values.redis.enabled .Values.redisConnection.host }}
 - name: REDIS_HOST
-  value: {{ .Release.Name }}-redis-master
+  value: {{ .Values.redisConnection.host | default (printf "%s-redis-master" .Release.Name) }}
 - name: REDIS_PORT
-  value: "6379"
+  value: {{ .Values.redisConnection.port | default "6379" | quote }}
 - name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.redis.auth.existingSecret }}
-      key: redis-password
+      name: {{ .Values.redis.auth.existingSecret | default "redis" }}
+      key: {{ .Values.redisConnection.secretKey | default "redis-password" }}
 {{- end }}
 - name: KEYCLOAK_SERVER_URL
   value: {{ .Values.keycloak.url }}
