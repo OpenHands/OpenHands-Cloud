@@ -5,6 +5,8 @@ metadata:
   name: {{ .Release.Name }}-support-bundle
 spec:
   collectors: {{- include "runtime.troubleshoot.collectors.shared" .  | nindent 4 }}
+    # Log volume is bounded by kubelet rotation (~tens of MB/pod), not maxAge,
+    # so 336h is free on chatty pods and only adds history on quiet ones.
     # Runtime API application logs
     - logs:
         name: app/{{ include "runtime-api.fullname" . }}/logs
@@ -13,7 +15,7 @@ spec:
           - app.kubernetes.io/name={{ include "runtime-api.name" . }}
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 720h
+          maxAge: 336h
     {{- if .Values.postgresql.enabled }}
     # PostgreSQL logs (Bitnami chart)
     - logs:
@@ -23,7 +25,7 @@ spec:
           - app.kubernetes.io/name=postgresql
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
     - postgresql:
         collectorName: postgresql
         uri: postgresql://postgres:@{{ include "runtime-api.postgresql.host" . }}:5432/{{ .Values.postgresql.auth.database | default "runtime_api" }}?sslmode=disable
