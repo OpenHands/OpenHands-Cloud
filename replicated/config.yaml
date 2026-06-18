@@ -559,8 +559,7 @@ spec:
             access to the target repos. OpenHands posts comments and reactions
             as this bot -- not as the mentioning user -- so its own replies
             don't re-trigger jobs; the agent still runs on the invoking user's
-            workspace. Use a dedicated account, since OpenHands ignores comments
-            authored by this bot.
+            workspace.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
