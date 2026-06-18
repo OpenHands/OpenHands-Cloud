@@ -403,6 +403,7 @@ spec:
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
+      botUsername: 'repl{{ ConfigOption "bitbucket_data_center_bot_username" }}'
     azureDevOps:
       enabled: repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}
       tenantId: 'repl{{ ConfigOption "azure_devops_tenant_id" }}'

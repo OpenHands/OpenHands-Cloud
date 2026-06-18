@@ -123,6 +123,7 @@ secretsChecksum: ""
 bitbucketDataCenter:
   enabled: false
   host: ""
+  botUsername: ""
 
 azureDevOps:
   enabled: false
