@@ -116,12 +116,17 @@ Use patterns that make it easy for chart consumers to override defaults. Environ
 - Dependencies should be conditional where possible
 - Version constraints should be explicit
 
+### Integration Credential Enforcement (KOTS layer, not Helm `required`)
+
+Required credentials/identities for integrations (Jira DC, Bitbucket DC, Azure DevOps, etc.) — service-account emails/PATs, bot tokens, bot usernames — are enforced in `replicated/config.yaml` with `required: true` + `when: "<integration>_enabled"`. That is the install path every customer uses. By established convention the chart itself does **not** use Helm's `required` to fail-fast these: secrets are wired as `secretKeyRef … optional: true` and non-secret values default to empty. This is consistent across all integrations (e.g. Jira DC's `service-account-email` / `service-account-pat`). A chart that enables a new integration this way — empty/optional in `_env.yaml`, `required` in `replicated/config.yaml` — is following the pattern, not introducing a gap. Tightening the bare-`helm install` path to fail-fast is a worthwhile but deliberate, chart-wide change tracked in its own PR; it is out of scope for an integration-wiring PR.
+
 ## What NOT to Comment On
 
 - Minor style preferences that don't affect functionality
 - Praise for code that follows best practices (just approve)
 - Obvious or self-explanatory configuration
 - Third-party env var naming (these follow external conventions)
+- Integration credentials rendered empty/`optional` in `_env.yaml` when `replicated/config.yaml` already marks them `required` (KOTS-layer enforcement is the convention — see Integration Credential Enforcement)
 
 ## Communication Style
 
