@@ -418,10 +418,9 @@
 {{- end }}
 - name: LMNR_FORCE_HTTP
   value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
-{{- if and .Values.laminar.enabled .Values.laminar.httpPort }}
+# Always emit (="" when off) so the LMNR_* request env matches the warm-runtime pool.
 - name: LMNR_HTTP_PORT
-  value: {{ .Values.laminar.httpPort | quote }}
-{{- end }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.httpPort }}{{ .Values.laminar.httpPort | quote }}{{ else }}""{{ end }}
 {{- if and .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
 - name: LAMINAR_WEB_HOST
   value: {{ .Values.laminar.frontend.ingress.hostname }}
