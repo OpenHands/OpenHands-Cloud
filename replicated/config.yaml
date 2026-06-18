@@ -76,17 +76,36 @@ spec:
           help_text: Upload your TLS certificate file (.crt or .pem)
           type: file
           required: true
+          # Validation runs against the base64-decoded file contents, so we can
+          # check for the PEM header directly. This catches the common mistake of
+          # uploading the private key (or a key/cert swap) into the certificate field.
+          validation:
+            regex:
+              pattern: '-----BEGIN CERTIFICATE-----'
+              message: 'This file does not look like a PEM certificate (expected a "-----BEGIN CERTIFICATE-----" block).'
         - name: tls_private_key
           title: TLS Private Key
           help_text: Upload your TLS private key file (.key or .pem)
           type: file
           required: true
+          # Matches PRIVATE KEY, RSA/EC/DSA/ENCRYPTED/OPENSSH PRIVATE KEY, but NOT
+          # "BEGIN CERTIFICATE" -- so a cert accidentally uploaded here is rejected.
+          validation:
+            regex:
+              pattern: '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+              message: 'This file does not look like a PEM private key (expected a "-----BEGIN PRIVATE KEY-----" block).'
         - name: tls_ca_certificate
           title: Additional Trusted CA Certificates
           help_text: Upload a root CA certificate in PEM format. Concatenate multiple PEM-encoded certificates in the same file to add them all to the cluster's default trust store. If the TLS certificate provided above is self-signed, include the CA that signed it here so components inside the cluster can validate it.
           type: file
           required: false
           recommended: true
+          # Optional, so this only runs when a file is provided (empty values skip
+          # validation). Guards against pasting a key into the CA bundle field.
+          validation:
+            regex:
+              pattern: '-----BEGIN CERTIFICATE-----'
+              message: 'This file does not look like a PEM certificate (expected a "-----BEGIN CERTIFICATE-----" block).'
 
     - name: llm_configuration
       title: LLM Configuration
@@ -114,12 +133,26 @@ spec:
               title: "Groq"
             - name: "openrouter"
               title: "OpenRouter"
+            - name: "bedrock"
+              title: "AWS Bedrock"
             - name: "custom"
               title: "Custom/Local LLM"
         - name: anthropic_api_key
           title: Anthropic API Key
           help_text: Your Anthropic API key for Claude models
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
+          required: true
+        # The models textareas below are `required` with a templated/literal
+        # `value:`. KOTS applies `value` whenever the item is unset (and keeps
+        # it across updates because the items are not readonly), so the
+        # prefilled value satisfies `required` on both fresh installs and
+        # upgrades; admins can edit it freely.
+        - name: anthropic_models
+          title: Anthropic Models
+          help_text: Anthropic model IDs served through the bundled LiteLLM proxy, one per line (e.g., claude-haiku-4-5).
+          type: textarea
+          value: "claude-sonnet-4-5-20250929\nclaude-opus-4-7"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "anthropic" }}'
           required: true
         - name: openai_api_key
@@ -162,6 +195,13 @@ spec:
           title: Google Cloud Service Account JSON file
           help_text: Upload your Google Cloud service account credentials JSON file (downloaded from GCP Console)
           type: file
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
+          required: true
+        - name: vertex_models
+          title: Vertex AI Models
+          help_text: Vertex AI model IDs served through the bundled LiteLLM proxy, one per line (e.g., gemini-2.5-pro).
+          type: textarea
+          value: "gemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex") }}'
           required: true
         - name: deepseek_api_key
@@ -225,10 +265,19 @@ spec:
           default: "2024-10-21"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
+        # Legacy single-deployment field, superseded by azure_deployments.
+        # Kept hidden (not removed) so the stored value of upgraded installs
+        # persists and seeds the first line of azure_deployments below.
         - name: azure_deployment_name
-          title: Azure OpenAI Deployment Name
-          help_text: The name of your Azure OpenAI model deployment (set when you deployed the model in Azure)
+          title: Azure OpenAI Deployment Name (legacy)
           type: text
+          hidden: true
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+        - name: azure_deployments
+          title: Azure OpenAI Deployments
+          help_text: Azure OpenAI deployment names served through the bundled LiteLLM proxy, one per line (set when you deployed the models in Azure). All deployments must be reachable at the endpoint and API version configured above.
+          type: textarea
+          value: '{{repl ConfigOption "azure_deployment_name"}}'
           when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
           required: true
         - name: groq_api_key
@@ -243,9 +292,57 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
           required: true
+        - name: aws_auth_method
+          title: AWS Authentication Method
+          help_text: How LiteLLM authenticates to AWS Bedrock. "EC2 Instance Profile" requires OpenHands to be running on an EC2 instance with an attached IAM role that has bedrock:InvokeModel* permissions. In containerized deployments, the EC2 instance metadata service hop limit must be at least 2 so pods can reach IMDS.
+          type: select_one
+          default: "static_keys"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
+          required: true
+          items:
+            - name: "static_keys"
+              title: "Access Key + Secret"
+            - name: "instance_profile"
+              title: "EC2 Instance Profile"
+        - name: aws_access_key_id
+          title: AWS Access Key ID
+          help_text: AWS access key with bedrock:InvokeModel and bedrock:InvokeModelWithResponseStream permissions.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "bedrock") (ConfigOptionEquals "aws_auth_method" "static_keys") }}'
+          required: true
+        - name: aws_secret_access_key
+          title: AWS Secret Access Key
+          help_text: Secret access key paired with the AWS Access Key ID above.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "bedrock") (ConfigOptionEquals "aws_auth_method" "static_keys") }}'
+          required: true
+        - name: aws_region_name
+          title: AWS Region
+          help_text: AWS region where Bedrock model access has been granted (e.g., us-west-2, us-east-1). Cross-region inference profile IDs (us.anthropic.*) work in any US region.
+          type: text
+          default: "us-west-2"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
+          required: true
+        # Legacy single-model field, superseded by bedrock_model_ids. Kept
+        # hidden (not removed) so the stored value of upgraded installs (or
+        # this default, for installs that never changed it) persists and seeds
+        # the first line of bedrock_model_ids below.
+        - name: bedrock_model_id
+          title: Bedrock Model ID (legacy)
+          type: text
+          hidden: true
+          default: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
+        - name: bedrock_model_ids
+          title: Bedrock Model IDs
+          help_text: Bedrock model IDs or cross-region inference profile IDs served through the bundled LiteLLM proxy, one per line. Cross-region profiles (prefix `us.`) work in any US region; standard model IDs are region-specific. Most current Claude models on Bedrock are inference-profile only (e.g., `us.anthropic.claude-sonnet-4-5-20250929-v1:0`).
+          type: textarea
+          value: '{{repl ConfigOption "bedrock_model_id"}}'
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "bedrock" }}'
+          required: true
         - name: custom_base_url
           title: Custom LLM Base URL
-          help_text: Base URL for your custom or local LLM endpoint
+          help_text: Base URL of your custom LLM endpoint (e.g., https://openrouter.ai/api/v1, http://my-vllm:8000/v1)
           type: text
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: true
@@ -255,6 +352,38 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
           required: false
+        # Legacy single-model field, superseded by custom_models. Kept hidden
+        # (not removed) so the stored value of upgraded installs persists and
+        # seeds the first line of custom_models below.
+        - name: custom_model
+          title: Custom LLM Model Name (legacy)
+          type: text
+          hidden: true
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+        - name: custom_models
+          title: Custom LLM Models
+          help_text: One model per line, as the full LiteLLM model string. For OpenAI-compatible endpoints, prefix the model with openai/ (e.g., openai/llama-3.1-70b-instruct). For non-OpenAI-shaped endpoints, use that provider prefix (e.g., anthropic/claude-opus-4-7).
+          type: textarea
+          value: '{{repl ConfigOption "custom_model"}}'
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+          required: true
+        - name: allow_user_llm_configuration
+          title: Allow users to configure their own LLM providers (BYOK)
+          help_text: When enabled, users can bring their own LLM API keys and configure custom models in their settings, in addition to the managed models above. Disable to restrict all users to the admin-managed models served through the bundled LiteLLM proxy.
+          type: bool
+          # Default off: self-hosted installs are admin-governed, so BYOK is an
+          # explicit opt-in. Existing installs keep whatever value they set.
+          default: "0"
+
+    - name: litellm_admin_console
+      title: LiteLLM Admin Console
+      description: Configure credentials for the bundled LiteLLM Admin UI.
+      items:
+        - name: litellm_admin_password
+          title: LiteLLM Admin Password
+          help_text: Password for the LiteLLM Admin UI at the LLM Proxy hostname with /ui. The username is fixed as admin. A random password is generated at install; to use the LiteLLM Admin UI, set your own password here and deploy. Changing this password restarts LiteLLM. Models can be added and managed in the LiteLLM dashboard; they appear in the OpenHands model selector automatically (within about a minute). When adding a model, leave the "Team" field blank so it is available to all users, and do not reuse a model name already listed in this Admin Console config — LiteLLM load-balances same-name entries as one model group.
+          type: password
+          value: '{{repl RandomString 32}}'
 
     - name: security_secrets
       title: Security & Authentication
@@ -314,6 +443,12 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: litellm_salt_key
+          title: LiteLLM Salt Key
+          help_text: Salt key LiteLLM uses to encrypt provider credentials stored in its database (e.g., models added via the LiteLLM dashboard). Must never change once set — changing it makes previously stored credentials undecryptable.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
         - name: default_api_key
           title: Default API Key
           help_text: Default API key for OpenHands
@@ -365,32 +500,173 @@ spec:
           hidden: true
           value: '{{repl RandomString 32}}'
 
+    - name: default_openhands_organization
+      title: Default OpenHands Organization
+      description: 'Bootstrap a default OpenHands organization for this instance. Note: this config is additive and never deletes organizations, removes members, or demotes users; these actions can be done in the app.'
+      items:
+        - name: default_openhands_org_enabled
+          title: Enable Default OpenHands Organization
+          help_text: 'Turn on default OpenHands organization setup. The organization is created by the first user to sign in after enabling, and that user becomes its owner. Enable this and sign in yourself to claim ownership. The owner can rename the organization and manage members and roles in the app.'
+          type: bool
+          default: "0"
+        - name: default_openhands_org_auto_add_users
+          title: Automatically Add Signed-In Users
+          help_text: Add every authenticated OpenHands user to the default organization as a member. After sign in, users land in the default organization automatically; existing users are moved into it on their next sign-in.
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
+        - name: default_openhands_org_hide_personal_workspaces
+          title: Hide Personal Workspaces
+          help_text: 'Make the default organization the only workspace users see. Existing personal workspace data (conversations, secrets, API keys, automations) is hidden, not deleted; disabling this option restores it.'
+          type: bool
+          default: "1"
+          when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
+
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
       description: Configure Bitbucket Data Center OAuth for user authentication
       items:
         - name: bitbucket_data_center_auth_enabled
           title: Enable Bitbucket Data Center Authentication
-          help_text: Enable Bitbucket Data Center OAuth for user authentication
+          help_text: Let users sign in with their Bitbucket Data Center account.
           type: bool
           default: "0"
         - name: bitbucket_data_center_domain
           title: Bitbucket Data Center Domain
-          help_text: Domain of your Bitbucket Data Center instance
+          help_text: >-
+            Hostname of your Bitbucket Data Center instance (e.g. bbdc.example.com)
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_id
           title: Bitbucket Data Center Client ID
-          help_text: Client ID from your Bitbucket Data Center OAuth App
+          help_text: >-
+            Client ID of the OAuth 2.0 Application Link created in Bitbucket
+            Data Center (Administration → Application Links).
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
         - name: bitbucket_data_center_client_secret
           title: Bitbucket Data Center Client Secret
-          help_text: Client Secret from your Bitbucket Data Center OAuth App
+          help_text: Client Secret for that Application Link.
           type: password
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+        - name: bitbucket_data_center_bot_token
+          title: Bitbucket Data Center Bot Token
+          help_text: >-
+            HTTP access token (Repository write) for a dedicated bot user with
+            access to the target repos. OpenHands posts comments and reactions
+            as this bot -- not as the mentioning user -- so its own replies
+            don't re-trigger jobs; the agent still runs on the invoking user's
+            workspace.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+        - name: bitbucket_data_center_bot_username
+          title: Bitbucket Data Center Bot Username
+          help_text: >-
+            Username (slug) of the bot account above, e.g. openhands. Used to
+            ignore the bot's own comments so its replies don't re-trigger jobs.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+
+    - name: azure_devops_authentication
+      title: Azure DevOps Authentication
+      description: Configure Azure DevOps OAuth through Microsoft Entra ID
+      items:
+        - name: azure_devops_auth_enabled
+          title: Enable Azure DevOps Authentication
+          help_text: Let users sign in with Microsoft Entra ID and access Azure DevOps without personal access tokens.
+          type: bool
+          default: "0"
+        - name: azure_devops_tenant_id
+          title: Microsoft Entra Tenant ID
+          help_text: Tenant ID for the Microsoft Entra app registration used by Azure DevOps OAuth.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+          required: true
+        - name: azure_devops_organization
+          title: Azure DevOps Organization
+          help_text: Optional default Azure DevOps organization name, e.g. contoso for https://dev.azure.com/contoso.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+        - name: azure_devops_client_id
+          title: Azure DevOps Client ID
+          help_text: Client ID of the Microsoft Entra app registration.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+          required: true
+        - name: azure_devops_client_secret
+          title: Azure DevOps Client Secret
+          help_text: Client secret for the Microsoft Entra app registration.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+          required: true
+
+    - name: jira_data_center_integration
+      title: Jira Data Center Integration
+      description: Enable the Jira Data Center issue integration. Configure the Jira server, linking method, and service account for this OpenHands Enterprise deployment.
+      items:
+        - name: jira_data_center_enabled
+          title: Enable Jira Data Center Integration
+          help_text: Enable the Jira Data Center issue integration.
+          type: bool
+          default: "0"
+        - name: jira_data_center_link_method
+          title: How should Jira users be linked to OpenHands accounts?
+          help_text: >-
+            OAuth (recommended): each user proves ownership of their Jira account via your server's
+            OAuth 2.0 application. When creating the OAuth app in Jira, use
+            https://app.<your-openhands-domain>/integration/jira-dc/callback as the callback URL,
+            then enter the app's client ID and secret below. Email match: users are linked by
+            matching their Jira email to their OpenHands email. Use this only if your Jira Data Center
+            server does not have an OAuth 2.0 application configured.
+          type: select_one
+          default: oauth
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          items:
+            - name: oauth
+              title: OAuth (verified, recommended)
+            - name: email
+              title: Email match (no OAuth app required)
+        - name: jira_data_center_service_account_email
+          title: Jira Data Center Service Account Email
+          help_text: >-
+            Email address of the Jira service account OpenHands uses to read
+            issues and post comments/reactions. This service account is required
+            for the Jira Data Center integration in this OpenHands Enterprise
+            deployment.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
+        - name: jira_data_center_service_account_pat
+          title: Jira Data Center Service Account PAT
+          help_text: >-
+            Personal access token for the Jira service account. OpenHands uses
+            this token to read Jira issues and post comments/reactions as the
+            service account.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+          required: true
+        - name: jira_data_center_base_url
+          title: Jira Data Center Base URL
+          help_text: Full base URL of your Jira Data Center server, INCLUDING the https:// scheme (e.g. https://jira.example.com).
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_id
+          title: Jira Data Center OAuth Client ID
+          help_text: Client ID from the OAuth 2.0 application on your Jira Data Center server.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
+          required: true
+        - name: jira_data_center_client_secret
+          title: Jira Data Center OAuth Client Secret
+          help_text: Client secret from the OAuth 2.0 application on your Jira Data Center server.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
 
     - name: github_authentication
@@ -525,6 +801,19 @@ spec:
           type: text
           default: "5432"
           when: 'repl{{ ConfigOptionEquals "postgres_type" "external_postgres" }}'
+        - name: external_postgres_ssl_mode
+          title: External PostgreSQL SSL Mode
+          help_text: Choose whether OpenHands should require SSL when connecting to your external PostgreSQL server.
+          type: select_one
+          default: "prefer"
+          when: 'repl{{ ConfigOptionEquals "postgres_type" "external_postgres" }}'
+          items:
+            - name: "prefer"
+              title: "Prefer SSL"
+            - name: "require"
+              title: "Require SSL"
+            - name: "disable"
+              title: "Disable SSL"
         - name: external_postgres_username
           title: External PostgreSQL Username
           help_text: Username for connecting to your external PostgreSQL server
@@ -659,6 +948,71 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: custom_sandbox_image_enabled
+          title: Use a Custom Sandbox Image
+          help_text: Use this if you bundle a custom agent-server image.
+          type: bool
+          default: "0"
+        - name: custom_sandbox_image_repository
+          title: Sandbox Image Repository
+          help_text: 'Full repository path with no tag, e.g. my-registry.example.com/openhands/agent-server'
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_tag
+          title: Sandbox Image Tag
+          help_text: Image tag, e.g. 1.28.0-python
+          type: text
+          default: "1.28.0-python"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: true
+        - name: custom_sandbox_image_registry_server
+          title: Registry Server
+          help_text: |
+            Host (and optional port) of the registry, e.g. my-registry.example.com.
+            Leave blank if the registry is public, or if your cluster authenticates
+            via a credential provider (EKS IRSA, GKE Workload Identity, AKS managed
+            identity).
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_username
+          title: Registry Username
+          help_text: |
+            Registry username. Some registries use sentinel values: _json_key
+            for GCP Artifact Registry, AWS for ECR static creds, $oauthtoken
+            for Quay robot accounts.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: custom_sandbox_image_registry_password
+          title: Registry Password or Credentials
+          help_text: |
+            Password, PAT, or credentials string. This field is single-line.
+            For GCP Artifact Registry, minify the service-account JSON first
+            (e.g. `jq -c . key.json`) and paste the one-line result, with
+            username set to _json_key.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+          required: false
+        - name: sandbox_additional_host_paths
+          title: Additional Host Path Mounts
+          help_text: >-
+            Mount node host paths into every sandbox, one per line as
+            host_path:container_path[:mode] (mode ro or rw, default rw), e.g.
+            /mnt/nfs-artifacts:/nfs:ro. The host_path must already exist on the node.
+            For NFS, pre-mount the export at that path on every node. On multi-node
+            clusters the path must exist on all nodes.
+          type: textarea
+          default: ""
+        - name: sandbox_kvm_enabled
+          title: Enable /dev/kvm passthrough (QEMU/KVM)
+          help_text: >-
+            Pass /dev/kvm into sandboxes so they can run hardware-accelerated QEMU/KVM
+            (the OSS SANDBOX_KVM_ENABLED equivalent). The cluster node(s) MUST expose
+            /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
+          type: bool
+          default: "0"
 
     - name: proxy_configuration
       title: Proxy Configuration
@@ -717,22 +1071,90 @@ spec:
           default: "0"
         - name: plugin_directory_marketplace_source
           title: Marketplace Source
-          help_text: "URI of the plugin catalog to load. Supports github://owner/repo[@ref], https:// URLs to a catalog JSON file, or file:// paths."
+          help_text: "URI of the plugin catalog to load. Supports github://owner/repo[@ref], or http(s):// URLs to a catalog JSON file."
           type: text
           when: 'repl{{ ConfigOptionEquals "plugin_directory_enabled" "1" }}'
           required: true
+          validation:
+            regex:
+              pattern: ^(github|https?)://
+              message: Must start with github://, https://, or http://
 
-    - name: advanced_options
-      title: Advanced Options
-      description: Optional components and advanced configuration settings
+    - name: analytics_configuration
+      title: Analytics Configuration
+      description: Configure LLM observability and tracing with Laminar
+      items:
+        - name: analytics_enabled
+          title: Enable Analytics
+          help_text: Enable analytics for LLM observability and tracing
+          type: bool
+          default: "0"
+        - name: laminar_project_api_key
+          title: Laminar Project API Key
+          help_text: |
+            Your Laminar project API key. After enabling analytics and logging in to your Laminar instance via Keycloak, create a project API key in the Laminar UI. Ingest-only keys are strongly recommended — they are write-only and have no read access, which is more secure than default project API keys.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
+          required: false
+
+    - name: automations_configuration
+      title: Automations
+      description: Configure the Automations UI and backend
       items:
         - name: automations_enabled
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
           default: "0"
-        - name: analytics_enabled
-          title: Enable Analytics
-          help_text: Enable analytics for LLM observability and tracing
+
+    - name: advanced_options
+      title: Advanced Options
+      description: Optional components and advanced configuration settings
+      items:
+        - name: litellm_forward_client_headers
+          title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
+          help_text: >-
+            Forward selected headers from each client request through LiteLLM to upstream LLM providers. When enabled, LiteLLM forwards the anthropic-beta header and client x-* headers, except x-stainless-* headers. It does not forward Authorization or non-x-* gateway headers such as Ocp-Apim-Subscription-Key. Leave disabled unless you need provider-visible client headers. Use Custom LLM Extra HTTP Headers for static gateway auth or routing headers.
           type: bool
           default: "0"
+        - name: custom_llm_extra_headers_enabled
+          title: Enable Custom LLM Extra HTTP Headers (JSON)
+          help_text: >-
+            Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every request to the custom upstream gateway for all users in this deployment. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the standard Authorization bearer header.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+        - name: custom_llm_extra_headers
+          title: Custom LLM Extra HTTP Headers (JSON)
+          help_text: >-
+            Format: JSON object mapping header names to values. Example: {"Ocp-Apim-Subscription-Key": "abc123", "X-Tenant-Id": "prod"}
+          type: textarea
+          default: ""
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "custom_llm_extra_headers_enabled" "1") }}'
+          required: false
+          validation:
+            regex:
+              pattern: '(?s)^\s*(\{\s*\}|\{\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*(,\s*"(?:[^"\\]|\\.)+"\s*:\s*"(?:[^"\\]|\\.)+"\s*)*\})?\s*$'
+              message: Must be blank or a JSON object with string values, such as {"Header-Name":"value"}
+        - name: keycloak_sso_session_idle_timeout
+          title: Login Session Idle Timeout (seconds)
+          help_text: >-
+            How long a login session stays valid without activity before the user must sign in again. Default is 259200 (3 days).
+          type: text
+          default: "259200"
+          required: false
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*$'
+              message: Must be a positive number of seconds
+        - name: keycloak_sso_session_max_lifespan
+          title: Login Session Max Duration (seconds)
+          help_text: >-
+            Maximum total lifetime of a login session before the user must sign in again, regardless of activity. Default is 604800 (7 days). Each forced re-login also re-authorizes the configured identity provider (for example, Bitbucket Data Center records a new authorized-application grant), so raising this reduces how often that happens.
+          type: text
+          default: "604800"
+          required: false
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*$'
+              message: Must be a positive number of seconds

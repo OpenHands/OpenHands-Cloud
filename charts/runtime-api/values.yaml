@@ -16,7 +16,7 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-ba6c9e4
+  tag: sha-61fc535
   pullPolicy: Always
 
 imagePullSecrets:
@@ -119,6 +119,39 @@ nodeSelector: {}
 
 securityContext: {}
 
+# KVM device plugin (OSS SANDBOX_KVM_ENABLED parity). When enabled, runs a
+# smarter-device-manager DaemonSet that advertises /dev/kvm as an extended
+# resource (kvm.resourceName) so sandbox pods can use hardware-accelerated QEMU
+# WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
+# nested-virt-capable VM). The plugin DaemonSet itself runs privileged, like
+# other device plugins; the sandbox pods do not.
+kvm:
+  enabled: false
+  resourceName: smarter-devices/kvm
+  maxDevices: 20
+  image:
+    repository: ghcr.io/smarter-project/smarter-device-manager
+    tag: v1.20.11
+    pullPolicy: IfNotPresent
+  # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
+  # perms still block the non-root sandbox UID from opening it. An init container
+  # relaxes /dev/kvm to 0666 so unprivileged sandboxes can use it. Disable only if
+  # you grant access another way (e.g. a node udev rule or supplementalGroups).
+  relaxDevicePermissions: true
+  initImage:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
+  nodeSelector: {}
+  tolerations: []
+
 tolerations: []
 
 affinity: {}
@@ -129,14 +162,14 @@ postgresql:
   primary:
     persistence:
       enabled: false
+    service:
+      ports:
+        postgresql: 5432
   auth:
     username: postgres
     password: "" # This should be set externally for security reasons
     existingSecret: postgres-password
     database: runtime_api_db
-  service:
-    ports:
-      postgresql: 5432
   image:
     repository: bitnamilegacy/postgresql
 
@@ -148,6 +181,8 @@ externalDatabase:
 database:
   create: false # Will only be true for AWS as it can't create the DB in terraform
   secretName: runtime-api-db-credentials # Secret containing external database credentials
+  port: "5432"
+  sslMode: "prefer"
   poolSize:
     api: 5 # Pool size for API deployment (default)
     cronjobs: 2 # Pool size for cronjobs (default)
@@ -256,7 +291,7 @@ warmRuntimes:
   count: 0
   configs:
     - name: default
-      image: "ghcr.io/openhands/agent-server:1.19.1-python"
+      image: "ghcr.io/openhands/agent-server:1.28.0-python"
       working_dir: "/workspace"
       environment:
         LOG_JSON: "1"

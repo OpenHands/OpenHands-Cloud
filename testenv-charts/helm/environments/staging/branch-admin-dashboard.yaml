@@ -68,9 +68,12 @@ keycloak:
   # CRITICAL: Set authHost to point to shared Keycloak
   # Without this, the chart computes AUTH_URL as auth.admin-dashboard.ohe-staging.platform-team.all-hands.dev which doesn't exist
   authHost: auth.ohe-staging.platform-team.all-hands.dev
-  # Register this branch's redirect URI with the shared Keycloak
+  # Keycloak server URL for backend token exchange
+  url: "https://auth.ohe-staging.platform-team.all-hands.dev"
+  # Redirect URIs already registered manually in Keycloak
+  # Keeping enabled: false to skip the hook job that keeps failing
   redirectUriRegistration:
-    enabled: true
+    enabled: false
     keycloakUrl: "https://auth.ohe-staging.platform-team.all-hands.dev"
     realmName: "allhands"
     clientId: "allhands"
@@ -146,10 +149,30 @@ tavily:
   enabled: false
 
 # =============================================================================
-# Disable Services (use shared from main deployment)
+# Runtime-API - Per-branch instance (replaces shared)
 # =============================================================================
 runtime-api:
-  enabled: false
+  enabled: true
+  fullnameOverride: openhands-admin-dashboard-runtime-api
+  env:
+    RUNTIME_CLASS: ""
+  # Use external database from shared postgresql
+  externalDatabase:
+    enabled: true
+    existingSecret: postgres-password
+  databaseMigrations:
+    createDatabases: true
+    migrate: true
+  # Disable warm runtimes for branch testing to save resources
+  warmRuntimes:
+    enabled: false
+
+# =============================================================================
+# Sandbox - Use per-branch runtime-api instead of shared
+# =============================================================================
+sandbox:
+  apiHostname: http://openhands-admin-dashboard-runtime-api:5000
+
 automation:
   enabled: false
   events:
@@ -174,21 +197,20 @@ pluginDirectory:
   enabled: false
 
 # =============================================================================
-# Use Shared PostgreSQL
+# PostgreSQL - Per-branch database on shared instance
 # =============================================================================
 postgresql:
   enabled: false
 databaseMigrations:
   waitForDatabase: true
-  createDatabases: false
-  # Enable migrations for this branch - PR #14846 adds migration 013.py
-  # which adds execution_status column to conversation_metadata table
+  createDatabases: true  # Create openhands_admin_dashboard database (underscores - hyphens not allowed in PostgreSQL)
   migrate: true
+  postgresImage: docker.io/bitnamilegacy/postgresql:16.4.0-debian-12-r14
 externalDatabase:
   host: openhands-postgresql.openhands.svc.cluster.local
   port: 5432
   username: postgres
-  database: openhands
+  database: openhands_admin_dashboard  # Per-branch database (underscores required)
   existingSecret: postgres-password
   secretKey: postgres-password
 
@@ -204,12 +226,23 @@ redisConnection:
   secretKey: redis-password
 
 # =============================================================================
-# Use Shared LiteLLM
+# LiteLLM - Per-branch on shared PostgreSQL
 # =============================================================================
 litellm-helm:
-  enabled: false
+  enabled: true
+  envVars:
+    JSON_LOGS: "true"
+  db:
+    deployStandalone: false
+    useExisting: true
+    database: litellm_admin_dashboard  # Per-branch database (underscores required)
+    endpoint: openhands-postgresql.openhands.svc.cluster.local
+    secret:
+      name: postgres-password
+      usernameKey: username
+      passwordKey: password
 litellm:
-  url: "http://openhands-litellm.openhands.svc.cluster.local:4000"
+  url: "http://openhands-admin-dashboard-litellm:4000"
 
 # =============================================================================
 # MinIO - Per-branch instance (needed for file storage)

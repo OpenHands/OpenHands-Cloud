@@ -252,7 +252,7 @@ Bitbucket Data Center is the self-hosted version of Bitbucket. The setup is diff
 1. Create a Bitbucket Data Center Application Link:
 
    - Follow the instructions in Bitbucket Data Center to create an [OAuth2 Application Link](https://confluence.atlassian.com/enterprise/link-to-atlassian-products-using-oauth-2-0-1688928427.html)
-   - Grant repository read and write scopes.
+   - Grant **Repository: Admin** scope. (Admin is required so OpenHands can manage the per-repo webhook via Bitbucket's REST API; it implies Repository: Write.)
    - Set the application URL to `https://auth.openhands.example.com/realms/openhands/broker/bitbucket_data_center
    - Note the Client ID and Client Secret provided by Bitbucket Data Center
 
@@ -303,6 +303,19 @@ env:
   LITELLM_DEFAULT_MODEL: "litellm_proxy/<your-model>"
 ```
 
+#### Forward client headers to LLM providers
+
+By default, the bundled LiteLLM proxy does not forward arbitrary client request headers to upstream LLM providers. If you trust callers and need provider-visible custom headers, enable LiteLLM's client header forwarding explicitly:
+
+```yaml
+litellm-helm:
+  proxy_config:
+    general_settings:
+      forward_client_headers_to_llm_api: true
+```
+
+This forwards LiteLLM-supported client headers such as `x-*` request headers and `anthropic-beta`. Leave this disabled unless you specifically need it.
+
 #### LiteLLM Team Configuration
 
 To use an existing team, provide the team ID.
@@ -321,7 +334,7 @@ Now we can install the helm chart.
 
 ```bash
 helm dependency update
-helm upgrade --install openhands --namespace openhands oci://ghcr.io/all-hands-ai/helm-charts/openhands -f site-values.yaml
+helm upgrade --install openhands --namespace openhands oci://ghcr.io/openhands/helm-charts/openhands -f site-values.yaml
 ```
 
 ### Verify your Setup
@@ -375,7 +388,7 @@ litellm-helm:
 Upgrade the release:
 
 ```bash
-helm upgrade --install openhands --namespace openhands oci://ghcr.io/all-hands-ai/helm-charts/openhands -f site-values.yaml
+helm upgrade --install openhands --namespace openhands oci://ghcr.io/openhands/helm-charts/openhands -f site-values.yaml
 ```
 
 ## Hardening

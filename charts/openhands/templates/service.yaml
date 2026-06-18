@@ -1,3 +1,4 @@
+{{- if .Values.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -13,7 +14,8 @@ spec:
   selector:
     app: openhands
   type: ClusterIP
-{{- if and (index .Values "runtime-api") (index .Values "runtime-api" "enabled") }}
+{{- end }}
+{{- if and .Values.enabled (index .Values "runtime-api") (index .Values "runtime-api" "enabled") }}
 ---
 apiVersion: v1
 kind: Service
@@ -30,7 +32,7 @@ spec:
     app.kubernetes.io/name: runtime-api
     app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-{{- if .Values.postgresql.enabled }}
+{{- if and .Values.enabled .Values.postgresql.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -49,7 +51,7 @@ spec:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/component: primary
 {{- end }}
-{{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
+{{- if and .Values.enabled (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 ---
 apiVersion: v1
 kind: Service

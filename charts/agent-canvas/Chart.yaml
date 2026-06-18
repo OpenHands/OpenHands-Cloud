@@ -1,0 +1,6 @@
+apiVersion: v2
+name: agent-canvas
+description: Frontend-only deployment of OpenHands Agent Canvas (UI shell pointing at user-managed backends)
+type: application
+version: 0.1.1
+appVersion: "0.1.0"

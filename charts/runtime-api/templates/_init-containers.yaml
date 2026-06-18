@@ -5,10 +5,10 @@
   command: ['sh', '-c']
   args:
     - |
-      echo "Waiting for PostgreSQL at $DB_HOST to be ready..."
+      echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT to be ready..."
       # pg_isready succeeds even if the database doesn't exist yet;
       # we pass credentials and database to avoid failed auth log entries.
-      until PGPASSWORD=$DB_PASS pg_isready -h $DB_HOST -p 5432 -U $DB_USER -d $DB_NAME > /dev/null 2>&1; do
+      until PGPASSWORD=$DB_PASS pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > /dev/null 2>&1; do
         echo "PostgreSQL is unavailable - sleeping for 2 seconds"
         sleep 2
       done
@@ -23,7 +23,7 @@
   args:
     - |
       export PGPASSWORD=$DB_PASS
-      PSQL="psql -h $DB_HOST -p 5432 -U $DB_USER"
+      PSQL="psql -h $DB_HOST -p $DB_PORT -U $DB_USER"
 
       echo "Ensuring database \"$DB_NAME\" exists..."
       $PSQL -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 || \

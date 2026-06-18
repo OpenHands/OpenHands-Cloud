@@ -1,0 +1,43 @@
+{{- /*
+  Ingress entry for the agent-canvas frontend-only deployment.
+
+  Unlike the other openhands subchart ingresses (plugin-directory,
+  integrations-hub, automation, mcp) which mount additional paths under
+  the main `.Values.ingress.host`, agent-canvas is served on its own
+  dedicated host (e.g. `canvas.openhands.dev`) supplied via
+  `agent-canvas.ingress.host`. This keeps the UI separate from the main
+  OpenHands app while reusing the same in-cluster ingress controller and
+  cert-manager.
+*/}}
+{{- $agentCanvas := index .Values "agent-canvas" -}}
+{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled $agentCanvas.ingress.host }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openhands-agent-canvas-ingress
+  annotations:
+    {{- if .Values.ingress.root.annotations }}
+    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
+    {{- else }}
+    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ default "traefik" .Values.ingress.class }}
+  {{- if $agentCanvas.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $agentCanvas.ingress.host }}
+    secretName: {{ $agentCanvas.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+  - host: {{ $agentCanvas.ingress.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: agent-canvas
+            port:
+              number: {{ default 8000 (index $agentCanvas "service" "port") }}
+{{- end }}

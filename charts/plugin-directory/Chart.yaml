@@ -2,5 +2,5 @@ apiVersion: v2
 name: plugin-directory
 description: OpenHands Plugin Directory — marketplace for discovering and reviewing agent plugins
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "1.1.0"

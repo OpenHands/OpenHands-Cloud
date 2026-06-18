@@ -15,21 +15,6 @@ build/
 
 # create_github_app script
 scripts/create_github_app/keys/
-
-# Terraform
-**/.terraform/
-**/.terraform.lock.hcl
-*.tfstate
-*.tfstate.*
-*.tfvars
-!*.tfvars.example
-*.tfplan
-crash.log
-crash.*.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-# Sensitive files
-anthropic_api_key.txt
-workspace_cert.cert
+# mutmut mutation-testing artifacts (scripts/update_openhands_charts/setup.cfg)
+mutants/
+mutmut-stats.json

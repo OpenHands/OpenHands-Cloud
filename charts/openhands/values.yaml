@@ -1,10 +1,12 @@
 allowedUsers: null
 
-# Branch-based routing configuration
-# When enabled, the ingress host becomes: {branchSanitized}.{ingress.host}
-# Example: saurya-prototype.app.example.com
-# Requires a wildcard TLS certificate (e.g., *.app.example.com)
-branchSanitized: ""  # Set to sanitized branch name (lowercase, alphanumeric, hyphens only)
+# When false, the OpenHands chart's own templates (deployment, services,
+# ingresses, cronjobs, etc.) are skipped. Subcharts (litellm-helm, runtime-api,
+# postgresql, redis, minio, keycloak, automation, plugin-directory,
+# integrations-hub, laminar, replicated) still respect their individual
+# `enabled` flags, so this umbrella chart can be used to deploy any subset of
+# them without the OpenHands app itself.
+enabled: true
 
 autoscaling:
   enabled: false
@@ -20,6 +22,7 @@ appConfig:
   OPENHANDS_GITLAB_SERVICE_CLS: "integrations.gitlab.gitlab_service.SaaSGitLabService"
   OPENHANDS_BITBUCKET_SERVICE_CLS: "integrations.bitbucket.bitbucket_service.SaaSBitBucketService"
   OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS: "integrations.bitbucket_data_center.bitbucket_dc_service.SaaSBitbucketDCService"
+  OPENHANDS_AZURE_DEVOPS_SERVICE_CLS: "integrations.azure_devops.azure_devops_service.SaaSAzureDevOpsService"
   OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
@@ -31,6 +34,14 @@ datadog:
   agentHost: "datadog-agent"
 
 debuggingRoutes:
+  enabled: false
+
+# Admin POST /api/organizations/provision-user endpoint. When enabled,
+# the enterprise app server registers the user-provisioning router and
+# sets USER_PROVISIONING_ENABLED=true. This endpoint should only be
+# enabled for OHE deployments when the customer needs to create users
+# without any user input.
+userProvisioning:
   enabled: false
 
 databaseMigrations:
@@ -101,9 +112,25 @@ bitbucket:
 enterpriseSSO:
   enabled: false
 
+# sha256 of all secret (password) config values, injected by KOTS. Changing any
+# secret-backed config changes this value, which changes the openhands pod
+# template and forces a rollout so the new secret is picked up (secret-sourced
+# env vars only load at pod start). The value is computed in replicated/openhands.yaml.
+# Blast radius: this restarts the openhands pod on ANY secret change, including
+# secrets that only affect other components (e.g. an LLM key used only by LiteLLM).
+secretsChecksum: ""
+
 bitbucketDataCenter:
   enabled: false
   host: ""
+  botUsername: ""
+
+azureDevOps:
+  enabled: false
+  tenantId: ""
+  organization: ""
+  auth:
+    existingSecret: azure-devops-app
 
 gitlabWebhookInstallation:
   enabled: false
@@ -122,101 +149,23 @@ gitlabWebhookInstallation:
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: cloud-1.26.1
+  tag: sha-be6f446
 
 ingress:
   enabled: false
   # REQUIRED: Update to a hostname in a DNS domain you own
   # host: "app.example.com"
   class: traefik
-
-  # =============================================================================
-  # TWO-LEVEL ROUTING ARCHITECTURE
-  # =============================================================================
-  #
-  # Level 1: Branch Routing (routingMode)
-  # ─────────────────────────────────────
-  # Controls how different branches/deployments are differentiated:
-  #
-  #   routingMode: subdomain (default)
-  #     - Branch gets a subdomain prefix: my-branch.app.example.com
-  #     - Requires: Wildcard TLS cert (*.app.example.com) and wildcard DNS
-  #
-  #   routingMode: path
-  #     - Branch gets a path prefix: app.example.com/my-branch/
-  #     - Requires: Single-domain TLS cert, path prefix stripped by middleware
-  #
-  # Level 2: Service Routing (serviceRoutingMode)
-  # ─────────────────────────────────────────────
-  # Controls how services within a branch are routed (only applies when
-  # routingMode=subdomain):
-  #
-  #   serviceRoutingMode: path (default)
-  #     - Services use paths: my-branch.app.example.com/api/automation
-  #     - Standard setup, single wildcard cert covers all
-  #
-  #   serviceRoutingMode: subdomain
-  #     - Services get subdomains: automation.my-branch.app.example.com
-  #     - Requires: Double-wildcard TLS cert (*.*.app.example.com) OR
-  #       individual certs per branch
-  #
-  # Example Configurations:
-  # ─────────────────────────────────────────────────────────────────────────────
-  #
-  # Config A: Branch subdomain + Service paths (most common)
-  #   routingMode: subdomain
-  #   prefixWithBranch: true
-  #   branchSanitized: "my-feature"
-  #   serviceRoutingMode: path
-  #   → my-feature.app.example.com/
-  #   → my-feature.app.example.com/api/automation
-  #   → my-feature.app.example.com/integration/github/events
-  #
-  # Config B: Branch subdomain + Service subdomains
-  #   routingMode: subdomain
-  #   prefixWithBranch: true
-  #   branchSanitized: "my-feature"
-  #   serviceRoutingMode: subdomain
-  #   → my-feature.app.example.com
-  #   → automation.my-feature.app.example.com
-  #   → integrations.my-feature.app.example.com
-  #   → mcp.my-feature.app.example.com
-  #
-  # Config C: Path-based routing (single domain)
-  #   routingMode: path
-  #   pathPrefix: "my-feature"
-  #   → app.example.com/my-feature/
-  #   → app.example.com/my-feature/api/automation
-  #
-  # =============================================================================
-
-  # Level 1: Branch routing
-  routingMode: subdomain  # Options: "subdomain" | "path"
-
-  # For subdomain branch routing
-  prefixWithBranch: false
-  branchSanitized: ""
-
-  # For path branch routing
-  pathPrefix: ""
-
-  # Level 2: Service routing (only applies when routingMode=subdomain)
-  serviceRoutingMode: path  # Options: "path" | "subdomain"
-
   # Legacy annotations field - kept for backward compatibility
   annotations: {}
     # UPDATE: if you use cert-manager, enter your clusterIssuer may not match.
     # cert-manager.io/cluster-issuer: letsencrypt-production
 
-  # Per-service annotations (allows service-specific ingress customization)
+  # Separate annotations for each ingress
   root:
     annotations: {}
       # Example: Add specific annotations for the root ingress
       # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
-
-  automation:
-    annotations: {}
-      # Example: Add specific annotations for automation ingress
 
   integrations:
     annotations: {}
@@ -280,7 +229,7 @@ resendSync:
   successfulJobsHistoryLimit: 1
   backoffLimit: 3
   audienceId: ""
-  batchSize: "100"
+  batchSize: "2000"
   maxRetries: "3"
   initialBackoffSeconds: "1"
   maxBackoffSeconds: "60"
@@ -297,7 +246,7 @@ resendSync:
 runtime:
   image:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.19.1-python
+    tag: 1.28.0-python
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -357,54 +306,25 @@ uvicorn:
 
 keycloak:
   enabled: false
+  # Parent-chart flag (not consumed by the Keycloak subchart): run the
+  # realm-config init container that creates the OpenHands realm, its OIDC
+  # client, and identity providers if missing, and updates them otherwise.
+  # When `enabled` is true this already runs against the bundled Keycloak, so
+  # `provisionRealm` is only needed for split deployments where Keycloak runs as
+  # a separate release/chart: leave `enabled: false`, point `url` (plus the
+  # keycloak-admin and keycloak-realm secrets) at that external server, and set
+  # this to true.
+  provisionRealm: false
+  # Parent-chart realm settings (not consumed by the Keycloak subchart),
+  # applied by the keycloak-config init container on create and on every
+  # update, so changes take effect on a live install.
+  # SSO session lifetimes for the OpenHands realm, in seconds. Idle timeout is
+  # how long a login session survives inactivity; max lifespan caps the total
+  # session duration before the user is sent back through the identity
+  # provider (e.g. Bitbucket Data Center) to log in again.
+  ssoSessionIdleTimeout: 259200
+  ssoSessionMaxLifespan: 604800
   url: "http://keycloak"
-  # authHost: Override AUTH_WEB_HOST for shared/external Keycloak (without https://)
-  # Use this when Keycloak is shared across branches and shouldn't get branch prefix
-  # Example: auth.ohe-staging.platform-team.all-hands.dev
-  authHost: ""
-  
-  # =============================================================================
-  # Redirect URI Registration (for shared Keycloak with branch deployments)
-  # =============================================================================
-  # When using a shared Keycloak instance across multiple branch deployments,
-  # each branch needs to register its specific redirect URI. Keycloak doesn't
-  # support wildcard subdomains (e.g., https://*.example.com/*), so we must
-  # register exact URIs like https://branch.example.com/*.
-  #
-  # This hook runs automatically after helm install/upgrade to register the
-  # branch's redirect URI with the shared Keycloak instance.
-  #
-  # Prerequisites:
-  #   1. Shared Keycloak must be deployed and accessible
-  #   2. The 'allhands' client must exist in the realm
-  #   3. Admin credentials must be available in a Kubernetes secret
-  #
-  # Example configuration for ohe-staging.platform-team.all-hands.dev:
-  #   redirectUriRegistration:
-  #     enabled: true
-  #     keycloakUrl: "https://auth.ohe-staging.platform-team.all-hands.dev"
-  #     realmName: "allhands"
-  #     clientId: "allhands"
-  #     adminUser: "admin"
-  #     adminPasswordSecret:
-  #       name: "keycloak-admin"
-  #       key: "admin-password"
-  # =============================================================================
-  redirectUriRegistration:
-    enabled: false
-    # URL of the shared Keycloak instance (with /auth suffix if applicable)
-    keycloakUrl: ""
-    # Keycloak realm name
-    realmName: "allhands"
-    # Client ID to update
-    clientId: "allhands"
-    # Admin username for Keycloak
-    adminUser: "admin"
-    # Secret containing the admin password
-    adminPasswordSecret:
-      name: "keycloak-admin"
-      key: "admin-password"
-  
   fullnameOverride: keycloak
   replicaCount: 1
   production: true
@@ -431,6 +351,7 @@ keycloak:
     enabled: false
   externalDatabase:
     host: oh-main-postgresql
+    sslMode: "prefer"
     database: bitnami_keycloak
     existingSecret: postgres-password
     existingSecretUserKey: username
@@ -444,6 +365,10 @@ keycloak:
       value: "xforwarded"
     - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
       value: "true"
+    # Bitnami Keycloak renders extraEnvVars with common.tplvalues.render, so
+    # this is evaluated in the Keycloak subchart context at render time.
+    - name: KC_DB_URL_PROPERTIES
+      value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
   image:
     repository: bitnamilegacy/keycloak
   waitForDb:
@@ -483,6 +408,8 @@ keycloak:
             secretKeyRef:
               name: postgres-password
               key: password
+        - name: PGSSLMODE
+          value: '{{ .Values.externalDatabase.sslMode | default "prefer" }}'
 
 laminar:
   # Enable this if you want to use laminar
@@ -509,6 +436,10 @@ laminar:
   # Force HTTP instead of HTTPS for Laminar connections
   # Useful for development/test environments without TLS
   forceHttp: true
+
+  # HTTP port for Laminar app server (default: 443)
+  # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
+  httpPort: null
 
   frontend:
     ingress:
@@ -542,6 +473,20 @@ laminar:
         secretName: "laminar-app-server-tls"
         clusterIssuer: ""
       annotations: {}
+
+  # Pin to laminar 0.1.9's default. K8s forbids changing StatefulSet
+  # volumeClaimTemplates in place; the 0.1.10 default of 100Gi breaks
+  # `helm upgrade` with "spec: Forbidden". With replicaCount: 1 this
+  # value only describes the template, never new replicas.
+  #
+  # To grow rabbitmq disk where size is actually enforced (e.g. GKE
+  # hyperdisk-balanced), patch the live PVC out of band with
+  # `kubectl patch pvc`. On Replicated's openebs-hostpath this is a
+  # no-op — the LocalPV-hostpath provisioner has no resize handler
+  # and hostpath capacity is metadata only.
+  rabbitmq:
+    persistence:
+      size: "50Gi"
 
 litellm-helm:
   # Set this to false if you are using your own litellm instance
@@ -596,6 +541,10 @@ litellm-helm:
     #   litellm_params:
     #     model: "anthropic/claude-3-7-sonnet-20250219"
     #     api_key: os.environ/ANTHROPIC_API_KEY
+    general_settings:
+      # When true, LiteLLM forwards client x-* headers and anthropic-beta to upstream LLM providers.
+      # Keep false unless you trust callers and need provider-visible custom headers.
+      forward_client_headers_to_llm_api: false
     litellm_settings:
       num_retries: 3
       request_timeout: 600
@@ -628,24 +577,25 @@ postgresql:
   enabled: true
   auth:
     username: postgres
-    database: postgres
     existingSecret: postgres-password
   primary:
     initdb:
       scriptsConfigMap: ""
     persistence:
       enabled: false
+    service:
+      ports:
+        postgresql: 5432
     # Add the following if using Karpenter with persistence
     # podAnnotations:
     #   karpenter.sh/do-not-evict: "true"
-  service:
-    ports:
-      postgresql: 5432
   image:
     repository: bitnamilegacy/postgresql
 
 externalDatabase:
   enabled: false
+  port: "5432"
+  sslMode: "prefer"
   existingSecret: postgres-password
 
 redis:
@@ -707,7 +657,7 @@ runtime-api:
     count: 1
     configs:
       - name: default
-        image: "ghcr.io/openhands/agent-server:1.19.1-python"
+        image: "ghcr.io/openhands/agent-server:1.28.0-python"
         working_dir: "/workspace"
         environment:
           LOG_JSON: "1"
@@ -736,7 +686,6 @@ runtime-api:
   postgresql:
     auth:
       username: postgres
-      database: runtime_api_db
       existingSecret: postgres-password
   externalDatabase:
     enabled: false
@@ -751,6 +700,9 @@ runtime-api:
     tls: true
   env:
     DB_HOST: oh-main-postgresql
+    DB_PORT: "5432"
+    DB_SSL_MODE: "prefer"
+    PGSSLMODE: "prefer"
     DB_USER: postgres
     DB_NAME: runtime_api_db
     K8S_NAMESPACE: "openhands"
@@ -768,6 +720,7 @@ jira:
 
 jiraDc:
   enabled: false
+  linkMethod: oauth
 
 linear:
   enabled: false
@@ -814,6 +767,7 @@ plugin-directory:
     # When deployed as subchart, this is set by parent chart
     host: ""
     port: "5432"
+    sslMode: "prefer"
     user: "postgres"
     name: "plugindir"
     secretName: "postgres-password"
@@ -937,6 +891,7 @@ automation:
     #   - Feature env: "openhands-feature-branch-postgresql"
     host: ""
     port: "5432"
+    sslMode: "prefer"
     user: "automation_user"
     name: "automations"
     # Secret containing the automation database password
@@ -946,6 +901,11 @@ automation:
     # When true, runs an init container to create the database and user
     # Useful when sharing a PostgreSQL instance with other services
     createDatabaseUser: false
+    # Superuser used to create the automation database and user.
+    # Defaults to "postgres" but must be overridden when the external PostgreSQL
+    # admin account uses a different name.
+    # Only used when createDatabaseUser=true
+    superuserName: "postgres"
     # Secret containing the postgres superuser password (for creating the automation user)
     # Only used when createDatabaseUser=true
     superuserSecretName: "postgres-password"
@@ -997,6 +957,15 @@ automation:
 
 replicated:
   enabled: false
+  # Database credentials below are rendered only into the support-bundle Secret
+  # (gated on replicated.enabled), following the same convention as the rest of
+  # replicated/openhands.yaml — the Replicated installer templates ConfigOption
+  # values into Secrets at install time. The troubleshoot v1beta2 redis/postgres
+  # collectors have no secretRef field, so auth must be inlined into the URI.
+  redisPassword: ""
+  postgresUsername: ""
+  postgresPassword: ""
+  postgresDatabase: ""
 
 global:
   security:
@@ -1066,3 +1035,168 @@ crdCheck:
     limits:
       memory: 128Mi
   location: ""
+
+# Integrations Hub - Agent context layer with managed connectors and MCP integrations
+integrations-hub:
+  enabled: false
+
+  image:
+    repository: ghcr.io/openhands/integrations-hub
+    # tag: set via helm args or override
+
+  imagePullSecrets: []
+
+  deployment:
+    replicas: 1
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  securityContext:
+    runAsUser: 42420
+    runAsGroup: 42420
+    runAsNonRoot: true
+
+  serviceAccount:
+    create: true
+    name: integrations-hub-sa
+    annotations: {}
+
+  probes:
+    startup:
+      failureThreshold: 30
+      periodSeconds: 10
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      failureThreshold: 3
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      failureThreshold: 3
+
+  # Service configuration
+  service:
+    baseUrl: ""
+    # Port the FastAPI container listens on (matches the integrations-hub
+    # Dockerfile's `EXPOSE 8000` on the development branch).
+    port: 8000
+
+  # Path prefix that the hub is mounted under. This single value drives
+  # three things at once and they MUST agree:
+  #   - The parent chart's `templates/ingress-integrations-hub.yaml`
+  #     routing rule (host-based ingress + this path).
+  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var, which causes
+  #     `backend/app/main.py::build_app` to mount every route under the
+  #     prefix.
+  #   - The Next.js SPA's `NEXT_PUBLIC_BASE_PATH`, which is baked into
+  #     the image at build time (default `/integrations-hub` in the
+  #     project Dockerfile). Override the image's build arg if you set a
+  #     different rootPath here.
+  rootPath: "/integrations-hub"
+
+  # Bypass authentication for local development only -- never enable in
+  # staging/production. Exposed as INTHUB_DISABLE_AUTH.
+  disableAuth: false
+
+  # OpenHands identity provider used to validate session cookies / API keys.
+  openhands:
+    # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
+    # ingress host when left empty -- see charts/integrations-hub/templates/_env.yaml).
+    baseUrl: ""
+    # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
+    authCookieName: "keycloak_auth"
+    # Stable-origin URL used as the OAuth callback proxy for preview
+    # deployments. Backend env var: AUTH_REDIRECT_PROXY_URL.
+    redirectProxyUrl: ""
+    # Optional callback target for preview deployments paired with
+    # redirectProxyUrl. Backend env var: AUTH_URL.
+    authUrl: ""
+
+  # Credential encryption key configuration.
+  # Backend env var: INTHUB_CREDENTIAL_ENCRYPTION_KEY.
+  credentialEncryption:
+    secretName: "integrations-hub-encryption-secret"
+    secretKey: "encryption-key"
+
+  # Optional internal service-to-service auth secret. Only needed when a
+  # Next.js proxy in front of FastAPI injects X-Integrations-Hub-Internal-Secret;
+  # in pure SPA + FastAPI K8s deployments this is unused. Leave
+  # internalSecretName empty to skip wiring INTHUB_INTERNAL_AUTH_SECRET.
+  auth:
+    internalSecretName: ""
+    internalSecretKey: "internal-auth-secret"
+
+  # Admin allowlist for /api/admin/* routes.
+  # Backend env var: APP_ADMIN_EMAILS (comma-separated).
+  admin:
+    emails: ""
+
+  # PostgreSQL database configuration. The backend reads a single
+  # connection URL via INTHUB_POSTGRES_URL; the chart builds it from the
+  # components below using $(VAR_NAME) expansion in templates/_env.yaml.
+  # Set `database.url` to bypass that builder and supply a pre-formed URL.
+  database:
+    url: ""
+    host: ""
+    port: "5432"
+    sslMode: "prefer"
+    user: "integrations_hub_user"
+    name: "integrations_hub"
+    secretName: "integrations-hub-db-secret"
+    secretKey: "db-password"
+    existingSecret: false
+    createDatabaseUser: false
+    superuserSecretName: "postgres-password"
+    superuserSecretKey: "password"
+
+  # GCP Cloud SQL (leave empty for non-GCP)
+  gcp:
+    dbInstance: ""
+    project: ""
+    region: ""
+
+  # Datadog configuration
+  datadog:
+    enabled: false
+    env: "dev"
+    serviceName: "integrations-hub"
+
+  # Cron job configuration
+  cron:
+    secretName: "integrations-hub-cron-secret"
+    secretKey: "cron-secret"
+
+  # Env vars passed directly to the container
+  env: {}
+
+  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  postgresql:
+    enabled: false
+
+# ───────────────────────────────────────────────────────────────────────
+# Agent Canvas (subchart): frontend-only deployment
+# ───────────────────────────────────────────────────────────────────────
+# When enabled, the agent-canvas subchart deploys the static frontend
+# behind its own ingress (rendered by `templates/ingress-agent-canvas.yaml`
+# below). `ingress.host` here is read by that template; the subchart's
+# `ingress.enabled` is left off because the parent renders the Ingress.
+agent-canvas:
+  enabled: false
+
+  image:
+    repository: ghcr.io/openhands/agent-canvas
+    # tag: supplied at deploy time via the OpenHands deploy workflow.
+
+  ingress:
+    enabled: false
+    # Hostname for the agent-canvas ingress, e.g. canvas.openhands.dev
+    host: ""
+    tls:
+      enabled: true
+      secretName: agent-canvas-tls
+

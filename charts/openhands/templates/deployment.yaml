@@ -1,3 +1,4 @@
+{{- if .Values.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,7 +15,7 @@ spec:
       labels:
         app: openhands
       annotations:
-        {{- if .Values.keycloak.enabled }}
+        {{- if (include "openhands.keycloakProvisionRealm" .) }}
         checksum/keycloak-config: {{ include (print $.Template.BasePath "/keycloak-config-script.yaml") . | sha256sum }}
         checksum/keycloak-realm-template: {{ include (print $.Template.BasePath "/keycloak-realm-template.yaml") . | sha256sum }}
         {{- end }}
@@ -23,6 +24,9 @@ spec:
         {{- end }}
         {{- if .Values.allowedUsers }}
         checksum/user-waitlist: {{ include (print $.Template.BasePath "/user-waitlist-configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.secretsChecksum }}
+        checksum/config-secrets: {{ .Values.secretsChecksum | quote }}
         {{- end }}
         {{- include "openhands.caBundle.checksumAnnotation" . | nindent 8 }}
     spec:
@@ -43,7 +47,7 @@ spec:
           configMap:
             name: user-waitlist
         {{- end }}
-        {{- if .Values.keycloak.enabled }}
+        {{- if (include "openhands.keycloakProvisionRealm" .) }}
         - name: keycloak-config-script
           configMap:
             name: keycloak-config-script
@@ -60,7 +64,7 @@ spec:
         {{- end }}
       initContainers:
       {{- include "openhands.dbInitContainers" . | nindent 6 }}
-      {{- if .Values.keycloak.enabled }}
+      {{- if (include "openhands.keycloakProvisionRealm" .) }}
       - name: keycloak-config
         imagePullPolicy: Always
         image: '{{.Values.image.repository}}:{{.Values.image.tag | default .Chart.AppVersion }}'
@@ -129,3 +133,4 @@ spec:
         env:
         {{- include "openhands.env" . | nindent 8 }}
         {{- include "openhands.caBundle.env" . | nindent 8 }}
+{{- end }}

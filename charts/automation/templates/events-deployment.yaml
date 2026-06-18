@@ -37,7 +37,7 @@ spec:
         command: ["ddtrace-run"]
         args:
           - "uvicorn"
-          - "automation.app:app"
+          - "openhands.automation.app:app"
           - "--host"
           - "0.0.0.0"
           - "--port"

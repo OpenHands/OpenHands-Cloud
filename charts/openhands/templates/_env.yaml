@@ -15,6 +15,10 @@
 - name: OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS
   value: {{ .Values.appConfig.OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS }}
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: OPENHANDS_AZURE_DEVOPS_SERVICE_CLS
+  value: {{ .Values.appConfig.OPENHANDS_AZURE_DEVOPS_SERVICE_CLS }}
+{{- end }}
 - name: OPENHANDS_MCP_CONFIG_CLS
   value: {{ .Values.appConfig.OPENHANDS_MCP_CONFIG_CLS }}
 - name: OPENHANDS_CONVERSATION_VALIDATOR_CLS
@@ -196,6 +200,8 @@
 {{- if .Values.bitbucketDataCenter.enabled }}
 - name: BITBUCKET_DATA_CENTER_HOST
   value: {{ .Values.bitbucketDataCenter.host }}
+- name: BITBUCKET_DATA_CENTER_BOT_USERNAME
+  value: {{ .Values.bitbucketDataCenter.botUsername | quote }}
 - name: BITBUCKET_DATA_CENTER_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -206,6 +212,30 @@
     secretKeyRef:
       name: bitbucket-data-center-app
       key: client-secret
+- name: BITBUCKET_DATA_CENTER_BOT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: bitbucket-data-center-app
+      key: bot-token
+      optional: true
+{{- end }}
+{{- if .Values.azureDevOps.enabled }}
+- name: AZURE_DEVOPS_TENANT_ID
+  value: {{ .Values.azureDevOps.tenantId | quote }}
+- name: AZURE_DEVOPS_ORGANIZATION
+  value: {{ .Values.azureDevOps.organization | quote }}
+- name: AZURE_DEVOPS_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-id
+      optional: false
+- name: AZURE_DEVOPS_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: client-secret
+      optional: false
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
@@ -343,9 +373,20 @@
   value: "1"
 {{- end }}
 
+{{- if .Values.userProvisioning.enabled }}
+- name: USER_PROVISIONING_ENABLED
+  value: "true"
+{{- end }}
+
+{{- $dbSslMode := "prefer" }}
+{{- if not .Values.postgresql.enabled }}
+{{- $dbSslMode = .Values.externalDatabase.sslMode | default "prefer" }}
+{{- end }}
 {{- if .Values.postgresql.enabled }}
 - name: DB_HOST
   value: "{{ .Release.Name }}-postgresql"
+- name: DB_PORT
+  value: "{{ .Values.postgresql.primary.service.ports.postgresql | default 5432 }}"
 - name: DB_USER
   value: "{{ .Values.postgresql.auth.username }}"
 - name: DB_NAME
@@ -353,11 +394,17 @@
 {{- else }}
 - name: DB_HOST
   value: "{{ .Values.externalDatabase.host }}"
+- name: DB_PORT
+  value: "{{ .Values.externalDatabase.port | default 5432 }}"
 - name: DB_USER
   value: "{{ .Values.externalDatabase.username }}"
 - name: DB_NAME
   value: "{{ .Values.externalDatabase.database }}"
 {{- end }}
+- name: DB_SSL_MODE
+  value: {{ $dbSslMode | quote }}
+- name: PGSSLMODE
+  value: {{ $dbSslMode | quote }}
 {{- if .Values.datadog.enabled }}
 # Datadog configuration
 - name: DD_AGENT_HOST
@@ -377,27 +424,40 @@
 - name: DD_TRACE_SAMPLING_RULES
   value: '[{"service":"deploy","name":"fastapi.request","resource":"/integration/*","sample_rate":0.05}, {"service":"deploy","name":"fastapi.request","resource":"/slack/on-*","sample_rate":0.05}]'
 {{- end }}
-{{- if .Values.laminar.enabled }}
-{{- if .Values.laminar.apiKeyFromSecret }}
+{{- if and .Values.laminar.enabled .Values.laminar.apiKeyFromSecret }}
 - name: LMNR_PROJECT_API_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.laminar.apiKeyFromSecret.name }}
       key: {{ .Values.laminar.apiKeyFromSecret.key }}
       optional: true
+{{- else }}
+- name: LMNR_PROJECT_API_KEY
+  value: ""
 {{- end }}
-{{- if .Values.laminar.baseUrlFromSecret }}
+{{- if and .Values.laminar.enabled .Values.laminar.baseUrlFromSecret }}
 - name: LMNR_BASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ .Values.laminar.baseUrlFromSecret.name }}
       key: {{ .Values.laminar.baseUrlFromSecret.key }}
       optional: true
+{{- else }}
+- name: LMNR_BASE_URL
+  value: ""
 {{- end }}
-{{- if .Values.laminar.forceHttp }}
 - name: LMNR_FORCE_HTTP
-  value: {{ .Values.laminar.forceHttp | quote }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
+{{- if and .Values.laminar.enabled .Values.laminar.httpPort }}
+- name: LMNR_HTTP_PORT
+  value: {{ .Values.laminar.httpPort | quote }}
 {{- end }}
+{{- if and .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
+- name: LAMINAR_WEB_HOST
+  value: {{ .Values.laminar.frontend.ingress.hostname }}
+{{- else }}
+- name: LAMINAR_WEB_HOST
+  value: laminar.{{ .Values.ingress.host }}
 {{- end }}
 - name: DB_PASS
   valueFrom:
@@ -422,6 +482,23 @@
 {{- if .Values.jiraDc.enabled }}
 - name: ENABLE_JIRA_DC
   value: "true"
+- name: JIRA_DC_WEBHOOKS_ENABLED
+  value: "1"
+- name: JIRA_DC_SERVICE_ACCOUNT_EMAIL
+  valueFrom:
+    secretKeyRef:
+      name: jira-dc-app
+      key: service-account-email
+      optional: true
+- name: JIRA_DC_SERVICE_ACCOUNT_PAT
+  valueFrom:
+    secretKeyRef:
+      name: jira-dc-app
+      key: service-account-pat
+      optional: true
+{{- if eq .Values.jiraDc.linkMethod "oauth" }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_DC_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -437,6 +514,10 @@
     secretKeyRef:
       name: jira-dc-app
       key: base-url
+{{- else }}
+- name: JIRA_DC_ENABLE_OAUTH
+  value: "0"
+{{- end }}
 {{- end }}
 
 {{- if .Values.linear.enabled }}
@@ -492,6 +573,9 @@
 {{- if .Values.bitbucketDataCenter.enabled }}
 {{- $providers = append $providers "bitbucket_data_center" }}
 {{- end }}
+{{- if .Values.azureDevOps.enabled }}
+{{- $providers = append $providers "azure_devops" }}
+{{- end }}
 {{- if .Values.enterpriseSSO.enabled }}
 {{- $providers = append $providers "enterprise_sso" }}
 {{- end }}
@@ -501,8 +585,11 @@
 {{- end }}
 - name: OH_APP_MODE
   value: "saas"
-- name: OH_APP_CONVERSATION_INFO_KIND
-  value: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
+# OHE is always self-hosted; pin it so deployment_mode isn't host-inferred.
+- name: OH_DEPLOYMENT_MODE
+  value: "self_hosted"
+# OH_APP_CONVERSATION_INFO_KIND / OH_LLM_MODEL_KIND are baked into the enterprise
+# image (OpenHands#14811), so the chart no longer sets them — keeps the two in sync.
 - name: CONVERSATION_MANAGER_CLASS
   value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}

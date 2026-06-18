@@ -1,55 +1,63 @@
-{{- if .Values.ingress.enabled }}
+{{- if and .Values.enabled .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-integrations-ingress
-  {{- $annotations := .Values.ingress.integrations.annotations | default .Values.ingress.annotations }}
-  {{- $middlewareAnnotation := include "openhands.pathMiddlewareAnnotation" . }}
-  {{- if or $annotations $middlewareAnnotation }}
   annotations:
-    {{- with $annotations }}
-    {{- toYaml . | nindent 4 }}
+    {{- if .Values.ingress.integrations.annotations }}
+    {{ .Values.ingress.integrations.annotations | toYaml | nindent 4 }}
+    {{- else }}
+    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
     {{- end }}
-    {{- if $middlewareAnnotation }}
-    {{ $middlewareAnnotation | nindent 4 }}
-    {{- end }}
-  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.class }}
   {{- if .Values.tls.enabled }}
   tls:
   - hosts:
-    - {{ include "openhands.serviceIngressHost" (dict "service" "integrations" "context" .) }}
-    secretName: {{ include "openhands.serviceTlsSecretName" (dict "service" "integrations" "context" .) }}
+    {{- if .Values.ingress.prefixWithBranch }}
+    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
+    {{- else }}
+    - {{ .Values.ingress.host }}
+    {{- end }}
+    secretName: app-all-hands-{{ .Values.tls.env }}-tls
   {{- end }}
   rules:
-  - host: {{ include "openhands.serviceIngressHost" (dict "service" "integrations" "context" .) }}
+  {{- if .Values.ingress.prefixWithBranch }}
+  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
+  {{- else }}
+  - host: {{ .Values.ingress.host }}
+  {{- end }}
     http:
       paths:
-      {{- if and (eq .Values.ingress.serviceRoutingMode "subdomain") (eq .Values.ingress.routingMode "subdomain") }}
-      {{- /* Subdomain routing: integrations.branch.host → paths relative to root */}}
-      - path: /github/events
+      - path: /integration/github/events
         pathType: Exact
         backend:
           service:
             name: openhands-integrations-service
             port:
               number: 3000
-      - path: /gitlab/events
+      - path: /integration/gitlab/events
         pathType: Exact
         backend:
           service:
             name: openhands-integrations-service
             port:
               number: 3000
-      - path: /jira/events
+      - path: /integration/jira/events
         pathType: Exact
         backend:
           service:
             name: openhands-integrations-service
             port:
               number: 3000
-      - path: /billing/stripe-webhook
+      - path: /integration/jira-dc/events
+        pathType: Exact
+        backend:
+          service:
+            name: openhands-integrations-service
+            port:
+              number: 3000
+      - path: /api/billing/stripe-webhook
         pathType: Exact
         backend:
           service:
@@ -70,49 +78,4 @@ spec:
             name: openhands-integrations-service
             port:
               number: 3000
-      {{- else }}
-      {{- /* Path-based routing: full paths like /integration/github/events */}}
-      - path: {{ include "openhands.routedPath" (dict "path" "/integration/github/events" "Values" .Values) }}
-        pathType: Exact
-        backend:
-          service:
-            name: openhands-integrations-service
-            port:
-              number: 3000
-      - path: {{ include "openhands.routedPath" (dict "path" "/integration/gitlab/events" "Values" .Values) }}
-        pathType: Exact
-        backend:
-          service:
-            name: openhands-integrations-service
-            port:
-              number: 3000
-      - path: {{ include "openhands.routedPath" (dict "path" "/integration/jira/events" "Values" .Values) }}
-        pathType: Exact
-        backend:
-          service:
-            name: openhands-integrations-service
-            port:
-              number: 3000
-      - path: {{ include "openhands.routedPath" (dict "path" "/api/billing/stripe-webhook" "Values" .Values) }}
-        pathType: Exact
-        backend:
-          service:
-            name: openhands-integrations-service
-            port:
-              number: 3000
-      - path: {{ include "openhands.routedPath" (dict "path" "/slack" "Values" .Values) }}
-        pathType: Prefix
-        backend:
-          service:
-            name: openhands-integrations-service
-            port:
-              number: 3000
-      - path: {{ include "openhands.routedPath" (dict "path" "/oauth/device" "Values" .Values) }}
-        pathType: Prefix
-        backend:
-          service:
-            name: openhands-integrations-service
-            port:
-              number: 3000
-      {{- end }}
 {{- end }}

@@ -1,8 +1,19 @@
 {{- define "runtime-api.env" }}
+{{- $dbSslMode := (get .Values.env "DB_SSL_MODE") | default (.Values.database.sslMode | default "prefer") }}
 {{- range $key, $value := .Values.env }}
 - name: {{ $key }}
   value: {{ $value | quote }}
 {{- end }}
+{{- if not (hasKey .Values.env "DB_SSL_MODE") }}
+- name: DB_SSL_MODE
+  value: {{ $dbSslMode | quote }}
+{{- end }}
+{{- if not (hasKey .Values.env "PGSSLMODE") }}
+- name: PGSSLMODE
+  value: {{ $dbSslMode | quote }}
+{{- end }}
+- name: RUNTIME_IDLE_SECONDS
+  value: {{ .Values.cleanup.idle_seconds | default 1200 | quote }}
 - name: RUNTIME_DEAD_SECONDS
   value: {{ printf "%.0f" .Values.cleanup.dead_seconds | quote }}
 {{- if .Values.runtimeInSameCluster }}
@@ -39,6 +50,8 @@
 {{- if .Values.postgresql.enabled }}
 - name: DB_HOST
   value: "{{ .Release.Name }}-postgresql"
+- name: DB_PORT
+  value: "{{ .Values.postgresql.primary.service.ports.postgresql | default 5432 }}"
 - name: DB_USER
   value: "{{ .Values.postgresql.auth.username }}"
 - name: DB_NAME
