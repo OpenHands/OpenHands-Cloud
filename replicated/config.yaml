@@ -161,6 +161,13 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
           required: true
+        - name: openai_models
+          title: OpenAI Models
+          help_text: OpenAI model IDs served through the bundled LiteLLM proxy, one per line (e.g., gpt-5).
+          type: textarea
+          value: "gpt-5\ngpt-4.1"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
+          required: true
         - name: google_api_type
           title: Google API Type
           help_text: Choose between Google AI Studio (Gemini API) or Google Cloud Platform (Vertex AI)
@@ -176,6 +183,13 @@ spec:
           title: Google Gemini API Key
           help_text: Your Google AI Studio API key for Gemini models
           type: password
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
+          required: true
+        - name: gemini_models
+          title: Gemini Models
+          help_text: Google AI Studio (Gemini) model IDs served through the bundled LiteLLM proxy, one per line (e.g., gemini-2.5-pro).
+          type: textarea
+          value: "gemini-2.5-pro\ngemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
           required: true
         - name: google_vertex_project_id
@@ -210,10 +224,24 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
           required: true
+        - name: deepseek_models
+          title: DeepSeek Models
+          help_text: DeepSeek model IDs served through the bundled LiteLLM proxy, one per line (e.g., deepseek-chat).
+          type: textarea
+          value: "deepseek-chat\ndeepseek-reasoner"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
+          required: true
         - name: mistral_api_key
           title: Mistral API Key
           help_text: Your Mistral AI API key
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
+          required: true
+        - name: mistral_models
+          title: Mistral Models
+          help_text: Mistral AI model IDs served through the bundled LiteLLM proxy, one per line (e.g., mistral-large-latest).
+          type: textarea
+          value: "mistral-large-latest\ncodestral-latest"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
           required: true
         - name: azure_auth_method
@@ -286,10 +314,24 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
           required: true
+        - name: groq_models
+          title: Groq Models
+          help_text: Groq model IDs served through the bundled LiteLLM proxy, one per line (e.g., llama-3.3-70b-versatile).
+          type: textarea
+          value: "llama-3.3-70b-versatile"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
+          required: true
         - name: openrouter_api_key
           title: OpenRouter API Key
           help_text: Your OpenRouter API key
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
+          required: true
+        - name: openrouter_models
+          title: OpenRouter Models
+          help_text: OpenRouter model IDs served through the bundled LiteLLM proxy, one per line, as provider/model (e.g., anthropic/claude-sonnet-4.5).
+          type: textarea
+          value: "anthropic/claude-sonnet-4.5"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
           required: true
         - name: aws_auth_method
