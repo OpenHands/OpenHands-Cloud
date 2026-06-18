@@ -256,6 +256,11 @@ warmRuntimes:
       image: "ghcr.io/openhands/agent-server:1.28.0-python"
       working_dir: "/workspace"
       environment:
+        # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
+        LMNR_BASE_URL: ""
+        LMNR_FORCE_HTTP: ""
+        LMNR_HTTP_PORT: ""
+        LMNR_PROJECT_API_KEY: ""
         LOG_JSON: "1"
         LOG_JSON_LEVEL_KEY: "severity"
         OH_ALLOW_CORS_ORIGINS_0: ""
