@@ -10,7 +10,7 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-61fc535
+  tag: sha-fd990c4
   pullPolicy: Always
 
 imagePullSecrets:
@@ -253,7 +253,7 @@ warmRuntimes:
   count: 0
   configs:
     - name: default
-      image: "ghcr.io/openhands/agent-server:1.28.0-python"
+      image: "ghcr.io/openhands/agent-server:ab886d3-python"
       working_dir: "/workspace"
       environment:
         LOG_JSON: "1"

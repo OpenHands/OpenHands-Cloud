@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/openhands/agent-server
-  tag: 1.28.0-python
+  tag: ab886d3-python
   pullPolicy: Always
 
 runtimeClass: sysbox-runc

@@ -2,7 +2,7 @@ apiVersion: v2
 name: automation
 description: OpenHands Automations Service — scheduled and event-driven automation execution
 type: application
-version: 0.1.14
+version: 0.1.15
 appVersion: "0.1.0"
 dependencies:
   - name: postgresql
