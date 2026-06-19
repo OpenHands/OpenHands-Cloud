@@ -341,8 +341,24 @@ tavily:
 # -----------------------------------------------------------------------------
 # Disable Services (use shared from main deployment)
 # -----------------------------------------------------------------------------
-runtime-api:
-  enabled: false
+# To enable a per-branch runtime-api instead of using shared:
+# IMPORTANT: If enabling runtime-api, you MUST set DB_HOST to the FQDN
+# Short hostnames (e.g., "oh-main-postgresql") fail DNS resolution cross-namespace
+# runtime-api:
+#   enabled: true
+#   fullnameOverride: openhands-${BRANCH_SANITIZED}-runtime-api
+#   env:
+#     DB_HOST: openhands-postgresql.openhands.svc.cluster.local  # FQDN REQUIRED!
+#     DB_PORT: "5432"
+#     DB_NAME: runtime_api_${BRANCH_SANITIZED}  # Unique per branch
+#   externalDatabase:
+#     enabled: true
+#     existingSecret: postgres-password
+#   databaseMigrations:
+#     createDatabases: true
+#     migrate: true
+#   warmRuntimes:
+#     enabled: false
 
 automation:
   enabled: false
@@ -591,6 +607,7 @@ tavily:
   enabled: false
 
 # Disable services not needed for branch testing
+# To enable per-branch runtime-api instead, see minimal mode example above
 runtime-api:
   enabled: false
 automation:

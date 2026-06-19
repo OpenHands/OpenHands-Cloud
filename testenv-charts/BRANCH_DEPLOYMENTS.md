@@ -36,7 +36,35 @@ Branch deployments use **shared infrastructure** (PostgreSQL, Redis, Keycloak, L
 | Redis | Shared from `openhands` namespace |
 | Keycloak | Shared (`auth.ohe-staging.platform-team.all-hands.dev`) |
 | LiteLLM | Shared from `openhands` namespace |
+| Runtime-API | Shared or Per-branch (see below) |
 | Minio | Per-branch (ephemeral) |
+
+### Runtime-API Configuration
+
+By default, branch deployments use the **shared runtime-api** from the main `openhands` namespace. However, if your deployment needs a **per-branch runtime-api** (e.g., for testing runtime-api changes), you must configure it with proper database settings:
+
+```yaml
+runtime-api:
+  enabled: true
+  fullnameOverride: openhands-{branch}-runtime-api
+  env:
+    # CRITICAL: Must use FQDN for cross-namespace database access
+    # Using short hostname (e.g., "oh-main-postgresql") will fail DNS resolution
+    DB_HOST: openhands-postgresql.openhands.svc.cluster.local
+    DB_PORT: "5432"
+    DB_NAME: runtime_api_{branch}  # Unique per branch
+  externalDatabase:
+    enabled: true
+    existingSecret: postgres-password
+  databaseMigrations:
+    createDatabases: true
+    migrate: true
+```
+
+**Key points:**
+- `DB_HOST` must be the **FQDN** (`openhands-postgresql.openhands.svc.cluster.local`), not the short hostname
+- `DB_NAME` should be unique per branch to avoid database collisions
+- The `databaseMigrations.createDatabases: true` will create the database on the shared PostgreSQL instance
 
 Your deployment URL: `https://<branch-name>.ohe-staging.platform-team.all-hands.dev`
 
@@ -169,6 +197,32 @@ kubectl describe pod -n ${NAMESPACE} <pod-name>
 ```bash
 kubectl run pg-test -n ${NAMESPACE} --rm -it --image=postgres:15 -- \
   psql -h openhands-postgresql.openhands.svc.cluster.local -U postgres
+```
+
+### Runtime-API Pod Stuck in Init (DNS Resolution Failure)
+
+If runtime-api pods are stuck in `Init:0/3` with errors like:
+```
+fatal: could not resolve host: oh-main-postgresql
+```
+
+This is a **DNS resolution issue**. The pod cannot resolve the short hostname `oh-main-postgresql` from a different namespace.
+
+**Fix:** Set the full FQDN in your branch values:
+
+```yaml
+runtime-api:
+  env:
+    DB_HOST: openhands-postgresql.openhands.svc.cluster.local
+    DB_NAME: runtime_api_{branch_name}  # Use unique database name per branch
+```
+
+Then upgrade:
+```bash
+helm upgrade openhands-${BRANCH_NAME} ./charts/openhands \
+  --namespace ${NAMESPACE} \
+  -f testenv-charts/helm/base-values.yaml \
+  -f testenv-charts/helm/environments/staging/branch-${BRANCH_NAME}.yaml
 ```
 
 ## Advanced: Custom Values File

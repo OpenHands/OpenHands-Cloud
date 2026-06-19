@@ -156,6 +156,11 @@ runtime-api:
   fullnameOverride: openhands-admin-dashboard-runtime-api
   env:
     RUNTIME_CLASS: ""
+    # CRITICAL: Must use FQDN for cross-namespace database access
+    # Using short hostname (e.g., "oh-main-postgresql") will fail DNS resolution
+    DB_HOST: openhands-postgresql.openhands.svc.cluster.local
+    DB_PORT: "5432"
+    DB_NAME: runtime_api_admin_dashboard
   # Use external database from shared postgresql
   externalDatabase:
     enabled: true
