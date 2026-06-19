@@ -5,29 +5,43 @@ metadata:
   name: {{ .Release.Name }}-support-bundle
 spec:
   collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
+    {{- /* Which config-derived secrets are set: a key renders only when its KOTS value
+    is set, so includeValue:false keyExists ⇔ value-set -- presence only, never the value. */}}
+    {{- $secretKeys := dict
+      "admin-password"            (list "admin-password")
+      "automation-db-secret"      (list "db-password")
+      "automation-service-key"    (list "automation-service-key")
+      "automation-webhook-secret" (list "webhook-secret")
+      "azure-devops-app"          (list "client-id" "client-secret")
+      "bitbucket-data-center-app" (list "host" "client-id" "client-secret" "bot-token")
+      "default-api-key"           (list "default-api-key")
+      "github-app"                (list "app-id" "app-slug" "client-id" "client-secret" "private-key" "webhook-secret")
+      "gitlab-app"                (list "client-id" "client-secret")
+      "jira-dc-app"               (list "base-url" "client-id" "client-secret" "service-account-email" "service-account-pat")
+      "jwt-secret"                (list "jwt-secret")
+      "keycloak-admin"            (list "admin-password")
+      "keycloak-realm"            (list "client-id" "client-secret" "realm-name" "server-url" "smtp-password")
+      "lite-llm-api-key"          (list "lite-llm-api-key")
+      "litellm-env-secrets"       (list "UI_PASSWORD" "LITELLM_SALT_KEY" "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GOOGLE_API_KEY" "GOOGLE_APPLICATION_CREDENTIALS_JSON" "VERTEXAI_PROJECT" "VERTEXAI_LOCATION" "DEEPSEEK_API_KEY" "MISTRAL_API_KEY" "AZURE_API_KEY" "AZURE_TENANT_ID" "AZURE_CLIENT_ID" "AZURE_CLIENT_SECRET" "AZURE_API_BASE" "AZURE_API_VERSION" "GROQ_API_KEY" "OPENROUTER_API_KEY" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME" "CUSTOM_API_KEY" "CUSTOM_API_BASE")
+      "openhands-env-secrets"     (list "LLM_API_KEY" "LLM_MODEL" "LLM_BASE_URL" "LLM_API_VERSION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME")
+      "openhands-tls"             (list "tls.crt" "ca.crt")
+      "plugin-directory-secrets"  (list "identity-shared-secret" "session-secret")
+      "postgres-password"         (list "postgres-password" "password" "username")
+      "redis"                     (list "redis-password")
+      "s3-credentials"            (list "access-key" "secret-key")
+      "sandbox-api-key"           (list "sandbox-api-key")
+      "sandbox-image-pull-secret" (list ".dockerconfigjson")
+      "slack-auth"                (list "client-id" "client-secret" "signing-secret")
+    }}
+    {{- range $name, $keys := $secretKeys }}
+    {{- range $key := $keys }}
     - secret:
-        name: postgres-password
-        namespace: {{ .Release.Namespace }}
-        key: postgres-password
+        name: {{ $name }}
+        namespace: {{ $.Release.Namespace }}
+        key: {{ $key }}
         includeValue: false
-    - secret:
-        name: redis
-        namespace: {{ .Release.Namespace }}
-        key: redis-password
-        includeValue: false
-    - secret:
-        name: sandbox-api-key
-        namespace: {{ .Release.Namespace }}
-        key: sandbox-api-key
-        includeValue: false
-    - secret:
-        name: github-app
-        namespace: {{ .Release.Namespace }}
-        includeValue: false
-    - secret:
-        name: keycloak-realm
-        namespace: {{ .Release.Namespace }}
-        includeValue: false
+    {{- end }}
+    {{- end }}
     # Log volume is bounded by kubelet rotation (~tens of MB/pod), not maxAge,
     # so 336h is free on chatty pods and only adds history on quiet ones.
     # OpenHands main application logs
