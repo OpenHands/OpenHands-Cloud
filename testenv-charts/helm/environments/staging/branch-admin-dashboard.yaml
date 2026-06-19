@@ -161,6 +161,10 @@ runtime-api:
     DB_HOST: openhands-postgresql.openhands.svc.cluster.local
     DB_PORT: "5432"
     DB_NAME: runtime_api_admin_dashboard
+    # CRITICAL: Must match the namespace where runtime-api is deployed
+    # Using "openhands" (from base values.yaml) causes sandbox pods to be created
+    # in the wrong namespace, breaking status monitoring between runtime-api and sandbox pods
+    K8S_NAMESPACE: "openhands-admin-dashboard"
   # Use external database from shared postgresql
   externalDatabase:
     enabled: true
