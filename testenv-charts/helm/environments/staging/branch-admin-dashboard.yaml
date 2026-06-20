@@ -114,7 +114,8 @@ enterpriseSSO:
 # =============================================================================
 env:
   # Runtime Configuration (uses shared runtime-api)
-  RUNTIME_URL_PATTERN: https://{runtime_id}.runtime.ohe-staging.platform-team.all-hands.dev
+  # Must use *.ohe-staging... to match the wildcard SSL certificate
+  RUNTIME_URL_PATTERN: https://{runtime_id}.ohe-staging.platform-team.all-hands.dev
   
   # LLM Proxy (shared)
   OPENHANDS_PROVIDER_BASE_URL: https://llm-proxy.ohe-staging.platform-team.all-hands.dev/
