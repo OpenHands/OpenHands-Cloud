@@ -178,12 +178,15 @@ runtime-api:
   env:
     RUNTIME_CLASS: ""
     # CRITICAL: Must match the wildcard DNS zone for sandbox ingresses
-    # This MUST be set to "runtime.ohe-staging.platform-team.all-hands.dev" so that:
-    # 1. Sandbox ingresses are created with *.runtime.ohe-staging.platform-team.all-hands.dev hosts
-    # 2. The wildcard DNS certificate covers these hosts
+    # This MUST be set to "ohe-staging.platform-team.all-hands.dev" so that:
+    # 1. Sandbox ingresses are created with *.ohe-staging.platform-team.all-hands.dev hosts
+    # 2. The wildcard DNS certificate (*.ohe-staging.platform-team.all-hands.dev) covers these hosts
     # 3. Runtime-api's check_alive_with_ingress() can resolve sandbox URLs from within the cluster
     # Do NOT use the default "runtime.all-hands.dev" - that DNS zone has no wildcard entry
-    RUNTIME_BASE_URL: "runtime.ohe-staging.platform-team.all-hands.dev"
+    RUNTIME_BASE_URL: "ohe-staging.platform-team.all-hands.dev"
+    # Set RUNTIME_DISABLE_SSL=true because the wildcard cert is for *.ohe-staging...
+    # but the health check needs to use HTTP (Traefik does TLS termination)
+    RUNTIME_DISABLE_SSL: "true"
     # CRITICAL: Must use FQDN for cross-namespace database access
     # Using short hostname (e.g., "oh-main-postgresql") will fail DNS resolution
     DB_HOST: openhands-postgresql.openhands.svc.cluster.local
