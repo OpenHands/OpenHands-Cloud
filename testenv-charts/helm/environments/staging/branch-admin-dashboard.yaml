@@ -29,6 +29,27 @@
 #          kubectl apply -f -
 #      done
 #
+# IMPORTANT: Runtime DNS Configuration
+# =============================================================================
+# The runtime-api MUST be configured with the correct RUNTIME_BASE_URL that matches
+# the wildcard DNS zone for the staging environment. This is critical for sandbox
+# health checks to work properly.
+#
+# Required: RUNTIME_BASE_URL must be "runtime.ohe-staging.platform-team.all-hands.dev"
+# - This MUST match the wildcard DNS zone (*.runtime.ohe-staging.platform-team.all-hands.dev)
+# - The runtime-api uses this to construct sandbox ingress hostnames
+# - The check_alive_with_ingress() function needs to resolve these URLs from within
+#   the cluster to verify sandbox health
+#
+# DO NOT use the default "runtime.all-hands.dev" - that DNS zone has no wildcard
+# entry and sandbox health checks will fail with DNS resolution errors.
+#
+# Shared DNS Architecture:
+# - All branch deployments share the same wildcard DNS: *.runtime.ohe-staging.platform-team.all-hands.dev
+# - Traefik routes traffic based on hostname, so different sandbox subdomains route
+#   to different sandbox pods in their respective namespaces
+# =============================================================================
+#
 # Seed Test Data (after deployment):
 #   # Port-forward to PostgreSQL
 #   kubectl port-forward svc/openhands-postgresql -n openhands 5432:5432 &
@@ -156,6 +177,13 @@ runtime-api:
   fullnameOverride: openhands-admin-dashboard-runtime-api
   env:
     RUNTIME_CLASS: ""
+    # CRITICAL: Must match the wildcard DNS zone for sandbox ingresses
+    # This MUST be set to "runtime.ohe-staging.platform-team.all-hands.dev" so that:
+    # 1. Sandbox ingresses are created with *.runtime.ohe-staging.platform-team.all-hands.dev hosts
+    # 2. The wildcard DNS certificate covers these hosts
+    # 3. Runtime-api's check_alive_with_ingress() can resolve sandbox URLs from within the cluster
+    # Do NOT use the default "runtime.all-hands.dev" - that DNS zone has no wildcard entry
+    RUNTIME_BASE_URL: "runtime.ohe-staging.platform-team.all-hands.dev"
     # CRITICAL: Must use FQDN for cross-namespace database access
     # Using short hostname (e.g., "oh-main-postgresql") will fail DNS resolution
     DB_HOST: openhands-postgresql.openhands.svc.cluster.local
