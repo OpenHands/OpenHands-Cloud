@@ -255,6 +255,11 @@ runtime:
 
 runtime-api:
   enabled: false
+  # IMPORTANT: If enabling runtime-api, you MUST set the following env vars:
+  #   RUNTIME_BASE_URL: "runtime.ohe-staging.platform-team.all-hands.dev"
+  # This MUST match the wildcard DNS zone (*.runtime.ohe-staging.platform-team.all-hands.dev)
+  # for sandbox ingress health checks to work properly.
+  # See branch-admin-dashboard.yaml for a complete example.
   warmRuntimes:
     enabled: false
 
