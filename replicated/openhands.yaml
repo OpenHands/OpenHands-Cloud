@@ -314,7 +314,8 @@ spec:
         CPU_LIMIT: 'repl{{ ConfigOption "sandbox_cpu_limit" }}'
         LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
         ADDITIONAL_CONFIGMAPS: "openhands-ca-bundle:/etc/openhands/ca-bundle"
-        ADDITIONAL_HOST_PATHS: 'repl{{ ConfigOption "sandbox_additional_host_paths" }}'
+        # Textarea is "one per line"; normalize to a comma list so a multiline value isn't YAML-folded into a space-joined token.
+        ADDITIONAL_HOST_PATHS: 'repl{{ $hp := list }}repl{{ range $raw := splitList "\n" (ConfigOption "sandbox_additional_host_paths" | replace "\r" "\n") }}repl{{ $e := trim $raw }}repl{{ if $e }}repl{{ $hp = append $hp $e }}repl{{ end }}repl{{ end }}repl{{ $hp | join "," }}'
         SANDBOX_KVM_ENABLED: 'repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}'
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
       kvm:
