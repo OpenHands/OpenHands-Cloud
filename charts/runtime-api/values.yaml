@@ -253,7 +253,7 @@ warmRuntimes:
   count: 0
   configs:
     - name: default
-      image: "ghcr.io/openhands/agent-server:1.28.0-python"
+      image: "ghcr.io/openhands/agent-server:1.29.0-python"
       working_dir: "/workspace"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
