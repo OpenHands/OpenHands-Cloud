@@ -30,3 +30,20 @@ agent-canvas:
       enabled: true
       secretName: agent-canvas-tls
 ```
+
+### Locking the UI to a single OpenHands Cloud host
+
+Set `staticServer.lockToCloud` to pass `--lock-to-cloud <url>` to
+`static-server.mjs`. The UI then locks backend setup to a single
+OpenHands Cloud host (skipping the "Manage Backends" flow), e.g. for a
+dedicated `canvas.<env>.all-hands.dev` deployment:
+
+```yaml
+agent-canvas:
+  enabled: true
+  staticServer:
+    lockToCloud: https://app.all-hands.dev
+  ingress:
+    enabled: true
+    host: canvas.staging.all-hands.dev
+```
