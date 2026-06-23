@@ -11,8 +11,8 @@ name: Cleanup stale Replicated channels
 
 on:
   schedule:
-    # Mondays at 07:00 UTC.
-    - cron: "0 7 * * 1"
+    # Daily at 07:00 UTC.
+    - cron: "0 7 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
