@@ -1,6 +1,13 @@
 # Description
 
-Updates the OpenHands, runtime-api, and automation helm charts to cut a new enterprise chart release.
+Updates the OpenHands and image-loader helm charts to cut a new enterprise chart release.
+
+For a given OpenHands cloud tag, the script:
+
+- Updates image tags in `charts/openhands/values.yaml`, `replicated/openhands.yaml`, and `replicated/config.yaml`.
+- Updates image tags in the embedded runtime-api and automation subcharts (`charts/openhands/charts/<name>/values.yaml`). These subcharts have no chart version of their own — they ship inside the openhands chart, so a change to their values triggers a patch bump of the openhands chart version instead. Their dependency entries in `charts/openhands/Chart.yaml` are repository-less with version `"*"` and are never rewritten.
+- Updates `appVersion` and bumps the patch version in `charts/openhands/Chart.yaml` when any of the above changed.
+- Updates the agent-server image tag in `charts/image-loader/values.yaml` and bumps the image-loader chart version when it changed (image-loader is still a standalone chart).
 
 ## Prerequisites
 

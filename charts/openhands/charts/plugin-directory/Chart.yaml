@@ -2,5 +2,7 @@ apiVersion: v2
 name: plugin-directory
 description: OpenHands Plugin Directory — marketplace for discovering and reviewing agent plugins
 type: application
-version: 0.1.2
+# Inert: embedded subchart of the openhands umbrella, not versioned or
+# published on its own. Ships at whatever openhands version bundles it.
+version: 0.0.0
 appVersion: "1.1.0"
