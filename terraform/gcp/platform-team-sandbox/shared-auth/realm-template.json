@@ -129,6 +129,26 @@
         "attribute": "identity_provider",
         "attribute.value": "enterprise_sso:saml"
       }
+    },
+    {
+      "name": "saml-first-name",
+      "identityProviderAlias": "enterprise_sso",
+      "identityProviderMapper": "saml-user-attribute-idp-mapper",
+      "config": {
+        "attribute.name": "firstName",
+        "user.attribute": "firstName",
+        "syncMode": "FORCE"
+      }
+    },
+    {
+      "name": "saml-last-name",
+      "identityProviderAlias": "enterprise_sso",
+      "identityProviderMapper": "saml-user-attribute-idp-mapper",
+      "config": {
+        "attribute.name": "lastName",
+        "user.attribute": "lastName",
+        "syncMode": "FORCE"
+      }
     }
   ],
   "clients": [
