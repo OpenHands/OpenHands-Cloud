@@ -63,17 +63,7 @@ spec:
                   value: {{ .Values.resendSync.backoffFactor | quote }}
                 - name: RATE_LIMIT
                   value: {{ .Values.resendSync.rateLimit | quote }}
-                {{- /* When resend.enabled is set, openhands.env (included below) already
-                       provides RESEND_API_KEY from .Values.resend.auth.existingSecret.
-                       Only set it here as a fallback for resend.enabled=false, otherwise
-                       the env list has a duplicate key that breaks server-side-apply diffs. */}}
-                {{- if not .Values.resend.enabled }}
-                - name: RESEND_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: resend-api-key
-                      key: resend-api-key
-                {{- end }}
+                {{- /* RESEND_API_KEY is provided by the shared openhands.env block below. */}}
                 {{- if .Values.resendSync.fromEmail }}
                 - name: RESEND_FROM_EMAIL
                   value: {{ .Values.resendSync.fromEmail | quote }}
