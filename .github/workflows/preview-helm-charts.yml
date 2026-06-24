@@ -1,8 +1,6 @@
 name: Preview Helm Charts
 on:
   pull_request:
-    paths:
-      - 'charts/**'
 
 jobs:
   validate-chart-versions:
