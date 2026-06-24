@@ -16,9 +16,7 @@
                                       parser and would require list syntax)
     INTHUB_CREDENTIAL_ENCRYPTION_KEY fallback: CREDENTIAL_ENCRYPTION_KEY
     INTHUB_STATIC_DIR                set in the Dockerfile to /app/out
-    INTHUB_ROOT_PATH                 sub-path mount; defaulted by the
-                                     Dockerfile to /integrations-hub and
-                                     overridable via .Values.rootPath
+    INTHUB_ROOT_PATH                 sub-path mount from .Values.rootPath
 
   In addition, backend/app/oauth_flow.py reads:
     AUTH_REDIRECT_PROXY_URL          stable origin for OAuth callback proxy
@@ -32,8 +30,9 @@
 - name: INTHUB_POSTGRES_URL
   value: {{ .Values.database.url | quote }}
 {{- else }}
+{{- $dbHost := .Values.database.host }}
 - name: INTHUB_DB_HOST
-  value: {{ .Values.database.host | quote }}
+  value: {{ $dbHost | quote }}
 - name: INTHUB_DB_PORT
   value: {{ .Values.database.port | quote }}
 - name: INTHUB_DB_SSL_MODE
@@ -58,10 +57,7 @@
 {{- if and (not $openhandsBaseUrl) .Values.global }}
 {{- if .Values.global.ingress }}
 {{- if .Values.global.ingress.host }}
-{{- $host := .Values.global.ingress.host }}
-{{- if and .Values.global.ingress.prefixWithBranch .Values.global.branchSanitized }}
-{{- $host = printf "%s.%s" .Values.global.branchSanitized .Values.global.ingress.host }}
-{{- end }}
+{{- $host := tpl .Values.global.ingress.host . }}
 {{- $openhandsBaseUrl = printf "https://%s" $host }}
 {{- end }}
 {{- end }}
@@ -81,12 +77,8 @@
 - name: INTHUB_DISABLE_AUTH
   value: {{ .Values.disableAuth | default false | quote }}
 
-# Sub-path mount for the FastAPI app. The Dockerfile already defaults
-# INTHUB_ROOT_PATH to /integrations-hub so the image works behind the
-# default ingress out of the box; this block re-emits the value so chart
-# overrides flow through. Rendered unconditionally (including when
-# .Values.rootPath is "") so that an empty override actually clears the
-# image default instead of silently inheriting it.
+# Sub-path mount for the FastAPI app. Rendered unconditionally so an
+# empty rootPath override mounts the service at cluster root.
 - name: INTHUB_ROOT_PATH
   value: {{ .Values.rootPath | default "" | quote }}
 

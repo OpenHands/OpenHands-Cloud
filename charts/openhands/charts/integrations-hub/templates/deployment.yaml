@@ -24,9 +24,12 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-      {{- if and .Values.database.createDatabaseUser (not .Values.gcp.dbInstance) }}
-      # Create database and user in PostgreSQL (non-GCP only)
-      # For GCP Cloud SQL, database and user are created via Terraform in the infra repo
+      {{- with .Values.extraInitContainers }}
+      {{- tpl (toYaml .) $ | nindent 6 }}
+      {{- end }}
+      {{- if .Values.database.createDatabaseUser }}
+      # Create database and user in PostgreSQL. Disable this when the database
+      # and user are provisioned outside the chart.
       - name: create-db-user
         image: postgres:14
         env:
