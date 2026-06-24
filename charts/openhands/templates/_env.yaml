@@ -200,6 +200,8 @@
 {{- if .Values.bitbucketDataCenter.enabled }}
 - name: BITBUCKET_DATA_CENTER_HOST
   value: {{ .Values.bitbucketDataCenter.host }}
+- name: BITBUCKET_DATA_CENTER_BOT_USERNAME
+  value: {{ .Values.bitbucketDataCenter.botUsername | quote }}
 - name: BITBUCKET_DATA_CENTER_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -341,6 +343,11 @@
   value: "1"
 {{- end }}
 
+{{- if .Values.userProvisioning.enabled }}
+- name: USER_PROVISIONING_ENABLED
+  value: "true"
+{{- end }}
+
 {{- $dbSslMode := "prefer" }}
 {{- if not .Values.postgresql.enabled }}
 {{- $dbSslMode = .Values.externalDatabase.sslMode | default "prefer" }}
@@ -411,9 +418,15 @@
 {{- end }}
 - name: LMNR_FORCE_HTTP
   value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
-{{- if and .Values.laminar.enabled .Values.laminar.httpPort }}
+# Always emit (="" when off) so the LMNR_* request env matches the warm-runtime pool.
 - name: LMNR_HTTP_PORT
-  value: {{ .Values.laminar.httpPort | quote }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.httpPort }}{{ .Values.laminar.httpPort | quote }}{{ else }}""{{ end }}
+{{- if and .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
+- name: LAMINAR_WEB_HOST
+  value: {{ .Values.laminar.frontend.ingress.hostname }}
+{{- else }}
+- name: LAMINAR_WEB_HOST
+  value: laminar.{{ .Values.ingress.host }}
 {{- end }}
 - name: DB_PASS
   valueFrom:
@@ -541,10 +554,11 @@
 {{- end }}
 - name: OH_APP_MODE
   value: "saas"
-- name: OH_APP_CONVERSATION_INFO_KIND
-  value: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
-- name: OH_LLM_MODEL_KIND
-  value: server.verified_models.verified_model_router.SaaSLLMModelServiceInjector
+# OHE is always self-hosted; pin it so deployment_mode isn't host-inferred.
+- name: OH_DEPLOYMENT_MODE
+  value: "self_hosted"
+# OH_APP_CONVERSATION_INFO_KIND / OH_LLM_MODEL_KIND are baked into the enterprise
+# image (OpenHands#14811), so the chart no longer sets them — keeps the two in sync.
 - name: CONVERSATION_MANAGER_CLASS
   value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}

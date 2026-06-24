@@ -28,6 +28,8 @@ spec:
         name: keycloak-realm
         namespace: {{ .Release.Namespace }}
         includeValue: false
+    # Log volume is bounded by kubelet rotation (~tens of MB/pod), not maxAge,
+    # so 336h is free on chatty pods and only adds history on quiet ones.
     # OpenHands main application logs
     - logs:
         name: app/openhands/logs
@@ -35,7 +37,7 @@ spec:
         selector:
           - app=openhands
         limits:
-          maxAge: 720h
+          maxAge: 336h
     # OpenHands integrations deployment logs
     - logs:
         name: app/openhands-integrations/logs
@@ -43,7 +45,7 @@ spec:
         selector:
           - app=openhands-integrations
         limits:
-          maxAge: 720h
+          maxAge: 336h
     # OpenHands MCP deployment logs
     - logs:
         name: app/openhands-mcp/logs
@@ -51,7 +53,7 @@ spec:
         selector:
           - app=openhands-mcp
         limits:
-          maxAge: 720h
+          maxAge: 336h
     {{- if .Values.postgresql.enabled }}
     # PostgreSQL logs (Bitnami chart)
     - logs:
@@ -61,7 +63,7 @@ spec:
           - app.kubernetes.io/name=postgresql
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
     {{- end }}
     {{- if .Values.redis.enabled }}
     # Redis logs (Bitnami chart)
@@ -72,7 +74,7 @@ spec:
           - app.kubernetes.io/name=redis
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
     {{- end }}
     {{- if .Values.keycloak.enabled }}
     # Keycloak logs (Bitnami chart)
@@ -83,7 +85,7 @@ spec:
           - app.kubernetes.io/name=keycloak
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
     {{- end }}
     {{- if .Values.filestore.ephemeral }}
     # MinIO logs (MinIO chart)
@@ -94,7 +96,7 @@ spec:
           - app=minio
           - release={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
     {{- end }}
     {{- if index .Values "runtime-api" "enabled" }}
     # Runtime API logs
@@ -105,7 +107,7 @@ spec:
           - app.kubernetes.io/name=runtime-api
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
     # Runtime sandbox pod logs. Pod names are dynamic (runtime-*) and the
     # logs collector has no glob-name support, so select by the runtime_id
     # label — a bare key matches "label exists with any value". Pod/event
@@ -115,8 +117,66 @@ spec:
         selector:
           - runtime_id
         limits:
-          maxAge: 168h
+          maxAge: 336h
         timestamps: true
+    # Read-only runtimes dump via the runtime-api pod's own DB creds (pg8000,
+    # runtime_api_db). Surfaces custom sandbox images + status; never selects
+    # the environment JSON or session_api_key. Also prints pull-secret NAMES.
+    - exec:
+        name: app/{{ .Release.Name }}-runtime-api-db
+        collectorName: runtime-api-db-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name=runtime-api
+        containerName: runtime-api
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os, pg8000.dbapi
+            kw = dict(
+                host=os.environ["DB_HOST"],
+                port=int(os.environ.get("DB_PORT", "5432")),
+                user=os.environ["DB_USER"],
+                password=os.environ.get("DB_PASS", ""),
+                database=os.environ["DB_NAME"],
+                timeout=10,
+            )
+            # mirror runtime-api db.py: ssl_context True/False for require/disable, omit otherwise
+            mode = (os.environ.get("DB_SSL_MODE") or "").strip().lower()
+            if mode == "require":
+                kw["ssl_context"] = True
+            elif mode == "disable":
+                kw["ssl_context"] = False
+            print("RUNTIME_IMAGE_PULL_SECRETS=" + os.environ.get("RUNTIME_IMAGE_PULL_SECRETS", ""))
+            conn = pg8000.dbapi.connect(**kw)
+            conn.autocommit = True
+            cur = conn.cursor()
+            cur.execute("SET default_transaction_read_only = on")
+            def run(label, sql):
+                print("== " + label + " ==")
+                try:
+                    cur.execute(sql)
+                    cols = [d[0] for d in cur.description]
+                    print(json.dumps(cols))
+                    for r in cur.fetchall():
+                        print(json.dumps(dict(zip(cols, r)), default=str))
+                except Exception as e:
+                    print("ERROR: " + repr(e))
+                print()
+            queries = [
+                ("runtimes image/status summary",
+                 "SELECT image, status, COUNT(*) AS n FROM runtimes "
+                 "GROUP BY image, status ORDER BY n DESC"),
+                ("runtimes recent",
+                 "SELECT runtime_id, session_id, api_key_name, status, image, working_dir, "
+                 "created_at, stopped_at, last_state_change, cpu_millicores, memory_mb, "
+                 "storage_gb, running_time, paused_time, run_as_user, run_as_group, fs_group "
+                 "FROM runtimes ORDER BY created_at DESC LIMIT 50"),
+            ]
+            for label, sql in queries:
+                run(label, sql)
+            conn.close()
+        timeout: 30s
     {{- end }}
     {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
     # LiteLLM logs
@@ -127,7 +187,239 @@ spec:
           - app.kubernetes.io/name=litellm
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
-          maxAge: 168h
+          maxAge: 336h
+    # Live LiteLLM proxy model list (/model/info): config-rendered models
+    # plus any models added at runtime via the LiteLLM dashboard
+    # (store_model_in_db). Authenticates with the proxy's own
+    # PROXY_MASTER_KEY env var (wired from the lite-llm-api-key secret by
+    # the litellm-helm chart). LiteLLM redacts api_key values server-side;
+    # api_base values may appear, which is acceptable. The image has no
+    # curl, so use the bundled python3.
+    - exec:
+        name: app/{{ .Release.Name }}-litellm
+        collectorName: litellm-model-info
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name=litellm
+          - app.kubernetes.io/instance={{ .Release.Name }}
+        containerName: litellm
+        command: ["python3", "-c"]
+        args:
+          - |
+            import os, urllib.request
+            req = urllib.request.Request(
+                "http://localhost:4000/model/info",
+                headers={"Authorization": "Bearer " + os.environ["PROXY_MASTER_KEY"]},
+            )
+            print(urllib.request.urlopen(req, timeout=15).read().decode())
+        timeout: 30s
+    {{- end }}
+    # Read-only integration STATE via the openhands pod's own DB creds. Dumps
+    # webhook/connection ids, repos and timestamps to spot duplicate
+    # registrations; SELECTs only non-secret columns (never tokens/secrets).
+    - exec:
+        name: app/openhands-db-diagnostics
+        collectorName: openhands-db-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os, psycopg2
+            conn = psycopg2.connect(
+                host=os.environ["DB_HOST"],
+                port=os.environ.get("DB_PORT", "5432"),
+                dbname=os.environ["DB_NAME"],
+                user=os.environ["DB_USER"],
+                password=os.environ.get("DB_PASS", ""),
+                sslmode=os.environ.get("DB_SSL_MODE", "prefer"),
+                connect_timeout=10,
+            )
+            conn.set_session(readonly=True, autocommit=True)
+            cur = conn.cursor()
+            def run(label, sql):
+                print("== " + label + " ==")
+                try:
+                    cur.execute(sql)
+                    print(json.dumps([d[0] for d in cur.description]))
+                    for r in cur.fetchall():
+                        print(json.dumps(r, default=str))
+                except Exception as e:
+                    print("ERROR: " + repr(e))
+                print()
+            queries = [
+                ("bitbucket_dc_webhook rows",
+                 "SELECT id, project_key, repo_slug, user_id, webhook_id, last_synced "
+                 "FROM bitbucket_dc_webhook ORDER BY project_key, repo_slug, id"),
+                ("bitbucket_dc_webhook duplicate repos",
+                 "SELECT project_key, repo_slug, COUNT(*) AS registrations "
+                 "FROM bitbucket_dc_webhook GROUP BY project_key, repo_slug HAVING COUNT(*) > 1"),
+                ("bitbucket_webhook rows",
+                 "SELECT id, workspace, repo_slug, user_id, webhook_uuid, last_synced "
+                 "FROM bitbucket_webhook ORDER BY workspace, repo_slug, id"),
+                ("bitbucket_webhook duplicate repos",
+                 "SELECT workspace, repo_slug, COUNT(*) AS registrations "
+                 "FROM bitbucket_webhook GROUP BY workspace, repo_slug HAVING COUNT(*) > 1"),
+                ("gitlab_webhook rows",
+                 "SELECT id, group_id, project_id, user_id, webhook_exists, webhook_uuid, last_synced "
+                 "FROM gitlab_webhook ORDER BY group_id, project_id, id"),
+                ("gitlab_webhook duplicate projects",
+                 "SELECT group_id, project_id, COUNT(*) AS registrations "
+                 "FROM gitlab_webhook GROUP BY group_id, project_id HAVING COUNT(*) > 1"),
+                ("github_app_installations rows",
+                 "SELECT id, installation_id, created_at, updated_at "
+                 "FROM github_app_installations ORDER BY installation_id, id"),
+                ("github_app_installations duplicate installation_id",
+                 "SELECT installation_id, COUNT(*) AS n "
+                 "FROM github_app_installations GROUP BY installation_id HAVING COUNT(*) > 1"),
+                ("jira_dc_workspaces rows",
+                 "SELECT id, name, org_id, admin_user_id, status, svc_acc_email, created_at, updated_at "
+                 "FROM jira_dc_workspaces ORDER BY name, id"),
+                ("offline_tokens freshness summary",
+                 "SELECT COUNT(*) AS token_count, MIN(updated_at) AS oldest_refresh, "
+                 "MAX(updated_at) AS newest_refresh FROM offline_tokens"),
+                ("offline_tokens per-user metadata",
+                 "SELECT user_id, created_at, updated_at FROM offline_tokens "
+                 "ORDER BY updated_at DESC LIMIT 500"),
+                # Per-org LLM/sandbox config. Secret-backed columns appear only as
+                # IS NOT NULL presence flags — never the encrypted values.
+                ("org llm config",
+                 "SELECT id, name, org_version, is_default, v1_enabled, byor_export_enabled, "
+                 "max_budget_per_task, sandbox_base_container_image, "
+                 "sandbox_runtime_container_image, agent_settings->>'agent' AS agent, "
+                 "agent_settings->'llm'->>'model' AS llm_model, "
+                 "agent_settings->'llm'->>'base_url' AS llm_base_url, "
+                 "conversation_settings->>'max_iterations' AS max_iterations, "
+                 "(_llm_api_key IS NOT NULL) AS org_llm_api_key_set, "
+                 "(llm_profiles IS NOT NULL) AS has_llm_profiles FROM org ORDER BY name"),
+            ]
+            for label, sql in queries:
+                run(label, sql)
+        timeout: 30s
+    # Non-secret config/feature snapshot from the running pod: values for flags,
+    # presence-only ("set"/"empty_or_unset") for secret-backed vars (never values).
+    - exec:
+        name: app/openhands-config-snapshot
+        collectorName: openhands-config-snapshot
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os
+            NONSECRET = [
+                "OH_APP_MODE", "OH_DEPLOYMENT_MODE", "OH_WEB_CLIENT_PROVIDERS_CONFIGURED",
+                "RUNTIME", "CONVERSATION_MANAGER_CLASS", "RUN_AS_OPENHANDS", "NO_SETUP",
+                "REQUIRE_PAYMENT", "ADD_DEBUGGING_ROUTES",
+                "AUTOMATION_EVENT_FORWARDING_ENABLED", "AUTOMATION_SERVICE_URL",
+                "ENABLE_JIRA", "ENABLE_JIRA_DC", "ENABLE_LINEAR",
+                "JIRA_DC_WEBHOOKS_ENABLED", "JIRA_DC_ENABLE_OAUTH", "JIRA_DC_BASE_URL",
+                "SLACK_WEBHOOKS_ENABLED", "BITBUCKET_DATA_CENTER_HOST", "GITLAB_HOST",
+                "AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_TENANT_ID",
+                "GITHUB_APP_ID", "GITHUB_APP_SLUG",
+                "SANDBOX_CLOSE_DELAY", "SANDBOX_KEEP_RUNTIME_ALIVE",
+                "FILE_STORE", "SHARED_EVENT_STORAGE_PROVIDER",
+                "LITE_LLM_API_URL", "LITE_LLM_TEAM_ID",
+                "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_SSL_MODE",
+                "REDIS_HOST", "REDIS_PORT",
+                "KEYCLOAK_SERVER_URL", "KEYCLOAK_REALM_NAME", "KEYCLOAK_CLIENT_ID",
+                "WEB_HOST", "AUTH_WEB_HOST", "MCP_HOST",
+                "AGENT_SERVER_IMAGE_REPOSITORY", "AGENT_SERVER_IMAGE_TAG",
+            ]
+            SECRET_PRESENCE = [
+                "BITBUCKET_DATA_CENTER_BOT_TOKEN", "BITBUCKET_DATA_CENTER_CLIENT_SECRET",
+                "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET",
+                "GITLAB_APP_CLIENT_SECRET", "AZURE_DEVOPS_CLIENT_SECRET",
+                "JIRA_DC_CLIENT_SECRET", "JIRA_DC_SERVICE_ACCOUNT_PAT",
+                "AUTOMATION_WEBHOOK_SECRET", "AUTOMATIONS_SERVICE_KEY",
+                "LITE_LLM_API_KEY", "SANDBOX_API_KEY", "JWT_SECRET",
+            ]
+            config = {k: os.environ.get(k) for k in NONSECRET}
+            presence = {k: ("set" if os.environ.get(k) else "empty_or_unset") for k in SECRET_PRESENCE}
+            print(json.dumps({"config": config, "secret_presence": presence}, indent=2, default=str))
+        timeout: 30s
+    {{- if .Values.automation.enabled }}
+    # Automation scheduler/dispatcher logs
+    - logs:
+        name: app/automation/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=automation
+        limits:
+          maxAge: 336h
+    # Automation events-service (webhook receiver) logs
+    - logs:
+        name: app/automation-events/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=automation-events
+        limits:
+          maxAge: 336h
+    # Read-only automation DB dump via the automation pod's own creds (asyncpg).
+    # Webhook/automation/run metadata only — never webhook_secret, prompts,
+    # tarball paths, event payloads or error detail.
+    - exec:
+        name: app/automation-db
+        collectorName: automation-db-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=automation
+        containerName: automation
+        command: ["python3", "-c"]
+        args:
+          - |
+            import asyncio, json, os, asyncpg
+            # mirror automation db.py: pass ssl only for require/disable, omit for prefer/empty
+            mode = (os.environ.get("AUTOMATION_DB_SSL_MODE") or "").strip().lower()
+            ssl_kwargs = {"ssl": mode} if mode in ("require", "disable") else {}
+            async def main():
+                conn = await asyncpg.connect(
+                    host=os.environ["AUTOMATION_DB_HOST"],
+                    port=int(os.environ.get("AUTOMATION_DB_PORT", "5432")),
+                    user=os.environ["AUTOMATION_DB_USER"],
+                    password=os.environ.get("AUTOMATION_DB_PASS", ""),
+                    database=os.environ["AUTOMATION_DB_NAME"],
+                    timeout=10,
+                    **ssl_kwargs,
+                )
+                await conn.execute("SET default_transaction_read_only = on")
+                async def run(label, sql):
+                    print("== " + label + " ==")
+                    try:
+                        rows = await conn.fetch(sql)
+                        if rows:
+                            print(json.dumps(list(rows[0].keys())))
+                        for r in rows:
+                            print(json.dumps(dict(r), default=str))
+                    except Exception as e:
+                        print("ERROR: " + repr(e))
+                    print()
+                queries = [
+                    ("custom_webhooks",
+                     "SELECT id, org_id, name, source, enabled, event_key_expr, "
+                     "signature_header, created_at, updated_at FROM custom_webhooks "
+                     "ORDER BY created_at"),
+                    ("automations",
+                     "SELECT id, org_id, user_id, name, model, enabled, last_triggered_at, "
+                     "last_polled_at, created_at, updated_at, deleted_at FROM automations "
+                     "ORDER BY created_at"),
+                    ("automation_runs status counts",
+                     "SELECT status, COUNT(*) AS n FROM automation_runs "
+                     "GROUP BY status ORDER BY n DESC"),
+                    ("automation_runs recent",
+                     "SELECT id, automation_id, status, conversation_id, sandbox_id, "
+                     "created_at, started_at, completed_at FROM automation_runs "
+                     "ORDER BY created_at DESC LIMIT 50"),
+                ]
+                for label, sql in queries:
+                    await run(label, sql)
+                await conn.close()
+            asyncio.run(main())
+        timeout: 30s
     {{- end }}
     # Ingress NGINX controller logs
     - logs:
@@ -136,7 +428,7 @@ spec:
           - app.kubernetes.io/name=ingress-nginx
         namespace: ingress-nginx
         limits:
-          maxAge: 168h
+          maxAge: 336h
     {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
     - postgresql:
         collectorName: postgresql

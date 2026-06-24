@@ -1,0 +1,47 @@
+# EXAMPLE — copy this into a COMPONENT repo (e.g. runtime-api, automation) at
+# .github/workflows/release.yml and adapt it. It is NOT a workflow for this repo
+# (files under docs/ are never executed by GitHub Actions).
+#
+# It calls the reusable bump-image-tag workflow in OpenHands/OpenHands-Cloud to
+# open a PR that points the component's chart image.tag at the just-released image.
+#
+# Auth: reuses the shared release GitHub App (RELEASE_APP_ID + RELEASE_APP_PRIVATE_KEY,
+# the same secrets OpenHands/release-actions uses), forwarded via `secrets: inherit`.
+# That App must be installed on OpenHands/OpenHands-Cloud with Contents + Pull
+# requests read/write. See docs/automated-image-tag-bumps.md.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # or, if you release via GitHub Releases:
+  # release:
+  #   types: [published]
+
+jobs:
+  # Your existing job(s) that build and push the image go here. Whatever tag you
+  # push the image with is the tag you must pass to the bump workflow below.
+
+  prepare-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: t
+        # Match however your image is tagged. Examples:
+        #   short-SHA tag:   echo "tag=sha-$(git rev-parse --short HEAD)"
+        #   release tag:     echo "tag=${{ github.event.release.tag_name }}"
+        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+  bump-chart:
+    needs: prepare-tag
+    uses: OpenHands/OpenHands-Cloud/.github/workflows/bump-image-tag.yml@main
+    # Forwards RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY to the reusable workflow.
+    secrets: inherit
+    with:
+      component: runtime-api
+      chart_file: charts/runtime-api/values.yaml
+      image_tag_path: .image.tag          # optional — this is the default
+      tag: ${{ needs.prepare-tag.outputs.tag }}

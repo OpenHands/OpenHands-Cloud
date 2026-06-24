@@ -36,6 +36,14 @@ datadog:
 debuggingRoutes:
   enabled: false
 
+# Admin POST /api/organizations/provision-user endpoint. When enabled,
+# the enterprise app server registers the user-provisioning router and
+# sets USER_PROVISIONING_ENABLED=true. This endpoint should only be
+# enabled for OHE deployments when the customer needs to create users
+# without any user input.
+userProvisioning:
+  enabled: false
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false
@@ -115,6 +123,7 @@ secretsChecksum: ""
 bitbucketDataCenter:
   enabled: false
   host: ""
+  botUsername: ""
 
 azureDevOps:
   enabled: false
@@ -140,7 +149,7 @@ gitlabWebhookInstallation:
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: sha-d6f88b0
+  tag: sha-be6f446
 
 ingress:
   enabled: false
@@ -313,8 +322,8 @@ keycloak:
   # how long a login session survives inactivity; max lifespan caps the total
   # session duration before the user is sent back through the identity
   # provider (e.g. Bitbucket Data Center) to log in again.
-  ssoSessionIdleTimeout: 1800
-  ssoSessionMaxLifespan: 36000
+  ssoSessionIdleTimeout: 259200
+  ssoSessionMaxLifespan: 604800
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
@@ -651,6 +660,11 @@ runtime-api:
         image: "ghcr.io/openhands/agent-server:1.28.0-python"
         working_dir: "/workspace"
         environment:
+          # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
+          LMNR_BASE_URL: ""
+          LMNR_FORCE_HTTP: ""
+          LMNR_HTTP_PORT: ""
+          LMNR_PROJECT_API_KEY: ""
           LOG_JSON: "1"
           LOG_JSON_LEVEL_KEY: "severity"
           OH_ALLOW_CORS_ORIGINS_0: ""
@@ -1168,3 +1182,26 @@ integrations-hub:
   # PostgreSQL subchart - disabled when using parent's PostgreSQL
   postgresql:
     enabled: false
+
+# ───────────────────────────────────────────────────────────────────────
+# Agent Canvas (subchart): frontend-only deployment
+# ───────────────────────────────────────────────────────────────────────
+# When enabled, the agent-canvas subchart deploys the static frontend
+# behind its own ingress (rendered by `templates/ingress-agent-canvas.yaml`
+# below). `ingress.host` here is read by that template; the subchart's
+# `ingress.enabled` is left off because the parent renders the Ingress.
+agent-canvas:
+  enabled: false
+
+  image:
+    repository: ghcr.io/openhands/agent-canvas
+    # tag: supplied at deploy time via the OpenHands deploy workflow.
+
+  ingress:
+    enabled: false
+    # Hostname for the agent-canvas ingress, e.g. canvas.openhands.dev
+    host: ""
+    tls:
+      enabled: true
+      secretName: agent-canvas-tls
+
