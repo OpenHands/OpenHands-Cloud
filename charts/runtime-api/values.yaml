@@ -256,6 +256,7 @@ runtimeFileArchive:
   enabled: false
   bucket: "" # Object-storage bucket that receives the archives.
   prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root, not /workspace).
   format: git-delta # git-delta (compact), tar.gz, or zip.
 
 warmRuntimes:

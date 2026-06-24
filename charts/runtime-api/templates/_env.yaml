@@ -23,6 +23,8 @@
   value: {{ .Values.runtimeFileArchive.bucket | quote }}
 - name: RUNTIME_FILE_ARCHIVE_PREFIX
   value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PATH
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
 - name: RUNTIME_FILE_ARCHIVE_FORMAT
   value: {{ .Values.runtimeFileArchive.format | default "git-delta" | quote }}
 {{- end }}
