@@ -44,6 +44,14 @@ debuggingRoutes:
 userProvisioning:
   enabled: false
 
+# POST /api/organizations org-creation endpoint. By default this endpoint
+# is restricted to @openhands.dev admin users. When enabled, the enterprise
+# app server sets OPEN_ORG_CREATION_ENABLED=true and any authenticated user
+# is allowed to create an organization. This should only be enabled for OHE
+# deployments where end users are expected to self-serve organizations.
+openOrgCreation:
+  enabled: false
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false

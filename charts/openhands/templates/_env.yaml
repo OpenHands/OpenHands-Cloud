@@ -348,6 +348,11 @@
   value: "true"
 {{- end }}
 
+{{- if .Values.openOrgCreation.enabled }}
+- name: OPEN_ORG_CREATION_ENABLED
+  value: "true"
+{{- end }}
+
 {{- $dbSslMode := "prefer" }}
 {{- if not .Values.postgresql.enabled }}
 {{- $dbSslMode = .Values.externalDatabase.sslMode | default "prefer" }}
