@@ -25,7 +25,7 @@ jobs:
         id: extract
         run: |
           # Extract image tags from chart values using yq
-          RUNTIME_API_TAG=$(yq '.image.tag' charts/runtime-api/values.yaml)
+          RUNTIME_API_TAG=$(yq '.image.tag' charts/openhands/charts/runtime-api/values.yaml)
           ENTERPRISE_TAG=$(yq '.image.tag' charts/openhands/values.yaml)
           RUNTIME_TAG=$(yq '.runtime.image.tag' charts/openhands/values.yaml)
 
