@@ -1,0 +1,52 @@
+name: Release notes
+
+# When release-please tags a chart release, rewrite that GitHub Release's notes
+# into GitHub's own format (## What's Changed / `by @author in <PR>` / New
+# Contributors / Full Changelog), but SCOPED to just that chart's PRs. GitHub's
+# generate-notes API can't path-filter, so the shared release-notes reusable
+# workflow asks GitHub for the notes over the chart's tag range and then drops
+# every entry whose PR didn't touch charts/<chart>/. Sections come from PR labels
+# via .github/release.yml (applied by the PR-title workflow).
+#
+# Deliberately a SEPARATE workflow from publish-release-charts.yml: a `uses:`
+# pointing at a reusable workflow that isn't present yet fails the whole file, so
+# co-locating this with the publish job could block chart publishing. Keeping
+# them apart means a notes hiccup never blocks a release artifact.
+#
+# release-please creates the tag with the release App token, so this push event
+# triggers workflows (a GITHUB_TOKEN-created tag would be suppressed).
+on:
+  push:
+    tags:
+      - 'crd-check-v*'
+      - 'image-loader-v*'
+      - 'openhands-v*'
+      - 'openhands-secrets-v*'
+
+jobs:
+  # The reusable workflow is called at the job level, so it can't run steps to
+  # parse the tag itself — derive the component here and feed it in.
+  parse:
+    runs-on: ubuntu-latest
+    outputs:
+      component: ${{ steps.p.outputs.component }}
+    steps:
+      - name: Parse component from tag
+        id: p
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # <component>-v<version> -> strip the trailing -v<version>.
+          echo "component=${TAG%-v*}" >> "$GITHUB_OUTPUT"
+
+  notes:
+    needs: parse
+    permissions:
+      contents: write
+      pull-requests: read
+    uses: OpenHands/release-actions/.github/workflows/release-notes.yml@main
+    with:
+      tag: ${{ github.ref_name }}
+      # charts/openhands/ also covers embedded subcharts at charts/openhands/charts/**.
+      paths: charts/${{ needs.parse.outputs.component }}/
+      tag-match: ${{ needs.parse.outputs.component }}-v*

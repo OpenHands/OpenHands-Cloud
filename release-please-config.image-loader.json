@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
+  "include-commit-authors": true,
   "changelog-sections": [
     { "type": "feat",     "section": "Features" },
     { "type": "fix",      "section": "Bug Fixes" },
@@ -19,7 +20,8 @@
     "charts/image-loader": {
       "release-type": "helm",
       "component": "image-loader",
-      "changelog-type": "default"
+      "changelog-type": "default",
+      "skip-changelog": true
     }
   }
 }

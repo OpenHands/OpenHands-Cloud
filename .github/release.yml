@@ -1,0 +1,20 @@
+# Maps PR labels to release-note sections. GitHub's generate-notes API reads
+# this; our scoped release-notes workflow (.github/workflows/release-notes.yml)
+# calls that API per chart tag, then filters the entries down to the PRs that
+# touched that chart's path. The `type: <type>` labels are applied automatically
+# by the PR-title workflow (.github/workflows/pr.yml). Keep these categories in
+# sync with OpenHands/release-actions/.github/release.yml.
+changelog:
+  categories:
+    - title: Features
+      labels: ["type: feat"]
+    - title: Bug Fixes
+      labels: ["type: fix"]
+    - title: Performance
+      labels: ["type: perf"]
+    - title: Documentation
+      labels: ["type: docs"]
+    - title: Maintenance
+      labels: ["type: chore", "type: build", "type: ci", "type: refactor", "type: style", "type: test", "type: revert"]
+    - title: Other Changes
+      labels: ["*"]
