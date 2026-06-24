@@ -24,24 +24,12 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-      {{- if .Values.gcp.dbInstance }}
-      # Native sidecar init container: starts before migrations, remains running
-      # for the pod lifetime, and lets both migrations and the app connect via
-      # 127.0.0.1:<database.port>. Requires Kubernetes >=1.29.
-      - name: cloud-sql-proxy
-        image: {{ .Values.gcp.cloudSqlProxy.image | quote }}
-        restartPolicy: Always
-        args:
-          - "--structured-logs"
-          - "--address=127.0.0.1"
-          - "--port={{ .Values.database.port }}"
-          - "{{ .Values.gcp.project }}:{{ .Values.gcp.region }}:{{ .Values.gcp.dbInstance }}"
-        resources:
-          {{- toYaml .Values.gcp.cloudSqlProxy.resources | nindent 10 }}
+      {{- with .Values.extraInitContainers }}
+      {{- tpl (toYaml .) $ | nindent 6 }}
       {{- end }}
-      {{- if and .Values.database.createDatabaseUser (not .Values.gcp.dbInstance) }}
-      # Create database and user in PostgreSQL (non-GCP only)
-      # For GCP Cloud SQL, database and user are created via Terraform in the infra repo
+      {{- if .Values.database.createDatabaseUser }}
+      # Create database and user in PostgreSQL. Disable this when the database
+      # and user are provisioned outside the chart.
       - name: create-db-user
         image: postgres:14
         env:

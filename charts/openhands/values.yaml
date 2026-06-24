@@ -1066,6 +1066,10 @@ integrations-hub:
     runAsGroup: 42420
     runAsNonRoot: true
 
+  # Extra init containers rendered verbatim by the integrations-hub subchart.
+  # Kubernetes native sidecars can be supplied here with restartPolicy: Always.
+  extraInitContainers: []
+
   serviceAccount:
     create: true
     name: integrations-hub-sa
@@ -1091,17 +1095,11 @@ integrations-hub:
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000
 
-  # Path prefix that the hub is mounted under. This single value drives
-  # three things at once and they MUST agree:
+  # Path prefix that the hub is mounted under. This value must match:
   #   - The parent chart's `templates/ingress-integrations-hub.yaml`
-  #     routing rule (host-based ingress + this path).
-  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var, which causes
-  #     `backend/app/main.py::build_app` to mount every route under the
-  #     prefix.
-  #   - The Next.js SPA's `NEXT_PUBLIC_BASE_PATH`, which is baked into
-  #     the image at build time (default `/integrations-hub` in the
-  #     project Dockerfile). Override the image's build arg if you set a
-  #     different rootPath here.
+  #     routing rule.
+  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var.
+  #   - The SPA base path baked into the image at build time.
   rootPath: "/integrations-hub"
 
   # Bypass authentication for local development only -- never enable in
@@ -1167,21 +1165,6 @@ integrations-hub:
     createDatabaseUser: false
     superuserSecretName: "postgres-password"
     superuserSecretKey: "password"
-
-  # GCP Cloud SQL (leave empty for non-GCP)
-  gcp:
-    dbInstance: ""
-    project: ""
-    region: ""
-    cloudSqlProxy:
-      image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.15.2
-      resources:
-        requests:
-          memory: 64Mi
-          cpu: 25m
-        limits:
-          memory: 128Mi
-          cpu: 100m
 
   # Datadog configuration
   datadog:

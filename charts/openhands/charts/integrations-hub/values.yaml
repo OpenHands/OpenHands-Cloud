@@ -19,6 +19,10 @@ securityContext:
   runAsGroup: 42420
   runAsNonRoot: true
 
+# Extra init containers rendered verbatim. Kubernetes native sidecars can be
+# supplied here by setting restartPolicy: Always on an init container.
+extraInitContainers: []
+
 serviceAccount:
   create: true
   name: integrations-hub-sa
@@ -45,19 +49,16 @@ service:
   # Port the container listens on (8000 for Python/FastAPI backend)
   port: 8000
 
-# Path prefix the application is mounted under. Must match:
-#   1. The image's `NEXT_PUBLIC_BASE_PATH` build arg (baked into the SPA
-#      bundle at image-build time -- see the project Dockerfile).
-#   2. The parent chart's `templates/ingress-integrations-hub.yaml` path.
+# Path prefix the application is mounted under. Must match the SPA base
+# path baked into the image and the parent chart ingress path.
 #
 # Wired to the FastAPI container as `INTHUB_ROOT_PATH`, which causes
 # `backend/app/main.py::build_app` to mount every route -- including the
 # SPA static files and `/api/health` -- under this prefix. Container
 # probes below also honour the prefix automatically.
 #
-# Set to an empty string to serve the app from the cluster root (only
-# makes sense for a dedicated subdomain image where the SPA was built
-# without `NEXT_PUBLIC_BASE_PATH`).
+# Set to an empty string to serve the app from the cluster root, usually
+# when using a dedicated hostname.
 rootPath: "/integrations-hub"
 
 # Bypass authentication for local development only. When true the FastAPI
@@ -124,7 +125,7 @@ database:
   url: ""
   # Full hostname of the PostgreSQL server
   # Examples:
-  #   - Cloud SQL: "my-project:us-central1:my-instance"
+  #   - External DB/proxy sidecar: "127.0.0.1"
   #   - In-cluster: "integrations-hub-postgresql"
   #   - Feature env: "integrations-hub-feature-branch-postgresql"
   host: ""
@@ -138,35 +139,18 @@ database:
   # Use an existing secret instead of auto-generating one
   # When true, the chart will not create the db secret
   existingSecret: false
-  # Create database and user in an existing PostgreSQL instance (non-GCP only)
+  # Create database and user in an existing PostgreSQL instance
   # When true, runs an init container to create the database and user
   # Useful when sharing a PostgreSQL instance with other services
-  # NOTE: For GCP Cloud SQL, database and user are created via Terraform in the infra repo
-  # This setting is ignored when gcp.dbInstance is set
+  # Disable this when the database and user are provisioned outside the chart.
   createDatabaseUser: false
   # Secret containing the postgres superuser password (for creating the service user)
-  # Only used when createDatabaseUser=true and gcp.dbInstance is not set
+  # Only used when createDatabaseUser=true
   superuserSecretName: "postgres-password"
   superuserSecretKey: "password"
   # Connection pool settings
   poolSize: 10
   maxOverflow: 5
-
-# GCP Cloud SQL (leave empty for non-GCP)
-# When gcp.dbInstance is set, the database and user must be pre-created via Terraform
-gcp:
-  dbInstance: ""
-  project: ""
-  region: ""
-  cloudSqlProxy:
-    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.15.2
-    resources:
-      requests:
-        memory: 64Mi
-        cpu: 25m
-      limits:
-        memory: 128Mi
-        cpu: 100m
 
 # Datadog configuration
 datadog:

@@ -3,12 +3,18 @@
 
   By default the hub is mounted at integrations-hub.rootPath under the main
   OpenHands host. If integrations-hub.ingress.host is set, the same service is
-  served on that dedicated hostname instead, usually with rootPath="".
+  served on that dedicated hostname instead, usually with rootPath="". Host
+  values are rendered with tpl so environment-specific charts can choose their
+  own naming scheme without this shared chart knowing about it.
 */}}
 {{- $hub := index .Values "integrations-hub" -}}
 {{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
 {{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
 {{- $dedicated := and $hub.ingress.enabled $hub.ingress.host }}
+{{- $host := tpl .Values.ingress.host . }}
+{{- if $dedicated }}
+{{- $host = tpl $hub.ingress.host . }}
+{{- end }}
 {{- $ingressPath := $rootPath }}
 {{- if $dedicated }}
 {{- $ingressPath = "/" }}
@@ -28,26 +34,16 @@ spec:
   {{- if and $dedicated $hub.ingress.tls.enabled }}
   tls:
   - hosts:
-    - {{ $hub.ingress.host }}
+    - {{ $host }}
     secretName: {{ $hub.ingress.tls.secretName }}
   {{- else if .Values.tls.enabled }}
   tls:
   - hosts:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - {{ .Values.ingress.host }}
-    {{- end }}
+    - {{ $host }}
     secretName: app-all-hands-{{ .Values.tls.env }}-tls
   {{- end }}
   rules:
-  {{- if $dedicated }}
-  - host: {{ $hub.ingress.host }}
-  {{- else if .Values.ingress.prefixWithBranch }}
-  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-  {{- else }}
-  - host: {{ .Values.ingress.host }}
-  {{- end }}
+  - host: {{ $host }}
     http:
       paths:
       - path: {{ $ingressPath | quote }}
