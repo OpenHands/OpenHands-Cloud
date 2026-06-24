@@ -1111,7 +1111,7 @@ integrations-hub:
   # OpenHands identity provider used to validate session cookies / API keys.
   openhands:
     # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
-    # ingress host when left empty -- see charts/integrations-hub/templates/_env.yaml).
+    # ingress host when left empty -- see charts/openhands/charts/integrations-hub/templates/_env.yaml).
     baseUrl: ""
     # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
     authCookieName: "keycloak_auth"

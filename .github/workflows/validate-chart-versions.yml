@@ -17,24 +17,9 @@ on:
       crd-check-publishable:
         description: 'Whether crd-check chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.crd-check-publishable }}
-      runtime-api-publishable:
-        description: 'Whether runtime-api chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.runtime-api-publishable }}
       image-loader-publishable:
         description: 'Whether image-loader chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.image-loader-publishable }}
-      automation-publishable:
-        description: 'Whether automation chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.automation-publishable }}
-      plugin-directory-publishable:
-        description: 'Whether plugin-directory chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.plugin-directory-publishable }}
-      integrations-hub-publishable:
-        description: 'Whether integrations-hub chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.integrations-hub-publishable }}
-      agent-canvas-publishable:
-        description: 'Whether agent-canvas chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.agent-canvas-publishable }}
       openhands-publishable:
         description: 'Whether openhands chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.openhands-publishable }}
@@ -49,12 +34,7 @@ jobs:
       YQ_VERSION: 'v4.47.1'
     outputs:
       crd-check-publishable: ${{ steps.validate.outputs.crd-check-publishable }}
-      runtime-api-publishable: ${{ steps.validate.outputs.runtime-api-publishable }}
       image-loader-publishable: ${{ steps.validate.outputs.image-loader-publishable }}
-      automation-publishable: ${{ steps.validate.outputs.automation-publishable }}
-      plugin-directory-publishable: ${{ steps.validate.outputs.plugin-directory-publishable }}
-      integrations-hub-publishable: ${{ steps.validate.outputs.integrations-hub-publishable }}
-      agent-canvas-publishable: ${{ steps.validate.outputs.agent-canvas-publishable }}
       openhands-publishable: ${{ steps.validate.outputs.openhands-publishable }}
       openhands-secrets-publishable: ${{ steps.validate.outputs.openhands-secrets-publishable }}
 
@@ -98,7 +78,7 @@ jobs:
           VALIDATION_FAILED=false
 
           for chart_dir in "${CHART_DIRS[@]}"; do
-            # Extract chart name from path (e.g., "charts/runtime-api" -> "runtime-api")
+            # Extract chart name from path (e.g., "charts/image-loader" -> "image-loader")
             chart_name=$(basename "$chart_dir")
             
             # Check if any files in this chart directory were changed (excluding README.md)
