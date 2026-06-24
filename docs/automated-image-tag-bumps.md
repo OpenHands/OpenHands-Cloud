@@ -18,10 +18,10 @@ tag inside it, and the new **tag**.
 The PR changes **only the image tag scalar** — a single line. It does **not**
 bump the chart `version` in `Chart.yaml` and does nothing else.
 
-Because of that, the **Validate Chart Versions** check (`enforce_version_bump:
-true`) will **fail** on these PRs: a chart file changed without a version bump.
-This is intentional — a maintainer bumps the chart version while reviewing/merging
-the bump.
+The PR is titled `fix(<component>): bump image tag to <tag>`, so release-please
+treats it as a patch for that chart and folds it into the chart's open release
+PR. The chart `version` in `Chart.yaml` is then bumped automatically when that
+release PR is merged — no manual version bump, and no version-bump CI gate.
 
 The edit is path-aware and minimal by design. `runtime-api/values.yaml` has three
 `tag:` keys (`image.tag`, `kvm.image.tag`, `kvm.initImage.tag`); the script edits

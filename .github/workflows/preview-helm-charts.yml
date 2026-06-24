@@ -1,14 +1,17 @@
 name: Preview Helm Charts
+
+# Publishes a per-PR preview chart to GHCR for every chart a PR changes, so the
+# change can be installed before it merges. release-please owns chart versions
+# now, so there is no manual version bump to gate on — a changed chart is enough.
+#
+# The preview version is the patch-bumped Chart.yaml version plus -alpha.<PR>,
+# e.g. with the last release at 0.7.68 a PR #812 preview is 0.7.69-alpha.812.
+# Patch-bumping keeps it ordered after the last stable release; the PR number
+# gives one moving preview tag per PR.
 on:
   pull_request:
 
 jobs:
-  validate-chart-versions:
-    uses: ./.github/workflows/validate-chart-versions.yml
-    with:
-      base_ref: origin/${{ github.event.pull_request.base.ref }}
-      enforce_version_bump: false
-
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
@@ -18,7 +21,7 @@ jobs:
       openhands-secrets: ${{ steps.changes.outputs.openhands-secrets }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -29,27 +32,25 @@ jobs:
         run: |
           BASE_REF="origin/${PR_BASE_REF}"
           echo "Comparing against: $BASE_REF"
-
-          # Get list of changed files
-          CHANGED_FILES=$(git diff --name-only $BASE_REF...HEAD)
+          CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # Check each chart for changes. Embedded subcharts live under
-          # charts/openhands/charts/, so their changes count as openhands changes.
+          # Embedded subcharts live under charts/openhands/charts/, so their
+          # changes count as openhands changes via the ^charts/openhands/ match.
           for chart in crd-check image-loader openhands openhands-secrets; do
             if echo "$CHANGED_FILES" | grep -q "^charts/${chart}/"; then
-              echo "${chart}=true" >> $GITHUB_OUTPUT
+              echo "${chart}=true" >> "$GITHUB_OUTPUT"
               echo "Changes detected in charts/${chart}"
             else
-              echo "${chart}=false" >> $GITHUB_OUTPUT
+              echo "${chart}=false" >> "$GITHUB_OUTPUT"
               echo "No changes in charts/${chart}"
             fi
           done
 
   publish-charts:
     runs-on: ubuntu-latest
-    needs: [validate-chart-versions, detect-changes]
+    needs: [detect-changes]
     permissions:
       contents: read
       packages: write
@@ -70,59 +71,23 @@ jobs:
       max-parallel: 1
 
     steps:
-      - name: Check if chart should be published
+      - name: Check if this chart changed
         id: check
         env:
-          HAS_CHANGES_CRD_CHECK: ${{ needs.detect-changes.outputs.crd-check }}
-          HAS_CHANGES_IMAGE_LOADER: ${{ needs.detect-changes.outputs.image-loader }}
-          HAS_CHANGES_OPENHANDS: ${{ needs.detect-changes.outputs.openhands }}
-          HAS_CHANGES_OPENHANDS_SECRETS: ${{ needs.detect-changes.outputs.openhands-secrets }}
-          IS_PUBLISHABLE_CRD_CHECK: ${{ needs.validate-chart-versions.outputs.crd-check-publishable }}
-          IS_PUBLISHABLE_IMAGE_LOADER: ${{ needs.validate-chart-versions.outputs.image-loader-publishable }}
-          IS_PUBLISHABLE_OPENHANDS: ${{ needs.validate-chart-versions.outputs.openhands-publishable }}
-          IS_PUBLISHABLE_OPENHANDS_SECRETS: ${{ needs.validate-chart-versions.outputs.openhands-secrets-publishable }}
+          CHANGES: ${{ toJSON(needs.detect-changes.outputs) }}
+          CHART_NAME: ${{ matrix.chart.name }}
         run: |
-          CHART_NAME="${{ matrix.chart.name }}"
-          case "$CHART_NAME" in
-            crd-check)
-              HAS_CHANGES="$HAS_CHANGES_CRD_CHECK"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_CRD_CHECK"
-              ;;
-            image-loader)
-              HAS_CHANGES="$HAS_CHANGES_IMAGE_LOADER"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_IMAGE_LOADER"
-              ;;
-            openhands)
-              HAS_CHANGES="$HAS_CHANGES_OPENHANDS"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_OPENHANDS"
-              ;;
-            openhands-secrets)
-              HAS_CHANGES="$HAS_CHANGES_OPENHANDS_SECRETS"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_OPENHANDS_SECRETS"
-              ;;
-          esac
-
-          # Default IS_PUBLISHABLE to true if not set (assume publishable unless explicitly marked otherwise)
-          IS_PUBLISHABLE="${IS_PUBLISHABLE:-true}"
-
-          echo "Chart $CHART_NAME - has changes: $HAS_CHANGES, is publishable: $IS_PUBLISHABLE"
-
-          # Only publish if chart has changes AND version was bumped
-          if [ "$HAS_CHANGES" = "true" ] && [ "$IS_PUBLISHABLE" = "true" ]; then
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "✅ Chart $CHART_NAME will be published"
+          CHANGED=$(echo "$CHANGES" | jq -r --arg k "$CHART_NAME" '.[$k]')
+          echo "should_publish=${CHANGED}" >> "$GITHUB_OUTPUT"
+          if [ "$CHANGED" = "true" ]; then
+            echo "✅ $CHART_NAME changed — will publish a preview"
           else
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-            if [ "$HAS_CHANGES" != "true" ]; then
-              echo "⏭️ Chart $CHART_NAME skipped - no changes"
-            else
-              echo "⏭️ Chart $CHART_NAME skipped - version not bumped"
-            fi
+            echo "⏭️ $CHART_NAME unchanged — skipping"
           fi
 
       - name: Checkout
         if: steps.check.outputs.should_publish == 'true'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -132,75 +97,73 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Use PR version suffix
+      - name: Install yq
         if: steps.check.outputs.should_publish == 'true'
-        run: |
-          # Create a preview version like 0.1.0-alpha.123
-          # This should confirm to SemVer, the last number is the GitHub PR number
-          CHART_VERSION=$(yq '.version' charts/${{ matrix.chart.name }}/Chart.yaml)
-          PREVIEW_VERSION="${CHART_VERSION}-alpha.${{ github.event.pull_request.number }}"
+        uses: mikefarah/yq@v4
 
-          # Update Chart.yaml with preview version
-          yq -i ".version = \"${PREVIEW_VERSION}\"" charts/${{ matrix.chart.name }}/Chart.yaml
+      - name: Compute preview version
+        if: steps.check.outputs.should_publish == 'true'
+        id: version
+        env:
+          CHART_PATH: ${{ matrix.chart.path }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          BASE=$(yq '.version' "${CHART_PATH}/Chart.yaml")
+          # Patch-bump so the preview sorts after the last stable release.
+          NEXT=$(echo "$BASE" | awk -F. '{printf "%d.%d.%d", $1, $2, $3 + 1}')
+          PREVIEW="${NEXT}-alpha.${PR_NUMBER}"
+          echo "Base (last released): ${BASE} -> preview: ${PREVIEW}"
+          yq -i ".version = \"${PREVIEW}\"" "${CHART_PATH}/Chart.yaml"
+          echo "version=${PREVIEW}" >> "$GITHUB_OUTPUT"
 
       - name: Test ${{ matrix.chart.name }} chart with default values
         if: steps.check.outputs.should_publish == 'true'
+        env:
+          CHART_NAME: ${{ matrix.chart.name }}
+          CHART_PATH: ${{ matrix.chart.path }}
         run: |
-          echo "Testing ${{ matrix.chart.name }} chart with default values"
-          echo "Updating dependencies for ${{ matrix.chart.name }}"
-          helm dependency update ${{ matrix.chart.path }}
+          echo "Updating dependencies for ${CHART_NAME}"
+          helm dependency update "${CHART_PATH}"
 
-          echo "Running helm lint for ${{ matrix.chart.name }}"
-          helm lint ${{ matrix.chart.path }}
-          if [ $? -ne 0 ]; then
-            echo "Helm lint test failed for ${{ matrix.chart.name }}"
-            exit 1
-          fi
-          echo "Helm lint test passed for ${{ matrix.chart.name }}"
+          echo "Running helm lint for ${CHART_NAME}"
+          helm lint "${CHART_PATH}"
 
-          if grep -q '^type: library' ${{ matrix.chart.path }}/Chart.yaml; then
-            echo "Skipping helm template for library chart ${{ matrix.chart.name }}"
+          if grep -q '^type: library' "${CHART_PATH}/Chart.yaml"; then
+            echo "Skipping helm template for library chart ${CHART_NAME}"
           else
-            echo "Running helm template for ${{ matrix.chart.name }}"
-            helm template ${{ matrix.chart.path }} --debug
-            if [ $? -ne 0 ]; then
-              echo "Helm template test failed for ${{ matrix.chart.name }}"
-              exit 1
-            fi
-            echo "Helm template test passed for ${{ matrix.chart.name }}"
+            echo "Running helm template for ${CHART_NAME}"
+            helm template "${CHART_PATH}" --debug
           fi
 
-      - name: Extract chart version and prepare repository
+      - name: Prepare registry owner
         if: steps.check.outputs.should_publish == 'true'
-        id: chart_info
+        id: registry
         run: |
-          VERSION=$(grep '^version:' ${{ matrix.chart.path }}/Chart.yaml | awk '{print $2}')
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Using chart version: ${VERSION}"
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "repo_owner=${REPO_OWNER}" >> "$GITHUB_OUTPUT"
 
-          # Ensure we are publishing to an "alpha" version.
-          if [[ "$VERSION" != *alpha* ]]; then
-            echo "Error: Version '$VERSION' does not contain 'alpha'"
+      - name: Sanity-check the version is an alpha
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ "$VERSION" != *-alpha.* ]]; then
+            echo "Refusing to publish: '$VERSION' is not an alpha version"
             exit 1
           fi
 
-          # Convert repository owner to lowercase for GHCR
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "REPO_OWNER=${REPO_OWNER}" >> $GITHUB_OUTPUT
-          echo "Using repository owner: ${REPO_OWNER}"
-
-      - name: Publish ${{ matrix.chart.name }} chart to GHCR
+      - name: Publish ${{ matrix.chart.name }} preview chart to GHCR
         if: steps.check.outputs.should_publish == 'true'
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
           name: ${{ matrix.chart.name }}
           repository: helm-charts
           path: ${{ matrix.chart.path }}
-          registry: ghcr.io/${{ steps.chart_info.outputs.REPO_OWNER }}
+          registry: ghcr.io/${{ steps.registry.outputs.repo_owner }}
           registry_username: ${{ github.actor }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
           update_dependencies: 'true'
-          tag: ${{ steps.chart_info.outputs.VERSION }}
+          tag: ${{ steps.version.outputs.version }}
 
   lint-and-test:
     runs-on: ubuntu-latest
@@ -220,7 +183,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -230,29 +193,23 @@ jobs:
           version: 'latest'
 
       - name: Lint ${{ matrix.chart.name }} chart
+        env:
+          CHART_NAME: ${{ matrix.chart.name }}
+          CHART_PATH: ${{ matrix.chart.path }}
         run: |
-          echo "Testing ${{ matrix.chart.name }} chart"
-          echo "Updating dependencies for ${{ matrix.chart.name }}"
-          helm dependency update ${{ matrix.chart.path }}
-
-          echo "Running helm lint for ${{ matrix.chart.name }}"
-          helm lint ${{ matrix.chart.path }}
-          if [ $? -ne 0 ]; then
-            echo "Helm lint failed for ${{ matrix.chart.name }}"
-            exit 1
-          fi
-          echo "Helm lint passed for ${{ matrix.chart.name }}"
+          echo "Updating dependencies for ${CHART_NAME}"
+          helm dependency update "${CHART_PATH}"
+          echo "Running helm lint for ${CHART_NAME}"
+          helm lint "${CHART_PATH}"
 
       - name: Template ${{ matrix.chart.name }} chart
+        env:
+          CHART_NAME: ${{ matrix.chart.name }}
+          CHART_PATH: ${{ matrix.chart.path }}
         run: |
-          if grep -q '^type: library' ${{ matrix.chart.path }}/Chart.yaml; then
-            echo "Skipping helm template for library chart ${{ matrix.chart.name }}"
+          if grep -q '^type: library' "${CHART_PATH}/Chart.yaml"; then
+            echo "Skipping helm template for library chart ${CHART_NAME}"
             exit 0
           fi
-          echo "Running helm template for ${{ matrix.chart.name }}"
-          helm template ${{ matrix.chart.path }} --debug
-          if [ $? -ne 0 ]; then
-            echo "Helm template failed for ${{ matrix.chart.name }}"
-            exit 1
-          fi
-          echo "Helm template passed for ${{ matrix.chart.name }}"
+          echo "Running helm template for ${CHART_NAME}"
+          helm template "${CHART_PATH}" --debug
