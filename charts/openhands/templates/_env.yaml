@@ -36,6 +36,18 @@
 
 - name: FILE_STORE_PATH
   value: {{ .Values.filestore.bucket }}
+{{- if .Values.runtimeFileArchive.enabled }}
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "git-delta" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_REQUIRED
+  value: {{ .Values.runtimeFileArchive.required | default false | quote }}
+{{- end }}
 - name: SANDBOX_KEEP_RUNTIME_ALIVE
   value: 'true'
 - name: SANDBOX_CLOSE_DELAY

@@ -2,7 +2,7 @@ apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
 appVersion: cloud-1.38.0
-version: 0.7.67
+version: 0.7.68
 dependencies:
   - name: keycloak
     version: 24.7.5
@@ -34,7 +34,7 @@ dependencies:
     condition: replicated.enabled
   - name: runtime-api
     repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.3.13
+    version: 0.3.14
     condition: runtime-api.enabled
   - name: automation
     repository: oci://ghcr.io/openhands/helm-charts

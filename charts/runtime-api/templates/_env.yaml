@@ -16,6 +16,16 @@
   value: {{ .Values.cleanup.idle_seconds | default 1200 | quote }}
 - name: RUNTIME_DEAD_SECONDS
   value: {{ printf "%.0f" .Values.cleanup.dead_seconds | quote }}
+{{- if .Values.runtimeFileArchive.enabled }}
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "git-delta" | quote }}
+{{- end }}
 {{- if .Values.runtimeInSameCluster }}
 - name: RUNTIME_IN_SAME_CLUSTER
   value: "true"

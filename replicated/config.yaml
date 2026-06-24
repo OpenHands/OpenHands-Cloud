@@ -894,6 +894,29 @@ spec:
             regex:
               pattern: ^[1-9][0-9]*$
               message: Must be a positive integer (in seconds)
+        - name: sandbox_archive_enabled
+          title: Archive Workspaces Before Deletion
+          help_text: >-
+            Copy each conversation's workspace to object storage before the
+            sandbox is paused/stopped or deleted, so it survives deletion (e.g.
+            for building evaluation datasets). The OpenHands and runtime-api
+            service accounts must have write access to the bucket below.
+          type: bool
+          default: "0"
+        - name: sandbox_archive_bucket
+          title: Archive Bucket
+          help_text: Object-storage bucket that receives workspace archives.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}'
+          required: true
+        - name: sandbox_archive_required
+          title: Require Archive to Succeed Before Deleting
+          help_text: >-
+            When enabled, an explicit sandbox deletion is blocked (and retried
+            later) if its workspace archive fails, instead of deleting anyway.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}'
         - name: sandbox_storage_size
           title: Storage Size
           help_text: How much persistent storage each sandbox gets.

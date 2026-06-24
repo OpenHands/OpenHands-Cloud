@@ -247,6 +247,17 @@ cleanup:
   idle_seconds: 1200 # Default to 20 minutes
   dead_seconds: 86400 # Default to 1 day
 
+# Workspace archiving: before the cleanup CronJob pauses/stops a runtime (while
+# the pod is still reachable), copy the workspace to object storage so it
+# survives PVC deletion and can feed eval/dataset creation. Disabled by default.
+# The cleanup ServiceAccount must have write access to the bucket
+# (GCS: roles/storage.objectAdmin on the bucket, via Workload Identity).
+runtimeFileArchive:
+  enabled: false
+  bucket: "" # Object-storage bucket that receives the archives.
+  prefix: workspace-archives # Key prefix within the bucket.
+  format: git-delta # git-delta (compact), tar.gz, or zip.
+
 warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config

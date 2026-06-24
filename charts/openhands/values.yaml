@@ -77,6 +77,20 @@ filestore:
   ephemeral: false
   bucket: openhands-sessions
 
+# Workspace archiving (app-server side): when a still-running sandbox is deleted
+# explicitly, copy its workspace to object storage before stopping the runtime,
+# so it survives deletion and can feed eval/dataset creation. Disabled by
+# default. The app-server ServiceAccount must have write access to the bucket
+# (GCS: roles/storage.objectAdmin on the bucket, via Workload Identity).
+# The idle/expiry reap is archived separately by the runtime-api cleanup
+# CronJob (see runtime-api.runtimeFileArchive).
+runtimeFileArchive:
+  enabled: false
+  bucket: "" # Object-storage bucket that receives the archives.
+  prefix: workspace-archives # Key prefix within the bucket.
+  format: git-delta # git-delta (compact), tar.gz, or zip.
+  required: false # When true, a failed archive blocks the delete (retry later).
+
 github:
   enabled: false
 
