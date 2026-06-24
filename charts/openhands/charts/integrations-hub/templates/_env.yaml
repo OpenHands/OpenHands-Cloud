@@ -32,8 +32,12 @@
 - name: INTHUB_POSTGRES_URL
   value: {{ .Values.database.url | quote }}
 {{- else }}
+{{- $dbHost := .Values.database.host }}
+{{- if and .Values.gcp.dbInstance (not $dbHost) }}
+{{- $dbHost = "127.0.0.1" }}
+{{- end }}
 - name: INTHUB_DB_HOST
-  value: {{ .Values.database.host | quote }}
+  value: {{ $dbHost | quote }}
 - name: INTHUB_DB_PORT
   value: {{ .Values.database.port | quote }}
 - name: INTHUB_DB_SSL_MODE

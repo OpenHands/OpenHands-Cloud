@@ -1108,6 +1108,15 @@ integrations-hub:
   # staging/production. Exposed as INTHUB_DISABLE_AUTH.
   disableAuth: false
 
+  ingress:
+    enabled: false
+    # Optional dedicated hostname, e.g. integrations.openhands.dev. When unset,
+    # the parent ingress mounts rootPath under the main OpenHands host.
+    host: ""
+    tls:
+      enabled: true
+      secretName: integrations-hub-tls
+
   # OpenHands identity provider used to validate session cookies / API keys.
   openhands:
     # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
@@ -1164,6 +1173,15 @@ integrations-hub:
     dbInstance: ""
     project: ""
     region: ""
+    cloudSqlProxy:
+      image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.15.2
+      resources:
+        requests:
+          memory: 64Mi
+          cpu: 25m
+        limits:
+          memory: 128Mi
+          cpu: 100m
 
   # Datadog configuration
   datadog:

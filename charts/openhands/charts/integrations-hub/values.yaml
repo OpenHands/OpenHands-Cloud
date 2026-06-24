@@ -158,6 +158,15 @@ gcp:
   dbInstance: ""
   project: ""
   region: ""
+  cloudSqlProxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.15.2
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 25m
+      limits:
+        memory: 128Mi
+        cpu: 100m
 
 # Datadog configuration
 datadog:

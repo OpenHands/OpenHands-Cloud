@@ -1,24 +1,18 @@
 {{- /*
   Ingress entry for the integrations-hub service.
 
-  The integrations-hub backend is a single FastAPI container that serves
-  BOTH the Next.js SPA bundle and the /api/* routes from one image. When
-  `(index .Values "integrations-hub" "rootPath")` is set (default
-  `/integrations-hub`), the FastAPI app mounts every route under that
-  prefix -- so `/integrations-hub/api/health`, `/integrations-hub/api/mcp`,
-  and the SPA HTML / `/_next/...` assets all live behind the same path.
-
-  That means this ingress only needs ONE rule covering the prefix; we do
-  not need a separate /api/integrations-hub rewrite, and we deliberately
-  do not configure a `nginx.ingress.kubernetes.io/rewrite-target` -- the
-  backend handles its own prefix.
-
-  The path is read from the integrations-hub subchart so the ingress
-  rule, container probes, and the SPA bundle's baked-in
-  `NEXT_PUBLIC_BASE_PATH` always agree.
+  By default the hub is mounted at integrations-hub.rootPath under the main
+  OpenHands host. If integrations-hub.ingress.host is set, the same service is
+  served on that dedicated hostname instead, usually with rootPath="".
 */}}
-{{- if and .Values.enabled .Values.ingress.enabled (index .Values "integrations-hub" "enabled") }}
-{{- $rootPath := index .Values "integrations-hub" "rootPath" | default "/integrations-hub" }}
+{{- $hub := index .Values "integrations-hub" -}}
+{{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
+{{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
+{{- $dedicated := and $hub.ingress.enabled $hub.ingress.host }}
+{{- $ingressPath := $rootPath }}
+{{- if $dedicated }}
+{{- $ingressPath = "/" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -30,8 +24,13 @@ metadata:
     {{ .Values.ingress.annotations | toYaml | nindent 4 }}
     {{- end }}
 spec:
-  ingressClassName: {{ .Values.ingress.class }}
-  {{- if .Values.tls.enabled }}
+  ingressClassName: {{ default "traefik" .Values.ingress.class }}
+  {{- if and $dedicated $hub.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $hub.ingress.host }}
+    secretName: {{ $hub.ingress.tls.secretName }}
+  {{- else if .Values.tls.enabled }}
   tls:
   - hosts:
     {{- if .Values.ingress.prefixWithBranch }}
@@ -42,14 +41,16 @@ spec:
     secretName: app-all-hands-{{ .Values.tls.env }}-tls
   {{- end }}
   rules:
-  {{- if .Values.ingress.prefixWithBranch }}
+  {{- if $dedicated }}
+  - host: {{ $hub.ingress.host }}
+  {{- else if .Values.ingress.prefixWithBranch }}
   - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
   {{- else }}
   - host: {{ .Values.ingress.host }}
   {{- end }}
     http:
       paths:
-      - path: {{ $rootPath | quote }}
+      - path: {{ $ingressPath | quote }}
         pathType: Prefix
         backend:
           service:
