@@ -4,7 +4,7 @@ dependencies:
   version: 24.7.5
 - name: laminar
   repository: https://lmnr-ai.github.io/lmnr-helm
-  version: 0.1.13
+  version: 0.2.2
 - name: litellm-helm
   repository: oci://ghcr.io/berriai
   version: 0.1.831
@@ -38,5 +38,5 @@ dependencies:
 - name: agent-canvas
   repository: ""
   version: '*'
-digest: sha256:28ddec4afdd16d99b204ea0f6de99cbe483a3b1087a6eb8a37a569c61fc5017b
-generated: "2026-06-23T00:00:00Z"
+digest: sha256:40485c9d50eaec81c717aaf76c1bbbe08dfeb5a288cd606a6bda929416c6ec91
+generated: "2026-06-25T15:27:15.536667-04:00"

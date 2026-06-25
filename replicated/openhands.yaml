@@ -925,6 +925,36 @@ spec:
           appServer:
             loadBalancer:
               enabled: false
+            # caBundle wiring: mount the trust-manager Bundle ConfigMap so the
+            # Rust app-server trusts an operator-supplied custom/self-signed CA
+            # on outbound HTTPS + gRPC. Needs the volume knobs added in the fork.
+            extraEnv:
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
+          appServerConsumer:
+            extraEnv:
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
           global:
             cloudProvider: "aws"
           clickhouse:
@@ -946,6 +976,22 @@ spec:
                     key: client-secret
               - name: AUTH_KEYCLOAK_ISSUER
                 value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://auth.app.{{repl ConfigOption "base_domain"}}/realms/allhands{{repl else}}https://{{repl ConfigOption "auth_hostname"}}/realms/allhands{{repl end}}'
+              # caBundle wiring (appended to the existing list — recursiveMerge
+              # REPLACES arrays, so these must live alongside the Keycloak vars).
+              # Next.js is Node, which honors NODE_EXTRA_CA_CERTS, not SSL_CERT_FILE;
+              # set both (SSL_CERT_FILE is harmless and helps any subprocess).
+              - name: NODE_EXTRA_CA_CERTS
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
             ingress:
               enabled: true
               hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
