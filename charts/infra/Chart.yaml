@@ -17,4 +17,4 @@ dependencies:
     condition: trust-manager.enabled
   - name: crd-check
     repository: oci://ghcr.io/openhands/helm-charts
-    version: 0.1.0
+    version: 0.1.1
