@@ -120,6 +120,7 @@ spec:
       # Run database migrations before starting the main container
       - name: migrate
         image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
+        workingDir: /app/backend
         command: ["alembic", "upgrade", "head"]
         env:
         {{- include "integrations-hub.env" . | nindent 8 }}
