@@ -2,7 +2,7 @@ apiVersion: v2
 name: crd-check
 description: Library chart providing a pre-install/pre-upgrade hook that waits for required CRDs to be Established before the consuming chart applies dependent resources.
 type: library
-version: 0.1.0
+version: 0.1.1
 appVersion: "1.0.0"
 maintainers:
   - name: all-hands-ai
