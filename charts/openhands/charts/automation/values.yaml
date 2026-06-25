@@ -4,6 +4,20 @@ image:
 
 imagePullSecrets: []
 
+# Mount a trust-manager / user-supplied CA bundle into the automation pods and
+# point the Python TLS stack (httpx + requests) at it. Required when automation
+# makes outbound HTTPS calls to endpoints served by a cert signed by a CA that
+# isn't in the OS trust store — e.g. the OpenHands app at openhandsApiUrl /
+# automationBaseUrl when an operator uploads a self-signed/custom cert.
+# Otherwise TLS verification fails and callbacks/dispatches silently break.
+# The named ConfigMap is created by the parent openhands chart's trust-manager
+# Bundle; this subchart only mounts it.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
 deployment:
   replicas: 1
   resources:
