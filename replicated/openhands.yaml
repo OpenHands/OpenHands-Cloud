@@ -560,6 +560,13 @@ spec:
           secretKey: webhook-secret
         automation:
           enabled: true
+          # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
+          # the Python TLS stack (httpx + requests) at the merged PEM. Required
+          # so automation can verify the OpenHands app cert (openhandsApiUrl /
+          # automationBaseUrl below) when the operator uploads a custom CA —
+          # otherwise outbound HTTPS callbacks/dispatches fail TLS verification.
+          caBundle:
+            enabled: true
           image:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/automation'
           imagePullSecrets:

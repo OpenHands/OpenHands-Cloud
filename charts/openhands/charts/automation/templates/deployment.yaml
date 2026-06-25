@@ -23,6 +23,12 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.caBundle.enabled }}
+      volumes:
+        - name: openhands-ca-bundle
+          configMap:
+            name: {{ .Values.caBundle.name }}
+      {{- end }}
       initContainers:
       {{- if .Values.database.createDatabaseUser }}
       # Create automation database and user in an existing PostgreSQL instance
@@ -156,3 +162,15 @@ spec:
           failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
         env:
         {{- include "automation.env" . | nindent 8 }}
+        {{- if .Values.caBundle.enabled }}
+        - name: SSL_CERT_FILE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: REQUESTS_CA_BUNDLE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        {{- end }}
+        {{- if .Values.caBundle.enabled }}
+        volumeMounts:
+        - name: openhands-ca-bundle
+          mountPath: {{ .Values.caBundle.mountPath }}
+          readOnly: true
+        {{- end }}
