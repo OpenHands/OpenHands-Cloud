@@ -245,7 +245,7 @@ cleanup:
   enabled: true
   schedule: "*/5 * * * *"
   idle_seconds: 1200 # Default to 20 minutes
-  dead_seconds: 86400 # Default to 1 day
+  dead_seconds: 5184000 # Default to 60 days (stopgap until workspace archiving ships; runtime-api#624)
 
 warmRuntimes:
   enabled: false
