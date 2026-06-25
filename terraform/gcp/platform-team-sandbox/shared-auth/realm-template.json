@@ -1,0 +1,265 @@
+{
+  "realm": "allhands",
+  "displayName": "OpenHands Staging",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": true,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 30,
+  "defaultSignatureAlgorithm": "RS256",
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeoutRememberMe": 0,
+  "ssoSessionMaxLifespanRememberMe": 0,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": false,
+  "offlineSessionMaxLifespan": 5184000,
+  "clientSessionIdleTimeout": 0,
+  "clientSessionMaxLifespan": 0,
+  "clientOfflineSessionIdleTimeout": 0,
+  "clientOfflineSessionMaxLifespan": 0,
+  "accessCodeLifespan": 120,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "actionTokenGeneratedByAdminLifespan": 43200,
+  "actionTokenGeneratedByUserLifespan": 300,
+  "oauth2DeviceCodeLifespan": 600,
+  "oauth2DevicePollingInterval": 5,
+  "roles": {
+    "realm": [
+      {
+        "name": "uma_authorization",
+        "description": "${role_uma_authorization}",
+        "composite": false
+      },
+      {
+        "name": "offline_access",
+        "description": "${role_offline-access}",
+        "composite": false
+      },
+      {
+        "name": "default-roles-allhands",
+        "description": "${role_default-roles}",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "offline_access",
+            "uma_authorization"
+          ],
+          "client": {
+            "broker": [
+              "read-token"
+            ],
+            "account": [
+              "manage-account",
+              "view-profile"
+            ]
+          }
+        }
+      }
+    ],
+    "client": {
+      "broker": [
+        {
+          "name": "read-token",
+          "description": "${role_read-token}",
+          "composite": false,
+          "clientRole": true
+        }
+      ]
+    }
+  },
+  "defaultRole": {
+    "name": "default-roles-allhands",
+    "description": "${role_default-roles}",
+    "composite": true
+  },
+  "attributes": {
+    "frontendUrl": "https://auth.ohe-staging.platform-team.all-hands.dev"
+  },
+  "identityProviders": [
+    {
+      "alias": "enterprise_sso",
+      "displayName": "Enterprise SSO (Google Workspace)",
+      "providerId": "saml",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": true,
+      "addReadTokenRoleOnCreate": true,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "Auto-Link First Broker Login",
+      "config": {
+        "validateSignature": "true",
+        "postBindingLogout": "true",
+        "nameIDPolicyFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        "postBindingResponse": "true",
+        "entityId": "openhands-allhands",
+        "signatureAlgorithm": "RSA_SHA256",
+        "wantAssertionsEncrypted": "false",
+        "xmlSigKeyInfoKeyNameTransformer": "KEY_ID",
+        "wantAssertionsSigned": "true",
+        "postBindingAuthnRequest": "true",
+        "syncMode": "IMPORT",
+        "forceAuthn": "false",
+        "singleSignOnServiceUrl": "${SAML_SSO_URL}",
+        "signingCertificate": "${SAML_SIGNING_CERTIFICATE}"
+      }
+    }
+  ],
+  "identityProviderMappers": [
+    {
+      "name": "identity_provider",
+      "identityProviderAlias": "enterprise_sso",
+      "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "attribute": "identity_provider",
+        "attribute.value": "enterprise_sso:saml"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "broker",
+      "name": "${client_broker}",
+      "description": "Broker client for identity provider token retrieval",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "bearerOnly": true,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "realm_client": "true"
+      },
+      "fullScopeAllowed": false
+    },
+    {
+      "clientId": "allhands",
+      "name": "OpenHands Staging Client",
+      "description": "Shared client for all staging branch deployments. Uses 'allhands' clientId to match frontend hardcoded values.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://ohe-staging.platform-team.all-hands.dev/*",
+        "https://ohe-staging.platform-team.all-hands.dev/oauth/keycloak/callback",
+        "https://*.ohe-staging.platform-team.all-hands.dev/*",
+        "https://*.ohe-staging.platform-team.all-hands.dev/oauth/keycloak/callback"
+      ],
+      "webOrigins": [
+        "https://ohe-staging.platform-team.all-hands.dev",
+        "https://*.ohe-staging.platform-team.all-hands.dev"
+      ],
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "oidc.ciba.grant.enabled": "false",
+        "backchannel.logout.session.required": "true",
+        "post.logout.redirect.uris": "https://ohe-staging.platform-team.all-hands.dev/*##https://ohe-staging.platform-team.all-hands.dev/oauth/keycloak/callback##https://*.ohe-staging.platform-team.all-hands.dev/*##https://*.ohe-staging.platform-team.all-hands.dev/oauth/keycloak/callback",
+        "oauth2.device.authorization.grant.enabled": "true",
+        "display.on.consent.screen": "false",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "roles",
+        "profile",
+        "basic",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ],
+      "protocolMappers": [
+        {
+          "name": "identity_provider",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "identity_provider",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "identity_provider",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "authenticationFlows": [
+    {
+      "alias": "Auto-Link First Broker Login",
+      "description": "Auto-link IdP accounts to existing users by email without password verification. For trusted enterprise IdPs only.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticatorConfig": "create unique user config",
+          "authenticator": "idp-create-user-if-unique",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "idp-auto-link",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "create unique user config",
+      "config": {
+        "require.password.update.after.registration": "false"
+      }
+    }
+  ],
+  "browserFlow": "browser",
+  "registrationFlow": "registration",
+  "directGrantFlow": "direct grant",
+  "resetCredentialsFlow": "reset credentials",
+  "clientAuthenticationFlow": "clients",
+  "firstBrokerLoginFlow": "first broker login"
+}

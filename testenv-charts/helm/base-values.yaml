@@ -1,0 +1,164 @@
+# =============================================================================
+# OpenHands Branch Deployment Base Values
+# =============================================================================
+# This file configures branch deployments to use SHARED infrastructure from
+# the main `openhands` namespace. Branch deployments get their own namespace
+# but share PostgreSQL, Redis, Keycloak, and LiteLLM.
+#
+# USAGE:
+#   export BRANCH_NAME="my-feature"
+#   export NAMESPACE="openhands-${BRANCH_NAME}"
+#   kubectl create namespace ${NAMESPACE}
+#   
+#   # Copy required secrets (one-time setup per namespace)
+#   for secret in ghcr-login-secret postgres-password redis keycloak-realm keycloak-admin lite-llm-api-key litellm-env-secrets admin-password; do
+#     kubectl get secret $secret -n openhands -o yaml | \
+#       sed "s/namespace: openhands/namespace: ${NAMESPACE}/" | \
+#       kubectl apply -n ${NAMESPACE} -f -
+#   done
+#
+#   # Deploy with just image tag and branch name
+#   helm install openhands-${BRANCH_NAME} ./charts/openhands \
+#     --namespace ${NAMESPACE} \
+#     --values testenv-charts/helm/base-values.yaml \
+#     --set image.tag="sha-abc1234" \
+#     --set branchSanitized="${BRANCH_NAME}"
+#
+# REQUIRED OVERRIDES:
+#   --set image.tag=<your-image-tag>       # From PR CI or ghcr.io/openhands/openhands
+#   --set branchSanitized=<branch-name>    # Lowercase, alphanumeric, hyphens only
+#
+# OPTIONAL OVERRIDES:
+#   --set image.repository=<repo>          # Default: ghcr.io/openhands/openhands
+#   --set deployment.replicas=<n>          # Default: 1
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Image Pull Secrets (required for private images)
+# -----------------------------------------------------------------------------
+imagePullSecrets:
+  - name: ghcr-login-secret
+
+# -----------------------------------------------------------------------------
+# Ingress Configuration
+# -----------------------------------------------------------------------------
+# Branch deployments use subdomain routing: <branch>.ohe-staging.platform-team.all-hands.dev
+ingress:
+  enabled: true
+  host: "ohe-staging.platform-team.all-hands.dev"
+  prefixWithBranch: true
+  routingMode: subdomain
+  serviceRoutingMode: path
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns01
+
+# -----------------------------------------------------------------------------
+# Shared Keycloak Authentication
+# -----------------------------------------------------------------------------
+# All branches share the Keycloak instance in the main namespace
+keycloak:
+  enabled: false  # Don't deploy a new Keycloak
+  url: "https://auth.ohe-staging.platform-team.all-hands.dev"
+  authHost: "auth.ohe-staging.platform-team.all-hands.dev"
+  realm: "allhands"
+
+enterpriseSSO:
+  enabled: true
+
+# Environment variables for Keycloak integration
+env:
+  AUTH_KEYCLOAK_CLIENT_ID: "openhands"
+  AUTH_KEYCLOAK_REALM: "allhands"
+  RUNTIME_URL_PATTERN: "https://{branch}.ohe-staging.platform-team.all-hands.dev/runtime/{runtime_id}"
+
+# -----------------------------------------------------------------------------
+# Shared PostgreSQL (from openhands namespace)
+# -----------------------------------------------------------------------------
+# Branch deployments connect to PostgreSQL in the main namespace.
+# Each branch uses a separate database (created by migrations).
+postgresql:
+  enabled: false  # Don't deploy a new PostgreSQL
+  # External PostgreSQL connection
+  host: "openhands-postgresql.openhands.svc.cluster.local"
+  port: 5432
+  auth:
+    existingSecret: "postgres-password"
+    secretKeys:
+      adminPasswordKey: "postgres-password"
+      userPasswordKey: "password"
+
+# Database migrations will create branch-specific databases
+databaseMigrations:
+  createDatabases: true
+  # Database names are auto-generated based on branchSanitized
+
+# -----------------------------------------------------------------------------
+# Shared Redis (from openhands namespace)
+# -----------------------------------------------------------------------------
+redis:
+  enabled: false  # Don't deploy a new Redis
+  host: "openhands-redis-master.openhands.svc.cluster.local"
+  port: 6379
+  auth:
+    enabled: true
+    existingSecret: "redis"
+
+# -----------------------------------------------------------------------------
+# Shared LiteLLM (from openhands namespace)
+# -----------------------------------------------------------------------------
+litellm-helm:
+  enabled: false  # Don't deploy a new LiteLLM
+
+litellm:
+  url: "http://litellm-helm.openhands.svc.cluster.local:4000"
+
+# -----------------------------------------------------------------------------
+# Ephemeral Storage (per-branch minio)
+# -----------------------------------------------------------------------------
+# Each branch gets its own minio for file storage (ephemeral, not shared)
+filestore:
+  ephemeral: true
+
+minio:
+  enabled: true
+  persistence:
+    enabled: false  # Ephemeral for testing
+
+# -----------------------------------------------------------------------------
+# Runtime API Configuration
+# -----------------------------------------------------------------------------
+sandbox:
+  apiHostname: "http://openhands-runtime-api.openhands.svc.cluster.local:5000"
+
+# Note: Branch deployments share the runtime-api from the main namespace.
+# If you need a separate runtime-api, deploy it separately with:
+#   helm install runtime-api-${BRANCH_NAME} ./charts/runtime-api ...
+runtime-api:
+  enabled: false  # Use shared runtime-api from main namespace
+
+# -----------------------------------------------------------------------------
+# Resource Configuration (minimal for dev/test)
+# -----------------------------------------------------------------------------
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "100m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+# Optional services - disable for minimal deployments
+automation:
+  enabled: true
+  deployment:
+    replicas: 1
+
+integrationEvents:
+  deployment:
+    replicas: 1
+
+mcpEvents:
+  deployment:
+    replicas: 1

@@ -1,0 +1,161 @@
+# =============================================================================
+# OpenHands Site-Specific Values: single-cluster-path
+# =============================================================================
+# This file contains ONLY overrides from charts/openhands/values.yaml
+# 
+# Usage:
+#   helm install openhands ./charts/openhands \
+#     -f testenv-charts/helm/environments/single-cluster-path/values-openhands.yaml
+# =============================================================================
+
+# TODO: Remove this tag override once PR in ~/Code/OpenHands is merged
+image:
+  tag: sha-f50653f
+
+# Site-specific hostnames
+ingress:
+  enabled: true
+  host: "ohe-staging.platform-team.all-hands.dev"
+
+env:
+  # URL pattern must match the HTTPRoute path created by runtime-api
+  # Runtime-api creates routes at: /{runtime_id}/runtime/
+  # NOT at: /runtime/{runtime_id}  (that path hits runtime-api management API!)
+  RUNTIME_URL_PATTERN: "https://ohe-staging.platform-team.all-hands.dev/{runtime_id}/runtime"
+  # Path-based routing mode for runtime pods
+  RUNTIME_ROUTING_MODE: "path"
+
+# Runtime API endpoint for OpenHands server to communicate with runtime-api
+# This was MISSING - caused "Name or service not known" errors
+sandbox:
+  apiHostname: "http://openhands-runtime-api:5000"
+
+# Use shared Keycloak (disabled in-cluster, keycloak.enabled=false is already default)
+keycloak:
+  url: "https://auth.ohe-staging.platform-team.all-hands.dev"
+
+# Enable Enterprise SSO (Google Workspace SAML via shared Keycloak)
+enterpriseSSO:
+  enabled: true
+
+# Ephemeral minio storage for testing (production would use GCS/S3)
+filestore:
+  ephemeral: true
+
+# Enable database creation (chart default is false)
+databaseMigrations:
+  createDatabases: true
+
+# PostgreSQL with persistence (chart default has persistence disabled)
+postgresql:
+  fullnameOverride: openhands-postgresql
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# Redis with persistence
+redis:
+  fullnameOverride: openhands-redis
+  auth:
+    enabled: true
+    existingSecret: "redis"
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+
+# Runtime API site-specific config
+runtime-api:
+  # Use same release name prefix for service name
+  fullnameOverride: openhands-runtime-api
+  imagePullSecrets:
+    - name: ghcr-login-secret
+  databaseMigrations:
+    createDatabases: true
+  # PostgreSQL auth config (inherits from parent's postgres)
+  postgresql:
+    auth:
+      existingSecret: postgres-password
+  ingress:
+    enabled: true
+    host: "ohe-staging.platform-team.all-hands.dev"
+    path: /runtime
+    pathType: Prefix
+  # Disable ingressBase - using Gateway API for path-based routing
+  ingressBase:
+    enabled: false
+  # Enable Gateway API for path-based runtime pod routing
+  sandboxGateway:
+    enabled: true
+    name: sandbox-gateway
+    hostname: "ohe-staging.platform-team.all-hands.dev"
+    tlsSecretName: openhands-runtime-api-tls  # Use existing cert for this hostname
+    gatewayClassName: traefik
+    # IMPORTANT: Gateway listener port must match Traefik's INTERNAL entrypoint port.
+    # Traefik's websecure entrypoint listens on 8443 internally (exposed as 443 via LoadBalancer).
+    # The Gateway API operates inside the cluster, so it needs the internal port (8443).
+    listenerPort: 8443
+  env:
+    # Database connection - point to our postgresql instance
+    DB_HOST: openhands-postgresql
+    DB_USER: postgres
+    DB_NAME: runtime_api_db
+    # Kubernetes namespace for runtime pods
+    K8S_NAMESPACE: "openhands"
+    # Runtime base URL for constructing runtime pod URLs
+    RUNTIME_BASE_URL: "ohe-staging.platform-team.all-hands.dev"
+    # Disable runtime pod probes - they require API key authentication which
+    # Kubernetes HTTP probes cannot provide, causing pods to never become Ready
+    INCLUDE_START_PROBE: "false"
+    INCLUDE_LIVENESS_PROBE: "false"
+    # Runtime class - empty string means no sandbox runtime (uses chart default)
+    # To use gVisor, enable GKE Sandbox on the runtime node pool first
+    RUNTIME_CLASS: ""
+    # Path-based routing configuration for Gateway API
+    RUNTIME_ROUTING_MODE: "path"
+    RUNTIME_URL_SEPARATOR: "/"
+    USE_GATEWAY_API: "true"
+    GATEWAY_NAME: "sandbox-gateway"
+    RUNTIME_CERT_SECRET: "openhands-runtime-api-tls"  # Use existing cert for this hostname
+    # SSL configuration - must be false (use https) to match RUNTIME_URL_PATTERN
+    # Default is "true" (use http), but we're behind TLS-terminating ingress
+    RUNTIME_DISABLE_SSL: "false"
+  # Warm runtimes configuration
+  # Must override configs[] to add node_selector for dedicated runtime nodes
+  warmRuntimes:
+    enabled: true
+    count: 1
+    configs:
+      - name: default
+        image: "ghcr.io/openhands/agent-server:1.19.0-python"
+        working_dir: "/workspace"
+        environment:
+          LOG_JSON: "1"
+          LOG_JSON_LEVEL_KEY: "severity"
+          OH_ALLOW_CORS_ORIGINS_0: ""
+          OH_BASH_EVENTS_DIR: "/workspace/bash_events"
+          OH_CONVERSATIONS_PATH: "/workspace/conversations"
+          OH_ENABLE_VNC: "0"
+          OH_VSCODE_PORT: "60001"
+          OH_WEBHOOKS_0_BASE_URL: ""
+          OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
+          VSCODE_PORT: "60001"
+          WORKER_1: "12000"
+          WORKER_2: "12001"
+        command:
+          - /usr/local/bin/openhands-agent-server
+          - "--port"
+          - "60000"
+        run_as_user: 10001
+        run_as_group: 10001
+        fs_group: 10001
+        # Schedule on dedicated runtime nodes (where image is pre-cached)
+        node_selector:
+          openhands.ai/node-type: runtime
+        # Tolerate the runtime node taint
+        tolerations:
+          - key: "openhands.ai/runtime"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"

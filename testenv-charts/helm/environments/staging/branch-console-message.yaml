@@ -1,0 +1,189 @@
+# Branch deployment: console-message
+# This file overrides base-values.yaml for the console-message branch deployment
+# Uses shared infrastructure from the 'openhands' namespace
+
+# Branch-specific naming
+fullnameOverride: openhands-console-message
+
+# Branch-specific images from PR #14343 (commit 3ac78c556ac7ec1c3cb7a70fa9dee32bf26ad219)
+# NOTE: PR #14343 built ghcr.io/openhands/openhands (open-source image), but staging 
+# requires ghcr.io/openhands/enterprise-server (SaaS backend with saas_server module).
+# Using main enterprise-server image to verify deployment infrastructure works.
+# TODO: Build enterprise-server image from PR #14343 changes to include console message.
+image:
+  repository: ghcr.io/openhands/enterprise-server
+  tag: sha-f50653f  # Same as main deployment - replace with PR-specific build when available
+  pullPolicy: Always
+
+# Use shared Keycloak from openhands namespace
+keycloak:
+  enabled: false
+  # CRITICAL: Set authHost to point to shared Keycloak (not derived from ingress.host)
+  # Without this, the chart computes AUTH_URL as auth.console-message.ohe-staging... which doesn't exist
+  authHost: auth.ohe-staging.platform-team.all-hands.dev
+  # Redirect URIs already registered via shared-auth terraform - disable hook to avoid job failures
+  redirectUriRegistration:
+    enabled: false
+keycloakConfig:
+  enabled: false
+
+# Enable Enterprise SSO button on frontend
+# This adds "enterprise_sso" to OH_WEB_CLIENT_PROVIDERS_CONFIGURED via the chart template
+enterpriseSSO:
+  enabled: true
+
+# Branch-specific env overrides
+# NOTE: Don't override OH_APP_MODE, CONVERSATION_MANAGER_CLASS, etc. - chart sets them correctly
+# NOTE: Don't override OH_WEB_CLIENT_PROVIDERS_CONFIGURED - let chart compute from enterpriseSSO.enabled
+env:
+  # Enterprise SSO backend flag (required alongside enterpriseSSO.enabled for full SSO support)
+  ENABLE_ENTERPRISE_SSO: "true"
+  
+  # Runtime Configuration (use shared runtime)
+  RUNTIME_URL_PATTERN: https://{runtime_id}.runtime.ohe-staging.platform-team.all-hands.dev
+  
+  # LLM Proxy (shared)
+  OPENHANDS_PROVIDER_BASE_URL: https://llm-proxy.ohe-staging.platform-team.all-hands.dev/
+  
+  # Features (minimal for branch testing)
+  ENABLE_BILLING: "false"
+  ENABLE_EXPERIMENT_MANAGER: "false"
+  ENABLE_MCP_SEARCH_ENGINE: "false"
+  ENABLE_PROACTIVE_CONVERSATION_STARTERS: "false"
+  ENABLE_SOLVABILITY_ANALYSIS: "false"
+  ENABLE_V1_GITHUB_RESOLVER: "false"
+  ENABLE_V1_SLACK_RESOLVER: "false"
+  
+  # UI Flags (show enterprise features)
+  OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: "false"
+  OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA: "false"
+  OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE: "true"
+  OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_INTEGRATIONS_PAGE: "false"
+  OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_USERS_PAGE: "false"
+  
+  # Access Control (open for testing)
+  DUPLICATE_EMAIL_CHECK: "false"
+  OH_USER_AUTHORIZER_PREVENT_DUPLICATES: "false"
+  EMAIL_PATTERN_BLACKLIST: '%'
+  EMAIL_PATTERN_WHITELIST: '%@openhands.dev,%@all-hands.dev,saurya@gmail.com'
+
+# Disable all integrations requiring secrets we don't have
+github:
+  enabled: false
+githubProxy:
+  enabled: false
+gitlab:
+  enabled: false
+gitlabWebhookInstallation:
+  enabled: false
+slack:
+  enabled: false
+stripe:
+  enabled: false
+linear:
+  enabled: false
+jira:
+  enabled: false
+resend:
+  enabled: false
+resendSync:
+  enabled: false
+bitbucket:
+  enabled: false
+
+# Disable services not needed for branch testing
+# Use shared runtime-api from main deployment (ohe-staging.platform-team.all-hands.dev)
+runtime-api:
+  enabled: false
+
+automation:
+  enabled: false
+  events:
+    enabled: false
+automationEvents:
+  enabled: false
+automationServiceKey:
+  enabled: false
+automationWebhookSecret:
+  enabled: false
+automationService:
+  eventForwardingEnabled: false
+mcp:
+  enabled: false
+mcpEvents:
+  enabled: false
+integrations:
+  enabled: false
+integrationEvents:
+  enabled: false
+pluginDirectory:
+  enabled: false
+
+# Disable Tavily search integration  
+tavily:
+  enabled: false
+
+# Use shared PostgreSQL
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: false
+  migrate: false  # Migrations already run by main deployment
+postgresql:
+  enabled: false
+
+# Use shared Redis
+redis:
+  enabled: false
+
+# Minio - use existing from namespace or disable
+minio:
+  enabled: true
+  fullnameOverride: openhands-console-message-minio
+
+# LiteLLM - use shared
+litellm-helm:
+  enabled: false
+
+# Ingress for branch - IMPORTANT: set `host` to override base-values.yaml
+# The chart uses ingress.host for automation/integrations/mcp ingresses
+ingress:
+  enabled: true
+  className: traefik
+  host: console-message.ohe-staging.platform-team.all-hands.dev  # Override base host!
+  prefixWithBranch: false  # Don't prefix since we're using explicit subdomain
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+  hosts:
+    - host: console-message.ohe-staging.platform-team.all-hands.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - console-message.ohe-staging.platform-team.all-hands.dev
+      secretName: ohe-staging-wildcard-tls
+
+# Use external database connection (postgresql.enabled: false requires externalDatabase)
+externalDatabase:
+  host: openhands-postgresql.openhands.svc.cluster.local
+  port: 5432
+  username: postgres
+  database: openhands
+  existingSecret: postgres-password
+  secretKey: postgres-password
+
+# Use external Redis connection  
+redisConnection:
+  host: openhands-redis-master.openhands.svc.cluster.local
+  port: 6379
+  existingSecret: redis
+  secretKey: redis-password
+
+# Use external LiteLLM
+litellm:
+  url: "http://openhands-litellm.openhands.svc.cluster.local:4000"
+
+# Disable DataDog (frontend image doesn't have ddtrace installed)
+datadog:
+  enabled: false

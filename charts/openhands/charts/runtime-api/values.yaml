@@ -1,6 +1,12 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# Branch-based routing configuration
+# When enabled, the ingress host becomes: {branchSanitized}.{ingress.host}
+# Example: saurya-prototype.runtime.example.com
+# Requires a wildcard TLS certificate (e.g., *.runtime.example.com)
+branchSanitized: ""  # Set to sanitized branch name (lowercase, alphanumeric, hyphens only)
+
 replicaCount: 1
 
 databaseMigrations:
@@ -21,6 +27,12 @@ serviceAccount:
   name: runtime-api-sa
   annotations: {}
   createRBAC: true
+  # Skip creating cluster-scoped RBAC (ClusterRole). Set to true for branch
+  # deployments that share a ClusterRole with the main deployment.
+  skipClusterRBAC: false
+  # Name of existing ClusterRole to bind when skipClusterRBAC is true.
+  # Defaults to "openhands-runtime-api-clusterrole" if not specified.
+  existingClusterRole: ""
 
 runtimeInSameCluster: false
 defaultAPIKeySecretName: default-api-key
@@ -201,6 +213,32 @@ ingress:
   path: /
   pathType: Prefix
   tls: true
+  
+  # =============================================================================
+  # ROUTING MODE: Choose subdomain-based OR path-based routing
+  # =============================================================================
+  #
+  # Option 1: Subdomain-based routing (default)
+  #   routingMode: subdomain
+  #   prefixWithBranch: true
+  #   branchSanitized: "my-branch"
+  #   Result: my-branch.runtime.example.com
+  #   Requires: Wildcard TLS cert and wildcard DNS
+  #
+  # Option 2: Path-based routing
+  #   routingMode: path
+  #   pathPrefix: "my-branch"
+  #   Result: runtime.example.com/my-branch/
+  #   Requires: Single-domain TLS cert, path prefix stripped before backend
+  #
+  routingMode: subdomain  # Options: "subdomain" | "path"
+  
+  # For subdomain mode
+  prefixWithBranch: false
+  branchSanitized: ""
+  
+  # For path mode
+  pathPrefix: ""
 
 # Base ingress configuration for runtime ingress inheritance
 # Only metadata (labels and annotations) will be inherited, not the spec
@@ -280,6 +318,16 @@ warmRuntimes:
       run_as_user: 10001
       run_as_group: 10001
       fs_group: 10001
+      # Node scheduling configuration for runtime pods
+      # These are passed to dynamically-created runtime pods
+      # Uncomment and configure for sysbox nodes:
+      # node_selector:
+      #   sysbox-install: "yes"
+      # tolerations:
+      #   - key: "sysbox-runtime"
+      #     operator: "Equal"
+      #     value: "true"
+      #     effect: "NoSchedule"
 
 # Database cleanup CronJob configuration
 dbCleanup:

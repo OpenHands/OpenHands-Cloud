@@ -3,36 +3,33 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-automation-ingress
+  {{- $annotations := .Values.ingress.automation.annotations | default .Values.ingress.root.annotations | default .Values.ingress.annotations }}
+  {{- $middlewareAnnotation := include "openhands.pathMiddlewareAnnotation" . }}
+  {{- if or $annotations $middlewareAnnotation }}
   annotations:
-    {{- if .Values.ingress.root.annotations }}
-    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
-    {{- else }}
-    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
+    {{- with $annotations }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- with $middlewareAnnotation }}
+    {{- . | nindent 4 }}
+    {{- end }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.class }}
   {{- if .Values.tls.enabled }}
   tls:
   - hosts:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - {{ .Values.ingress.host }}
-    {{- end }}
-    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+    - {{ include "openhands.serviceIngressHost" (dict "service" "automation" "context" .) }}
+    secretName: {{ include "openhands.serviceTlsSecretName" (dict "service" "automation" "context" .) }}
   {{- end }}
   rules:
-  {{- if .Values.ingress.prefixWithBranch }}
-  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-  {{- else }}
-  - host: {{ .Values.ingress.host }}
-  {{- end }}
+  - host: {{ include "openhands.serviceIngressHost" (dict "service" "automation" "context" .) }}
     http:
       paths:
+      {{- if and (eq .Values.ingress.serviceRoutingMode "subdomain") (eq .Values.ingress.routingMode "subdomain") }}
+      {{- /* Subdomain routing: automation.branch.host → serve at root */}}
       {{- if .Values.automation.events.enabled }}
-      # Route webhook events to dedicated events pods
-      # IMPORTANT: This more specific path must come before the general /api/automation path
-      - path: /api/automation/v1/events
+      - path: /v1/events
         pathType: Prefix
         backend:
           service:
@@ -40,18 +37,39 @@ spec:
             port:
               number: 80
       {{- end }}
-      - path: /api/automation
+      - path: /
         pathType: Prefix
         backend:
           service:
             name: automation
             port:
               number: 80
-      - path: /automations
+      {{- else }}
+      {{- /* Path-based routing: paths like /api/automation */}}
+      {{- if .Values.automation.events.enabled }}
+      # Route webhook events to dedicated events pods
+      # IMPORTANT: This more specific path must come before the general /api/automation path
+      - path: {{ include "openhands.routedPath" (dict "path" "/api/automation/v1/events" "Values" .Values) }}
+        pathType: Prefix
+        backend:
+          service:
+            name: automation-events
+            port:
+              number: 80
+      {{- end }}
+      - path: {{ include "openhands.routedPath" (dict "path" "/api/automation" "Values" .Values) }}
         pathType: Prefix
         backend:
           service:
             name: automation
             port:
               number: 80
+      - path: {{ include "openhands.routedPath" (dict "path" "/automations" "Values" .Values) }}
+        pathType: Prefix
+        backend:
+          service:
+            name: automation
+            port:
+              number: 80
+      {{- end }}
 {{- end }}

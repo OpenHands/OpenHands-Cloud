@@ -1,7 +1,7 @@
 {{- define "openhands.dbInitContainers" }}
 {{- if .Values.databaseMigrations.waitForDatabase }}
 - name: wait-for-db
-  image: "bitnamilegacy/postgresql:latest"
+  image: "{{ .Values.databaseMigrations.postgresImage | default "public.ecr.aws/bitnami/postgresql:latest" }}"
   command: ['sh', '-c']
   args:
     - |
@@ -18,7 +18,7 @@
 {{- end }}
 {{- if .Values.databaseMigrations.createDatabases }}
 - name: create-db
-  image: "bitnamilegacy/postgresql:latest"
+  image: "{{ .Values.databaseMigrations.postgresImage | default "public.ecr.aws/bitnami/postgresql:latest" }}"
   command: ['sh', '-c']
   args:
     - |
@@ -32,7 +32,7 @@
       done
   env:
     - name: DATABASES
-      value: "{{ .Values.keycloak.externalDatabase.database }}{{- if (index .Values "litellm-helm").enabled }} {{ (index .Values "litellm-helm").db.database }}{{- end }}"
+      value: "{{- if .Values.keycloak.enabled }}{{ .Values.keycloak.externalDatabase.database }}{{- end }}{{- if (index .Values "litellm-helm").enabled }} {{ (index .Values "litellm-helm").db.database }}{{- end }}"
     {{- include "openhands.env" . | nindent 4 }}
 {{- end }}
 {{- if .Values.databaseMigrations.migrate }}

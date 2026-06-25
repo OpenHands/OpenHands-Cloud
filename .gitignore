@@ -1,6 +1,4 @@
-# Chart dependencies vendored by `helm dependency update`. Only the archives
-# are ignored — embedded subchart sources (charts/openhands/charts/*/) are tracked.
-charts/**/charts/*.tgz
+charts/**/charts
 
 **/.DS_Store
 __pycache__/
@@ -17,6 +15,21 @@ build/
 
 # create_github_app script
 scripts/create_github_app/keys/
-# mutmut mutation-testing artifacts (scripts/update_openhands_charts/setup.cfg)
-mutants/
-mutmut-stats.json
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# Sensitive files
+anthropic_api_key.txt
+workspace_cert.cert

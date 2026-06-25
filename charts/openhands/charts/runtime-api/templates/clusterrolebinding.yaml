@@ -1,9 +1,18 @@
 
+{{/*
+ClusterRoleBinding for runtime-api. When serviceAccount.skipClusterRBAC is true,
+the binding references an existing ClusterRole (from the main deployment) instead
+of creating one. This allows branch deployments to share cluster-scoped RBAC.
+*/}}
 {{- if and .Values.runtimeInSameCluster .Values.serviceAccount.createRBAC }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
+  {{- if .Values.serviceAccount.skipClusterRBAC }}
+  name: {{ include "runtime-api.fullname" . }}-{{ .Release.Namespace }}-clusterrolebinding
+  {{- else }}
   name: {{ include "runtime-api.fullname" . }}-clusterrolebinding
+  {{- end }}
   labels:
     {{- include "runtime-api.labels" . | nindent 4 }}
 subjects:
@@ -12,6 +21,10 @@ subjects:
   namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
+  {{- if .Values.serviceAccount.skipClusterRBAC }}
+  name: {{ .Values.serviceAccount.existingClusterRole | default "openhands-runtime-api-clusterrole" }}
+  {{- else }}
   name: {{ include "runtime-api.fullname" . }}-clusterrole
+  {{- end }}
   apiGroup: rbac.authorization.k8s.io
 {{- end }}

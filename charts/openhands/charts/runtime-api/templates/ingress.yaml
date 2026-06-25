@@ -3,9 +3,16 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "runtime-api.fullname" . }}-ingress
-  {{- with .Values.ingress.annotations }}
+  {{- $annotations := .Values.ingress.annotations }}
+  {{- $middlewareAnnotation := include "runtime-api.pathMiddlewareAnnotation" . }}
+  {{- if or $annotations $middlewareAnnotation }}
   annotations:
+    {{- with $annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if $middlewareAnnotation }}
+    {{ $middlewareAnnotation | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   {{- if .Values.ingress.className }}
@@ -14,22 +21,14 @@ spec:
   {{- if .Values.ingress.tls }}
   tls:
   - hosts:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - {{ .Values.ingress.host }}
-    {{- end }}
+    - {{ include "runtime-api.ingressHost" . }}
     secretName: {{ .Values.ingress.tlsSecretName | default (printf "%s-tls" (include "runtime-api.fullname" .)) }}
   {{- end }}
   rules:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - host: {{ .Values.ingress.host }}
-    {{- end }}
+    - host: {{ include "runtime-api.ingressHost" . }}
       http:
         paths:
-          - path: {{ .Values.ingress.path | default "/" }}
+          - path: {{ include "runtime-api.routedPath" (dict "path" (.Values.ingress.path | default "/") "Values" .Values) }}
             pathType: {{ .Values.ingress.pathType | default "Prefix" }}
             backend:
               service:

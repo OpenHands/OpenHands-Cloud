@@ -1,0 +1,75 @@
+# ClusterIssuer configurations for Let's Encrypt
+#
+# IMPORTANT: This file contains variable placeholders that must be substituted before applying.
+# Required variables:
+#   - ${ACME_EMAIL}: Email for certificate expiration notifications
+#   - ${GCP_PROJECT_ID}: GCP project ID (only needed for DNS-01 solver)
+#
+# Apply with variable substitution:
+#   export ACME_EMAIL="your-email@example.com"
+#   export GCP_PROJECT_ID="staging-092324"
+#   envsubst < cluster-issuer.yaml | kubectl apply -f -
+#
+# Or manually replace the variables before applying:
+#   kubectl apply -f cluster-issuer.yaml
+
+---
+# Let's Encrypt Staging (for testing - higher rate limits)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    # Use staging server for testing
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Email for certificate expiration notifications
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    solvers:
+      # HTTP-01 solver using ingress
+      - http01:
+          ingress:
+            class: traefik
+
+---
+# Let's Encrypt Production
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-production
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-production-key
+    solvers:
+      - http01:
+          ingress:
+            class: traefik
+
+---
+# DNS-01 solver using Google Cloud DNS (for wildcard certs in subdomain routing)
+# Requires Workload Identity or service account key
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-dns
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-dns-key
+    solvers:
+      - dns01:
+          cloudDNS:
+            # GCP project containing the Cloud DNS zone
+            project: ${GCP_PROJECT_ID}
+            # If using Workload Identity, leave serviceAccountSecretRef empty
+            # If using service account key:
+            # serviceAccountSecretRef:
+            #   name: clouddns-dns01-solver-svc-acct
+            #   key: key.json

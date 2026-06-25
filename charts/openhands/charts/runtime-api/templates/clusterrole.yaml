@@ -1,5 +1,9 @@
 
-{{- if and .Values.runtimeInSameCluster .Values.serviceAccount.createRBAC }}
+{{/*
+ClusterRole for runtime-api. Skipped when serviceAccount.skipClusterRBAC is true,
+which allows branch deployments to share the ClusterRole from the main deployment.
+*/}}
+{{- if and .Values.runtimeInSameCluster .Values.serviceAccount.createRBAC (not .Values.serviceAccount.skipClusterRBAC) }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

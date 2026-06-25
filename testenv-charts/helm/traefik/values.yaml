@@ -1,0 +1,115 @@
+# Traefik Helm values for OpenHands staging environments
+# Install with: helm install traefik traefik/traefik -n traefik --create-namespace -f values.yaml
+
+# Deployment configuration
+deployment:
+  replicas: 2
+  podAnnotations: {}
+
+# Service configuration
+service:
+  enabled: true
+  type: LoadBalancer
+  # Use static IP created by Terraform
+  # spec:
+  #   loadBalancerIP: <static-ip-address>
+  annotations:
+    # For GKE with static IP
+    # networking.gke.io/load-balancer-type: "External"
+
+# Ports configuration
+ports:
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+    protocol: TCP
+    # Redirect HTTP to HTTPS
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    protocol: TCP
+    http:
+      tls:
+        enabled: true
+
+# IngressClass configuration
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+# Enable Kubernetes Ingress provider
+providers:
+  kubernetesIngress:
+    enabled: true
+    publishedService:
+      enabled: true
+  # Enable Gateway API provider for runtime pod routing
+  # Required for path-based routing where sandbox-gateway creates HTTPRoutes
+  kubernetesGateway:
+    enabled: true
+
+# Logs
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+    format: json
+
+# Resource limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Security context
+securityContext:
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  runAsGroup: 65532
+  runAsNonRoot: true
+  runAsUser: 65532
+
+# Additional arguments
+additionalArguments:
+  - "--api.insecure=false"
+  - "--api.dashboard=true"
+
+# Metrics
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true

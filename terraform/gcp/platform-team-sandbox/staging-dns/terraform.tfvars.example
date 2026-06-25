@@ -1,0 +1,9 @@
+# -----------------------------------------------------------------------------
+# Staging DNS Configuration Example
+# Copy this file to terraform.tfvars and update values for your environment
+# -----------------------------------------------------------------------------
+
+project_id       = "your-gcp-project-id"
+region           = "us-central1"
+parent_zone_name = "your-parent-dns-zone-name"
+traefik_lb_ip    = "your-traefik-load-balancer-ip"

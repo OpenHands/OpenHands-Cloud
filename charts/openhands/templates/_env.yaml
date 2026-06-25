@@ -292,14 +292,34 @@
 - name: WEB_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
 - name: AUTH_WEB_HOST
+  {{- if .Values.keycloak.authHost }}
+  value: {{ .Values.keycloak.authHost }}
+  {{- else }}
   value: {{ .Values.branchSanitized }}.auth.{{ .Values.ingress.host }}
+  {{- end }}
+- name: AUTH_URL
+  {{- if .Values.keycloak.authHost }}
+  value: https://{{ .Values.keycloak.authHost }}
+  {{- else }}
+  value: https://{{ .Values.branchSanitized }}.auth.{{ .Values.ingress.host }}
+  {{- end }}
 - name: MCP_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
 {{- else }}
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
 - name: AUTH_WEB_HOST
+  {{- if .Values.keycloak.authHost }}
+  value: {{ .Values.keycloak.authHost }}
+  {{- else }}
   value: auth.{{ .Values.ingress.host }}
+  {{- end }}
+- name: AUTH_URL
+  {{- if .Values.keycloak.authHost }}
+  value: https://{{ .Values.keycloak.authHost }}
+  {{- else }}
+  value: https://auth.{{ .Values.ingress.host }}
+  {{- end }}
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
 {{- end }}
@@ -307,7 +327,17 @@
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
 - name: AUTH_WEB_HOST
+  {{- if .Values.keycloak.authHost }}
+  value: {{ .Values.keycloak.authHost }}
+  {{- else }}
   value: keycloak
+  {{- end }}
+- name: AUTH_URL
+  {{- if .Values.keycloak.authHost }}
+  value: https://{{ .Values.keycloak.authHost }}
+  {{- else }}
+  value: http://keycloak
+  {{- end }}
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
 {{- end }}

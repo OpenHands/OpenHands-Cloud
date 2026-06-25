@@ -1,0 +1,22 @@
+# external-dns values specific to path-based routing environments
+# Use with: helm install ... -f values.yaml -f values-path-routing.yaml
+
+# For path-based routing, we only need the root domain record
+# No wildcard DNS management needed as all routes are on the same host
+
+# Stricter domain filter for path-based setups
+# domainFilters:
+#   - your-domain.com
+
+# TXT record prefix to identify this environment
+txtPrefix: "path-"
+
+# Only watch Ingress resources (no services needed)
+sources:
+  - ingress
+
+# More conservative policy - don't delete records
+policy: upsert-only
+
+# Annotations to filter which ingresses to process
+annotationFilter: "external-dns.alpha.kubernetes.io/managed=true"

@@ -1,0 +1,32 @@
+{{/*
+Compute the ingress host based on routing mode
+*/}}
+{{- define "runtime-api.ingressHost" -}}
+{{- if and (eq .Values.ingress.routingMode "subdomain") .Values.ingress.prefixWithBranch .Values.ingress.branchSanitized -}}
+{{ .Values.ingress.branchSanitized }}.{{ .Values.ingress.host }}
+{{- else -}}
+{{ .Values.ingress.host }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Compute a path with optional prefix for path-based routing
+Usage: {{ include "runtime-api.routedPath" (dict "path" "/api/foo" "Values" .Values) }}
+*/}}
+{{- define "runtime-api.routedPath" -}}
+{{- if and (eq .Values.ingress.routingMode "path") .Values.ingress.pathPrefix -}}
+/{{ .Values.ingress.pathPrefix }}{{ .path }}
+{{- else -}}
+{{ .path }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get middleware annotation for path-based routing (Traefik)
+Returns the middleware reference if path mode is enabled
+*/}}
+{{- define "runtime-api.pathMiddlewareAnnotation" -}}
+{{- if and (eq .Values.ingress.routingMode "path") .Values.ingress.pathPrefix -}}
+traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-{{ include "runtime-api.fullname" . }}-strip-prefix@kubernetescrd
+{{- end -}}
+{{- end -}}

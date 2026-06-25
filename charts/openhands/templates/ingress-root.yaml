@@ -3,33 +3,30 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-root-ingress
+  {{- $annotations := .Values.ingress.root.annotations | default .Values.ingress.annotations }}
+  {{- $middlewareAnnotation := include "openhands.pathMiddlewareAnnotation" . }}
+  {{- if or $annotations $middlewareAnnotation }}
   annotations:
-    {{- if .Values.ingress.root.annotations }}
-    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
-    {{- else }}
-    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
+    {{- with $annotations }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- if $middlewareAnnotation }}
+    {{ $middlewareAnnotation | nindent 4 }}
+    {{- end }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.class }}
   {{- if .Values.tls.enabled }}
   tls:
   - hosts:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - {{ .Values.ingress.host }}
-    {{- end }}
+    - {{ include "openhands.ingressHost" . }}
     secretName: app-all-hands-{{ .Values.tls.env }}-tls
   {{- end }}
   rules:
-  {{- if .Values.ingress.prefixWithBranch }}
-  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-  {{- else }}
-  - host: {{ .Values.ingress.host }}
-  {{- end }}
+  - host: {{ include "openhands.ingressHost" . }}
     http:
       paths:
-      - path: /
+      - path: {{ include "openhands.routedPath" (dict "path" "/" "Values" .Values) }}
         pathType: Prefix
         backend:
           service:

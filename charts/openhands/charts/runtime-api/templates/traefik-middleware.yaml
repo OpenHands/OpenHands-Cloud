@@ -1,0 +1,11 @@
+{{- if and .Values.ingress.enabled (eq .Values.ingress.routingMode "path") .Values.ingress.pathPrefix }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "runtime-api.fullname" . }}-strip-prefix
+spec:
+  stripPrefix:
+    prefixes:
+      - /{{ .Values.ingress.pathPrefix }}
+{{- end }}

@@ -31,7 +31,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.warmRuntimes.enabled .Values.ingressBase.enabled .Values.caBundle.enabled }}
+      {{- if or .Values.warmRuntimes.enabled .Values.ingressBase.enabled (and .Values.caBundle .Values.caBundle.enabled) }}
       volumes:
         {{- if .Values.warmRuntimes.enabled }}
         - name: warm-runtimes-config
@@ -43,7 +43,7 @@ spec:
           configMap:
             name: {{ include "runtime-api.fullname" . }}-ingress-base
         {{- end }}
-        {{- if .Values.caBundle.enabled }}
+        {{- if and .Values.caBundle .Values.caBundle.enabled }}
         - name: openhands-ca-bundle
           configMap:
             name: {{ .Values.caBundle.name }}
@@ -61,7 +61,7 @@ spec:
               protocol: TCP
           env:
             {{- include "runtime-api.env" . | nindent 12 }}
-            {{- if .Values.caBundle.enabled }}
+            {{- if and .Values.caBundle .Values.caBundle.enabled }}
             - name: SSL_CERT_FILE
               value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
             - name: REQUESTS_CA_BUNDLE
@@ -116,7 +116,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.warmRuntimes.enabled .Values.ingressBase.enabled .Values.caBundle.enabled }}
+          {{- if or .Values.warmRuntimes.enabled .Values.ingressBase.enabled (and .Values.caBundle .Values.caBundle.enabled) }}
           volumeMounts:
           {{- if .Values.warmRuntimes.enabled }}
             - name: warm-runtimes-config
@@ -126,7 +126,7 @@ spec:
             - name: ingress-base-config
               mountPath: /ingress-base
           {{- end }}
-          {{- if .Values.caBundle.enabled }}
+          {{- if and .Values.caBundle .Values.caBundle.enabled }}
             - name: openhands-ca-bundle
               mountPath: {{ .Values.caBundle.mountPath }}
               readOnly: true

@@ -1,0 +1,54 @@
+# -----------------------------------------------------------------------------
+# Single Cluster - Subdomain-Based Routing - Example Configuration
+# -----------------------------------------------------------------------------
+# Copy this file to terraform.tfvars and update the values.
+# 
+# Subdomain routing uses hostnames like:
+#   - app.single-subdomain.example.com (main app)
+#   - auth.single-subdomain.example.com (keycloak)
+#   - api.single-subdomain.example.com (runtime API)
+#   - branch-name.single-subdomain.example.com (branch deploys)
+# -----------------------------------------------------------------------------
+
+project_id       = "staging-092324"
+region           = "us-central1"
+environment_name = "oh-single-subdomain"
+
+# Domain for this environment
+domain = "single-subdomain.example.com"
+
+# Set to true if you want Terraform to manage DNS
+create_dns_zone = false
+
+# Cluster configuration
+enable_autopilot    = false
+deletion_protection = false
+
+# Node pool sizing (adjust based on expected workload)
+node_machine_type       = "e2-standard-4"
+node_pool_min_count     = 1
+node_pool_max_count     = 5
+node_pool_initial_count = 2
+
+# Runtime node pool (for OpenHands agent runtimes)
+create_runtime_node_pool        = true
+runtime_node_machine_type       = "e2-standard-8"
+runtime_node_pool_min_count     = 0
+runtime_node_pool_max_count     = 10
+runtime_node_pool_initial_count = 1
+
+# Network settings
+enable_private_nodes = true
+master_authorized_networks = [
+  {
+    cidr_block   = "0.0.0.0/0"
+    display_name = "All networks (restrict for production)"
+  }
+]
+
+# Labels for cost tracking and organization
+labels = {
+  team        = "platform"
+  cost-center = "engineering"
+  managed-by  = "terraform"
+}

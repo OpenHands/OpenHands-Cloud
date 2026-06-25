@@ -29,7 +29,7 @@ Consume from a parent chart with a one-line template file:
   {{ include "crd-check.hook" . }}
 */}}
 {{- define "crd-check.hook" -}}
-{{- if .Values.crdCheck.enabled }}
+{{- if and .Values.crdCheck .Values.crdCheck.enabled }}
 {{- $saName := printf "%s-crd-check" .Release.Name }}
 {{- $roleName := printf "%s-crd-check" .Release.Name }}
 apiVersion: v1

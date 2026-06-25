@@ -3,37 +3,46 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-mcp-ingress
+  {{- $annotations := .Values.ingress.mcp.annotations | default .Values.ingress.annotations }}
+  {{- $middlewareAnnotation := include "openhands.pathMiddlewareAnnotation" . }}
+  {{- if or $annotations $middlewareAnnotation }}
   annotations:
-    {{- if .Values.ingress.mcp.annotations }}
-    {{ .Values.ingress.mcp.annotations | toYaml | nindent 4 }}
-    {{- else }}
-    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
+    {{- with $annotations }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- if $middlewareAnnotation }}
+    {{ $middlewareAnnotation | nindent 4 }}
+    {{- end }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.class }}
   {{- if .Values.tls.enabled }}
   tls:
   - hosts:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - {{ .Values.ingress.host }}
-    {{- end }}
-    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+    - {{ include "openhands.serviceIngressHost" (dict "service" "mcp" "context" .) }}
+    secretName: {{ include "openhands.serviceTlsSecretName" (dict "service" "mcp" "context" .) }}
   {{- end }}
   rules:
-  {{- if .Values.ingress.prefixWithBranch }}
-  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-  {{- else }}
-  - host: {{ .Values.ingress.host }}
-  {{- end }}
+  - host: {{ include "openhands.serviceIngressHost" (dict "service" "mcp" "context" .) }}
     http:
       paths:
-      - path: /mcp/mcp
+      {{- if and (eq .Values.ingress.serviceRoutingMode "subdomain") (eq .Values.ingress.routingMode "subdomain") }}
+      {{- /* Subdomain routing: mcp.branch.host → serve at root */}}
+      - path: /
         pathType: Prefix
         backend:
           service:
             name: openhands-mcp-service
             port:
               number: 3000
+      {{- else }}
+      {{- /* Path-based routing: /mcp/mcp */}}
+      - path: {{ include "openhands.routedPath" (dict "path" "/mcp/mcp" "Values" .Values) }}
+        pathType: Prefix
+        backend:
+          service:
+            name: openhands-mcp-service
+            port:
+              number: 3000
+      {{- end }}
 {{- end }}

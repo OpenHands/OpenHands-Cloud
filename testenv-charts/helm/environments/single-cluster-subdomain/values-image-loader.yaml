@@ -1,0 +1,27 @@
+# =============================================================================
+# Image Loader Site-Specific Values: single-cluster-subdomain
+# =============================================================================
+# This file contains ONLY overrides from charts/image-loader/values.yaml
+# 
+# Usage:
+#   helm install image-loader ./charts/image-loader \
+#     -f testenv-charts/helm/environments/single-cluster-subdomain/values-image-loader.yaml
+# =============================================================================
+
+# Image: Inherits from base chart (ghcr.io/openhands/agent-server)
+# No override needed - base chart has the correct image
+
+# Node selector for runtime nodes
+# Matches label on runtime node pool: openhands.ai/node-type=runtime
+# Note: sysbox-install explicitly set to null to override base chart default
+nodeSelector:
+  openhands.ai/node-type: "runtime"
+  sysbox-install: null
+
+# Tolerations for runtime nodes  
+# Matches taint on runtime node pool: openhands.ai/runtime=true:NoSchedule
+tolerations:
+- key: "openhands.ai/runtime"
+  operator: "Equal"
+  value: "true"
+  effect: "NoSchedule"

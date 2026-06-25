@@ -1,0 +1,57 @@
+# =============================================================================
+# Image Loader Site-Specific Values: platform-team-sandbox
+# =============================================================================
+# This file configures the image-loader DaemonSet for pre-caching runtime
+# images on sysbox-enabled nodes.
+#
+# PREREQUISITES:
+# 1. Sysbox node pool created via terraform
+# 2. sysbox-install.yaml applied to cluster
+#
+# Usage:
+#   helm install image-loader ./charts/image-loader \
+#     -n openhands --create-namespace \
+#     -f testenv-charts/helm/environments/platform-team-sandbox/values-image-loader.yaml
+# =============================================================================
+
+# Runtime image to pre-cache on nodes
+# Must match the image used in warmRuntimes.configs[].image
+image:
+  repository: ghcr.io/openhands/runtime
+  tag: cloud-1.22.1-nikolaik
+
+# RuntimeClass for sysbox (image-loader needs this to test the image works with sysbox)
+runtimeClass: sysbox-runc
+
+# Node selector for sysbox-enabled runtime nodes
+# Matches terraform label: sysbox-install=yes
+nodeSelector:
+  sysbox-install: "yes"
+
+# Tolerations for sysbox-tainted nodes
+# Matches terraform taint: sysbox-runtime=true:NoSchedule
+tolerations:
+  - key: "sysbox-runtime"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+# Resource requests - minimal since this just keeps the image cached
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# Node overprovisioner - keep spare capacity for fast runtime startup
+nodeOverprovisioner:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 500m
+      memory: 1Gi

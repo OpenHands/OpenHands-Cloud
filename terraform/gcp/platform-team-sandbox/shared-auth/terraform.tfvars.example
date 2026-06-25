@@ -1,0 +1,45 @@
+# -----------------------------------------------------------------------------
+# Example terraform.tfvars for Shared Keycloak
+# Copy this to terraform.tfvars and fill in the values
+# -----------------------------------------------------------------------------
+
+# Namespace configuration
+namespace = "shared-auth"
+
+# Keycloak configuration
+keycloak_hostname       = "auth.ohe-staging.platform-team.all-hands.dev"
+keycloak_admin_password = "CHANGE_ME_SECURE_PASSWORD"
+keycloak_chart_version  = "24.7.5"
+
+# PostgreSQL configuration (uses shared DB from openhands namespace)
+postgres_host     = "openhands-postgresql.openhands.svc.cluster.local"
+postgres_database = "shared_keycloak"
+postgres_username = "postgres"
+postgres_password = "CHANGE_ME_DB_PASSWORD"
+
+# Ingress configuration
+ingress_class   = "traefik"
+tls_secret_name = "ohe-staging-wildcard-tls"
+
+# -----------------------------------------------------------------------------
+# Enterprise SSO (SAML) Configuration - Google Workspace
+# -----------------------------------------------------------------------------
+# These values come from the Google Workspace Admin Console:
+# 1. Go to Apps > Web and mobile apps > Add App > Add custom SAML app
+# 2. Enter app name: "OpenHands Staging"
+# 3. Download the IDP metadata or copy:
+#    - SSO URL (singleSignOnServiceUrl)
+#    - Certificate (copy just the base64 content, no BEGIN/END lines)
+# 4. Configure Service Provider:
+#    - ACS URL: https://auth.ohe-staging.platform-team.all-hands.dev/auth/realms/allhands/broker/enterprise_sso/endpoint
+#    - Entity ID: openhands-allhands
+#    - Name ID format: EMAIL
+# -----------------------------------------------------------------------------
+
+# SAML SSO URL from Google Workspace (format: https://accounts.google.com/o/saml2/idp?idpid=...)
+saml_sso_url = ""
+
+# SAML signing certificate (base64 content only, no headers/footers)
+# Remove "-----BEGIN CERTIFICATE-----" and "-----END CERTIFICATE-----" lines
+# and join all lines into a single string
+saml_signing_certificate = ""

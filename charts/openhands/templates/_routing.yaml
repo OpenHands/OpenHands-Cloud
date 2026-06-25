@@ -1,0 +1,116 @@
+{{/*
+=============================================================================
+TWO-LEVEL ROUTING ARCHITECTURE
+=============================================================================
+
+Level 1: Branch Routing (routingMode)
+  - subdomain: branch.host.example.com
+  - path: host.example.com/branch/
+
+Level 2: Service Routing within a branch (serviceRoutingMode)
+  - path: (default) services use paths like /api/automation, /integration/*
+  - subdomain: services get subdomains like automation.branch.host.example.com
+
+Examples with branch "my-feature" and host "staging.example.com":
+
+  routingMode=subdomain + serviceRoutingMode=path (default):
+    App:         my-feature.staging.example.com/
+    Automation:  my-feature.staging.example.com/api/automation
+    Integrations: my-feature.staging.example.com/integration/*
+
+  routingMode=subdomain + serviceRoutingMode=subdomain:
+    App:         my-feature.staging.example.com
+    Automation:  automation.my-feature.staging.example.com
+    Integrations: integrations.my-feature.staging.example.com
+    MCP:         mcp.my-feature.staging.example.com
+
+  routingMode=path + serviceRoutingMode=path:
+    App:         staging.example.com/my-feature/
+    Automation:  staging.example.com/my-feature/api/automation
+    (Note: serviceRoutingMode=subdomain is not supported with routingMode=path)
+
+=============================================================================
+*/}}
+
+{{/*
+Compute the base ingress host (branch routing only, no service prefix)
+Supports branchSanitized at both root level (.Values.branchSanitized) and ingress level (.Values.ingress.branchSanitized)
+*/}}
+{{- define "openhands.ingressHost" -}}
+{{- $branch := .Values.ingress.branchSanitized | default .Values.branchSanitized -}}
+{{- if and (eq .Values.ingress.routingMode "subdomain") .Values.ingress.prefixWithBranch $branch -}}
+{{ $branch }}.{{ .Values.ingress.host }}
+{{- else -}}
+{{ .Values.ingress.host }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Compute the ingress host for a specific service (includes service subdomain if applicable)
+Usage: {{ include "openhands.serviceIngressHost" (dict "service" "automation" "context" .) }}
+Services: "automation", "integrations", "mcp" (empty string or "root" for main app)
+*/}}
+{{- define "openhands.serviceIngressHost" -}}
+{{- $baseHost := include "openhands.ingressHost" .context -}}
+{{- $service := .service -}}
+{{- if and (eq .context.Values.ingress.routingMode "subdomain") (eq .context.Values.ingress.serviceRoutingMode "subdomain") $service (ne $service "root") -}}
+{{ $service }}.{{ $baseHost }}
+{{- else -}}
+{{ $baseHost }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Compute the TLS secret name for a service
+When serviceRoutingMode=subdomain, each service may need its own TLS secret
+*/}}
+{{- define "openhands.serviceTlsSecretName" -}}
+{{- $service := .service -}}
+{{- $baseSecretName := printf "app-all-hands-%s-tls" .context.Values.tls.env -}}
+{{- if and (eq .context.Values.ingress.routingMode "subdomain") (eq .context.Values.ingress.serviceRoutingMode "subdomain") $service (ne $service "root") -}}
+{{- /* For service subdomains, use a wildcard cert that covers *.branch.host */ -}}
+{{- $baseSecretName -}}
+{{- else -}}
+{{- $baseSecretName -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Compute a path with optional prefix for path-based routing
+Usage: {{ include "openhands.routedPath" (dict "path" "/api/foo" "Values" .Values) }}
+*/}}
+{{- define "openhands.routedPath" -}}
+{{- if and (eq .Values.ingress.routingMode "path") .Values.ingress.pathPrefix -}}
+/{{ .Values.ingress.pathPrefix }}{{ .path }}
+{{- else -}}
+{{ .path }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Compute a path for service routing (strips service prefix when using service subdomains)
+Usage: {{ include "openhands.serviceRoutedPath" (dict "path" "/api/automation" "service" "automation" "context" .) }}
+When serviceRoutingMode=subdomain:
+  - "/api/automation" with service="automation" → "/" (path stripped, service is in subdomain)
+When serviceRoutingMode=path:
+  - "/api/automation" → "/api/automation" or "/branch/api/automation" (path kept)
+*/}}
+{{- define "openhands.serviceRoutedPath" -}}
+{{- if and (eq .context.Values.ingress.routingMode "subdomain") (eq .context.Values.ingress.serviceRoutingMode "subdomain") .service (ne .service "root") -}}
+{{- /* Service is in subdomain, so we serve at root */}}
+/
+{{- else -}}
+{{- /* Use normal path routing */}}
+{{- include "openhands.routedPath" (dict "path" .path "Values" .context.Values) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get middleware annotation for path-based routing (Traefik)
+Returns the middleware reference if path mode is enabled
+*/}}
+{{- define "openhands.pathMiddlewareAnnotation" -}}
+{{- if and (eq .Values.ingress.routingMode "path") .Values.ingress.pathPrefix -}}
+traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-openhands-strip-prefix@kubernetescrd
+{{- end -}}
+{{- end -}}

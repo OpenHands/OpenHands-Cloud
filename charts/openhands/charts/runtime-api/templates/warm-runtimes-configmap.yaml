@@ -30,6 +30,15 @@ data:
           {{- with $config.fs_group }},
           "fs_group": {{ $config.fs_group }}
           {{- end }}
+          {{- with $config.node_selector }},
+          "node_selector": {{ $config.node_selector | toJson }}
+          {{- end }}
+          {{- with $config.tolerations }},
+          "tolerations": {{ $config.tolerations | toJson }}
+          {{- end }}
+          {{- with $config.runtime_class }},
+          "runtime_class": {{ $config.runtime_class | quote }}
+          {{- end }}
         }
         {{- end }}
       ]

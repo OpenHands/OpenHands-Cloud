@@ -1,0 +1,51 @@
+# Traefik values specific to subdomain-based routing environments
+# Use with: helm install ... -f values.yaml -f values-subdomain-routing.yaml
+#
+# Subdomain routing example:
+#   app.domain.com        -> openhands-service (main UI)
+#   api.domain.com        -> openhands-service (API endpoints)
+#   runtime.domain.com    -> runtime-api (runtime management)
+#   auth.domain.com       -> keycloak (authentication)
+#   llm.domain.com        -> litellm (LLM proxy)
+#   branch.domain.com     -> branch-specific deployment
+
+# TLS configuration for wildcard certificates
+# Requires cert-manager with DNS-01 solver
+
+# Ports - websecure handles TLS termination
+ports:
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    protocol: TCP
+    http:
+      tls:
+        enabled: true
+        # Use default certificate store that will have wildcard cert
+        # certResolver: letsencrypt-dns
+
+# Additional arguments for subdomain routing
+additionalArguments:
+  - "--api.insecure=false"
+  - "--api.dashboard=true"
+  - "--providers.kubernetesingress.ingressendpoint.publishedservice=traefik/traefik"
+  # Enable TLS passthrough for websocket connections
+  - "--entryPoints.websecure.http.tls=true"
+
+# Logs - include host info for debugging
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+    format: json
+    fields:
+      headers:
+        defaultMode: keep
+        names:
+          Host: keep
+          X-Forwarded-Host: keep
+          X-Forwarded-For: keep
+          X-Real-IP: keep

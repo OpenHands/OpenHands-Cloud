@@ -1,0 +1,55 @@
+# Traefik values specific to path-based routing environments
+# Use with: helm install ... -f values.yaml -f values-path-routing.yaml
+#
+# Path-based routing example:
+#   domain.com/           -> openhands-service (main UI)
+#   domain.com/api/       -> openhands-service (API endpoints)
+#   domain.com/runtime/   -> runtime-api (runtime management)
+#   domain.com/auth/      -> keycloak (authentication)
+#   domain.com/llm/       -> litellm (LLM proxy)
+
+# Additional middlewares for path-based routing
+# These are configured via Kubernetes Middleware CRDs
+
+# Example middleware definitions to apply after installation:
+# ---
+# apiVersion: traefik.io/v1alpha1
+# kind: Middleware
+# metadata:
+#   name: strip-api-prefix
+#   namespace: openhands
+# spec:
+#   stripPrefix:
+#     prefixes:
+#       - /api
+# ---
+# apiVersion: traefik.io/v1alpha1
+# kind: Middleware
+# metadata:
+#   name: strip-runtime-prefix
+#   namespace: openhands
+# spec:
+#   stripPrefix:
+#     prefixes:
+#       - /runtime
+
+# Additional arguments for path routing
+additionalArguments:
+  - "--api.insecure=false"
+  - "--api.dashboard=true"
+  # Enable better path matching
+  - "--providers.kubernetesingress.ingressendpoint.publishedservice=traefik/traefik"
+
+# Logs - include path info
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+    format: json
+    fields:
+      headers:
+        defaultMode: keep
+        names:
+          X-Forwarded-For: keep
+          X-Real-IP: keep

@@ -1,0 +1,64 @@
+# external-dns Helm values for OpenHands staging environments
+# Install with: helm install external-dns bitnami/external-dns -n external-dns --create-namespace -f values.yaml
+
+# Provider: Google Cloud DNS
+provider: google
+
+# GCP-specific configuration
+google:
+  # Project containing Cloud DNS zones
+  project: ""  # Set via --set google.project=staging-092324
+  # Use Workload Identity (recommended for GKE)
+  # serviceAccountSecret: ""  # Leave empty for Workload Identity
+
+# Domain filter - only manage DNS for these domains
+# Set via --set domainFilters[0]=your-domain.com
+domainFilters: []
+
+# Zone type filter
+zoneIdFilters: []
+
+# Sources for DNS records
+sources:
+  - service
+  - ingress
+
+# Policy: sync will delete records, upsert-only will only create/update
+policy: upsert-only
+
+# Registry to track DNS records ownership
+registry: txt
+txtOwnerId: ""  # Set to environment name, e.g., "single-cluster-path"
+txtPrefix: "external-dns-"
+
+# Interval between DNS synchronization
+interval: 1m
+
+# Log level
+logLevel: info
+logFormat: text
+
+# Service account configuration
+serviceAccount:
+  create: true
+  # Annotate for GKE Workload Identity
+  annotations: {}
+    # iam.gke.io/gcp-service-account: external-dns@<project-id>.iam.gserviceaccount.com
+
+# Resource limits
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# Replica count
+replicaCount: 1
+
+# Prometheus metrics
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false

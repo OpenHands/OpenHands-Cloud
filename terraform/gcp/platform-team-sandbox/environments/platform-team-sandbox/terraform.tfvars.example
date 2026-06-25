@@ -1,0 +1,66 @@
+# -----------------------------------------------------------------------------
+# Platform Team Sandbox - Example Configuration
+# -----------------------------------------------------------------------------
+# Copy this file to terraform.tfvars and update the values.
+#
+# This environment uses sysbox for runtime isolation (same as production).
+# After terraform apply, you must also install sysbox:
+#   kubectl apply -f ../../../../testenv-charts/k8s/sysbox/sysbox-install.yaml
+#
+# Domain routing: ohe-staging.platform-team.all-hands.dev
+#   - Main app: ohe-staging.platform-team.all-hands.dev
+#   - Auth (shared Keycloak): auth.all-hands.dev
+#   - Runtime: *.runtime.ohe-staging.platform-team.all-hands.dev
+# -----------------------------------------------------------------------------
+
+# GCP Project - Platform Team Sandbox
+project_id       = "platform-team-sandbox"  # Update with actual project ID
+region           = "us-central1"
+environment_name = "ohe-staging"
+
+# Domain for this environment
+domain = "ohe-staging.platform-team.all-hands.dev"
+
+# DNS zone is managed elsewhere (parent domain)
+create_dns_zone = false
+
+# Cluster configuration
+enable_autopilot    = false  # Required for sysbox (Autopilot doesn't support custom runtimes)
+deletion_protection = false  # Set to true for production
+
+# Primary node pool (for OpenHands app, shared services)
+node_machine_type       = "e2-standard-4"
+node_disk_size_gb       = 100
+node_pool_min_count     = 1
+node_pool_max_count     = 5
+node_pool_initial_count = 2
+
+# Runtime node pool with sysbox
+# These nodes are:
+# - Labeled: sysbox-install=yes
+# - Tainted: sysbox-runtime=true:NoSchedule
+# - Larger disk for runtime image caching (~10GB images)
+create_runtime_node_pool        = true
+runtime_node_machine_type       = "e2-standard-8"  # 8 vCPU, 32GB RAM for multiple runtimes
+runtime_node_disk_size_gb       = 200              # Large disk for image caching
+runtime_node_pool_min_count     = 1                # Keep at least 1 runtime node
+runtime_node_pool_max_count     = 10
+runtime_node_pool_initial_count = 1
+
+# Network settings
+enable_private_nodes = true
+master_authorized_networks = [
+  {
+    cidr_block   = "0.0.0.0/0"
+    display_name = "All networks (restrict for production)"
+  }
+]
+
+# Labels for cost tracking and organization
+labels = {
+  team        = "platform"
+  environment = "staging"
+  cost-center = "engineering"
+  managed-by  = "terraform"
+  runtime     = "sysbox"
+}

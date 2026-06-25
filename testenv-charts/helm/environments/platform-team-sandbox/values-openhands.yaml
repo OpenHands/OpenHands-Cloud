@@ -1,0 +1,191 @@
+# =============================================================================
+# OpenHands Site-Specific Values: platform-team-sandbox
+# =============================================================================
+# Runtime Isolation Status: SYSBOX ENABLED
+#
+# CURRENT STATE:
+# - Runtime pods run with sysbox-runc RuntimeClass for container-in-container isolation
+# - Matches production configuration
+#
+# PREREQUISITES (before deploying):
+# 1. Terraform creates runtime node pool with Ubuntu nodes (runtime_node_image_type = UBUNTU_CONTAINERD)
+# 2. Apply sysbox-install.yaml: kubectl apply -f testenv-charts/k8s/sysbox/sysbox-install.yaml
+# 3. Deploy image-loader for pre-caching runtime images
+#
+# VERIFICATION:
+#   kubectl get runtimeclass sysbox-runc
+#   kubectl get nodes -l sysbox-install=yes
+#   kubectl get pods -n sysbox
+#
+# Usage:
+#   helm install openhands ./charts/openhands \
+#     -f testenv-charts/helm/environments/platform-team-sandbox/values-openhands.yaml \
+#     --set branchSanitized=my-branch
+# =============================================================================
+
+# Image override - use sha-115237f which has migrations up to 112
+image:
+  tag: sha-115237f
+
+# Site-specific hostnames with subdomain routing
+ingress:
+  enabled: true
+  host: "ohe-staging.platform-team.all-hands.dev"
+  prefixWithBranch: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns01
+
+env:
+  RUNTIME_URL_PATTERN: "https://ohe-staging.platform-team.all-hands.dev/runtime/{runtime_id}"
+
+# Runtime API endpoint for OpenHands server to communicate with runtime-api
+sandbox:
+  apiHostname: "http://openhands-runtime-api:5000"
+
+# Use shared Keycloak
+keycloak:
+  url: "https://auth.ohe-staging.platform-team.all-hands.dev"
+  authHost: "auth.ohe-staging.platform-team.all-hands.dev"
+  # Redirect URI registration for branch deployments
+  # When enabled, a post-install/upgrade hook registers the branch's redirect URI
+  # with the shared Keycloak instance. Required because Keycloak doesn't support
+  # wildcard subdomains (e.g., https://*.example.com/*).
+  redirectUriRegistration:
+    enabled: true
+    keycloakUrl: "https://auth.ohe-staging.platform-team.all-hands.dev"
+    realmName: "allhands"
+    clientId: "allhands"
+    adminUser: "tmpadmin"
+    adminPasswordSecret:
+      name: "keycloak-admin"
+      key: "admin-password"
+
+enterpriseSSO:
+  enabled: true
+
+# LiteLLM using shared PostgreSQL
+litellm-helm:
+  enabled: true
+  db:
+    useExisting: true
+    deployStandalone: false
+    endpoint: openhands-postgresql
+  ingress:
+    enabled: false
+
+litellm:
+  url: "http://litellm-helm:4000"
+
+# Ephemeral minio storage for testing (production would use GCS/S3)
+filestore:
+  ephemeral: true
+
+# Enable database creation
+databaseMigrations:
+  createDatabases: true
+
+# PostgreSQL with persistence
+postgresql:
+  fullnameOverride: openhands-postgresql
+  auth:
+    database: openhands_db
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# Redis
+redis:
+  fullnameOverride: openhands-redis
+  auth:
+    enabled: true
+    existingSecret: "redis"
+
+# =============================================================================
+# RUNTIME CONFIGURATION
+# =============================================================================
+# Runtime isolation: SYSBOX ENABLED
+# - RUNTIME_CLASS is set to "sysbox-runc" for container-in-container isolation
+# - Runtime pods schedule on nodes labeled: sysbox-install=yes
+# - Nodes are tainted: sysbox-runtime=true:NoSchedule
+# =============================================================================
+
+runtime-api:
+  fullnameOverride: openhands-runtime-api
+  imagePullSecrets:
+    - name: ghcr-login-secret
+  databaseMigrations:
+    createDatabases: true
+  postgresql:
+    auth:
+      existingSecret: postgres-password
+  ingress:
+    enabled: true
+    host: "ohe-staging.platform-team.all-hands.dev"
+    prefixWithBranch: true
+    path: /runtime
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-dns01
+  env:
+    # Database connection
+    DB_HOST: openhands-postgresql
+    DB_USER: postgres
+    DB_NAME: runtime_api_db
+    # Kubernetes namespace for runtime pods
+    K8S_NAMESPACE: "openhands"
+    # Runtime base URL
+    RUNTIME_BASE_URL: "ohe-staging.platform-team.all-hands.dev"
+    # ============================================================
+    # RUNTIME ISOLATION: SYSBOX ENABLED
+    # Uses sysbox-runc RuntimeClass for secure container-in-container
+    # ============================================================
+    RUNTIME_CLASS: "sysbox-runc"
+    # Runtime node scheduling - schedule on sysbox-enabled nodes
+    RUNTIME_NODE_SELECTOR: '{"sysbox-install": "yes"}'
+    RUNTIME_TOLERATIONS: '[{"key": "sysbox-runtime", "operator": "Equal", "value": "true", "effect": "NoSchedule"}]'
+
+  # Warm runtimes pre-create runtime pods for faster conversation startup
+  warmRuntimes:
+    enabled: true
+    count: 1
+    configs:
+      - name: default
+        image: "ghcr.io/openhands/runtime:cloud-1.22.1-nikolaik"
+        working_dir: "/openhands/code/"
+        environment:
+          LOG_JSON: "1"
+          LOG_JSON_LEVEL_KEY: "severity"
+        command:
+          - /openhands/micromamba/bin/micromamba
+          - run
+          - -n
+          - openhands
+          - poetry
+          - run
+          - python
+          - -u
+          - -m
+          - openhands.runtime.action_execution_server
+          - "60000"
+          - --working-dir
+          - /workspace
+          - --plugins
+          - agent_skills
+          - jupyter
+          - vscode
+          - --username
+          - root
+          - --user-id
+          - "0"
+        # Node selector to schedule on sysbox-enabled nodes (snake_case required by template)
+        node_selector:
+          sysbox-install: "yes"
+        # Tolerations to allow scheduling on sysbox-tainted nodes (snake_case required by template)
+        tolerations:
+          - key: "sysbox-runtime"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"
+        # Runtime class for sysbox isolation (snake_case required by template)
+        runtime_class: "sysbox-runc"

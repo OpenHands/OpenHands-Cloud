@@ -1,0 +1,524 @@
+# =============================================================================
+# OpenHands Platform Team Sandbox Base Values
+# =============================================================================
+# Shared configuration for all branch deployments on ohe-staging.platform-team.all-hands.dev
+#
+# Usage:
+#   helm install openhands-{branch} ./charts/openhands \
+#     -f testenv-charts/helm/environments/staging/base-values.yaml \
+#     --set branchSanitized={branch} \
+#     -n openhands-{branch} --create-namespace
+#
+# Required secrets in namespace (copied from all-hands-system):
+#   - ghcr-login-secret (image pull)
+#   - postgres-password
+#   - redis (redis auth)
+#   - keycloak-admin
+#   - keycloak-db-secret
+#   - lite-llm-api-key
+#   - stripe-api-key
+#   - resend-api-key
+#   - github-app (GitHub integration)
+#   - bitbucket-app (Bitbucket integration)
+#   - gitlab-auth (GitLab integration)
+#   - automation-webhook-secret
+#   - automation-service-key
+#   - automation-db-secret
+# =============================================================================
+
+# Branch name placeholder - MUST be overridden per deployment
+branchSanitized: ""
+
+# -----------------------------------------------------------------------------
+# Application Image
+# -----------------------------------------------------------------------------
+image:
+  repository: ghcr.io/openhands/enterprise-server
+  # tag: will be set per deployment based on OpenHands PR
+
+imagePullSecrets:
+  - name: ghcr-login-secret
+
+# -----------------------------------------------------------------------------
+# Application Configuration
+# -----------------------------------------------------------------------------
+appConfig:
+  OPENHANDS_BITBUCKET_SERVICE_CLS: integrations.bitbucket.bitbucket_service.SaaSBitBucketService
+  POSTHOG_CLIENT_KEY: phc_Wj1DvqGQgl5ml0bkZvPr55sxIvJWjlGmoHYZrxdh5qD
+  POSTHOG_HOST: https://us.i.posthog.com
+
+env:
+  # Conversation & App Mode
+  CONVERSATION_MANAGER_CLASS: server.saas_nested_conversation_manager.SaasNestedConversationManager
+  OH_APP_CONVERSATION_INFO_KIND: server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector
+  OH_APP_MODE: saas
+  V1_ENABLED: "true"
+  INIT_GIT_IN_EMPTY_WORKSPACE: "1"
+  OPENHANDS_SUPPRESS_BANNER: "1"
+  
+  # Runtime Configuration
+  RUNTIME_URL_PATTERN: https://{runtime_id}.runtime.ohe-staging.platform-team.all-hands.dev
+  
+  # LLM Proxy
+  OPENHANDS_PROVIDER_BASE_URL: https://llm-proxy.ohe-staging.platform-team.all-hands.dev/
+  
+  # Features
+  ENABLE_BILLING: "true"
+  ENABLE_EXPERIMENT_MANAGER: "true"
+  ENABLE_MCP_SEARCH_ENGINE: "true"
+  ENABLE_PROACTIVE_CONVERSATION_STARTERS: "false"
+  ENABLE_SOLVABILITY_ANALYSIS: "true"
+  ENABLE_V1_GITHUB_RESOLVER: "true"
+  ENABLE_V1_SLACK_RESOLVER: "true"
+  
+  # UI Flags
+  OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: "true"
+  OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA: "true"
+  OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE: "false"
+  OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_INTEGRATIONS_PAGE: "false"
+  OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_USERS_PAGE: "false"
+  # NOTE: Don't set OH_WEB_CLIENT_PROVIDERS_CONFIGURED here - let the chart compute 
+  # it from github.enabled, gitlab.enabled, bitbucket.enabled, enterpriseSSO.enabled flags
+  
+  # Integrations
+  COLLECT_GITHUB_INTERACTIONS: "true"
+  JIRA_WEBHOOKS_ENABLED: "true"
+  LINEAR_WEBHOOKS_ENABLED: "true"
+  
+  # Access Control (staging is open to internal emails)
+  DUPLICATE_EMAIL_CHECK: "false"
+  OH_USER_AUTHORIZER_PREVENT_DUPLICATES: "false"
+  EMAIL_PATTERN_BLACKLIST: '%'
+  EMAIL_PATTERN_WHITELIST: '%@openhands.dev,%@all-hands.dev,chloearibo92@gmail.com,chuckbutkus@gmail.com,contact@rbren.io,hieptl.developer@gmail.com,jlaverty@live.com,joepelletier@outlook.com,juan@juan.com.uy,neubig@gmail.com,ray.myers@gmail.com,rohitvinodmalhotra@gmail.com,saurya@gmail.com,tofarr@gmail.com,stephanpsaras@proton.me'
+  
+  # Experiments
+  EXPERIMENT_CONDENSER_MAX_STEP: condenser_max_step_experiment
+  EXPERIMENT_SYSTEM_PROMPT_EXPERIMENT: three_system_prompt_experiment
+
+# -----------------------------------------------------------------------------
+# Deployment Settings
+# -----------------------------------------------------------------------------
+deployment:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 100m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+
+uvicorn:
+  workers: 1
+
+debuggingRoutes:
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Ingress Configuration
+# -----------------------------------------------------------------------------
+ingress:
+  class: traefik
+  enabled: true
+  host: ohe-staging.platform-team.all-hands.dev
+  prefixWithBranch: true
+  root:
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+
+# -----------------------------------------------------------------------------
+# File Storage
+# -----------------------------------------------------------------------------
+filestore:
+  ephemeral: true
+
+# -----------------------------------------------------------------------------
+# PostgreSQL (per-branch instance)
+# -----------------------------------------------------------------------------
+postgresql:
+  auth:
+    database: openhands
+    existingSecret: postgres-password
+    password: ""
+    username: postgres
+  enabled: true
+  primary:
+    initdb:
+      scriptsConfigMap: ""
+    persistence:
+      enabled: false
+  service:
+    ports:
+      postgresql: 5432
+
+# -----------------------------------------------------------------------------
+# Redis (per-branch instance)
+# -----------------------------------------------------------------------------
+redis:
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: redis
+  enabled: true
+  master:
+    persistence:
+      enabled: false
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  replica:
+    replicaCount: 0
+
+# -----------------------------------------------------------------------------
+# MinIO (per-branch instance)
+# -----------------------------------------------------------------------------
+minio:
+  nameOverride: minio
+  rootPassword: notasecret
+  rootUser: root
+  svcaccts:
+    - accessKey: default
+      secretKey: notasecret
+      user: root
+
+# -----------------------------------------------------------------------------
+# Keycloak (per-branch instance)
+# -----------------------------------------------------------------------------
+keycloak:
+  enabled: true
+  auth:
+    adminUser: tmpadmin
+    existingSecret: keycloak-admin
+    passwordSecretKey: admin-password
+  postgresql:
+    enabled: false
+  externalDatabase:
+    host: ""  # Will be set dynamically: openhands-{branch}-postgresql
+    existingSecret: keycloak-db-secret
+    existingSecretDatabaseKey: db-name
+    existingSecretPasswordKey: db-password
+    existingSecretPortKey: db-port
+    existingSecretUserKey: db-user
+  extraEnvVars:
+    - name: KC_FEATURES
+      value: token-exchange,admin-fine-grained-authz
+    - name: KC_HOSTNAME_STRICT
+      value: "false"
+    - name: KC_PROXY
+      value: edge
+    - name: KC_PROXY_HEADERS
+      value: xforwarded
+  fullnameOverride: keycloak
+  ingress:
+    enabled: true
+    hostname: ""  # Will be set dynamically: {branch}.auth.ohe-staging.platform-team.all-hands.dev
+    hostnameStrict: true
+    ingressClassName: traefik
+    servicePort: 80
+    tls: true
+  production: true
+  proxyHeaders: forwarded
+  replicaCount: 1
+  service:
+    type: ClusterIP
+  serviceAccount:
+    name: keycloak-sa
+  # initContainers for database setup - host will be dynamically substituted
+
+# -----------------------------------------------------------------------------
+# LiteLLM (uses shared proxy)
+# -----------------------------------------------------------------------------
+litellm:
+  auth:
+    existingSecret: lite-llm-api-key
+  enabled: true
+  teamId: 62ea39c4-8886-44f3-b7ce-07ed4fe42d2c
+  url: https://llm-proxy.ohe-staging.platform-team.all-hands.dev
+
+litellm-helm:
+  enabled: false
+  envVars:
+    JSON_LOGS: "true"
+
+# -----------------------------------------------------------------------------
+# Runtime Configuration
+# -----------------------------------------------------------------------------
+runtime:
+  image:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.19.1-python
+  runAsRoot: true
+
+runtime-api:
+  enabled: false
+  warmRuntimes:
+    enabled: false
+
+sandbox:
+  apiHostname: https://runtime.ohe-staging.platform-team.all-hands.dev
+
+# -----------------------------------------------------------------------------
+# Integration: GitHub
+# -----------------------------------------------------------------------------
+github:
+  enabled: true
+
+githubProxy:
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Integration: GitLab
+# -----------------------------------------------------------------------------
+gitlab:
+  enabled: true
+
+gitlabWebhookInstallation:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  backoffLimit: 3
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# Integration: Bitbucket
+# -----------------------------------------------------------------------------
+bitbucket:
+  auth:
+    existingSecret: bitbucket-app
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Integration: Jira
+# -----------------------------------------------------------------------------
+jira:
+  enabled: true
+
+jiraDc:
+  enableOAuth: false
+  enabled: false
+
+# -----------------------------------------------------------------------------
+# Integration: Linear
+# -----------------------------------------------------------------------------
+linear:
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Integration: Slack
+# -----------------------------------------------------------------------------
+slack:
+  clientId: "7477886716822.8876012058320"
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Integration: Stripe
+# -----------------------------------------------------------------------------
+stripe:
+  auth:
+    existingSecret: stripe-api-key
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Integration: Resend
+# -----------------------------------------------------------------------------
+resend:
+  auth:
+    existingSecret: resend-api-key
+  enabled: true
+
+resendSync:
+  enabled: false
+  audienceId: 71505d2c-e1c7-4623-b985-ff73dbe04a23
+  schedule: "0 * * * *"
+  batchSize: 100
+  rateLimit: 2
+  maxRetries: 3
+  initialBackoffSeconds: 1
+  backoffFactor: 2
+  maxBackoffSeconds: 60
+  fromEmail: "OpenHands Team <no-reply@welcome.openhands.dev>"
+  concurrencyPolicy: Forbid
+  backoffLimit: 3
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# Integration: Tavily
+# -----------------------------------------------------------------------------
+tavily:
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Automation Service
+# -----------------------------------------------------------------------------
+automation:
+  enabled: true
+  # automationBaseUrl: will be set dynamically: https://{branch}.ohe-staging.platform-team.all-hands.dev
+  # openhandsApiUrl: will be set dynamically: https://{branch}.ohe-staging.platform-team.all-hands.dev
+  automationWebhookSecretFromSecret:
+    key: webhook-secret
+    name: automation-webhook-secret
+  database:
+    createDatabaseUser: true
+    host: ""  # Will be set dynamically: openhands-{branch}-postgresql
+    name: automations
+    port: "5432"
+    secretKey: db-password
+    secretName: automation-db-secret
+    superuserSecretKey: password
+    superuserSecretName: postgres-password
+    user: automation_user
+  datadog:
+    env: feature
+  deployment:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 250m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  env:
+    AUTOMATION_LOG_LEVEL: info
+    AUTOMATION_SCHEDULER_INTERVAL_SECONDS: "60"
+    AWS_S3_AUTO_CREATE_BUCKET: "true"
+  events:
+    deployment:
+      replicas: 1
+      resources:
+        limits:
+          cpu: 250m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+    enabled: true
+    uvicorn:
+      workers: 1
+  filestore:
+    bucket: automation-data
+    ephemeral: true
+    type: gcs
+  image:
+    repository: ghcr.io/openhands/automation
+    # tag: should match OpenHands release
+  imagePullSecrets:
+    - name: ghcr-login-secret
+  minio:
+    enabled: false
+    external:
+      accessKey: root
+      endpoint: ""  # Will be set dynamically: openhands-{branch}-minio:9000
+      secretKey: notasecret
+  postgresql:
+    enabled: false
+  serviceAccount:
+    annotations: {}
+    name: automation-sa
+  serviceKeyFromSecret:
+    key: automation-service-key
+    name: automation-service-key
+
+automationService:
+  eventForwardingEnabled: true
+  url: ""  # Will be set dynamically: https://{branch}.ohe-staging.platform-team.all-hands.dev/api/automation
+
+automationServiceKey:
+  enabled: true
+  existingSecret: automation-service-key
+  secretKey: automation-service-key
+
+automationWebhookSecret:
+  enabled: true
+  existingSecret: automation-webhook-secret
+  secretKey: webhook-secret
+
+# -----------------------------------------------------------------------------
+# Integration Events
+# -----------------------------------------------------------------------------
+integrationEvents:
+  deployment:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2.5Gi
+      requests:
+        cpu: 1000m
+        memory: 2.5Gi
+  uvicorn:
+    workers: 1
+
+# -----------------------------------------------------------------------------
+# MCP Events
+# -----------------------------------------------------------------------------
+mcpEvents:
+  deployment:
+    replicas: 1
+  uvicorn:
+    workers: 1
+
+# -----------------------------------------------------------------------------
+# Database Migrations
+# -----------------------------------------------------------------------------
+migrationJob:
+  enabled: true
+  initContainer:
+    enabled: false
+
+# -----------------------------------------------------------------------------
+# Cron Jobs
+# -----------------------------------------------------------------------------
+enrichUserInteractionData:
+  enabled: true
+
+commonRoomSync:
+  enabled: false
+  schedule: "* * * * *"
+
+proactiveConvoClean:
+  enabled: true
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  backoffLimit: 3
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------------
+datadog:
+  agentHost: datadog-agent.all-hands-system.svc.cluster.local
+  enabled: true
+  env: feature
+  service: deploy
+
+gcpMonitoring:
+  enabled: true

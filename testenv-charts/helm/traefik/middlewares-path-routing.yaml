@@ -1,0 +1,100 @@
+# Traefik Middlewares for path-based routing
+# Apply after Traefik installation: kubectl apply -f middlewares-path-routing.yaml
+
+---
+# Strip /api prefix before forwarding to backend
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-api-prefix
+  namespace: openhands
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
+
+---
+# Strip /runtime prefix before forwarding to runtime-api
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-runtime-prefix
+  namespace: openhands
+spec:
+  stripPrefix:
+    prefixes:
+      - /runtime
+
+---
+# Strip /auth prefix before forwarding to Keycloak
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-auth-prefix
+  namespace: openhands
+spec:
+  stripPrefix:
+    prefixes:
+      - /auth
+
+---
+# Strip /llm prefix before forwarding to LiteLLM
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-llm-prefix
+  namespace: openhands
+spec:
+  stripPrefix:
+    prefixes:
+      - /llm
+
+---
+# Add X-Forwarded-Prefix header (some apps need this)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: add-forwarded-prefix-api
+  namespace: openhands
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Prefix: "/api"
+
+---
+# Rate limiting middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit
+  namespace: openhands
+spec:
+  rateLimit:
+    average: 100
+    burst: 200
+
+---
+# Compression middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: compress
+  namespace: openhands
+spec:
+  compress: {}
+
+---
+# Security headers middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: openhands
+spec:
+  headers:
+    frameDeny: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Frame-Options: "SAMEORIGIN"

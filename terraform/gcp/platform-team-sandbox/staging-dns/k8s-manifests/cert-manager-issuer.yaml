@@ -1,0 +1,62 @@
+# -----------------------------------------------------------------------------
+# cert-manager ClusterIssuer for Let's Encrypt with GCP Cloud DNS
+#
+# Uses DNS-01 challenge for wildcard certificate support
+# Requires: cert-manager installed, GCP service account with DNS admin role
+# -----------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging-dns
+spec:
+  acme:
+    # Use Let's Encrypt staging for testing (change to production URL when ready)
+    # Staging: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Production: https://acme-v02.api.letsencrypt.org/directory
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: saurya@openhands.dev
+    privateKeySecretRef:
+      name: letsencrypt-staging-dns-account-key
+    solvers:
+    - dns01:
+        cloudDNS:
+          project: platform-team-sandbox-62793
+          serviceAccountSecretRef:
+            name: clouddns-dns01-solver-svc-acct
+            key: key.json
+---
+# -----------------------------------------------------------------------------
+# Wildcard Certificate for staging environments
+#
+# This certificate covers:
+# - ohe-staging.platform-team.all-hands.dev (root)
+# - *.ohe-staging.platform-team.all-hands.dev (all subdomains)
+# -----------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ohe-staging-wildcard-cert
+  namespace: traefik
+spec:
+  secretName: ohe-staging-wildcard-tls
+  issuerRef:
+    name: letsencrypt-staging-dns
+    kind: ClusterIssuer
+  dnsNames:
+  - "ohe-staging.platform-team.all-hands.dev"
+  - "*.ohe-staging.platform-team.all-hands.dev"
+---
+# -----------------------------------------------------------------------------
+# Traefik TLSStore - Default certificate for all HTTPS traffic
+#
+# This configures Traefik to use the wildcard certificate as the default
+# for all incoming HTTPS connections on the staging domain
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: traefik
+spec:
+  defaultCertificate:
+    secretName: ohe-staging-wildcard-tls

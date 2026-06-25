@@ -1,0 +1,28 @@
+# external-dns values specific to subdomain-based routing environments
+# Use with: helm install ... -f values.yaml -f values-subdomain-routing.yaml
+
+# For subdomain routing, external-dns needs to manage multiple subdomains
+# (app.domain.com, auth.domain.com, api.domain.com, branch.domain.com, etc.)
+
+# TXT record prefix to identify this environment
+txtPrefix: "subdomain-"
+
+# Watch both Ingress and Service resources
+sources:
+  - ingress
+  - service
+
+# Sync policy - actively manage DNS records
+# WARNING: This will delete records not matching current state
+policy: sync
+
+# Enable watching for host annotations on services
+publishInternalServices: false
+
+# Annotations to filter which resources to process
+annotationFilter: ""
+
+# For branch-based deployments, allow creating wildcard records
+# when the ingress uses host: "*.domain.com"
+extraArgs:
+  - --txt-wildcard-replacement=wildcard

@@ -1,0 +1,253 @@
+{{/*
+Keycloak Redirect URI Registration Hook
+
+This hook runs after helm install/upgrade to register the branch's redirect URI
+with a shared Keycloak instance. This is necessary because Keycloak doesn't
+support wildcard subdomains in redirect URIs (e.g., https://*.example.com/*).
+
+Each branch deployment must register its specific redirect URI:
+  - https://branch.example.com/*
+
+The hook is idempotent - it will add the URI if not present, or skip if already registered.
+*/}}
+{{- if and .Values.keycloak.redirectUriRegistration.enabled .Values.ingress.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-keycloak-redirect-uri-script
+  labels:
+    app: openhands
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  register-redirect-uri.sh: |
+    #!/bin/sh
+    set -e
+
+    echo "============================================"
+    echo "Keycloak Redirect URI Registration"
+    echo "============================================"
+    echo "KEYCLOAK_URL: $KEYCLOAK_URL"
+    echo "REALM_NAME: $REALM_NAME"
+    echo "CLIENT_ID: $CLIENT_ID"
+    echo "REDIRECT_URI: $REDIRECT_URI"
+    echo "WEB_ORIGIN: $WEB_ORIGIN"
+    echo "============================================"
+
+    # Wait for Keycloak to be ready
+    echo ""
+    echo "Waiting for Keycloak to be ready..."
+    RETRY_COUNT=0
+    MAX_RETRIES=30
+    until curl --output /dev/null --silent --head --fail "$KEYCLOAK_URL/realms/master" 2>/dev/null; do
+      RETRY_COUNT=$((RETRY_COUNT + 1))
+      if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "ERROR: Keycloak not ready after $MAX_RETRIES attempts"
+        exit 1
+      fi
+      echo "Keycloak not ready (attempt $RETRY_COUNT/$MAX_RETRIES), waiting 10s..."
+      sleep 10
+    done
+    echo "Keycloak is ready!"
+
+    # Get admin token
+    echo ""
+    echo "Getting admin access token..."
+    TOKEN_RESPONSE=$(curl -s -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "client_id=admin-cli" \
+      -d "grant_type=password" \
+      -d "username=$KEYCLOAK_ADMIN_USER" \
+      -d "password=$KEYCLOAK_ADMIN_PASSWORD")
+
+    ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
+
+    if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+      echo "ERROR: Failed to get admin token"
+      echo "Response: $TOKEN_RESPONSE"
+      exit 1
+    fi
+    echo "Got access token successfully"
+
+    # Get the client UUID
+    echo ""
+    echo "Looking up client '$CLIENT_ID'..."
+    CLIENT_RESPONSE=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients?clientId=$CLIENT_ID" \
+      -H "Authorization: Bearer $ACCESS_TOKEN")
+
+    CLIENT_UUID=$(echo "$CLIENT_RESPONSE" | jq -r '.[0].id')
+
+    if [ "$CLIENT_UUID" = "null" ] || [ -z "$CLIENT_UUID" ]; then
+      echo "ERROR: Client '$CLIENT_ID' not found in realm '$REALM_NAME'"
+      echo "Response: $CLIENT_RESPONSE"
+      exit 1
+    fi
+    echo "Found client UUID: $CLIENT_UUID"
+
+    # Get current client configuration
+    echo ""
+    echo "Getting current client configuration..."
+    CLIENT_CONFIG=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients/$CLIENT_UUID" \
+      -H "Authorization: Bearer $ACCESS_TOKEN")
+
+    # Check if redirect URI already exists
+    EXISTING_URIS=$(echo "$CLIENT_CONFIG" | jq -r '.redirectUris[]' 2>/dev/null || echo "")
+    if echo "$EXISTING_URIS" | grep -qF "$REDIRECT_URI"; then
+      echo "Redirect URI already registered: $REDIRECT_URI"
+    else
+      echo "Adding redirect URI: $REDIRECT_URI"
+      
+      # Add the new redirect URI to the array
+      UPDATED_URIS=$(echo "$CLIENT_CONFIG" | jq --arg uri "$REDIRECT_URI" '.redirectUris += [$uri] | .redirectUris')
+      
+      # Update the client
+      UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+        "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients/$CLIENT_UUID" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "$(echo "$CLIENT_CONFIG" | jq --arg uri "$REDIRECT_URI" '.redirectUris += [$uri]')")
+      
+      HTTP_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+      BODY=$(echo "$UPDATE_RESPONSE" | sed '$d')
+      
+      if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+        echo "Successfully added redirect URI!"
+      else
+        echo "WARNING: Failed to add redirect URI (HTTP $HTTP_CODE): $BODY"
+        # Don't fail - the app can still work, just auth might fail
+      fi
+    fi
+
+    # Check if web origin already exists
+    EXISTING_ORIGINS=$(echo "$CLIENT_CONFIG" | jq -r '.webOrigins[]' 2>/dev/null || echo "")
+    if echo "$EXISTING_ORIGINS" | grep -qF "$WEB_ORIGIN"; then
+      echo "Web origin already registered: $WEB_ORIGIN"
+    else
+      echo "Adding web origin: $WEB_ORIGIN"
+      
+      # Refresh client config after previous update
+      CLIENT_CONFIG=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients/$CLIENT_UUID" \
+        -H "Authorization: Bearer $ACCESS_TOKEN")
+      
+      # Update the client with new web origin
+      UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+        "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients/$CLIENT_UUID" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "$(echo "$CLIENT_CONFIG" | jq --arg origin "$WEB_ORIGIN" '.webOrigins += [$origin]')")
+      
+      HTTP_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+      BODY=$(echo "$UPDATE_RESPONSE" | sed '$d')
+      
+      if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+        echo "Successfully added web origin!"
+      else
+        echo "WARNING: Failed to add web origin (HTTP $HTTP_CODE): $BODY"
+      fi
+    fi
+
+    # Also update post.logout.redirect.uris attribute
+    echo ""
+    echo "Checking post-logout redirect URIs..."
+    CLIENT_CONFIG=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients/$CLIENT_UUID" \
+      -H "Authorization: Bearer $ACCESS_TOKEN")
+    
+    POST_LOGOUT_URIS=$(echo "$CLIENT_CONFIG" | jq -r '.attributes["post.logout.redirect.uris"] // ""')
+    
+    if echo "$POST_LOGOUT_URIS" | grep -qF "$REDIRECT_URI"; then
+      echo "Post-logout redirect URI already registered"
+    else
+      echo "Adding post-logout redirect URI..."
+      
+      if [ -z "$POST_LOGOUT_URIS" ]; then
+        NEW_POST_LOGOUT_URIS="$REDIRECT_URI"
+      else
+        NEW_POST_LOGOUT_URIS="${POST_LOGOUT_URIS}##${REDIRECT_URI}"
+      fi
+      
+      UPDATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
+        "$KEYCLOAK_URL/admin/realms/$REALM_NAME/clients/$CLIENT_UUID" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "$(echo "$CLIENT_CONFIG" | jq --arg uris "$NEW_POST_LOGOUT_URIS" '.attributes["post.logout.redirect.uris"] = $uris')")
+      
+      HTTP_CODE=$(echo "$UPDATE_RESPONSE" | tail -n1)
+      if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+        echo "Successfully added post-logout redirect URI!"
+      else
+        BODY=$(echo "$UPDATE_RESPONSE" | sed '$d')
+        echo "WARNING: Failed to add post-logout redirect URI (HTTP $HTTP_CODE): $BODY"
+      fi
+    fi
+
+    echo ""
+    echo "============================================"
+    echo "Redirect URI registration complete!"
+    echo "============================================"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-keycloak-redirect-uri
+  labels:
+    app: openhands
+    release: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-keycloak-redirect-uri
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: register-uri
+          image: alpine/curl:8.5.0
+          command: ["/bin/sh", "/scripts/register-redirect-uri.sh"]
+          env:
+            - name: KEYCLOAK_URL
+              value: {{ .Values.keycloak.redirectUriRegistration.keycloakUrl | quote }}
+            - name: REALM_NAME
+              value: {{ .Values.keycloak.redirectUriRegistration.realmName | default "allhands" | quote }}
+            - name: CLIENT_ID
+              value: {{ .Values.keycloak.redirectUriRegistration.clientId | default "allhands" | quote }}
+            - name: REDIRECT_URI
+              value: "https://{{ include "openhands.ingressHost" . }}/*"
+            - name: WEB_ORIGIN
+              value: "https://{{ include "openhands.ingressHost" . }}"
+            - name: KEYCLOAK_ADMIN_USER
+              value: {{ .Values.keycloak.redirectUriRegistration.adminUser | default "admin" | quote }}
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.redirectUriRegistration.adminPasswordSecret.name }}
+                  key: {{ .Values.keycloak.redirectUriRegistration.adminPasswordSecret.key | default "admin-password" }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ .Release.Name }}-keycloak-redirect-uri-script
+            defaultMode: 0755
+{{- end }}

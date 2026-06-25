@@ -1,0 +1,146 @@
+# =============================================================================
+# OpenHands Site-Specific Values: single-cluster-subdomain
+# =============================================================================
+# This file contains ONLY overrides from charts/openhands/values.yaml
+# 
+# Usage:
+#   helm install openhands ./charts/openhands \
+#     -f testenv-charts/helm/environments/single-cluster-subdomain/values-openhands.yaml \
+#     --set branchSanitized=my-branch
+# =============================================================================
+
+# Image override - use sha-115237f which has migrations up to 112
+# (chart default cloud-1.25.1 only has migrations up to 110)
+image:
+  tag: sha-115237f
+
+# Site-specific hostnames with subdomain routing
+ingress:
+  enabled: true
+  host: "ohe-staging.platform-team.all-hands.dev"
+  prefixWithBranch: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns01
+
+env:
+  RUNTIME_URL_PATTERN: "https://ohe-staging.platform-team.all-hands.dev/runtime/{runtime_id}"
+
+# Runtime API endpoint for OpenHands server to communicate with runtime-api
+# This was MISSING - caused "Name or service not known" errors
+sandbox:
+  apiHostname: "http://openhands-runtime-api:5000"
+
+# Use shared Keycloak (keycloak.enabled=false is already default)
+# authHost overrides the per-branch auth URL pattern so all branches share one Keycloak
+keycloak:
+  url: "https://auth.ohe-staging.platform-team.all-hands.dev"
+  authHost: "auth.ohe-staging.platform-team.all-hands.dev"
+
+enterpriseSSO:
+  enabled: true
+
+# LiteLLM using shared PostgreSQL
+litellm-helm:
+  enabled: true
+  db:
+    useExisting: true
+    deployStandalone: false
+    endpoint: openhands-postgresql
+  ingress:
+    enabled: false
+
+litellm:
+  url: "http://litellm-helm:4000"
+
+# Ephemeral minio storage for testing (production would use GCS/S3)
+filestore:
+  ephemeral: true
+
+# Enable database creation (chart default is false)
+databaseMigrations:
+  createDatabases: true
+
+# PostgreSQL with persistence (chart default has persistence disabled)
+postgresql:
+  fullnameOverride: openhands-postgresql
+  auth:
+    database: openhands_db
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# Redis (persistence disabled by default, which is fine for staging)
+redis:
+  fullnameOverride: openhands-redis
+  auth:
+    enabled: true
+    existingSecret: "redis"
+
+# Runtime API site-specific config
+runtime-api:
+  # Use same release name prefix for service name
+  fullnameOverride: openhands-runtime-api
+  imagePullSecrets:
+    - name: ghcr-login-secret
+  databaseMigrations:
+    createDatabases: true
+  # PostgreSQL auth config (inherits from parent's postgres)
+  postgresql:
+    auth:
+      existingSecret: postgres-password
+  ingress:
+    enabled: true
+    host: "ohe-staging.platform-team.all-hands.dev"
+    prefixWithBranch: true
+    path: /runtime
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-dns01
+  env:
+    # Database connection - point to our postgresql instance
+    DB_HOST: openhands-postgresql
+    DB_USER: postgres
+    DB_NAME: runtime_api_db
+    # Kubernetes namespace for runtime pods
+    K8S_NAMESPACE: "openhands"
+    # Runtime base URL for constructing runtime pod URLs
+    RUNTIME_BASE_URL: "ohe-staging.platform-team.all-hands.dev"
+    # No special runtime class needed - standard containerd
+    RUNTIME_CLASS: ""
+  # Warm runtimes with tolerations for runtime nodes
+  # Using chart defaults for image/command, only adding tolerations
+  warmRuntimes:
+    enabled: true
+    count: 1
+    configs:
+      - name: default
+        image: "ghcr.io/openhands/agent-server:1.19.0-python"
+        working_dir: "/workspace"
+        environment:
+          LOG_JSON: "1"
+          LOG_JSON_LEVEL_KEY: "severity"
+          OH_ALLOW_CORS_ORIGINS_0: ""
+          OH_BASH_EVENTS_DIR: "/workspace/bash_events"
+          OH_CONVERSATIONS_PATH: "/workspace/conversations"
+          OH_ENABLE_VNC: "0"
+          OH_VSCODE_PORT: "60001"
+          OH_WEBHOOKS_0_BASE_URL: ""
+          OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
+          VSCODE_PORT: "60001"
+          WORKER_1: "12000"
+          WORKER_2: "12001"
+        command:
+          - /usr/local/bin/openhands-agent-server
+          - "--port"
+          - "60000"
+        run_as_user: 10001
+        run_as_group: 10001
+        fs_group: 10001
+        # Tolerations for scheduling on runtime nodes
+        # Matches existing node pool taint: openhands.ai/runtime=true:NoSchedule
+        tolerations:
+          - key: "openhands.ai/runtime"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"

@@ -1,0 +1,28 @@
+# =============================================================================
+# Image Loader Site-Specific Values: single-cluster-path
+# =============================================================================
+# This file contains ONLY overrides from charts/image-loader/values.yaml
+# 
+# Usage:
+#   helm install image-loader ./charts/image-loader \
+#     -f testenv-charts/helm/environments/single-cluster-path/values-image-loader.yaml
+# =============================================================================
+
+# Image: Inherits from base chart (ghcr.io/openhands/agent-server)
+# No override needed - base chart has the correct image
+
+# Runtime class: empty string means no sandbox runtime
+# The base chart defaults to sysbox-runc which isn't available on GKE
+runtimeClass: ""
+
+# Node selector: Target runtime nodes (no gVisor/sandbox requirement)
+# Since GKE Sandbox is not enabled, we target nodes with our custom label
+nodeSelector:
+  openhands.ai/node-type: "runtime"
+
+# Tolerations for runtime nodes with our custom taint
+tolerations:
+- key: "openhands.ai/runtime"
+  operator: "Equal"
+  value: "true"
+  effect: "NoSchedule"

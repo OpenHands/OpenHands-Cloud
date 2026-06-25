@@ -1,0 +1,215 @@
+# -----------------------------------------------------------------------------
+# Shared Keycloak Helm Values (codecentric/keycloakx chart)
+# 
+# This Keycloak instance serves all staging branch deployments at:
+#   https://auth.ohe-staging.platform-team.all-hands.dev
+# 
+# Using codecentric/keycloakx chart with official quay.io/keycloak/keycloak image
+# because Bitnami images are currently unavailable on Docker Hub.
+# -----------------------------------------------------------------------------
+
+replicas: 1
+
+# Use stable fullname for service discovery
+fullnameOverride: keycloak
+
+# -----------------------------------------------------------------------------
+# Image Configuration
+# Uses official quay.io/keycloak/keycloak image
+# Chart 7.1.11 defaults to 26.5.6, but we can override if needed
+# -----------------------------------------------------------------------------
+image:
+  repository: quay.io/keycloak/keycloak
+  tag: "26.1.0"
+  pullPolicy: IfNotPresent
+
+# -----------------------------------------------------------------------------
+# Command Configuration
+# Start Keycloak with the 'start' command for production mode
+# -----------------------------------------------------------------------------
+command:
+  - "/opt/keycloak/bin/kc.sh"
+  - "start"
+  - "--http-enabled=true"
+  - "--http-port=8080"
+  - "--hostname-strict=false"
+
+# -----------------------------------------------------------------------------
+# Service Configuration
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  httpPort: 80
+  httpNodePort: null
+  httpsPort: 8443
+  httpsNodePort: null
+
+serviceAccount:
+  create: true
+  name: "keycloak-sa"
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# Uses shared PostgreSQL from openhands namespace
+# -----------------------------------------------------------------------------
+database:
+  vendor: postgres
+  hostname: "${postgres_host}"
+  port: 5432
+  database: "${postgres_database}"
+  username: ""
+  password: ""
+  existingSecret: postgres-password
+  existingSecretKey: password
+
+# -----------------------------------------------------------------------------
+# Proxy Configuration
+# -----------------------------------------------------------------------------
+proxy:
+  enabled: true
+  mode: edge
+
+# -----------------------------------------------------------------------------
+# HTTP Configuration
+# Serve from root path (OpenHands expects /realms/... not /auth/realms/...)
+# -----------------------------------------------------------------------------
+http:
+  relativePath: "/"
+
+# -----------------------------------------------------------------------------
+# Ingress Configuration
+# Stable hostname for all branch deployments to reference
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  ingressClassName: "${ingress_class}"
+  annotations: {}
+  rules:
+    - host: "${hostname}"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - "${hostname}"
+      secretName: "${tls_secret_name}"
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+extraEnv: |
+  - name: KEYCLOAK_ADMIN
+    value: admin
+  - name: KEYCLOAK_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin
+        key: admin-password
+  - name: KC_DB
+    value: postgres
+  - name: KC_DB_URL_HOST
+    value: "${postgres_host}"
+  - name: KC_DB_URL_PORT
+    value: "5432"
+  - name: KC_DB_URL_DATABASE
+    value: "${postgres_database}"
+  - name: KC_DB_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: postgres-password
+        key: username
+  - name: KC_DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: postgres-password
+        key: password
+  - name: KC_FEATURES
+    value: token-exchange,admin-fine-grained-authz
+  - name: KC_PROXY_HEADERS
+    value: xforwarded
+  - name: KC_HTTP_RELATIVE_PATH
+    value: /
+  - name: KC_HOSTNAME
+    value: "${hostname}"
+  - name: KC_HOSTNAME_STRICT
+    value: "false"
+  - name: KC_HOSTNAME_STRICT_HTTPS
+    value: "false"
+  - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
+    value: "true"
+  - name: KC_HEALTH_ENABLED
+    value: "true"
+  - name: KC_METRICS_ENABLED
+    value: "true"
+  # Use local cache for single-replica deployment (not distributed Infinispan)
+  # This avoids cluster discovery overhead and potential hangs
+  - name: KC_CACHE
+    value: local
+
+# -----------------------------------------------------------------------------
+# Init Container - Wait for Database
+# -----------------------------------------------------------------------------
+extraInitContainers: |
+  - name: wait-for-db
+    image: postgres:15-alpine
+    command: ['sh', '-c']
+    args:
+      - |
+        echo "Waiting for PostgreSQL at ${postgres_host}:5432..."
+        until pg_isready -h "${postgres_host}" -p 5432 -U postgres > /dev/null 2>&1; do
+          echo "PostgreSQL is unavailable - sleeping 5s"
+          sleep 5
+        done
+        echo "PostgreSQL is ready!"
+
+# -----------------------------------------------------------------------------
+# Resource Limits
+# -----------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Health and Metrics
+# Keycloak 26.x exposes health on port 9000 at /health/ready and /health/live
+# -----------------------------------------------------------------------------
+health:
+  enabled: true
+
+metrics:
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Startup Probe - give Keycloak time to initialize
+# Keycloak can take 2-3 minutes on first start for DB migrations
+# -----------------------------------------------------------------------------
+startupProbe: |
+  httpGet:
+    path: /health/ready
+    port: 9000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+
+livenessProbe: |
+  httpGet:
+    path: /health/live
+    port: 9000
+  initialDelaySeconds: 0
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe: |
+  httpGet:
+    path: /health/ready
+    port: 9000
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3

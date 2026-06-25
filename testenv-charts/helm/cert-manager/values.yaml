@@ -1,0 +1,55 @@
+# cert-manager Helm values for OpenHands staging environments
+# Install with: helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace -f values.yaml
+
+installCRDs: true
+
+replicaCount: 1
+
+# GKE Workload Identity setup
+serviceAccount:
+  create: true
+  # Annotate with GCP service account for Workload Identity
+  # annotations:
+  #   iam.gke.io/gcp-service-account: cert-manager@<project-id>.iam.gserviceaccount.com
+
+# Resource limits
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# Prometheus metrics
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: false
+
+# Webhook configuration
+webhook:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# CA injector
+cainjector:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Global options
+global:
+  leaderElection:
+    namespace: cert-manager
