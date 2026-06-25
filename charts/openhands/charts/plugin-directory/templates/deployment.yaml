@@ -23,6 +23,12 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.caBundle.enabled }}
+      volumes:
+        - name: openhands-ca-bundle
+          configMap:
+            name: {{ .Values.caBundle.name }}
+      {{- end }}
       initContainers:
       {{- include "plugin-directory.dbInitContainers" . | nindent 6 }}
       containers:
@@ -36,8 +42,20 @@ spec:
             protocol: TCP
         env:
         {{- include "plugin-directory.env.server" . | nindent 8 }}
+        {{- if .Values.caBundle.enabled }}
+        - name: SSL_CERT_FILE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: REQUESTS_CA_BUNDLE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        {{- end }}
         resources:
           {{- toYaml .Values.server.resources | nindent 10 }}
+        {{- if .Values.caBundle.enabled }}
+        volumeMounts:
+        - name: openhands-ca-bundle
+          mountPath: {{ .Values.caBundle.mountPath }}
+          readOnly: true
+        {{- end }}
         startupProbe:
           httpGet:
             path: /health/live
@@ -69,8 +87,26 @@ spec:
             protocol: TCP
         env:
         {{- include "plugin-directory.env.client" . | nindent 8 }}
+        {{- if .Values.caBundle.enabled }}
+        # The client is a Node.js SSR server: Node honors NODE_EXTRA_CA_CERTS for
+        # its outbound TLS (e.g. OIDC to Keycloak at oidc.issuerUrl). SSL_CERT_FILE
+        # and REQUESTS_CA_BUNDLE are inert for Node itself but cover any subprocess
+        # it shells out to and keep the env set uniform with the server container.
+        - name: NODE_EXTRA_CA_CERTS
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: SSL_CERT_FILE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: REQUESTS_CA_BUNDLE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        {{- end }}
         resources:
           {{- toYaml .Values.client.resources | nindent 10 }}
+        {{- if .Values.caBundle.enabled }}
+        volumeMounts:
+        - name: openhands-ca-bundle
+          mountPath: {{ .Values.caBundle.mountPath }}
+          readOnly: true
+        {{- end }}
         startupProbe:
           httpGet:
             path: /plugins/health/live
