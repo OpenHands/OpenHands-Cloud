@@ -889,6 +889,71 @@ spec:
             # region-only litellm_params (credentials come from the instance
             # profile).
             model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # OpenAI — one <id> -> openai/<id> entry per non-empty line of the "OpenAI
+    # Models" textarea (comma- or newline-separated, trimmed, deduped). Key-only
+    # provider routed entirely through the proxy, mirroring the anthropic base.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "openai" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "openai_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "openai_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "openai/%s" $m) "api_key" "os.environ/OPENAI_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+    # DeepSeek — one <id> -> deepseek/<id> entry per line of the "DeepSeek
+    # Models" textarea.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "deepseek" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "deepseek_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "deepseek_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "deepseek/%s" $m) "api_key" "os.environ/DEEPSEEK_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+    # Mistral — one <id> -> mistral/<id> entry per line of the "Mistral Models"
+    # textarea.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "mistral" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "mistral_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "mistral_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "mistral/%s" $m) "api_key" "os.environ/MISTRAL_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+    # Groq — one <id> -> groq/<id> entry per line of the "Groq Models" textarea.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "groq" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "groq_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "groq_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "groq/%s" $m) "api_key" "os.environ/GROQ_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+    # OpenRouter — one <provider/model> -> openrouter/<provider/model> entry per
+    # line of the "OpenRouter Models" textarea. OR_SITE_URL / OR_APP_NAME come
+    # from the base block's proxy_config.environment_variables.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "openrouter" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "openrouter_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "openrouter_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "openrouter/%s" $m) "api_key" "os.environ/OPENROUTER_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+    # Google AI Studio (Gemini) — one <id> -> gemini/<id> entry per line of the
+    # "Gemini Models" textarea. Gated on google_api_type=gemini AND
+    # llm_provider=google because google_api_type defaults to "gemini" (so the
+    # type check alone would fire for every other provider). LiteLLM's gemini
+    # provider defaults to GEMINI_API_KEY, but an explicit api_key wins, so it
+    # reads GOOGLE_API_KEY (the name litellm-env-secrets exports).
+    - when: '{{repl and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "gemini_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "gemini_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "gemini/%s" $m) "api_key" "os.environ/GOOGLE_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs
