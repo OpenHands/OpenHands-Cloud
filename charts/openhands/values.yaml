@@ -323,6 +323,16 @@ keycloak:
   # keycloak-admin and keycloak-realm secrets) at that external server, and set
   # this to true.
   provisionRealm: false
+  # Redirect URI registration for branch deployments with shared Keycloak.
+  redirectUriRegistration:
+    enabled: false
+    keycloakUrl: ""
+    realmName: "allhands"
+    clientId: "openhands"
+    adminUser: "admin"
+    adminPasswordSecret:
+      name: ""
+      key: "admin-password"
   # Parent-chart realm settings (not consumed by the Keycloak subchart),
   # applied by the keycloak-config init container on create and on every
   # update, so changes take effect on a live install.
