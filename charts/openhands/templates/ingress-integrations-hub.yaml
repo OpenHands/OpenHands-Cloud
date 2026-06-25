@@ -1,0 +1,56 @@
+{{- /*
+  Ingress entry for the integrations-hub service.
+
+  By default the hub is mounted at integrations-hub.rootPath under the main
+  OpenHands host. If integrations-hub.ingress.host is set, the same service is
+  served on that dedicated hostname instead, usually with rootPath="". Host
+  values are rendered with tpl so environment-specific charts can choose their
+  own naming scheme without this shared chart knowing about it.
+*/}}
+{{- $hub := index .Values "integrations-hub" -}}
+{{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
+{{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
+{{- $dedicated := and $hub.ingress.enabled $hub.ingress.host }}
+{{- $host := tpl .Values.ingress.host . }}
+{{- if $dedicated }}
+{{- $host = tpl $hub.ingress.host . }}
+{{- end }}
+{{- $ingressPath := $rootPath }}
+{{- if $dedicated }}
+{{- $ingressPath = "/" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openhands-integrations-hub-ingress
+  annotations:
+    {{- if .Values.ingress.root.annotations }}
+    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
+    {{- else }}
+    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ default "traefik" .Values.ingress.class }}
+  {{- if and $dedicated $hub.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $host }}
+    secretName: {{ $hub.ingress.tls.secretName }}
+  {{- else if .Values.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $host }}
+    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+  {{- end }}
+  rules:
+  - host: {{ $host }}
+    http:
+      paths:
+      - path: {{ $ingressPath | quote }}
+        pathType: Prefix
+        backend:
+          service:
+            name: integrations-hub
+            port:
+              number: 80
+{{- end }}

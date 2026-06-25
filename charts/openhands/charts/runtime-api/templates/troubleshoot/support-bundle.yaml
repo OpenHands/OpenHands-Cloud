@@ -1,0 +1,77 @@
+{{- define "runtime.troubleshoot.supportBundle" -}}
+apiVersion: troubleshoot.sh/v1beta2
+kind: SupportBundle
+metadata:
+  name: {{ .Release.Name }}-support-bundle
+spec:
+  collectors: {{- include "runtime.troubleshoot.collectors.shared" .  | nindent 4 }}
+    # Log volume is bounded by kubelet rotation (~tens of MB/pod), not maxAge,
+    # so 336h is free on chatty pods and only adds history on quiet ones.
+    # Runtime API application logs
+    - logs:
+        name: app/{{ include "runtime-api.fullname" . }}/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name={{ include "runtime-api.name" . }}
+          - app.kubernetes.io/instance={{ .Release.Name }}
+        limits:
+          maxAge: 336h
+    {{- if .Values.postgresql.enabled }}
+    # PostgreSQL logs (Bitnami chart)
+    - logs:
+        name: app/{{ .Release.Name }}-postgresql/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name=postgresql
+          - app.kubernetes.io/instance={{ .Release.Name }}
+        limits:
+          maxAge: 336h
+    - postgresql:
+        collectorName: postgresql
+        uri: postgresql://postgres:@{{ include "runtime-api.postgresql.host" . }}:5432/{{ .Values.postgresql.auth.database | default "runtime_api" }}?sslmode=disable
+        tls:
+          disabled: true
+        password:
+          secretName: {{ .Release.Name }}-postgresql
+          secretKey: postgres-password
+    {{- end }}
+  analyzers: {{- include "runtime.troubleshoot.analyzers.shared" .  | nindent 4 }}
+    - deploymentStatus:
+        name: {{ include "runtime-api.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        outcomes:
+          - fail:
+              when: "< 1"
+              message: "Runtime API deployment is not ready"
+          - pass:
+              when: ">= 1"
+              message: "Runtime API deployment is ready"
+    {{- if .Values.postgresql.enabled }}
+    - statefulsetStatus:
+        name: {{ .Release.Name }}-postgresql
+        namespace: {{ .Release.Namespace }}
+        outcomes:
+          - fail:
+              when: "< 1"
+              message: "Runtime API PostgreSQL statefulset is not ready"
+          - pass:
+              when: ">= 1"
+              message: "Runtime API PostgreSQL statefulset is ready"
+    - postgresql:
+        checkName: "Runtime API PostgreSQL Database Health"
+        collectorName: postgresql
+        outcomes:
+          - fail:
+              when: "connected == false"
+              message: "Cannot connect to Runtime API PostgreSQL database"
+          - fail:
+              when: "version == \"\""
+              message: "Runtime API PostgreSQL version could not be determined"
+          - warn:
+              when: "version < 12.0.0"
+              message: "Runtime API PostgreSQL version is older than recommended (12.0.0+)"
+          - pass:
+              when: "connected == true"
+              message: "Runtime API PostgreSQL database is healthy"
+    {{- end }}
+{{- end -}}

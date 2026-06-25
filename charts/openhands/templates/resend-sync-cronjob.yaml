@@ -1,4 +1,4 @@
-{{- if .Values.resendSync.enabled }}
+{{- if and .Values.enabled .Values.resendSync.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -52,7 +52,7 @@ spec:
                       name: keycloak-realm
                       key: realm-name
                 - name: BATCH_SIZE
-                  value: {{ .Values.resendSync.batchSize | quote }}
+                  value: {{ .Values.resendSync.batchSize | default "2000" | quote }}
                 - name: MAX_RETRIES
                   value: {{ .Values.resendSync.maxRetries | quote }}
                 - name: INITIAL_BACKOFF_SECONDS
@@ -63,11 +63,7 @@ spec:
                   value: {{ .Values.resendSync.backoffFactor | quote }}
                 - name: RATE_LIMIT
                   value: {{ .Values.resendSync.rateLimit | quote }}
-                - name: RESEND_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: resend-api-key
-                      key: resend-api-key
+                {{- /* RESEND_API_KEY is provided by the shared openhands.env block below. */}}
                 {{- if .Values.resendSync.fromEmail }}
                 - name: RESEND_FROM_EMAIL
                   value: {{ .Values.resendSync.fromEmail | quote }}

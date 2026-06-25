@@ -1,0 +1,8 @@
+apiVersion: v2
+name: agent-canvas
+description: Frontend-only deployment of OpenHands Agent Canvas (UI shell pointing at user-managed backends)
+type: application
+# Inert: embedded subchart of the openhands umbrella, not versioned or
+# published on its own. Ships at whatever openhands version bundles it.
+version: 0.0.0
+appVersion: "0.1.0"

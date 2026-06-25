@@ -1,0 +1,15 @@
+{{- if or .Values.config.azure_devops_client_id .Values.config.azure_devops_client_secret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-devops-app
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  {{- if .Values.config.azure_devops_client_id }}
+  client-id: {{ .Values.config.azure_devops_client_id | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.azure_devops_client_secret }}
+  client-secret: {{ .Values.config.azure_devops_client_secret | b64enc | quote }}
+  {{- end }}
+{{- end }}

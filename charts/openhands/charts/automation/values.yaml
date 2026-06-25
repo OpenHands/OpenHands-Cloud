@@ -1,0 +1,204 @@
+image:
+  repository: ghcr.io/openhands/automation
+  tag: sha-a3ad2b7
+
+imagePullSecrets: []
+
+# Mount a trust-manager / user-supplied CA bundle into the automation pods and
+# point the Python TLS stack (httpx + requests) at it. Required when automation
+# makes outbound HTTPS calls to endpoints served by a cert signed by a CA that
+# isn't in the OS trust store — e.g. the OpenHands app at openhandsApiUrl /
+# automationBaseUrl when an operator uploads a self-signed/custom cert.
+# Otherwise TLS verification fails and callbacks/dispatches silently break.
+# The named ConfigMap is created by the parent openhands chart's trust-manager
+# Bundle; this subchart only mounts it.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+# Separate deployment for handling webhook events
+# Routes /v1/events/* traffic to dedicated pods for better isolation and scalability
+events:
+  enabled: false
+  deployment:
+    replicas: 2
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+  uvicorn:
+    workers: 2
+
+securityContext:
+  runAsUser: 42420
+  runAsGroup: 42420
+  runAsNonRoot: true
+
+serviceAccount:
+  create: true
+  name: automation-sa
+  annotations: {}
+
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+
+# URL configuration
+# OpenHands API URL for dispatching sandbox runs (e.g., https://staging.all-hands.dev)
+openhandsApiUrl: ""
+# Automation service base URL for completion callbacks (e.g., https://staging.all-hands.dev/api/automation)
+automationBaseUrl: ""
+
+# PostgreSQL database configuration
+database:
+  # Full hostname of the PostgreSQL server
+  # Examples:
+  #   - Cloud SQL: "my-project:us-central1:my-instance"
+  #   - In-cluster: "openhands-main-postgresql"
+  #   - Feature env: "openhands-feature-branch-postgresql"
+  host: ""
+  port: "5432"
+  sslMode: "prefer"
+  user: "automation_user"
+  name: "automations"
+  # Secret containing the automation database password
+  secretName: "automation-db-secret"
+  secretKey: "db-password"
+  # Create database and user in an existing PostgreSQL instance
+  # When true, runs an init container to create the database and user
+  # Useful when sharing a PostgreSQL instance with other services
+  createDatabaseUser: false
+  # Superuser used to create the automation database and user.
+  # Defaults to "postgres" but must be overridden when the external PostgreSQL
+  # admin account uses a different name (e.g. AWS RDS instances).
+  # Only used when createDatabaseUser=true
+  superuserName: "postgres"
+  # Secret containing the postgres superuser password (for creating the automation user)
+  # Only used when createDatabaseUser=true
+  superuserSecretName: "postgres-password"
+  superuserSecretKey: "password"
+
+# GCP Cloud SQL (leave empty for non-GCP)
+gcp:
+  dbInstance: ""
+  project: ""
+  region: ""
+
+# File storage configuration (aligned with openhands chart pattern)
+# Supports multiple backends: gcs, s3, or in-cluster minio for ephemeral environments
+filestore:
+  # When true, uses S3-compatible storage (minio) for ephemeral/feature environments
+  # When false, uses cloud storage specified by 'type' (for production)
+  ephemeral: false
+  # Bucket name for storing automation data
+  bucket: automation-data
+  # Storage type when ephemeral=false (e.g., gcs, s3)
+  type: gcs
+
+# Minio configuration for ephemeral storage (filestore.ephemeral=true)
+#
+# Two deployment modes:
+# 1. Standalone: Set minio.enabled=true to deploy minio as a subchart
+# 2. Subchart of openhands: Set minio.enabled=false and configure minio.external
+#    to use the parent chart's minio instance
+minio:
+  # Deploy minio as a subchart (for standalone deployments)
+  # Set to false when deployed as subchart of openhands (uses parent's minio)
+  enabled: false
+
+  # External minio configuration (used when enabled=false but filestore.ephemeral=true)
+  # Configure this to point to an existing minio instance (e.g., parent chart's minio)
+  external:
+    endpoint: "http://minio:9000"
+    accessKey: "default"
+    secretKey: "notasecret"
+
+  # Minio subchart configuration (used when enabled=true)
+  # These values are passed to the minio subchart
+  replicas: 1
+  mode: standalone
+  persistence:
+    enabled: false
+  buckets:
+    - name: automation-data
+      policy: none
+      purge: true
+  svcaccts:
+    - accessKey: "automationkey"
+      secretKey: "automationsecret"
+      user: root
+  rootUser: "root"
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 50m
+    limits:
+      memory: 512Mi
+      cpu: 100m
+
+# Service key from K8s secret (for staging/production)
+# Used by OpenHands SaaS to authenticate requests to the automation service
+serviceKeyFromSecret:
+  name: automation-service-key
+  key: automation-service-key
+
+# Automation webhook secret from K8s secret
+# Used to verify webhook signatures for automation events
+automationWebhookSecretFromSecret:
+  name: automation-webhook-secret
+  key: webhook-secret
+
+# Datadog configuration
+datadog:
+  env: "dev"
+
+# Env vars passed directly to the container
+env: {}
+
+# PostgreSQL subchart configuration (for ephemeral/feature environments)
+# When enabled, deploys an in-cluster PostgreSQL instance
+# Service name will be "{release-name}-postgresql", secret name also "{release-name}-postgresql"
+postgresql:
+  enabled: false
+  auth:
+    username: postgres
+    database: automations
+  primary:
+    persistence:
+      enabled: false
+    initdb:
+      scriptsConfigMap: ""
+  service:
+    ports:
+      postgresql: 5432
+  image:
+    repository: bitnamilegacy/postgresql
+
+global:
+  security:
+    # This allows using the bitnamilegacy image repo
+    allowInsecureImages: true

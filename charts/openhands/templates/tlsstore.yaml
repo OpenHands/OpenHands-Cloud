@@ -1,4 +1,4 @@
-{{- if .Values.tlsStore.enabled }}
+{{- if and .Values.enabled .Values.tlsStore.enabled }}
 apiVersion: traefik.io/v1alpha1
 kind: TLSStore
 metadata:

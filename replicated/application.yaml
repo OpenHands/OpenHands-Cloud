@@ -59,7 +59,7 @@ spec:
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-rabbitmq-headless{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-rabbitmq-service{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-redis-service{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/ingress/laminar-frontend-alb{{repl end}}'
+    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/ingress/laminar-frontend-ingress{{repl end}}'
 
     # postgres
     - '{{repl if ConfigOptionEquals "postgres_type" "embedded_postgres"}}openhands/statefulset/openhands-postgresql{{repl end}}'

@@ -1,0 +1,154 @@
+# Plugin Directory Helm Chart Values
+# This chart deploys the Plugin Directory marketplace using a sidecar pattern
+# (client + server containers in the same pod)
+
+# Database init container toggles (same pattern as runtime-api chart).
+# createDatabases issues CREATE DATABASE as the configured DB_USER, so the
+# user must have CREATEDB (or already be postgres). No separate superuser
+# secret is needed.
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: false
+  migrate: true
+
+# Client container configuration (React Router SSR)
+client:
+  image:
+    repository: ghcr.io/openhands/plugin-directory-client
+    tag: "sha-0e9a6d1"
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+
+# Server container configuration (FastAPI backend)
+server:
+  image:
+    repository: ghcr.io/openhands/plugin-directory-server
+    tag: "sha-0e9a6d1"
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+
+# Mount a trust-manager / user-supplied CA bundle into the plugin-directory
+# pod and point the runtimes at it. Required when the pod makes outbound HTTPS
+# calls to endpoints served by a cert signed by a CA that isn't in the OS trust
+# store — e.g. the server fetching the marketplace catalog from MARKETPLACE_SOURCE
+# (an https:// or github:// URL) and the client's SSR loader reaching Keycloak at
+# oidc.issuerUrl when an operator uploads a self-signed/custom cert. Otherwise TLS
+# verification fails and the marketplace/login silently break. The named ConfigMap
+# is created by the parent openhands chart's trust-manager Bundle; this subchart
+# only mounts it.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
+# Deployment configuration
+deployment:
+  replicas: 1
+
+# Security context for the pod
+securityContext:
+  runAsUser: 1001
+  runAsGroup: 1001
+  runAsNonRoot: true
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: plugin-directory-sa
+  annotations: {}
+
+# Image pull secrets (inherited from parent chart when deployed as subchart)
+imagePullSecrets: []
+
+# Probe configuration
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+
+# Application environment variables
+appEnv:
+  MARKETPLACE_SOURCE: ""
+  FEATURED_PLUGIN_IDS: ""
+  LOG_LEVEL: "INFO"
+
+# URL configuration
+# App URL for the client (e.g., https://plugins.example.com or https://example.com/plugins)
+appUrl: ""
+
+# Base URL the SSR loader uses to reach the FastAPI server. Must include
+# the /api path. Defaults to the sidecar server on the shared pod network.
+# Override when the server is reachable under a different in-cluster DNS
+# name or port (e.g. http://plugin-directory-server.ns.svc.cluster.local:8000/api).
+apiUrl: "http://localhost:8000/api"
+
+# Base URL for the "Create New Conversation" button.
+# Default assumes OpenHands is served at the same origin as the plugin
+# directory (e.g. /launch alongside /plugins), so a relative value is fine.
+# Override with an absolute URL (https://openhands.example.com) when the
+# conversation host is different. Empty string hides the button.
+conversationUrl: "/"
+
+# Base URL shown inside the curl command example on plugin detail pages.
+# Typically the same OpenHands API host the conversation button points at.
+# Empty string hides the curl command block.
+curlApiUrl: ""
+
+# PostgreSQL database configuration
+database:
+  # Full hostname of the PostgreSQL server
+  host: ""
+  port: "5432"
+  sslMode: "prefer"
+  user: "postgres"
+  name: "plugindir"
+  # Secret containing the database password
+  secretName: "postgres-password"
+  secretKey: "password"
+
+# Authentication configuration
+auth:
+  # Secret containing plugin-directory-specific auth credentials
+  # (internal identity + session signing keys).
+  existingSecret: plugin-directory-secrets
+  identitySharedSecretKey: identity-shared-secret
+  sessionSecretKey: session-secret
+
+# Keycloak/OIDC configuration
+# Reuses the existing allhands Keycloak client (same one the main
+# openhands app uses) via the shared keycloak-realm secret. No dedicated
+# plugin-directory client is registered. Matches the laminar pattern.
+oidc:
+  # Keycloak server URL (e.g., https://auth.example.com)
+  issuerUrl: ""
+  # Shared keycloak-realm secret: provides realm name + allhands client
+  # credentials (client-id, client-secret).
+  realmSecretName: "keycloak-realm"
+  realmSecretKey: "realm-name"
+  clientIdKey: "client-id"
+  clientSecretKey: "client-secret"
+
+# Datadog configuration
+datadog:
+  enabled: false
+  env: "dev"
+
+# Env vars passed directly to the containers (overrides defaults)
+env: {}

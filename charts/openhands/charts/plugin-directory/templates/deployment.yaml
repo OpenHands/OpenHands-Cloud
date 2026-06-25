@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plugin-directory
+  labels:
+    app: plugin-directory
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: plugin-directory
+  template:
+    metadata:
+      labels:
+        app: plugin-directory
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.caBundle.enabled }}
+      volumes:
+        - name: openhands-ca-bundle
+          configMap:
+            name: {{ .Values.caBundle.name }}
+      {{- end }}
+      initContainers:
+      {{- include "plugin-directory.dbInitContainers" . | nindent 6 }}
+      containers:
+      # Server container (FastAPI backend)
+      - name: server
+        image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+        imagePullPolicy: Always
+        ports:
+          - name: api
+            containerPort: 8000
+            protocol: TCP
+        env:
+        {{- include "plugin-directory.env.server" . | nindent 8 }}
+        {{- if .Values.caBundle.enabled }}
+        - name: SSL_CERT_FILE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: REQUESTS_CA_BUNDLE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.server.resources | nindent 10 }}
+        {{- if .Values.caBundle.enabled }}
+        volumeMounts:
+        - name: openhands-ca-bundle
+          mountPath: {{ .Values.caBundle.mountPath }}
+          readOnly: true
+        {{- end }}
+        startupProbe:
+          httpGet:
+            path: /health/live
+            port: 8000
+          failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8000
+          initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+
+      # Client container (React Router SSR)
+      - name: client
+        image: "{{ .Values.client.image.repository }}:{{ .Values.client.image.tag }}"
+        imagePullPolicy: Always
+        ports:
+          - name: http
+            containerPort: 3000
+            protocol: TCP
+        env:
+        {{- include "plugin-directory.env.client" . | nindent 8 }}
+        {{- if .Values.caBundle.enabled }}
+        # The client is a Node.js SSR server: Node honors NODE_EXTRA_CA_CERTS for
+        # its outbound TLS (e.g. OIDC to Keycloak at oidc.issuerUrl). SSL_CERT_FILE
+        # and REQUESTS_CA_BUNDLE are inert for Node itself but cover any subprocess
+        # it shells out to and keep the env set uniform with the server container.
+        - name: NODE_EXTRA_CA_CERTS
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: SSL_CERT_FILE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        - name: REQUESTS_CA_BUNDLE
+          value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.client.resources | nindent 10 }}
+        {{- if .Values.caBundle.enabled }}
+        volumeMounts:
+        - name: openhands-ca-bundle
+          mountPath: {{ .Values.caBundle.mountPath }}
+          readOnly: true
+        {{- end }}
+        startupProbe:
+          httpGet:
+            path: /plugins/health/live
+            port: 3000
+          failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+        livenessProbe:
+          httpGet:
+            path: /plugins/health/live
+            port: 3000
+          initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+        readinessProbe:
+          httpGet:
+            path: /plugins/health/ready
+            port: 3000
+          initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          failureThreshold: {{ .Values.probes.readiness.failureThreshold }}

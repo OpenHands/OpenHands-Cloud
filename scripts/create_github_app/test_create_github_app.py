@@ -1,11 +1,12 @@
 #!/usr/bin/env -S uv run
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["PyGithub", "requests", "fastapi", "uvicorn"]
+# dependencies = ["PyGithub", "requests", "fastapi", "uvicorn", "pytest", "httpx"]
 # ///
 """Unit tests for create_github_app.py."""
 
 import os
+import requests
 import sys
 import threading
 import time
@@ -320,6 +321,21 @@ class TestOpenManifestInBrowser:
             mock_open.assert_called_once_with(f"file://{filepath}")
             os.unlink(filepath)
 
+    def test_cleans_up_temp_file_when_browser_open_fails(self):
+        """Test that a headless/browser failure does not leave the manifest temp file behind."""
+        captured = {}
+
+        def fail_open(url):
+            captured["url"] = url
+            raise RuntimeError("no browser available")
+
+        with patch("create_github_app.webbrowser.open", side_effect=fail_open):
+            with pytest.raises(RuntimeError):
+                open_manifest_in_browser(base_domain="example.com")
+
+        path = captured["url"].removeprefix("file://")
+        assert not os.path.exists(path)
+
 
 class TestExchangeCodeForCredentials:
     """Tests for exchange_code_for_credentials function."""
@@ -335,6 +351,7 @@ class TestExchangeCodeForCredentials:
             mock_post.assert_called_once_with(
                 "https://api.github.com/app-manifests/test-code/conversions",
                 headers={"Accept": "application/vnd.github+json"},
+                timeout=create_github_app.GITHUB_API_TIMEOUT_SECONDS,
             )
 
     def test_returns_credentials(self):
@@ -569,6 +586,38 @@ class TestParseArgs:
         args = parse_args()
         assert args.base_domain == "mycompany.com"
 
+    def test_org_defaults_to_none(self, monkeypatch):
+        """Test that apps are created in the personal account unless --org is set."""
+        monkeypatch.setattr(sys, "argv", ["script", "--base-domain", "example.com"])
+        args = parse_args()
+        assert args.org is None
+
+    def test_org_can_be_set(self, monkeypatch):
+        """Test that --org directs manifest creation to an organization."""
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["script", "--base-domain", "example.com", "--org", "OpenHands"],
+        )
+        args = parse_args()
+        assert args.org == "OpenHands"
+
+    def test_callback_port_defaults_to_9876(self, monkeypatch):
+        """Test that the local callback port defaults to the manifest redirect port."""
+        monkeypatch.setattr(sys, "argv", ["script", "--base-domain", "example.com"])
+        args = parse_args()
+        assert args.callback_port == 9876
+
+    def test_callback_port_can_be_overridden(self, monkeypatch):
+        """Test that --callback-port lets operators avoid a busy local port."""
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["script", "--base-domain", "example.com", "--callback-port", "18080"],
+        )
+        args = parse_args()
+        assert args.callback_port == 18080
+
 
 class TestCallbackServer:
     """Tests for the FastAPI callback server that captures the GitHub OAuth code."""
@@ -699,6 +748,34 @@ class TestCallbackServerLifecycle:
         with pytest.raises(httpx.ConnectError):
             httpx.get("http://localhost:18235/callback?code=test", timeout=0.1)
 
+    def test_start_callback_server_fails_fast_when_server_thread_exits(self):
+        """Test that callback startup failure is reported immediately instead of timing out later."""
+        fake_server = MagicMock()
+        fake_server.started = False
+        fake_server.run.return_value = None
+
+        with patch("create_github_app.uvicorn.Server", return_value=fake_server):
+            with pytest.raises(RuntimeError) as exc_info:
+                start_callback_server(port=18080)
+
+        assert "failed to start" in str(exc_info.value).lower()
+        assert "18080" in str(exc_info.value)
+
+    def test_stop_callback_server_warns_if_thread_does_not_exit(self, capsys):
+        """Test that cleanup trouble is visible when the callback thread keeps running."""
+        mock_thread = MagicMock()
+        mock_thread.is_alive.return_value = True
+        handle = MagicMock()
+        handle.thread = mock_thread
+
+        stop_callback_server(handle)
+
+        mock_thread.join.assert_called_once()
+        mock_thread.is_alive.assert_called()
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "did not exit within 5s" in captured.out
+
 
 class TestManifestRedirectUrl:
     """Tests for manifest redirect_url with callback port."""
@@ -770,6 +847,104 @@ class TestMainWithCallbackServer:
         # input() should never be called
         mock_input.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "exc",
+        [requests.RequestException("boom"), ValueError("non-JSON body")],
+    )
+    def test_main_exits_nonzero_on_credential_exchange_failure(self, capsys, exc):
+        """Test that a failed manifest-code exchange is a clean CLI failure."""
+        code_holder = make_mock_code_holder()
+        with patch("create_github_app.start_callback_server", return_value=(MagicMock(), code_holder)):
+            with patch("create_github_app.open_manifest_in_browser", return_value="/tmp/_manifest.html"):
+                with patch("create_github_app.stop_callback_server") as mock_stop:
+                    with patch("create_github_app.exchange_code_for_credentials", side_effect=exc):
+                        with pytest.raises(SystemExit) as exit_info:
+                            main(base_domain="example.com", dry_run=False, app_name="my-app")
+
+        assert exit_info.value.code == 1
+        assert "failed to exchange" in capsys.readouterr().out.lower()
+        mock_stop.assert_called_once()
+
+    def test_main_exits_nonzero_on_auth_code_timeout(self, capsys):
+        """Test that never receiving GitHub's callback fails the command."""
+        code_holder = make_mock_code_holder(code=None)
+        with patch("create_github_app.start_callback_server", return_value=(MagicMock(), code_holder)):
+            with patch("create_github_app.open_manifest_in_browser", return_value="/tmp/_manifest.html"):
+                with patch("create_github_app.stop_callback_server") as mock_stop:
+                    with pytest.raises(SystemExit) as exit_info:
+                        main(base_domain="example.com", dry_run=False, app_name="my-app")
+
+        assert exit_info.value.code == 1
+        assert "timed out" in capsys.readouterr().out.lower()
+        mock_stop.assert_called_once()
+
+    @pytest.mark.parametrize("bad", ["", "../evil", "a/b", r"a\b", "..", "."])
+    def test_main_rejects_unsafe_app_name_before_io(self, capsys, bad):
+        """Test that app names cannot escape the keys directory when saved."""
+        with patch("create_github_app.start_callback_server") as mock_start:
+            with pytest.raises(SystemExit) as exit_info:
+                main(base_domain="example.com", dry_run=True, app_name=bad)
+
+        assert exit_info.value.code == 1
+        assert "invalid" in capsys.readouterr().out.lower()
+        mock_start.assert_not_called()
+
+    def test_main_passes_org_and_callback_port_to_browser_manifest(self):
+        """Test that main creates org-owned apps and keeps callback URLs in sync."""
+        with mock_main_dependencies({"id": 123}) as mocks:
+            main(
+                base_domain="example.com",
+                dry_run=False,
+                app_name="my-app",
+                org="OpenHands",
+                callback_port=18080,
+            )
+
+        mocks["start_server"].assert_called_once_with(port=18080)
+        mocks["open_browser"].assert_called_once_with(
+            "example.com",
+            "my-app",
+            callback_port=18080,
+            org="OpenHands",
+        )
+
+    def test_main_deletes_temp_manifest_file_after_flow(self, tmp_path):
+        """Test that the temporary manifest page is removed once it has been loaded."""
+        manifest = tmp_path / "manifest.html"
+        manifest.write_text("<html></html>")
+
+        with mock_main_dependencies({"id": 123}) as mocks:
+            mocks["open_browser"].return_value = str(manifest)
+            main(base_domain="example.com", dry_run=False, app_name="my-app")
+
+        assert not manifest.exists()
+
+
+class TestOrgManifestHtml:
+    """Tests for creating apps under an organization account."""
+
+    def test_html_posts_to_personal_account_by_default(self):
+        """Test that the default manifest form creates a user-owned app."""
+        page = generate_manifest_html(build_app_manifest(base_domain="example.com"))
+        assert 'action="https://github.com/settings/apps/new"' in page
+
+    def test_html_posts_to_org_when_org_set(self):
+        """Test that --org switches GitHub's manifest endpoint to the org path."""
+        page = generate_manifest_html(
+            build_app_manifest(base_domain="example.com"),
+            org="OpenHands",
+        )
+        assert 'action="https://github.com/organizations/OpenHands/settings/apps/new"' in page
+
+    def test_html_escapes_org_in_action_url(self):
+        """Test that an org name cannot break the HTML form attribute."""
+        page = generate_manifest_html(
+            build_app_manifest(base_domain="example.com"),
+            org='ev"il',
+        )
+        assert 'organizations/ev"il/' not in page
+        assert "ev&quot;il" in page
+
 
 class TestWaitForAppInstallation:
     """Tests for wait_for_app_installation()."""
@@ -783,17 +958,37 @@ class TestWaitForAppInstallation:
         assert "could not authenticate with github api" in captured.out.lower()
         assert "bad auth" in captured.out
 
-    def test_returns_false_when_installation_check_fails(self, capsys):
-        """Test that installation polling errors are surfaced as warnings instead of crashing."""
+    def test_retries_when_installation_check_fails_once(self, capsys):
+        """Test that transient post-creation API errors do not abort installation polling."""
+        mock_integration = MagicMock()
+        mock_integration.get_installations.side_effect = [
+            RuntimeError("api unavailable"),
+            iter([MagicMock()]),
+        ]
+
+        with patch("create_github_app.Auth.AppAuth"):
+            with patch("create_github_app.GithubIntegration", return_value=mock_integration):
+                with patch("create_github_app.time.time", side_effect=[0, 0, 0]):
+                    with patch("create_github_app.time.sleep") as mock_sleep:
+                        assert wait_for_app_installation(app_id=123, private_key="pem", timeout=1) is True
+
+        mock_sleep.assert_called_once()
+        captured = capsys.readouterr()
+        assert "error checking installations" in captured.out.lower()
+        assert "api unavailable" in captured.out
+
+    def test_returns_false_when_installation_check_keeps_failing_until_timeout(self, capsys):
+        """Test that repeated installation polling errors eventually time out."""
         mock_integration = MagicMock()
         mock_integration.get_installations.side_effect = RuntimeError("api unavailable")
 
         with patch("create_github_app.Auth.AppAuth"):
             with patch("create_github_app.GithubIntegration", return_value=mock_integration):
-                with patch("create_github_app.time.time", side_effect=[0, 0]):
-                    with patch("create_github_app.time.sleep"):
+                with patch("create_github_app.time.time", side_effect=[0, 0, 2]):
+                    with patch("create_github_app.time.sleep") as mock_sleep:
                         assert wait_for_app_installation(app_id=123, private_key="pem", timeout=1) is False
 
+        mock_sleep.assert_called_once()
         captured = capsys.readouterr()
         assert "error checking installations" in captured.out.lower()
         assert "api unavailable" in captured.out
@@ -860,6 +1055,24 @@ class TestMainInstallationFlow:
 
         captured = capsys.readouterr()
         assert "GitHub App Client ID: Iv1.abc" in captured.out
+
+
+class TestSavesPrivateKeySecurely:
+    """Tests for private key file handling."""
+
+    def test_private_key_is_written_with_owner_only_permissions(self, capsys, monkeypatch, tmp_path):
+        """Test that the generated pem file is not group/world-readable."""
+        monkeypatch.chdir(tmp_path)
+        pem_path = SCRIPT_DIR / "keys" / "secure-app.pem"
+        pem_content = "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----"
+
+        with temporary_pem_file(pem_path):
+            with mock_main_dependencies({"id": 123, "pem": pem_content}):
+                main(base_domain="example.com", dry_run=False, app_name="secure-app")
+
+            assert pem_path.exists()
+            assert pem_path.read_text() == pem_content
+            assert (pem_path.stat().st_mode & 0o777) == 0o600
 
 
 if __name__ == "__main__":

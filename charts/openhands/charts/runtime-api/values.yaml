@@ -1,0 +1,363 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Branch-based routing configuration
+# When enabled, the ingress host becomes: {branchSanitized}.{ingress.host}
+# Example: saurya-prototype.runtime.example.com
+# Requires a wildcard TLS certificate (e.g., *.runtime.example.com)
+branchSanitized: ""  # Set to sanitized branch name (lowercase, alphanumeric, hyphens only)
+
+replicaCount: 1
+
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: false
+  migrate: true
+
+image:
+  repository: ghcr.io/openhands/runtime-api
+  tag: sha-61fc535
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-login-secret
+
+serviceAccount:
+  create: true
+  name: runtime-api-sa
+  annotations: {}
+  createRBAC: true
+  # Skip creating cluster-scoped RBAC (ClusterRole). Set to true for branch
+  # deployments that share a ClusterRole with the main deployment.
+  skipClusterRBAC: false
+  # Name of existing ClusterRole to bind when skipClusterRBAC is true.
+  # Defaults to "openhands-runtime-api-clusterrole" if not specified.
+  existingClusterRole: ""
+
+runtimeInSameCluster: false
+defaultAPIKeySecretName: default-api-key
+
+# Mount a trust-manager / user-supplied CA bundle into the runtime-api pod and
+# point the Python TLS stack (httpx + requests) at it. Required when the
+# runtime ingress serves a cert signed by a CA that isn't in the OS trust
+# store — `runtimes.check_alive_with_ingress` uses requests.get and silently
+# returns False on TLS failures, leaving runtimes stuck in `starting`.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
+service:
+  type: ClusterIP
+  port: 5000
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+  DEV_MODE: "false"
+  ARTIFACT_REGISTRY_REPOSITORY: "runtime-api-docker-repo"
+  ARTIFACT_REGISTRY_LOCATION: "us-central1"
+  GCP_REGION: "us-central1"
+  STORAGE_CLASS: "standard-rwo"
+  INCLUDE_START_PROBE: "true"
+  INCLUDE_LIVENESS_PROBE: "true"
+  RUNTIME_CLASS: "sysbox-runc"
+
+resources:
+  limits:
+    cpu: 1
+    memory: 4Gi
+  requests:
+    cpu: 100m
+    memory: 100Mi
+
+deployment:
+  minReadySeconds: 10
+  strategy:
+    maxUnavailable: 0
+    maxSurge: 1
+
+probes:
+  liveness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    path: /health
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    enabled: true
+    path: /health
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 12
+
+# Unified job settings for both jobs and cronjobs
+jobSettings:
+  # Resource configuration
+  resources:
+    limits:
+      cpu: 1
+      memory: 3Gi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+  # Timeout settings (30 minutes)
+  activeDeadlineSeconds: 1800
+  # History limits
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+
+nodeSelector: {}
+
+securityContext: {}
+
+# KVM device plugin (OSS SANDBOX_KVM_ENABLED parity). When enabled, runs a
+# smarter-device-manager DaemonSet that advertises /dev/kvm as an extended
+# resource (kvm.resourceName) so sandbox pods can use hardware-accelerated QEMU
+# WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
+# nested-virt-capable VM). The plugin DaemonSet itself runs privileged, like
+# other device plugins; the sandbox pods do not.
+kvm:
+  enabled: false
+  resourceName: smarter-devices/kvm
+  maxDevices: 20
+  image:
+    repository: ghcr.io/smarter-project/smarter-device-manager
+    tag: v1.20.11
+    pullPolicy: IfNotPresent
+  # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
+  # perms still block the non-root sandbox UID from opening it. An init container
+  # relaxes /dev/kvm to 0666 so unprivileged sandboxes can use it. Disable only if
+  # you grant access another way (e.g. a node udev rule or supplementalGroups).
+  relaxDevicePermissions: true
+  initImage:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
+  nodeSelector: {}
+  tolerations: []
+
+tolerations: []
+
+affinity: {}
+
+postgresql:
+  enabled: false
+  isFeatureDeploy: false
+  primary:
+    persistence:
+      enabled: false
+    service:
+      ports:
+        postgresql: 5432
+  auth:
+    username: postgres
+    password: "" # This should be set externally for security reasons
+    existingSecret: postgres-password
+    database: runtime_api_db
+  image:
+    repository: bitnamilegacy/postgresql
+
+externalDatabase:
+  enabled: false
+  existingSecret: postgres-password
+
+# External database configuration (used when postgresql.enabled=false)
+database:
+  create: false # Will only be true for AWS as it can't create the DB in terraform
+  secretName: runtime-api-db-credentials # Secret containing external database credentials
+  port: "5432"
+  sslMode: "prefer"
+  poolSize:
+    api: 5 # Pool size for API deployment (default)
+    cronjobs: 2 # Pool size for cronjobs (default)
+  maxOverflow:
+    api: 10 # Max overflow for API deployment (default)
+    cronjobs: 5 # Max overflow for cronjobs (default)
+
+helm-release-pruner:
+  enabled: false
+  job:
+    schedule: "0 */4 * * *"
+    dryRun: False
+  pruneProfiles:
+    - olderThan: "1 days ago"
+      helmReleaseFilter: "^runtime-api-.*$"
+      namespaceFilter: "^runtime-api-.*$"
+      maxReleasesToKeep: 10
+
+certificate:
+  enabled: false
+
+ingress:
+  enabled: false
+  host: chart-example.local
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  path: /
+  pathType: Prefix
+  tls: true
+  
+  # =============================================================================
+  # ROUTING MODE: Choose subdomain-based OR path-based routing
+  # =============================================================================
+  #
+  # Option 1: Subdomain-based routing (default)
+  #   routingMode: subdomain
+  #   prefixWithBranch: true
+  #   branchSanitized: "my-branch"
+  #   Result: my-branch.runtime.example.com
+  #   Requires: Wildcard TLS cert and wildcard DNS
+  #
+  # Option 2: Path-based routing
+  #   routingMode: path
+  #   pathPrefix: "my-branch"
+  #   Result: runtime.example.com/my-branch/
+  #   Requires: Single-domain TLS cert, path prefix stripped before backend
+  #
+  routingMode: subdomain  # Options: "subdomain" | "path"
+  
+  # For subdomain mode
+  prefixWithBranch: false
+  branchSanitized: ""
+  
+  # For path mode
+  pathPrefix: ""
+
+# Base ingress configuration for runtime ingress inheritance
+# Only metadata (labels and annotations) will be inherited, not the spec
+ingressBase:
+  enabled: false
+  apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    name: base-ingress
+    labels:
+      app: runtime-api
+      environment: production
+      team: platform
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+
+# Shared Gateway API Gateway for path-based sandbox routing.
+# When enabled, renders a gateway.networking.k8s.io/v1 Gateway that the
+# runtime-api attaches HTTPRoutes to (one per sandbox). The name must match
+# the GATEWAY_NAME env var passed to the runtime-api container.
+sandboxGateway:
+  enabled: false
+  name: sandbox-gateway
+  gatewayClassName: traefik
+  hostname: ""
+  # Internal port the Gateway listener binds to. Must match the gateway
+  # controller's entrypoint port — NOT the external port clients dial.
+  # Traefik's websecure entrypoint listens on 8443 by default (NodePort/
+  # Service 443 maps to container 8443), so 8443 is the right default here.
+  listenerPort: 8443
+  tlsSecretName: openhands-tls
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+
+cleanup:
+  enabled: true
+  schedule: "*/5 * * * *"
+  idle_seconds: 1200 # Default to 20 minutes
+  dead_seconds: 86400 # Default to 1 day
+
+warmRuntimes:
+  enabled: false
+  configMapName: warm-runtimes-config
+  count: 0
+  configs:
+    - name: default
+      image: "ghcr.io/openhands/agent-server:1.29.0-python"
+      working_dir: "/workspace"
+      environment:
+        # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
+        LMNR_BASE_URL: ""
+        LMNR_FORCE_HTTP: ""
+        LMNR_HTTP_PORT: ""
+        LMNR_PROJECT_API_KEY: ""
+        LOG_JSON: "1"
+        LOG_JSON_LEVEL_KEY: "severity"
+        OH_ALLOW_CORS_ORIGINS_0: ""
+        OH_BASH_EVENTS_DIR: "/workspace/bash_events"
+        OH_CONVERSATIONS_PATH: "/workspace/conversations"
+        OH_ENABLE_VNC: "0"
+        OH_VSCODE_PORT: "60001"
+        OH_WEBHOOKS_0_BASE_URL: ""
+        OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
+        VSCODE_PORT: "60001"
+        WORKER_1: "12000"
+        WORKER_2: "12001"
+      command:
+        - /usr/local/bin/openhands-agent-server
+        - "--port"
+        - "60000"
+      run_as_user: 10001
+      run_as_group: 10001
+      fs_group: 10001
+      # Node scheduling configuration for runtime pods
+      # These are passed to dynamically-created runtime pods
+      # Uncomment and configure for sysbox nodes:
+      # node_selector:
+      #   sysbox-install: "yes"
+      # tolerations:
+      #   - key: "sysbox-runtime"
+      #     operator: "Equal"
+      #     value: "true"
+      #     effect: "NoSchedule"
+
+# Database cleanup CronJob configuration
+dbCleanup:
+  enabled: true
+  schedule: "0 0 * * *" # Run daily at midnight
+  retentionDays: 90 # Number of days to retain runtime objects
+
+# Test API Keys cleanup CronJob configuration
+testKeysCleanup:
+  enabled: false # Disabled by default, enabled only in feature and staging environments
+  schedule: "0 0 * * *" # Run daily at midnight
+  retentionDays: 2 # Number of days to retain test API keys
+
+# Pod Status Logger configuration
+podStatusLogger:
+  enabled: true
+  schedule: "*/5 * * * *" # Run every 5 minutes
+
+monitoring:
+  enabled: false
+
+datadog:
+  enabled: false
+  env: "dev"
+
+replicated:
+  enabled: false
+
+global:
+  security:
+    # This allows using the bitnamilegacy image repo.
+    # See: https://github.com/bitnami/containers/issues/83267
+    allowInsecureImages: true

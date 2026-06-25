@@ -1,0 +1,50 @@
+
+{{- if .Values.cleanup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "runtime-api.fullname" . }}-cleanup
+spec:
+  schedule: {{ .Values.cleanup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.jobSettings.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.jobSettings.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.jobSettings.activeDeadlineSeconds }}
+      template:
+        spec:
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.ingressBase.enabled }}
+          volumes:
+            - name: ingress-base-config
+              configMap:
+                name: {{ include "runtime-api.fullname" . }}-ingress-base
+          {{- end }}
+          containers:
+          - name: cleanup
+            image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+            command: ["python", "cleanup.py"]
+            env:
+              {{- include "runtime-api.env" . | nindent 14 }}
+              - name: DB_POOL_SIZE
+                value: {{ .Values.database.poolSize.cronjobs | default 2 | quote }}
+              - name: DB_MAX_OVERFLOW
+                value: {{ .Values.database.maxOverflow.cronjobs | default 5 | quote }}
+            {{- if .Values.ingressBase.enabled }}
+            volumeMounts:
+              - name: ingress-base-config
+                mountPath: /ingress-base
+            {{- end }}
+            resources:
+              {{- toYaml .Values.jobSettings.resources | nindent 14 }}
+          restartPolicy: OnFailure
+{{- end }}

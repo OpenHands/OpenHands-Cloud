@@ -1,0 +1,87 @@
+{{- $port := int .Values.service.port -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-canvas
+  labels:
+    app: agent-canvas
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: agent-canvas
+  template:
+    metadata:
+      labels:
+        app: agent-canvas
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent-canvas
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The agent-canvas image is the all-in-one combined build.
+          # Override the entrypoint so the container runs ONLY the static
+          # frontend behind static-server.mjs — no agent-server, no
+          # automation. Users connect this UI to their own backends via
+          # the in-app "Manage Backends" screen.
+          command: ["node", "/opt/agent-canvas/static-server.mjs"]
+          args:
+            - --port
+            - {{ $port | quote }}
+            - --host
+            - "::"
+            - --dir
+            - /opt/agent-canvas/frontend
+            {{- if .Values.staticServer.authRequired }}
+            - --auth-required
+            {{- end }}
+            {{- with .Values.staticServer.lockToCloud }}
+            - --lock-to-cloud
+            - {{ . | quote }}
+            {{- end }}
+            {{- range .Values.staticServer.rejectPrefixes }}
+            - --reject-prefix
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $port }}
+              protocol: TCP
+          {{- with .Values.env }}
+          env:
+            {{- range $k, $v := . }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.deployment.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}

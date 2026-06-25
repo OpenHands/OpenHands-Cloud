@@ -17,18 +17,9 @@ on:
       crd-check-publishable:
         description: 'Whether crd-check chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.crd-check-publishable }}
-      runtime-api-publishable:
-        description: 'Whether runtime-api chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.runtime-api-publishable }}
       image-loader-publishable:
         description: 'Whether image-loader chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.image-loader-publishable }}
-      automation-publishable:
-        description: 'Whether automation chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.automation-publishable }}
-      plugin-directory-publishable:
-        description: 'Whether plugin-directory chart is publishable (no changes or version bumped)'
-        value: ${{ jobs.validate-chart-versions.outputs.plugin-directory-publishable }}
       openhands-publishable:
         description: 'Whether openhands chart is publishable (no changes or version bumped)'
         value: ${{ jobs.validate-chart-versions.outputs.openhands-publishable }}
@@ -43,10 +34,7 @@ jobs:
       YQ_VERSION: 'v4.47.1'
     outputs:
       crd-check-publishable: ${{ steps.validate.outputs.crd-check-publishable }}
-      runtime-api-publishable: ${{ steps.validate.outputs.runtime-api-publishable }}
       image-loader-publishable: ${{ steps.validate.outputs.image-loader-publishable }}
-      automation-publishable: ${{ steps.validate.outputs.automation-publishable }}
-      plugin-directory-publishable: ${{ steps.validate.outputs.plugin-directory-publishable }}
       openhands-publishable: ${{ steps.validate.outputs.openhands-publishable }}
       openhands-secrets-publishable: ${{ steps.validate.outputs.openhands-secrets-publishable }}
 
@@ -58,16 +46,19 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/${{ env.YQ_VERSION }}/yq_linux_amd64
+          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
           sudo chmod +x /usr/local/bin/yq
 
       - name: Check for chart changes and validate version bumps
         id: validate
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          ENFORCE_VERSION_BUMP: ${{ inputs.enforce_version_bump }}
         run: |
-          echo "Comparing against: ${{ inputs.base_ref }}"
+          echo "Comparing against: $BASE_REF"
 
           # Get list of changed files
-          CHANGED_FILES=$(git diff --name-only ${{ inputs.base_ref }}...HEAD)
+          CHANGED_FILES=$(git diff --name-only "${BASE_REF}...HEAD")
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
@@ -87,7 +78,7 @@ jobs:
           VALIDATION_FAILED=false
 
           for chart_dir in "${CHART_DIRS[@]}"; do
-            # Extract chart name from path (e.g., "charts/runtime-api" -> "runtime-api")
+            # Extract chart name from path (e.g., "charts/image-loader" -> "image-loader")
             chart_name=$(basename "$chart_dir")
             
             # Check if any files in this chart directory were changed (excluding README.md)
@@ -102,7 +93,7 @@ jobs:
               echo "Current version: $CURRENT_VERSION"
 
               # Get base version
-              BASE_VERSION=$(git show ${{ inputs.base_ref }}:"${chart_dir}/Chart.yaml" | yq e '.version' -)
+              BASE_VERSION=$(git show "${BASE_REF}:${chart_dir}/Chart.yaml" | yq e '.version' -)
               echo "Base version: $BASE_VERSION"
 
               # Check if version was bumped
@@ -110,7 +101,7 @@ jobs:
                 # Version not bumped - not publishable
                 echo "${chart_name}-publishable=false" >> $GITHUB_OUTPUT
                 
-                if [ "${{ inputs.enforce_version_bump }}" = "true" ]; then
+                if [ "$ENFORCE_VERSION_BUMP" = "true" ]; then
                   echo "❌ ERROR: Chart ${chart_dir} has changes but version was not bumped!"
                   echo "   Current version: $CURRENT_VERSION"
                   echo "   Base version: $BASE_VERSION"

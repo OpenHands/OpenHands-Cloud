@@ -1,0 +1,48 @@
+{{- define "runtime-api.dbInitContainers" }}
+{{- if .Values.databaseMigrations.waitForDatabase }}
+- name: wait-for-db
+  image: "bitnamilegacy/postgresql:latest"
+  command: ['sh', '-c']
+  args:
+    - |
+      echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT to be ready..."
+      # pg_isready succeeds even if the database doesn't exist yet;
+      # we pass credentials and database to avoid failed auth log entries.
+      until PGPASSWORD=$DB_PASS pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > /dev/null 2>&1; do
+        echo "PostgreSQL is unavailable - sleeping for 2 seconds"
+        sleep 2
+      done
+      echo "PostgreSQL is up and running!"
+  env:
+    {{- include "runtime-api.env" . | nindent 4 }}
+{{- end }}
+{{- if .Values.databaseMigrations.createDatabases }}
+- name: create-db
+  image: "bitnamilegacy/postgresql:latest"
+  command: ['sh', '-c']
+  args:
+    - |
+      export PGPASSWORD=$DB_PASS
+      PSQL="psql -h $DB_HOST -p $DB_PORT -U $DB_USER"
+
+      echo "Ensuring database \"$DB_NAME\" exists..."
+      $PSQL -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 || \
+      $PSQL -d postgres -c "CREATE DATABASE $DB_NAME;"
+  env:
+    {{- include "runtime-api.env" . | nindent 4 }}
+{{- end }}
+{{- if .Values.databaseMigrations.migrate }}
+- name: migrate-db
+  image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+  command: ["alembic", "upgrade", "head"]
+  env:
+    {{- include "runtime-api.env" . | nindent 4 }}
+  {{- if .Values.ingressBase.enabled }}
+  volumeMounts:
+    - name: ingress-base-config
+      mountPath: /ingress-base
+  {{- end }}
+  resources:
+    {{- toYaml .Values.jobSettings.resources | nindent 4 }}
+{{- end }}
+{{- end }}
