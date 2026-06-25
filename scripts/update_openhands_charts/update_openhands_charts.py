@@ -49,10 +49,14 @@ def find_repo_root(start: Path) -> Path:
 REPO_ROOT = find_repo_root(SCRIPT_DIR)
 CHART_PATH = REPO_ROOT / "charts" / "openhands" / "Chart.yaml"
 VALUES_PATH = REPO_ROOT / "charts" / "openhands" / "values.yaml"
-RUNTIME_API_CHART_PATH = REPO_ROOT / "charts" / "runtime-api" / "Chart.yaml"
-RUNTIME_API_VALUES_PATH = REPO_ROOT / "charts" / "runtime-api" / "values.yaml"
-AUTOMATION_CHART_PATH = REPO_ROOT / "charts" / "automation" / "Chart.yaml"
-AUTOMATION_VALUES_PATH = REPO_ROOT / "charts" / "automation" / "values.yaml"
+# runtime-api and automation are embedded subcharts of openhands: they version
+# with the openhands chart, so only their values files are updated here.
+RUNTIME_API_VALUES_PATH = (
+    REPO_ROOT / "charts" / "openhands" / "charts" / "runtime-api" / "values.yaml"
+)
+AUTOMATION_VALUES_PATH = (
+    REPO_ROOT / "charts" / "openhands" / "charts" / "automation" / "values.yaml"
+)
 IMAGE_LOADER_CHART_PATH = REPO_ROOT / "charts" / "image-loader" / "Chart.yaml"
 IMAGE_LOADER_VALUES_PATH = REPO_ROOT / "charts" / "image-loader" / "values.yaml"
 REPLICATED_OPENHANDS_PATH = REPO_ROOT / "replicated" / "openhands.yaml"
@@ -329,30 +333,6 @@ def update_tag_in_content(
     return content
 
 
-def update_dependency(
-    chart_data: dict,
-    dep_name: str,
-    new_version: str | None,
-    result: UpdateResult,
-) -> None:
-    """Update a named dependency version in chart data."""
-    if not new_version:
-        return
-    for dep in chart_data.get("dependencies", []):
-        if dep.get("name") == dep_name:
-            old_version = dep.get("version")
-            result_key = f"{dep_name} version"
-            if old_version == new_version:
-                result.unchanged.append((result_key, old_version))
-            else:
-                dep["version"] = new_version
-                result.changes.append((result_key, old_version, new_version))
-                result.has_changes = True
-            break
-    else:
-        result.errors.append(f"Could not find {dep_name} dependency in Chart.yaml")
-
-
 def update_all_tags_in_content(
     content: str,
     pattern: str,
@@ -415,14 +395,14 @@ def bump_patch_version(version: str) -> str:
 def update_openhands_chart(
     chart_path: Path,
     new_app_version: str,
-    new_runtime_api_version: str | None,
-    new_automation_version: str | None = None,
     has_changes: bool = True,
     dry_run: bool = False,
 ) -> UpdateResult:
-    """Update appVersion, bump patch version, and update dependencies.
+    """Update appVersion and bump the patch version of the openhands chart.
 
     Only updates appVersion and bumps version if has_changes is True.
+    has_changes must cover the embedded runtime-api and automation subchart
+    values as well — they ship inside the openhands chart.
     """
     yaml = create_yaml_parser()
     chart_data = yaml.load(chart_path)
@@ -433,10 +413,6 @@ def update_openhands_chart(
         old_app_version = chart_data.get("appVersion")
         result.unchanged.append(("openhands chart version", f"{old_version} (no value changes)"))
         result.unchanged.append(("appVersion", f"{old_app_version} (no value changes)"))
-        update_dependency(chart_data, "runtime-api", new_runtime_api_version, result)
-        update_dependency(chart_data, "automation", new_automation_version, result)
-        if not dry_run and result.has_changes and not result.errors:
-            yaml.dump(chart_data, chart_path)
         return result
 
     old_app_version = chart_data.get("appVersion")
@@ -452,9 +428,6 @@ def update_openhands_chart(
     chart_data["version"] = new_version
     result.changes.append(("version", old_version, new_version))
     result.has_changes = True
-
-    update_dependency(chart_data, "runtime-api", new_runtime_api_version, result)
-    update_dependency(chart_data, "automation", new_automation_version, result)
 
     if not dry_run and result.has_changes and not result.errors:
         yaml.dump(chart_data, chart_path)
@@ -656,15 +629,6 @@ def bump_chart_version(
     return new_version, result
 
 
-def update_runtime_api_chart(
-    chart_path: Path,
-    has_changes: bool = True,
-    dry_run: bool = False,
-) -> tuple[str, UpdateResult]:
-    """Bump the patch version of the runtime-api chart and return the new/current version."""
-    return bump_chart_version(chart_path, "runtime-api", has_changes=has_changes, dry_run=dry_run)
-
-
 def update_runtime_api_values(
     values_path: Path,
     runtime_api_sha: str,
@@ -750,7 +714,10 @@ def print_section_header(title: str) -> None:
 def parse_args(args=None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Update OpenHands, runtime-api, automation, and image-loader charts based on a SaaS deploy."
+        description=(
+            "Update the OpenHands chart (including its embedded runtime-api and "
+            "automation subcharts) and the image-loader chart based on a SaaS deploy."
+        )
     )
     parser.add_argument(
         "--dry-run",
@@ -795,9 +762,14 @@ def update_runtime_api_workflow(
     deploy_config: DeployConfig,
     runtime_image_tag: str,
     dry_run: bool,
-) -> str:
-    """Update runtime-api chart and values. Returns the new chart version."""
-    print_section_header("Updating runtime-api chart...")
+) -> UpdateResult:
+    """Update runtime-api subchart values. Returns the values UpdateResult.
+
+    runtime-api is an embedded subchart of openhands, so it has no chart
+    version of its own to bump — value changes are released by the openhands
+    chart version bump instead.
+    """
+    print_section_header("Updating runtime-api subchart...")
 
     print("Updating runtime-api values.yaml...")
     values_result = update_runtime_api_values(
@@ -808,27 +780,22 @@ def update_runtime_api_workflow(
     )
     values_result.print_summary()
 
-    print()
-    print("Updating runtime-api Chart.yaml...")
-    chart_version, chart_result = update_runtime_api_chart(
-        RUNTIME_API_CHART_PATH,
-        has_changes=values_result.has_changes,
-        dry_run=dry_run,
-    )
-    chart_result.print_summary()
-
-    return chart_version
+    return values_result
 
 
 def update_openhands_workflow(
-    deploy_config: DeployConfig,
     openhands_version: str,
-    runtime_api_version: str,
     runtime_image_tag: str,
     dry_run: bool,
-    automation_version: str | None = None,
+    subchart_values_changed: bool = False,
 ) -> None:
-    """Update openhands chart and values."""
+    """Update openhands chart and values.
+
+    subchart_values_changed reports whether any embedded subchart values
+    (runtime-api, automation) changed — those ship inside the openhands chart,
+    so they require an openhands version bump even when the openhands values
+    themselves are untouched.
+    """
     print_section_header("Updating openhands chart...")
 
     print("Updating openhands values.yaml...")
@@ -863,9 +830,7 @@ def update_openhands_workflow(
     chart_result = update_openhands_chart(
         CHART_PATH,
         openhands_version,
-        runtime_api_version,
-        automation_version,
-        has_changes=values_result.has_changes,
+        has_changes=values_result.has_changes or subchart_values_changed,
         dry_run=dry_run,
     )
     chart_result.print_summary()
@@ -900,9 +865,14 @@ def update_image_loader_workflow(
 def update_automation_workflow(
     deploy_config: DeployConfig,
     dry_run: bool,
-) -> str:
-    """Update automation chart values and bump chart version. Returns new chart version."""
-    print_section_header("Updating automation chart...")
+) -> UpdateResult:
+    """Update automation subchart values. Returns the values UpdateResult.
+
+    automation is an embedded subchart of openhands, so it has no chart
+    version of its own to bump — value changes are released by the openhands
+    chart version bump instead.
+    """
+    print_section_header("Updating automation subchart...")
 
     print("Updating automation values.yaml...")
     values_result = update_automation_values(
@@ -912,17 +882,7 @@ def update_automation_workflow(
     )
     values_result.print_summary()
 
-    print()
-    print("Updating automation Chart.yaml...")
-    chart_version, chart_result = bump_chart_version(
-        AUTOMATION_CHART_PATH,
-        "automation",
-        has_changes=values_result.has_changes,
-        dry_run=dry_run,
-    )
-    chart_result.print_summary()
-
-    return chart_version
+    return values_result
 
 
 def process_updates(
@@ -974,22 +934,22 @@ def process_updates(
     print(f"  AGENT_SERVER_IMAGE tag (from sandbox spec): {runtime_image_tag}")
 
     print()
-    runtime_api_version = update_runtime_api_workflow(deploy_config, runtime_image_tag, dry_run)
+    runtime_api_result = update_runtime_api_workflow(deploy_config, runtime_image_tag, dry_run)
 
     print()
-    automation_version = update_automation_workflow(deploy_config, dry_run)
+    automation_result = update_automation_workflow(deploy_config, dry_run)
 
     print()
     update_image_loader_workflow(runtime_image_tag, dry_run)
 
     print()
     update_openhands_workflow(
-        deploy_config,
         openhands_version,
-        runtime_api_version,
         runtime_image_tag,
         dry_run,
-        automation_version=automation_version,
+        subchart_values_changed=(
+            runtime_api_result.has_changes or automation_result.has_changes
+        ),
     )
 
 

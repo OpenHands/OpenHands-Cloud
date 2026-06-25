@@ -314,7 +314,8 @@ spec:
         CPU_LIMIT: 'repl{{ ConfigOption "sandbox_cpu_limit" }}'
         LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
         ADDITIONAL_CONFIGMAPS: "openhands-ca-bundle:/etc/openhands/ca-bundle"
-        ADDITIONAL_HOST_PATHS: 'repl{{ ConfigOption "sandbox_additional_host_paths" }}'
+        # Textarea is "one per line"; normalize to a comma list so a multiline value isn't YAML-folded into a space-joined token.
+        ADDITIONAL_HOST_PATHS: 'repl{{ $hp := list }}repl{{ range $raw := splitList "\n" (ConfigOption "sandbox_additional_host_paths" | replace "\r" "\n") }}repl{{ $e := trim $raw }}repl{{ if $e }}repl{{ $hp = append $hp $e }}repl{{ end }}repl{{ end }}repl{{ $hp | join "," }}'
         SANDBOX_KVM_ENABLED: 'repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}'
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
       kvm:
@@ -559,6 +560,13 @@ spec:
           secretKey: webhook-secret
         automation:
           enabled: true
+          # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
+          # the Python TLS stack (httpx + requests) at the merged PEM. Required
+          # so automation can verify the OpenHands app cert (openhandsApiUrl /
+          # automationBaseUrl below) when the operator uploads a custom CA —
+          # otherwise outbound HTTPS callbacks/dispatches fail TLS verification.
+          caBundle:
+            enabled: true
           image:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/automation'
           imagePullSecrets:
@@ -961,6 +969,14 @@ spec:
       values:
         plugin-directory:
           enabled: true
+          # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
+          # the server (Python) and client (Node, via NODE_EXTRA_CA_CERTS) at the
+          # merged PEM. Required so the server can verify the marketplace catalog
+          # host (MARKETPLACE_SOURCE) and the client's SSR loader can verify
+          # Keycloak (oidc.issuerUrl) when the operator uploads a custom CA —
+          # otherwise outbound HTTPS fails TLS verification.
+          caBundle:
+            enabled: true
           appUrl: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}/plugins'
           # OpenHands API host (same host as appUrl, without the /plugins path).
           # The curl template appends /api/v1/app-conversations to this base.

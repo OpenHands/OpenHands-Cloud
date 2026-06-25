@@ -29,20 +29,14 @@ from conftest import (
     make_json_error_response,
     make_missing_key_response,
     # Fixture baseline constants for self-documenting assertions
-    AUTOMATION_CHART_APP_VERSION,
-    AUTOMATION_CHART_VERSION,
+    IMAGE_LOADER_CHART_APP_VERSION,
     IMAGE_LOADER_CHART_VERSION,
     OPENHANDS_CHART_VERSION,
     OPENHANDS_CHART_APP_VERSION,
-    OPENHANDS_CHART_RUNTIME_API_VERSION,
-    OPENHANDS_CHART_AUTOMATION_VERSION,
+    OPENHANDS_CHART_SUBCHART_DEP_VERSION,
     OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION,
-    RUNTIME_API_CHART_FULL_VERSION,
-    RUNTIME_API_CHART_MINIMAL_VERSION,
     # Test input constants for update operations
     NEW_APP_VERSION,
-    NEW_AUTOMATION_VERSION,
-    NEW_RUNTIME_API_VERSION,
     NEW_RUNTIME_IMAGE_TAG,
     RUNTIME_IMAGE_TAG,
 )
@@ -70,7 +64,6 @@ from update_openhands_charts import (
     update_openhands_workflow,
     update_replicated_config,
     update_replicated_openhands_values,
-    update_runtime_api_chart,
     update_runtime_api_values,
     update_runtime_api_workflow,
     update_automation_workflow,
@@ -316,16 +309,14 @@ class TestBumpPatchVersion:
 
 
 class TestUpdateChartAcrossVariants:
-    """Tests for update_chart that verify behavior across both chart variants.
+    """Tests for update_openhands_chart across both chart variants.
 
     Uses the parameterized openhands_chart_variant fixture to ensure core
     functionality works with both rich (with_deps) and minimal chart structures.
 
-    Test Structure:
-    - test_chart_app_version_updates: Core update behavior
-    - test_chart_version_bumps: Version increment on change
-    - test_runtime_api_dependency: Dependency update
-    - test_version_unchanged_when_already_current: Consolidated idempotency checks
+    runtime-api and automation are embedded subcharts: their dependency entries
+    carry a wildcard version and must never be rewritten by the updater — the
+    only managed fields are appVersion and the chart version.
 
     TDD Rationale: Tests drive the update_openhands_chart function to handle
     both minimal and full Chart.yaml structures. Parameterized variants ensure
@@ -340,90 +331,57 @@ class TestUpdateChartAcrossVariants:
 
     def test_chart_app_version_updates_to_new_cloud_tag(self, temp_chart_file):
         """Verify appVersion field is updated to the new OpenHands cloud tag."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION)
 
         assert get_chart_value(temp_chart_file, "appVersion") == NEW_APP_VERSION
 
     def test_chart_version_bumps_patch_on_update(self, temp_chart_file):
         """Verify chart version patch is incremented when changes are made."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION)
 
         assert_version_bumped(temp_chart_file, OPENHANDS_CHART_VERSION)
 
-    def test_runtime_api_dependency_version_updates(self, temp_chart_file):
-        """Verify runtime-api dependency version is updated in Chart.yaml."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+    @pytest.mark.parametrize("subchart_dep", ["runtime-api", "automation"])
+    def test_embedded_subchart_dependency_stays_wildcard(self, temp_chart_file, subchart_dep):
+        """Verify embedded subchart dependency entries keep their wildcard version.
 
-        assert get_dependency_version(temp_chart_file, "runtime-api") == NEW_RUNTIME_API_VERSION
-
-    def test_automation_dependency_version_updates(self, temp_chart_file):
-        """Verify automation dependency version is updated in Chart.yaml."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, None, NEW_AUTOMATION_VERSION)
-
-        assert get_dependency_version(temp_chart_file, "automation") == NEW_AUTOMATION_VERSION
-
-    def test_missing_requested_dependency_reports_error(self, make_temp_yaml_file):
-        """Verify requested dependency updates fail loudly when the dependency is absent."""
-        chart_file = make_temp_yaml_file("""\
-apiVersion: v2
-name: test-chart
-description: Test chart
-type: application
-version: 0.1.0
-appVersion: cloud-1.0.0
-dependencies:
-  - name: runtime-api
-    version: 0.1.10
-""")
-
-        result = update_openhands_chart(chart_file, NEW_APP_VERSION, None, NEW_AUTOMATION_VERSION)
-
-        assert result.has_error_containing("Could not find automation dependency in Chart.yaml")
-        assert get_dependency_version(chart_file, "automation") is None
-        assert get_chart_value(chart_file, "appVersion") == OPENHANDS_CHART_APP_VERSION
-        assert get_chart_value(chart_file, "version") == OPENHANDS_CHART_VERSION
-
-    @pytest.mark.parametrize("app_version,runtime_api_version,automation_version,unchanged_key", [
-        # When appVersion already matches target, it should be reported as unchanged
-        pytest.param(
-            OPENHANDS_CHART_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, "appVersion",
-            id="appVersion unchanged when already current"
-        ),
-        # When runtime-api version already matches target, it should be reported as unchanged
-        pytest.param(
-            NEW_APP_VERSION, OPENHANDS_CHART_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION, "runtime-api version",
-            id="runtime-api version unchanged when already current"
-        ),
-        # When automation version already matches target, it should be reported as unchanged
-        pytest.param(
-            NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, OPENHANDS_CHART_AUTOMATION_VERSION, "automation version",
-            id="automation version unchanged when already current"
-        ),
-    ])
-    def test_version_unchanged_when_already_current(
-        self, temp_chart_file, app_version, runtime_api_version, automation_version, unchanged_key
-    ):
-        """Verify no change is recorded when a version already matches target.
-
-        Idempotency verification: Ensures the update function correctly identifies
-        when values are already at their target state, preventing spurious version
-        bumps and unnecessary commits in CI/CD pipelines.
+        runtime-api and automation live inside the openhands chart's charts/
+        directory; their dependency entries exist only for the condition flags
+        and must never be pinned by the updater.
         """
-        result = update_openhands_chart(temp_chart_file, app_version, runtime_api_version, automation_version)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION)
 
-        assert result.is_unchanged(unchanged_key)
+        assert get_dependency_version(temp_chart_file, subchart_dep) == OPENHANDS_CHART_SUBCHART_DEP_VERSION
+
+    def test_app_version_unchanged_when_already_current(self, temp_chart_file):
+        """Verify no appVersion change is recorded when it already matches the target."""
+        result = update_openhands_chart(temp_chart_file, OPENHANDS_CHART_APP_VERSION)
+
+        assert result.is_unchanged("appVersion")
+
+    def test_version_still_bumps_when_app_version_already_current(self, temp_chart_file):
+        """Embedded-subchart semantics: the chart version bumps even when appVersion is current.
+
+        has_changes defaults to True (the caller reports that something inside
+        the chart — e.g. runtime-api/automation subchart values — changed), so
+        the chart version must bump to release those changes even when the
+        openhands appVersion itself is untouched.
+        """
+        result = update_openhands_chart(temp_chart_file, OPENHANDS_CHART_APP_VERSION)
+
+        assert_version_bumped(temp_chart_file, OPENHANDS_CHART_VERSION)
+        assert result.has_change_for("version")
 
 
 class TestUpdateChart:
-    """Tests for update_chart function with specific fixture requirements.
+    """Tests for update_openhands_chart with specific fixture requirements.
 
     These tests require the with_deps fixture specifically because they test
     features only present in that variant (e.g., multiple dependencies, maintainers).
 
-    TDD Rationale: Tests drive selective dependency updates - only managed
-    dependencies should be modified while other dependencies remain untouched.
-    This prevents accidental side effects when updating charts with multiple
-    dependencies.
+    TDD Rationale: The updater only touches appVersion and version — every
+    dependency entry (embedded subcharts and third-party deps alike) must be
+    preserved verbatim.
     """
 
     @pytest.fixture
@@ -432,8 +390,8 @@ class TestUpdateChart:
         return make_temp_yaml_file(sample_openhands_chart_with_deps)
 
     def test_unmanaged_dependencies_remain_unchanged(self, temp_chart_file):
-        """Verify only runtime-api and automation dependencies are modified; other deps are preserved."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, NEW_AUTOMATION_VERSION)
+        """Verify dependency versions are never modified by the chart update."""
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION)
 
         assert get_dependency_version(temp_chart_file, "other-dep") == OPENHANDS_CHART_WITH_DEPS_OTHER_DEP_VERSION
 
@@ -444,7 +402,7 @@ class TestUpdateChart:
     ])
     def test_scalar_field_preserved_after_update(self, temp_chart_file, key, expected):
         """Non-targeted scalar fields are not modified by chart update."""
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION)
 
         assert get_chart_value(temp_chart_file, key) == expected
 
@@ -453,7 +411,7 @@ class TestUpdateChart:
         """Lists (maintainers, dependencies) keep their original length — no entries added/removed."""
         original_count = len(get_chart_value(temp_chart_file, list_key))
 
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION)
 
         assert len(get_chart_value(temp_chart_file, list_key)) == original_count
 
@@ -1608,13 +1566,63 @@ class TestReplicatedPatternsMatchRealFile:
         """
         assert get_chart_value(update_openhands_charts.IMAGE_LOADER_CHART_PATH, "name") == "image-loader"
 
+    @pytest.mark.parametrize("path_constant,relative_parts", [
+        pytest.param(
+            "RUNTIME_API_VALUES_PATH",
+            ("charts", "openhands", "charts", "runtime-api", "values.yaml"),
+            id="runtime-api embedded values path",
+        ),
+        pytest.param(
+            "AUTOMATION_VALUES_PATH",
+            ("charts", "openhands", "charts", "automation", "values.yaml"),
+            id="automation embedded values path",
+        ),
+    ])
+    def test_embedded_subchart_values_path_resolves_to_real_file(self, path_constant, relative_parts):
+        """The subchart values path constants point at the embedded subchart locations.
+
+        runtime-api and automation moved from charts/<name>/ into
+        charts/openhands/charts/<name>/; if a constant still pointed at the old
+        standalone location, the script would update a file Helm never packages.
+        """
+        path = getattr(update_openhands_charts, path_constant)
+        assert path == update_openhands_charts.REPO_ROOT.joinpath(*relative_parts)
+        assert path.is_file()
+
+    def test_every_runtime_api_ref_in_real_embedded_values_is_matched(self, copy_of_real_file):
+        """Running the runtime-api updater against the real embedded values.yaml reports zero unmatched patterns."""
+        result = update_runtime_api_values(
+            copy_of_real_file(update_openhands_charts.RUNTIME_API_VALUES_PATH),
+            runtime_api_sha="0000000cafef00d",
+            runtime_image_tag="0.0.0-canary",
+            dry_run=True,
+        )
+
+        assert result.errors == [], (
+            "A pattern stopped matching the real embedded runtime-api values.yaml — "
+            "likely the image block was restructured. Fix the pattern: " + "; ".join(result.errors)
+        )
+
+    def test_automation_ref_in_real_embedded_values_is_matched(self, copy_of_real_file):
+        """Running the automation updater against the real embedded values.yaml reports zero unmatched patterns."""
+        result = update_automation_values(
+            copy_of_real_file(update_openhands_charts.AUTOMATION_VALUES_PATH),
+            automation_sha="0000000cafef00d",
+            dry_run=True,
+        )
+
+        assert result.errors == [], (
+            "The automation image pattern stopped matching the real embedded "
+            "automation values.yaml. Fix the pattern: " + "; ".join(result.errors)
+        )
+
 
 class TestConditionalChartVersionBump:
-    """Tests for conditional chart version bumping across both chart types.
+    """Tests for the openhands chart's conditional version bump.
 
-    Both openhands and runtime-api charts use the same pattern: only bump
-    the chart version when has_changes=True. This consolidates testing of
-    that behavior to reduce redundancy (Necessary property).
+    The chart version (and appVersion) is only touched when has_changes=True.
+    has_changes covers the openhands values AND the embedded runtime-api and
+    automation subchart values — those ship inside the openhands chart.
 
     TDD Rationale: These tests drive the has_changes flag behavior that
     prevents unnecessary version bumps when only checking for updates.
@@ -1625,19 +1633,11 @@ class TestConditionalChartVersionBump:
         """Create a temporary openhands Chart.yaml file."""
         return make_temp_yaml_file(sample_openhands_chart_minimal)
 
-    @pytest.fixture
-    def temp_runtime_api_chart_file(self, make_temp_yaml_file, sample_runtime_api_chart_minimal):
-        """Create a temporary runtime-api Chart.yaml file."""
-        return make_temp_yaml_file(sample_runtime_api_chart_minimal)
-
-    # --- Openhands chart tests ---
-
     def test_openhands_no_version_bump_when_no_changes(self, temp_openhands_chart_file):
         """Test that openhands chart version is not bumped when has_changes is False."""
         result = update_openhands_chart(
             temp_openhands_chart_file,
             new_app_version=OPENHANDS_CHART_APP_VERSION,
-            new_runtime_api_version=OPENHANDS_CHART_RUNTIME_API_VERSION,
             has_changes=False,
         )
 
@@ -1645,12 +1645,23 @@ class TestConditionalChartVersionBump:
         assert get_chart_value(temp_openhands_chart_file, "appVersion") == OPENHANDS_CHART_APP_VERSION
         assert result.is_unchanged("openhands chart version")
 
+    def test_openhands_no_app_version_write_when_no_changes(self, temp_openhands_chart_file):
+        """has_changes=False short-circuits before appVersion is rewritten, even when it differs."""
+        result = update_openhands_chart(
+            temp_openhands_chart_file,
+            new_app_version=NEW_APP_VERSION,
+            has_changes=False,
+        )
+
+        assert get_chart_value(temp_openhands_chart_file, "appVersion") == OPENHANDS_CHART_APP_VERSION
+        assert result.is_unchanged("appVersion")
+        assert result.has_changes is False
+
     def test_openhands_chart_file_updated_when_has_changes(self, temp_openhands_chart_file):
         """File content: version bumped and appVersion replaced when has_changes is True."""
         update_openhands_chart(
             temp_openhands_chart_file,
             new_app_version="cloud-1.1.0",
-            new_runtime_api_version="0.2.7",
             has_changes=True,
         )
 
@@ -1662,29 +1673,28 @@ class TestConditionalChartVersionBump:
         result = update_openhands_chart(
             temp_openhands_chart_file,
             new_app_version="cloud-1.1.0",
-            new_runtime_api_version="0.2.7",
             has_changes=True,
         )
 
         assert result.has_change_for("appVersion")
         assert result.has_change_for("version")
 
-    # --- Runtime-api chart tests ---
+    def test_openhands_version_bumps_for_subchart_only_changes(self, temp_openhands_chart_file):
+        """Embedded subchart values changed but appVersion is current: version still bumps.
 
-    def test_runtime_api_no_version_bump_when_no_changes(self, temp_runtime_api_chart_file):
-        """Test that runtime-api chart version is not bumped when has_changes is False."""
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file, has_changes=False)
+        This is the release mechanism for runtime-api/automation values changes:
+        they have no chart version of their own, so the openhands chart version
+        must bump to ship them.
+        """
+        result = update_openhands_chart(
+            temp_openhands_chart_file,
+            new_app_version=OPENHANDS_CHART_APP_VERSION,
+            has_changes=True,
+        )
 
-        assert new_version == RUNTIME_API_CHART_MINIMAL_VERSION  # Version unchanged
-        assert result.is_unchanged("runtime-api chart version")
-
-    def test_runtime_api_version_bump_when_has_changes(self, temp_runtime_api_chart_file):
-        """Test that runtime-api chart version is bumped when has_changes is True."""
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file, has_changes=True)
-
-        expected_version = bump_patch_version(RUNTIME_API_CHART_MINIMAL_VERSION)
-        assert new_version == expected_version  # Version bumped
-        assert result.has_change_for("runtime-api chart version")
+        assert_version_bumped(temp_openhands_chart_file, OPENHANDS_CHART_VERSION)
+        assert result.is_unchanged("appVersion")
+        assert result.has_change_for("version")
 
 
 class TestDryRun:
@@ -1723,7 +1733,7 @@ class TestDryRun:
         original_content = temp_chart_file.read_text()
 
         # Act: run update with dry_run=True
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, dry_run=True)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, dry_run=True)
 
         # Assert: file unchanged
         assert temp_chart_file.read_text() == original_content
@@ -1731,12 +1741,11 @@ class TestDryRun:
     def test_update_chart_dry_run_prints_changes(self, temp_chart_file):
         """Test that dry-run still records what would be changed."""
         # Act
-        result = update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, dry_run=True)
+        result = update_openhands_chart(temp_chart_file, NEW_APP_VERSION, dry_run=True)
 
         # Assert: changes are tracked even though file wasn't modified
         assert result.has_change_for("appVersion")
         assert result.has_change_for("version")
-        assert result.has_change_for("runtime-api version")
 
     def test_update_values_dry_run_no_file_changes(self, temp_values_file):
         """Test that dry-run doesn't modify values.yaml."""
@@ -1775,7 +1784,7 @@ class TestDryRun:
         original_content = temp_chart_file.read_text()
 
         # Act: run update with dry_run=False (default behavior)
-        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, NEW_RUNTIME_API_VERSION, dry_run=False)
+        update_openhands_chart(temp_chart_file, NEW_APP_VERSION, dry_run=False)
 
         # Assert: file was modified
         assert temp_chart_file.read_text() != original_content
@@ -1795,62 +1804,6 @@ class TestDryRun:
 
         # Assert: file was modified
         assert temp_values_file.read_text() != original_content
-
-
-class TestUpdateRuntimeApiChart:
-    """Tests for update_runtime_api_chart function."""
-
-    @pytest.fixture
-    def temp_runtime_api_chart_file(self, make_temp_yaml_file, sample_runtime_api_chart_full):
-        """Create a temporary runtime-api Chart.yaml file using shared fixtures."""
-        return make_temp_yaml_file(sample_runtime_api_chart_full)
-
-    def test_bump_runtime_api_version_writes_bumped_version_to_file(self, temp_runtime_api_chart_file):
-        """File content: runtime-api chart file is updated to the bumped version."""
-        expected_version = bump_patch_version(RUNTIME_API_CHART_FULL_VERSION)
-        update_runtime_api_chart(temp_runtime_api_chart_file)
-
-        assert get_chart_value(temp_runtime_api_chart_file, "version") == expected_version
-
-    def test_bump_runtime_api_version_returns_bumped_version(self, temp_runtime_api_chart_file):
-        """Return value: bumped version is returned to the caller."""
-        expected_version = bump_patch_version(RUNTIME_API_CHART_FULL_VERSION)
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file)
-
-        assert new_version == expected_version
-
-    @pytest.mark.parametrize("key,expected", [
-        ("apiVersion", "v2"),
-        ("name", "runtime-api"),
-        ("appVersion", "1.0.0"),
-    ])
-    def test_scalar_fields_preserved_after_version_bump(self, temp_runtime_api_chart_file, key, expected):
-        """Verify scalar fields are not modified by runtime-api chart version bump."""
-        update_runtime_api_chart(temp_runtime_api_chart_file)
-
-        assert get_chart_value(temp_runtime_api_chart_file, key) == expected
-
-    def test_dependencies_count_preserved_after_version_bump(self, temp_runtime_api_chart_file):
-        """Verify dependencies list length is not modified by runtime-api chart version bump."""
-        original_count = len(get_chart_value(temp_runtime_api_chart_file, "dependencies"))
-
-        update_runtime_api_chart(temp_runtime_api_chart_file)
-
-        assert len(get_chart_value(temp_runtime_api_chart_file, "dependencies")) == original_count
-
-    def test_dry_run_no_file_changes(self, temp_runtime_api_chart_file):
-        """Test that dry-run doesn't modify the file."""
-        original_content = temp_runtime_api_chart_file.read_text()
-
-        update_runtime_api_chart(temp_runtime_api_chart_file, dry_run=True)
-
-        assert temp_runtime_api_chart_file.read_text() == original_content
-
-    def test_dry_run_returns_new_version(self, temp_runtime_api_chart_file):
-        """Test that dry-run still returns the new version."""
-        expected_version = bump_patch_version(RUNTIME_API_CHART_FULL_VERSION)
-        new_version, result = update_runtime_api_chart(temp_runtime_api_chart_file, dry_run=True)
-        assert new_version == expected_version
 
 
 class TestUpdateRuntimeApiValues:
@@ -2055,57 +2008,63 @@ deployment:
         assert result.has_error_containing("Could not find automation image tag in values.yaml")
 
 
-class TestUpdateAutomationChart:
-    """Tests for bump_chart_version with automation chart."""
+class TestBumpChartVersion:
+    """Tests for bump_chart_version using the image-loader chart.
+
+    image-loader is the only chart still released independently (runtime-api
+    and automation became embedded subcharts of openhands and version with it),
+    so it is the only remaining consumer of this helper.
+    """
+
+    BUMPED_VERSION = bump_patch_version(IMAGE_LOADER_CHART_VERSION)
 
     @pytest.fixture
-    def temp_automation_chart_file(self, make_temp_yaml_file, sample_automation_chart):
-        """Create a temporary automation Chart.yaml file."""
-        return make_temp_yaml_file(sample_automation_chart)
+    def temp_image_loader_chart_file(self, make_temp_yaml_file, sample_image_loader_chart):
+        """Create a temporary image-loader Chart.yaml file."""
+        return make_temp_yaml_file(sample_image_loader_chart)
 
-    def test_bumps_automation_chart_version(self, temp_automation_chart_file):
-        """Test that automation chart version is bumped correctly."""
-        new_version, result = bump_chart_version(temp_automation_chart_file, "automation")
+    def test_bumps_chart_version(self, temp_image_loader_chart_file):
+        """Test that the chart version is bumped correctly."""
+        new_version, result = bump_chart_version(temp_image_loader_chart_file, "image-loader")
 
-        assert get_chart_value(temp_automation_chart_file, "version") == "0.1.2"
-        assert new_version == "0.1.2"
-        assert result.has_change_for("automation chart version")
+        assert get_chart_value(temp_image_loader_chart_file, "version") == self.BUMPED_VERSION
+        assert new_version == self.BUMPED_VERSION
+        assert result.has_change_for("image-loader chart version")
 
-    def test_no_version_bump_when_no_changes(self, temp_automation_chart_file):
-        """Test that automation chart version is not bumped when values are unchanged."""
+    def test_no_version_bump_when_no_changes(self, temp_image_loader_chart_file):
+        """Test that the chart version is not bumped when values are unchanged."""
         new_version, result = bump_chart_version(
-            temp_automation_chart_file, "automation", has_changes=False
+            temp_image_loader_chart_file, "image-loader", has_changes=False
         )
 
-        assert get_chart_value(temp_automation_chart_file, "version") == AUTOMATION_CHART_VERSION
-        assert new_version == AUTOMATION_CHART_VERSION
-        assert result.is_unchanged("automation chart version")
+        assert get_chart_value(temp_image_loader_chart_file, "version") == IMAGE_LOADER_CHART_VERSION
+        assert new_version == IMAGE_LOADER_CHART_VERSION
+        assert result.is_unchanged("image-loader chart version")
 
-    def test_preserves_other_fields(self, temp_automation_chart_file):
+    def test_preserves_other_fields(self, temp_image_loader_chart_file):
         """Test that non-version chart fields are preserved."""
-        bump_chart_version(temp_automation_chart_file, "automation")
+        bump_chart_version(temp_image_loader_chart_file, "image-loader")
 
-        assert get_chart_value(temp_automation_chart_file, "apiVersion") == "v2"
-        assert get_chart_value(temp_automation_chart_file, "name") == "automation"
-        assert get_chart_value(temp_automation_chart_file, "appVersion") == AUTOMATION_CHART_APP_VERSION
-        assert len(get_chart_value(temp_automation_chart_file, "dependencies")) == 2
+        assert get_chart_value(temp_image_loader_chart_file, "apiVersion") == "v2"
+        assert get_chart_value(temp_image_loader_chart_file, "name") == "image-loader"
+        assert get_chart_value(temp_image_loader_chart_file, "appVersion") == IMAGE_LOADER_CHART_APP_VERSION
 
-    def test_dry_run_no_file_changes(self, temp_automation_chart_file):
+    def test_dry_run_no_file_changes(self, temp_image_loader_chart_file):
         """Test that dry-run doesn't modify the file."""
-        original_content = temp_automation_chart_file.read_text()
+        original_content = temp_image_loader_chart_file.read_text()
 
-        bump_chart_version(temp_automation_chart_file, "automation", dry_run=True)
+        bump_chart_version(temp_image_loader_chart_file, "image-loader", dry_run=True)
 
-        assert temp_automation_chart_file.read_text() == original_content
+        assert temp_image_loader_chart_file.read_text() == original_content
 
-    def test_dry_run_returns_new_version(self, temp_automation_chart_file):
+    def test_dry_run_returns_new_version(self, temp_image_loader_chart_file):
         """Test that dry-run still returns the new version."""
         new_version, result = bump_chart_version(
-            temp_automation_chart_file, "automation", dry_run=True
+            temp_image_loader_chart_file, "image-loader", dry_run=True
         )
 
-        assert new_version == "0.1.2"
-        assert result.has_change_for("automation chart version")
+        assert new_version == self.BUMPED_VERSION
+        assert result.has_change_for("image-loader chart version")
 
 
 class TestSkipVersionCheck:
@@ -2188,8 +2147,8 @@ class TestProcessUpdates:
             "update_openhands_charts.get_deploy_config",
             lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha=""),
         )
-        mock_update_runtime_api = MagicMock(return_value="0.1.21")
-        mock_update_automation = MagicMock(return_value="0.1.2")
+        mock_update_runtime_api = MagicMock()
+        mock_update_automation = MagicMock()
         mock_update_image_loader = MagicMock()
         mock_update_openhands = MagicMock()
         monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", mock_update_runtime_api)
@@ -2216,8 +2175,14 @@ class TestProcessUpdates:
             "update_openhands_charts.get_deploy_config",
             lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha="auto-sha"),
         )
-        monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", MagicMock(return_value="0.1.21"))
-        monkeypatch.setattr("update_openhands_charts.update_automation_workflow", MagicMock(return_value="0.1.2"))
+        monkeypatch.setattr(
+            "update_openhands_charts.update_runtime_api_workflow",
+            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.update_automation_workflow",
+            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
+        )
         monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", MagicMock())
         mock_update_image_loader = MagicMock()
         monkeypatch.setattr("update_openhands_charts.update_image_loader_workflow", mock_update_image_loader)
@@ -2226,109 +2191,113 @@ class TestProcessUpdates:
 
         mock_update_image_loader.assert_called_once_with("1.20.0-python", True)
 
+    @pytest.mark.parametrize("runtime_api_changed,automation_changed,expected", [
+        pytest.param(False, False, False, id="no subchart values changed"),
+        pytest.param(True, False, True, id="runtime-api values changed"),
+        pytest.param(False, True, True, id="automation values changed"),
+        pytest.param(True, True, True, id="both subchart values changed"),
+    ])
+    def test_subchart_values_changes_feed_openhands_workflow(
+        self, monkeypatch, stub_process_updates_chain, runtime_api_changed, automation_changed, expected
+    ):
+        """Embedded subchart values results are ORed into subchart_values_changed.
+
+        runtime-api and automation values ship inside the openhands chart, so a
+        change to either alone must reach update_openhands_workflow as
+        subchart_values_changed=True to trigger an openhands version bump.
+        """
+        stub_process_updates_chain()
+        monkeypatch.setattr(
+            "update_openhands_charts.get_deploy_config",
+            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha="auto-sha"),
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.update_runtime_api_workflow",
+            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=runtime_api_changed)),
+        )
+        monkeypatch.setattr(
+            "update_openhands_charts.update_automation_workflow",
+            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=automation_changed)),
+        )
+        monkeypatch.setattr("update_openhands_charts.update_image_loader_workflow", MagicMock())
+        mock_update_openhands = MagicMock()
+        monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", mock_update_openhands)
+
+        process_updates("token", dry_run=True)
+
+        assert mock_update_openhands.call_args.kwargs["subchart_values_changed"] is expected
+
 
 class TestUpdateRuntimeApiWorkflow:
     """Tests for update_runtime_api_workflow orchestration.
 
-    The inner functions update_runtime_api_values and update_runtime_api_chart
-    are already covered by ~30 tests; these focus on the workflow's distinct
-    contract: how it wires arguments between the two calls, threads dry_run,
-    and propagates has_changes from values into the chart bump decision.
+    runtime-api is an embedded subchart of openhands: it has no chart version
+    of its own, so the workflow only updates values.yaml and returns the values
+    UpdateResult — process_updates feeds it into the openhands chart bump.
     """
 
     @pytest.fixture
-    def patched_inner_calls(self, monkeypatch):
-        """Mock both inner update functions and return their MagicMocks for assertion."""
+    def patched_values_call(self, monkeypatch):
+        """Mock the inner values update and return its MagicMock for assertion."""
         mock_values = MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True))
-        mock_chart = MagicMock(return_value=("0.1.21", update_openhands_charts.UpdateResult()))
         monkeypatch.setattr("update_openhands_charts.update_runtime_api_values", mock_values)
-        monkeypatch.setattr("update_openhands_charts.update_runtime_api_chart", mock_chart)
-        return mock_values, mock_chart
+        return mock_values
 
-    def test_returns_chart_version_from_inner_call(self, patched_inner_calls):
-        """The returned value is the new chart version produced by update_runtime_api_chart."""
-        _, mock_chart = patched_inner_calls
-        mock_chart.return_value = ("0.9.99", update_openhands_charts.UpdateResult())
+    def test_returns_values_result_from_inner_call(self, patched_values_call):
+        """The workflow returns the UpdateResult produced by update_runtime_api_values."""
+        values_result = update_openhands_charts.UpdateResult(has_changes=True)
+        patched_values_call.return_value = values_result
 
         result = update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=False)
 
-        assert result == "0.9.99"
+        assert result is values_result
 
-    def test_chart_call_receives_has_changes_true_when_values_changed(self, monkeypatch):
-        """When values has changes, the chart is invoked with has_changes=True so version bumps."""
-        monkeypatch.setattr(
-            "update_openhands_charts.update_runtime_api_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
-        )
-        mock_chart = MagicMock(return_value=("0.1.21", update_openhands_charts.UpdateResult()))
-        monkeypatch.setattr("update_openhands_charts.update_runtime_api_chart", mock_chart)
-
+    def test_values_call_targets_embedded_subchart_values_path(self, patched_values_call):
+        """The workflow points the values updater at the embedded subchart's values.yaml."""
         update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=False)
 
-        assert mock_chart.call_args.kwargs["has_changes"] is True
+        assert patched_values_call.call_args.args[0] == update_openhands_charts.RUNTIME_API_VALUES_PATH
 
-    def test_chart_call_receives_has_changes_false_when_values_unchanged(self, monkeypatch):
-        """When values has no changes, the chart is invoked with has_changes=False so no bump occurs."""
-        monkeypatch.setattr(
-            "update_openhands_charts.update_runtime_api_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=False)),
-        )
-        mock_chart = MagicMock(return_value=("0.1.20", update_openhands_charts.UpdateResult()))
-        monkeypatch.setattr("update_openhands_charts.update_runtime_api_chart", mock_chart)
-
-        update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=False)
-
-        assert mock_chart.call_args.kwargs["has_changes"] is False
-
-    def test_values_call_receives_runtime_api_sha_from_deploy_config(self, patched_inner_calls):
+    def test_values_call_receives_runtime_api_sha_from_deploy_config(self, patched_values_call):
         """The runtime_api_sha is extracted from deploy_config and passed positionally to values."""
-        mock_values, _ = patched_inner_calls
-
         update_runtime_api_workflow(DeployConfig(runtime_api_sha="cafef00d"), "tag", dry_run=False)
 
         # update_runtime_api_values(path, sha, image_tag, dry_run=...) — sha is the 2nd positional arg
-        assert mock_values.call_args.args[1] == "cafef00d"
+        assert patched_values_call.call_args.args[1] == "cafef00d"
 
-    def test_values_call_receives_runtime_image_tag(self, patched_inner_calls):
+    def test_values_call_receives_runtime_image_tag(self, patched_values_call):
         """The runtime_image_tag is passed through to values as the 3rd positional argument."""
-        mock_values, _ = patched_inner_calls
-
         update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "image-tag-v9", dry_run=False)
 
-        assert mock_values.call_args.args[2] == "image-tag-v9"
+        assert patched_values_call.call_args.args[2] == "image-tag-v9"
 
     @pytest.mark.parametrize("dry_run", [True, False])
-    def test_dry_run_is_propagated_to_both_inner_calls(self, patched_inner_calls, dry_run):
-        """The dry_run flag is forwarded to both update_runtime_api_values and update_runtime_api_chart."""
-        mock_values, mock_chart = patched_inner_calls
-
+    def test_dry_run_is_propagated_to_values_call(self, patched_values_call, dry_run):
+        """The dry_run flag is forwarded to update_runtime_api_values."""
         update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=dry_run)
 
-        assert mock_values.call_args.kwargs["dry_run"] is dry_run
-        assert mock_chart.call_args.kwargs["dry_run"] is dry_run
+        assert patched_values_call.call_args.kwargs["dry_run"] is dry_run
 
 
 class TestUpdateAutomationWorkflow:
-    """Tests for update_automation_workflow orchestration."""
+    """Tests for update_automation_workflow orchestration.
 
-    @pytest.fixture
-    def automation_paths(
+    automation is an embedded subchart of openhands: no chart version bump
+    happens here — the workflow updates values.yaml and returns the values
+    UpdateResult for process_updates to feed into the openhands chart bump.
+    """
+
+    def test_updates_values_and_returns_values_result(
         self,
         monkeypatch,
         make_temp_yaml_file,
         sample_automation_values,
-        sample_automation_chart,
     ):
-        """Point the workflow at temporary copies of the automation chart files."""
+        """The automation values file is updated and the values result is returned."""
         values_path = make_temp_yaml_file(sample_automation_values)
-        chart_path = make_temp_yaml_file(sample_automation_chart)
         monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
-        monkeypatch.setattr("update_openhands_charts.AUTOMATION_CHART_PATH", chart_path)
-        return values_path, chart_path
 
-    def _run(self):
-        """Invoke the workflow with a changed automation SHA; return its result."""
-        return update_automation_workflow(
+        result = update_automation_workflow(
             DeployConfig(
                 runtime_api_sha="unused",
                 automation_sha="1234567890abcdef1234567890abcdef12345678",
@@ -2336,27 +2305,27 @@ class TestUpdateAutomationWorkflow:
             dry_run=False,
         )
 
-    def test_updates_values_file(self, automation_paths):
-        """When values change, the automation values.yaml receives the new tag."""
-        values_path, _ = automation_paths
-
-        self._run()
-
         assert_file_contains(values_path, "tag: sha-1234567\n")
+        assert result.has_changes is True
+        assert result.has_change_for("automation image tag")
 
-    def test_bumps_chart_version(self, automation_paths):
-        """When values change, the automation chart version is bumped in the file."""
-        _, chart_path = automation_paths
+    def test_unchanged_values_return_no_changes(
+        self,
+        monkeypatch,
+        make_temp_yaml_file,
+        sample_automation_values,
+    ):
+        """Reapplying the tag already in the values file reports no changes upward."""
+        values_path = make_temp_yaml_file(sample_automation_values)
+        monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
 
-        self._run()
+        result = update_automation_workflow(
+            DeployConfig(runtime_api_sha="unused", automation_sha="c58faa1"),
+            dry_run=False,
+        )
 
-        assert get_chart_value(chart_path, "version") == "0.1.2"
-
-    def test_returns_new_chart_version(self, automation_paths):
-        """When values change, the workflow returns the bumped chart version."""
-        new_version = self._run()
-
-        assert new_version == "0.1.2"
+        assert result.has_changes is False
+        assert result.is_unchanged("automation image tag")
 
 
 class TestUpdateImageLoaderWorkflow:
@@ -2443,125 +2412,195 @@ class TestUpdateOpenhandsWorkflow:
     """Tests for update_openhands_workflow orchestration.
 
     Focuses on the wiring contract: openhands_version flows to both inner calls,
-    runtime_api_version only to chart, runtime_image_tag only to values, and
-    has_changes propagates from values into the chart's bump decision.
+    runtime_image_tag only to values, and has_changes for the chart bump is the
+    OR of the openhands values result and subchart_values_changed — the embedded
+    runtime-api/automation subchart values ship inside the openhands chart, so a
+    change to them alone must bump the openhands version.
     """
 
-    def test_chart_call_receives_has_changes_true_when_values_changed(self, monkeypatch):
+    @pytest.fixture
+    def make_patched_inner_calls(self, monkeypatch):
+        """Factory mocking all four inner update functions.
+
+        Accepts values_changed to control the openhands values result. Returns
+        the values/chart mocks asserted by this workflow-contract test class.
+        The replicated mocks are intentionally not returned here; they are
+        patched only to prevent writes to the real replicated files and have
+        dedicated assertions in the focused replicated workflow test classes.
+        """
+        def _patch(values_changed: bool = True):
+            mock_values = MagicMock(
+                return_value=update_openhands_charts.UpdateResult(has_changes=values_changed)
+            )
+            mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult())
+            mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
+            mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
+            monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
+            monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
+            monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
+            monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
+            return mock_values, mock_chart
+        return _patch
+
+    @pytest.fixture
+    def patched_inner_calls(self, make_patched_inner_calls):
+        """Default patching: openhands values report changes."""
+        return make_patched_inner_calls(values_changed=True)
+
+    def test_chart_call_receives_has_changes_true_when_values_changed(self, make_patched_inner_calls):
         """When values has changes, the chart is invoked with has_changes=True so version bumps."""
-        monkeypatch.setattr(
-            "update_openhands_charts.update_openhands_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_replicated_openhands_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult()),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_replicated_config",
-            MagicMock(return_value=update_openhands_charts.UpdateResult()),
-        )
-        mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
+        _, mock_chart = make_patched_inner_calls(values_changed=True)
 
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=False,
         )
 
         assert mock_chart.call_args.kwargs["has_changes"] is True
 
-    def test_chart_call_receives_has_changes_false_when_values_unchanged(self, monkeypatch):
-        """When values has no changes, the chart is invoked with has_changes=False so no bump."""
-        monkeypatch.setattr(
-            "update_openhands_charts.update_openhands_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=False)),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_replicated_openhands_values",
-            MagicMock(return_value=update_openhands_charts.UpdateResult()),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_replicated_config",
-            MagicMock(return_value=update_openhands_charts.UpdateResult()),
-        )
-        mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
-        monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
+    def test_chart_call_receives_has_changes_false_when_nothing_changed(self, make_patched_inner_calls):
+        """Values unchanged and no subchart values changed: has_changes=False so no bump."""
+        _, mock_chart = make_patched_inner_calls(values_changed=False)
 
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=False,
         )
 
         assert mock_chart.call_args.kwargs["has_changes"] is False
 
-    def test_values_call_receives_openhands_version(self, openhands_workflow_mocks):
-        """openhands_version is passed positionally to update_openhands_values as the 2nd argument."""
+    def test_chart_call_receives_has_changes_true_when_only_subchart_values_changed(
+        self, make_patched_inner_calls
+    ):
+        """Subchart values changed but openhands values untouched: has_changes=True.
+
+        This is the new release path for the embedded runtime-api/automation
+        subcharts — their values changes must bump the openhands chart version
+        even when the openhands values.yaml itself is already current.
+        """
+        _, mock_chart = make_patched_inner_calls(values_changed=False)
+
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
+            openhands_version="cloud-1.0.0",
+            runtime_image_tag="tag",
+            dry_run=False,
+            subchart_values_changed=True,
+        )
+
+        assert mock_chart.call_args.kwargs["has_changes"] is True
+
+    def test_values_call_receives_openhands_version(self, patched_inner_calls):
+        """openhands_version is passed positionally to update_openhands_values as the 2nd argument."""
+        mock_values, _ = patched_inner_calls
+
+        update_openhands_workflow(
             openhands_version="cloud-9.9.9",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=False,
         )
 
-        assert openhands_workflow_mocks.values.call_args.args[1] == "cloud-9.9.9"
+        assert mock_values.call_args.args[1] == "cloud-9.9.9"
 
-    def test_values_call_receives_runtime_image_tag(self, openhands_workflow_mocks):
+    def test_values_call_receives_runtime_image_tag(self, patched_inner_calls):
         """runtime_image_tag is passed positionally to update_openhands_values as the 3rd argument."""
+        mock_values, _ = patched_inner_calls
+
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="image-tag-v9",
             dry_run=False,
         )
 
-        assert openhands_workflow_mocks.values.call_args.args[2] == "image-tag-v9"
+        assert mock_values.call_args.args[2] == "image-tag-v9"
 
-    def test_chart_call_receives_openhands_version(self, openhands_workflow_mocks):
+    def test_chart_call_receives_openhands_version(self, patched_inner_calls):
         """openhands_version is passed positionally to update_openhands_chart as the 2nd argument."""
+        _, mock_chart = patched_inner_calls
+
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-9.9.9",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=False,
         )
 
-        assert openhands_workflow_mocks.chart.call_args.args[1] == "cloud-9.9.9"
-
-    def test_chart_call_receives_runtime_api_version(self, openhands_workflow_mocks):
-        """runtime_api_version is passed positionally to update_openhands_chart as the 3rd argument."""
-        update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
-            openhands_version="cloud-1.0.0",
-            runtime_api_version="0.9.99",
-            runtime_image_tag="tag",
-            dry_run=False,
-        )
-
-        assert openhands_workflow_mocks.chart.call_args.args[2] == "0.9.99"
+        assert mock_chart.call_args.args[1] == "cloud-9.9.9"
 
     @pytest.mark.parametrize("dry_run", [True, False])
-    def test_dry_run_is_propagated_to_both_inner_calls(self, openhands_workflow_mocks, dry_run):
+    def test_dry_run_is_propagated_to_both_inner_calls(self, patched_inner_calls, dry_run):
         """The dry_run flag is forwarded to both update_openhands_values and update_openhands_chart."""
+        mock_values, mock_chart = patched_inner_calls
+
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=dry_run,
         )
 
-        assert openhands_workflow_mocks.values.call_args.kwargs["dry_run"] is dry_run
-        assert openhands_workflow_mocks.chart.call_args.kwargs["dry_run"] is dry_run
+        assert mock_values.call_args.kwargs["dry_run"] is dry_run
+        assert mock_chart.call_args.kwargs["dry_run"] is dry_run
+
+
+class TestSubchartChangeBumpsOpenhandsChartEndToEnd:
+    """File-level tests: a subchart-values-only change bumps the openhands chart.
+
+    Unlike the mock-based wiring tests above, these run update_openhands_workflow
+    against real temp files whose values are already current, so the ONLY
+    change signal is subchart_values_changed. The openhands Chart.yaml version
+    must bump (to ship the embedded runtime-api/automation values) while the
+    appVersion stays put.
+    """
+
+    @pytest.fixture
+    def openhands_paths(
+        self,
+        monkeypatch,
+        make_temp_yaml_file,
+        sample_openhands_chart_minimal,
+        sample_openhands_values_minimal,
+        sample_replicated_openhands_wrapper_values,
+        sample_replicated_config,
+    ):
+        """Point the workflow at temp copies of every file it touches."""
+        chart_path = make_temp_yaml_file(sample_openhands_chart_minimal)
+        values_path = make_temp_yaml_file(sample_openhands_values_minimal)
+        replicated_path = make_temp_yaml_file(sample_replicated_openhands_wrapper_values)
+        replicated_config_path = make_temp_yaml_file(sample_replicated_config)
+        monkeypatch.setattr("update_openhands_charts.CHART_PATH", chart_path)
+        monkeypatch.setattr("update_openhands_charts.VALUES_PATH", values_path)
+        monkeypatch.setattr("update_openhands_charts.REPLICATED_OPENHANDS_PATH", replicated_path)
+        monkeypatch.setattr("update_openhands_charts.REPLICATED_CONFIG_PATH", replicated_config_path)
+        return chart_path, values_path
+
+    def test_subchart_only_change_bumps_chart_version(self, openhands_paths):
+        """openhands values already current + subchart values changed → version bump."""
+        chart_path, values_path = openhands_paths
+        original_values = values_path.read_text()
+
+        update_openhands_workflow(
+            openhands_version=OPENHANDS_CHART_APP_VERSION,
+            runtime_image_tag=RUNTIME_IMAGE_TAG,
+            dry_run=False,
+            subchart_values_changed=True,
+        )
+
+        assert values_path.read_text() == original_values  # openhands values untouched
+        assert_version_bumped(chart_path, OPENHANDS_CHART_VERSION)
+        assert get_chart_value(chart_path, "appVersion") == OPENHANDS_CHART_APP_VERSION
+
+    def test_no_chart_changes_leave_chart_version_alone(self, openhands_paths):
+        """Control: openhands values current and no subchart values changed → no version bump."""
+        chart_path, _ = openhands_paths
+
+        update_openhands_workflow(
+            openhands_version=OPENHANDS_CHART_APP_VERSION,
+            runtime_image_tag=RUNTIME_IMAGE_TAG,
+            dry_run=False,
+            subchart_values_changed=False,
+        )
+
+        assert get_chart_value(chart_path, "version") == OPENHANDS_CHART_VERSION
 
 
 class TestUpdateOpenhandsWorkflowReplicated:
@@ -2575,9 +2614,7 @@ class TestUpdateOpenhandsWorkflowReplicated:
     def test_replicated_updater_invoked_with_replicated_openhands_path(self, openhands_workflow_mocks):
         """The workflow points the replicated updater at replicated/openhands.yaml."""
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=False,
         )
@@ -2587,9 +2624,7 @@ class TestUpdateOpenhandsWorkflowReplicated:
     def test_replicated_updater_receives_runtime_image_tag(self, openhands_workflow_mocks):
         """runtime_image_tag is forwarded to the replicated updater."""
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="9.9.9-python",
             dry_run=False,
         )
@@ -2600,9 +2635,7 @@ class TestUpdateOpenhandsWorkflowReplicated:
     def test_replicated_updater_receives_dry_run(self, openhands_workflow_mocks, dry_run):
         """The dry_run flag is forwarded to the replicated updater."""
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=dry_run,
         )
@@ -2621,9 +2654,7 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
     def test_replicated_config_updater_invoked_with_replicated_config_path(self, openhands_workflow_mocks):
         """The workflow points the config updater at replicated/config.yaml."""
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=False,
         )
@@ -2633,9 +2664,7 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
     def test_replicated_config_updater_receives_runtime_image_tag(self, openhands_workflow_mocks):
         """runtime_image_tag is forwarded to the config updater."""
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="9.9.9-python",
             dry_run=False,
         )
@@ -2646,9 +2675,7 @@ class TestUpdateOpenhandsWorkflowReplicatedConfig:
     def test_replicated_config_updater_receives_dry_run(self, openhands_workflow_mocks, dry_run):
         """The dry_run flag is forwarded to the config updater."""
         update_openhands_workflow(
-            DeployConfig(runtime_api_sha="abc"),
             openhands_version="cloud-1.0.0",
-            runtime_api_version="0.1.0",
             runtime_image_tag="tag",
             dry_run=dry_run,
         )
@@ -2669,7 +2696,8 @@ class TestParseArgs:
         # whitespace before matching to stay independent of where it breaks lines.
         normalized_output = " ".join(capsys.readouterr().out.split())
         assert (
-            "Update OpenHands, runtime-api, automation, and image-loader charts based on a SaaS deploy."
+            "Update the OpenHands chart (including its embedded runtime-api and "
+            "automation subcharts) and the image-loader chart based on a SaaS deploy."
             in normalized_output
         )
 

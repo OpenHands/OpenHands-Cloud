@@ -44,6 +44,10 @@ spec:
             {{- if .Values.staticServer.authRequired }}
             - --auth-required
             {{- end }}
+            {{- with .Values.staticServer.lockToCloud }}
+            - --lock-to-cloud
+            - {{ . | quote }}
+            {{- end }}
             {{- range .Values.staticServer.rejectPrefixes }}
             - --reject-prefix
             - {{ . | quote }}
