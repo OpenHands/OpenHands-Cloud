@@ -159,7 +159,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: cloud-1.39.0
+  tag: cloud-1.40.0
 
 ingress:
   enabled: false
