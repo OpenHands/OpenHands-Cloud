@@ -604,6 +604,29 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
           required: true
+        # Bot fields below are grouped so a future azure_devops_bot_auth_strategy
+        # dropdown can sit alongside them.
+        - name: azure_devops_webhook_secret
+          title: Azure DevOps Webhook Secret
+          help_text: Secret OpenHands uses to sign/verify Azure DevOps service hooks. Generated automatically.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
+        - name: azure_devops_bot_token
+          title: Azure DevOps Bot Personal Access Token
+          help_text: >-
+            Optional service-account PAT. When set, OpenHands posts replies as
+            this bot -- not as the mentioning user -- so its own comments don't
+            re-trigger jobs; the agent still runs on the invoking user's behalf.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+        - name: azure_devops_bot_username
+          title: Azure DevOps Bot Username
+          help_text: >-
+            Username of the bot account above. Used to ignore the bot's own
+            comments so its replies don't re-trigger jobs.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
