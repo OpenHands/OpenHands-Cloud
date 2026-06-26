@@ -1,0 +1,65 @@
+name: Cleanup stale Replicated channels
+
+# Archives dead per-branch feature channels (names containing "/", e.g. jl/foo)
+# that have no customers assigned and no activity in over a week. The long-lived
+# channels -- Stable, Beta, Unstable, sysbox -- have no "/" and are additionally
+# protected by an explicit allow-list in the script, so they are never touched.
+#
+# Scheduled runs archive for real. Manual runs default to a dry run so you can
+# preview the list first; set dry_run=false to actually archive on a manual run.
+# "Archiving" in Replicated is reversible (Vendor support can restore a channel).
+
+on:
+  schedule:
+    # Daily at 07:00 UTC.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report what would be archived (no changes)"
+        type: boolean
+        default: true
+      stale_days:
+        description: "Days without activity before a channel is considered stale"
+        type: string
+        default: "7"
+
+# Never let two cleanup runs race each other.
+concurrency:
+  group: cleanup-stale-channels
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Replicated CLI
+        run: |
+          curl -s https://api.github.com/repos/replicatedhq/replicated/releases/latest \
+            | grep "browser_download_url.*linux_amd64.tar.gz" \
+            | cut -d : -f 2,3 \
+            | tr -d \" \
+            | wget -qi -
+          mkdir -p /tmp/replicated-cli
+          tar -xzf replicated_*_linux_amd64.tar.gz -C /tmp/replicated-cli replicated
+          sudo mv /tmp/replicated-cli/replicated /usr/local/bin/
+
+      - name: Archive stale feature channels
+        env:
+          REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
+          REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+          # Scheduled runs archive for real; manual runs honor the dry_run input.
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+          STALE_DAYS: ${{ inputs.stale_days || '7' }}
+        run: python3 scripts/cleanup_stale_channels.py

@@ -1,8 +1,6 @@
 name: Preview Helm Charts
 on:
   pull_request:
-    paths:
-      - 'charts/**'
 
 jobs:
   validate-chart-versions:
@@ -15,12 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       crd-check: ${{ steps.changes.outputs.crd-check }}
-      runtime-api: ${{ steps.changes.outputs.runtime-api }}
       image-loader: ${{ steps.changes.outputs.image-loader }}
-      automation: ${{ steps.changes.outputs.automation }}
-      plugin-directory: ${{ steps.changes.outputs.plugin-directory }}
-      integrations-hub: ${{ steps.changes.outputs.integrations-hub }}
-      agent-canvas: ${{ steps.changes.outputs.agent-canvas }}
       openhands: ${{ steps.changes.outputs.openhands }}
       openhands-secrets: ${{ steps.changes.outputs.openhands-secrets }}
     steps:
@@ -42,8 +35,9 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # Check each chart for changes
-          for chart in crd-check runtime-api image-loader automation plugin-directory integrations-hub agent-canvas openhands openhands-secrets; do
+          # Check each chart for changes. Embedded subcharts live under
+          # charts/openhands/charts/, so their changes count as openhands changes.
+          for chart in crd-check image-loader openhands openhands-secrets; do
             if echo "$CHANGED_FILES" | grep -q "^charts/${chart}/"; then
               echo "${chart}=true" >> $GITHUB_OUTPUT
               echo "Changes detected in charts/${chart}"
@@ -65,20 +59,8 @@ jobs:
     strategy:
       matrix:
         chart:
-          # Order matters! Charts that are dependencies must be published first.
-          # crd-check, automation, plugin-directory, integrations-hub, agent-canvas, and runtime-api are dependencies of openhands.
           - name: crd-check
             path: charts/crd-check
-          - name: automation
-            path: charts/automation
-          - name: plugin-directory
-            path: charts/plugin-directory
-          - name: integrations-hub
-            path: charts/integrations-hub
-          - name: agent-canvas
-            path: charts/agent-canvas
-          - name: runtime-api
-            path: charts/runtime-api
           - name: image-loader
             path: charts/image-loader
           - name: openhands
@@ -92,21 +74,11 @@ jobs:
         id: check
         env:
           HAS_CHANGES_CRD_CHECK: ${{ needs.detect-changes.outputs.crd-check }}
-          HAS_CHANGES_RUNTIME_API: ${{ needs.detect-changes.outputs.runtime-api }}
           HAS_CHANGES_IMAGE_LOADER: ${{ needs.detect-changes.outputs.image-loader }}
-          HAS_CHANGES_AUTOMATION: ${{ needs.detect-changes.outputs.automation }}
-          HAS_CHANGES_PLUGIN_DIRECTORY: ${{ needs.detect-changes.outputs.plugin-directory }}
-          HAS_CHANGES_INTEGRATIONS_HUB: ${{ needs.detect-changes.outputs.integrations-hub }}
-          HAS_CHANGES_AGENT_CANVAS: ${{ needs.detect-changes.outputs.agent-canvas }}
           HAS_CHANGES_OPENHANDS: ${{ needs.detect-changes.outputs.openhands }}
           HAS_CHANGES_OPENHANDS_SECRETS: ${{ needs.detect-changes.outputs.openhands-secrets }}
           IS_PUBLISHABLE_CRD_CHECK: ${{ needs.validate-chart-versions.outputs.crd-check-publishable }}
-          IS_PUBLISHABLE_RUNTIME_API: ${{ needs.validate-chart-versions.outputs.runtime-api-publishable }}
           IS_PUBLISHABLE_IMAGE_LOADER: ${{ needs.validate-chart-versions.outputs.image-loader-publishable }}
-          IS_PUBLISHABLE_AUTOMATION: ${{ needs.validate-chart-versions.outputs.automation-publishable }}
-          IS_PUBLISHABLE_PLUGIN_DIRECTORY: ${{ needs.validate-chart-versions.outputs.plugin-directory-publishable }}
-          IS_PUBLISHABLE_INTEGRATIONS_HUB: ${{ needs.validate-chart-versions.outputs.integrations-hub-publishable }}
-          IS_PUBLISHABLE_AGENT_CANVAS: ${{ needs.validate-chart-versions.outputs.agent-canvas-publishable }}
           IS_PUBLISHABLE_OPENHANDS: ${{ needs.validate-chart-versions.outputs.openhands-publishable }}
           IS_PUBLISHABLE_OPENHANDS_SECRETS: ${{ needs.validate-chart-versions.outputs.openhands-secrets-publishable }}
         run: |
@@ -116,29 +88,9 @@ jobs:
               HAS_CHANGES="$HAS_CHANGES_CRD_CHECK"
               IS_PUBLISHABLE="$IS_PUBLISHABLE_CRD_CHECK"
               ;;
-            runtime-api)
-              HAS_CHANGES="$HAS_CHANGES_RUNTIME_API"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_RUNTIME_API"
-              ;;
             image-loader)
               HAS_CHANGES="$HAS_CHANGES_IMAGE_LOADER"
               IS_PUBLISHABLE="$IS_PUBLISHABLE_IMAGE_LOADER"
-              ;;
-            automation)
-              HAS_CHANGES="$HAS_CHANGES_AUTOMATION"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_AUTOMATION"
-              ;;
-            plugin-directory)
-              HAS_CHANGES="$HAS_CHANGES_PLUGIN_DIRECTORY"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_PLUGIN_DIRECTORY"
-              ;;
-            integrations-hub)
-              HAS_CHANGES="$HAS_CHANGES_INTEGRATIONS_HUB"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_INTEGRATIONS_HUB"
-              ;;
-            agent-canvas)
-              HAS_CHANGES="$HAS_CHANGES_AGENT_CANVAS"
-              IS_PUBLISHABLE="$IS_PUBLISHABLE_AGENT_CANVAS"
               ;;
             openhands)
               HAS_CHANGES="$HAS_CHANGES_OPENHANDS"
@@ -149,12 +101,12 @@ jobs:
               IS_PUBLISHABLE="$IS_PUBLISHABLE_OPENHANDS_SECRETS"
               ;;
           esac
-          
+
           # Default IS_PUBLISHABLE to true if not set (assume publishable unless explicitly marked otherwise)
           IS_PUBLISHABLE="${IS_PUBLISHABLE:-true}"
-          
+
           echo "Chart $CHART_NAME - has changes: $HAS_CHANGES, is publishable: $IS_PUBLISHABLE"
-          
+
           # Only publish if chart has changes AND version was bumped
           if [ "$HAS_CHANGES" = "true" ] && [ "$IS_PUBLISHABLE" = "true" ]; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
@@ -187,63 +139,9 @@ jobs:
           # This should confirm to SemVer, the last number is the GitHub PR number
           CHART_VERSION=$(yq '.version' charts/${{ matrix.chart.name }}/Chart.yaml)
           PREVIEW_VERSION="${CHART_VERSION}-alpha.${{ github.event.pull_request.number }}"
-          
+
           # Update Chart.yaml with preview version
           yq -i ".version = \"${PREVIEW_VERSION}\"" charts/${{ matrix.chart.name }}/Chart.yaml
-
-      - name: Set preview dependency repository
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands'
-        run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "PREVIEW_REPOSITORY=oci://ghcr.io/${REPO_OWNER}/helm-charts" >> "$GITHUB_ENV"
-      
-      - name: Update runtime-api dependency version
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.runtime-api == 'true'
-        run: |
-          RUNTIME_API_VERSION=$(yq '.version' charts/runtime-api/Chart.yaml)
-          RUNTIME_API_PREVIEW="${RUNTIME_API_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          yq -i "(.dependencies[] | select(.name == \"runtime-api\")) |= (.version = \"${RUNTIME_API_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update automation dependency version
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.automation == 'true'
-        run: |
-          AUTOMATION_VERSION=$(yq '.version' charts/automation/Chart.yaml)
-          AUTOMATION_PREVIEW="${AUTOMATION_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          yq -i "(.dependencies[] | select(.name == \"automation\")) |= (.version = \"${AUTOMATION_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update crd-check dependency version
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.crd-check == 'true'
-        run: |
-          CRD_CHECK_VERSION=$(yq '.version' charts/crd-check/Chart.yaml)
-          CRD_CHECK_PREVIEW="${CRD_CHECK_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          yq -i "(.dependencies[] | select(.name == \"crd-check\")) |= (.version = \"${CRD_CHECK_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update plugin-directory dependency version
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.plugin-directory == 'true'
-        run: |
-          PLUGIN_DIRECTORY_VERSION=$(yq '.version' charts/plugin-directory/Chart.yaml)
-          PLUGIN_DIRECTORY_PREVIEW="${PLUGIN_DIRECTORY_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          yq -i "(.dependencies[] | select(.name == \"plugin-directory\")) |= (.version = \"${PLUGIN_DIRECTORY_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update integrations-hub dependency version
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.integrations-hub == 'true'
-        run: |
-          INTEGRATIONS_HUB_VERSION=$(yq '.version' charts/integrations-hub/Chart.yaml)
-          INTEGRATIONS_HUB_PREVIEW="${INTEGRATIONS_HUB_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")) |= (.version = \"${INTEGRATIONS_HUB_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update agent-canvas dependency version
-        if: steps.check.outputs.should_publish == 'true' && matrix.chart.name == 'openhands' && needs.detect-changes.outputs.agent-canvas == 'true'
-        run: |
-          AGENT_CANVAS_VERSION=$(yq '.version' charts/agent-canvas/Chart.yaml)
-          AGENT_CANVAS_PREVIEW="${AGENT_CANVAS_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          yq -i "(.dependencies[] | select(.name == \"agent-canvas\")) |= (.version = \"${AGENT_CANVAS_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Test ${{ matrix.chart.name }} chart with default values
         if: steps.check.outputs.should_publish == 'true'
@@ -306,25 +204,15 @@ jobs:
 
   lint-and-test:
     runs-on: ubuntu-latest
-    needs: [publish-charts, detect-changes]
+    needs: [publish-charts]
 
     strategy:
       matrix:
         chart:
           - name: crd-check
             path: charts/crd-check
-          - name: runtime-api
-            path: charts/runtime-api
           - name: image-loader
             path: charts/image-loader
-          - name: automation
-            path: charts/automation
-          - name: plugin-directory
-            path: charts/plugin-directory
-          - name: integrations-hub
-            path: charts/integrations-hub
-          - name: agent-canvas
-            path: charts/agent-canvas
           - name: openhands
             path: charts/openhands
           - name: openhands-secrets
@@ -340,66 +228,6 @@ jobs:
         uses: azure/setup-helm@v3
         with:
           version: 'latest'
-
-      - name: Set preview dependency repository for openhands
-        if: matrix.chart.name == 'openhands'
-        run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "PREVIEW_REPOSITORY=oci://ghcr.io/${REPO_OWNER}/helm-charts" >> "$GITHUB_ENV"
-
-      - name: Update runtime-api dependency version for openhands
-        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.runtime-api == 'true'
-        run: |
-          RUNTIME_API_VERSION=$(yq '.version' charts/runtime-api/Chart.yaml)
-          RUNTIME_API_PREVIEW="${RUNTIME_API_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          echo "Updating openhands runtime-api dependency to ${RUNTIME_API_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"runtime-api\")) |= (.version = \"${RUNTIME_API_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update automation dependency version for openhands
-        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.automation == 'true'
-        run: |
-          AUTOMATION_VERSION=$(yq '.version' charts/automation/Chart.yaml)
-          AUTOMATION_PREVIEW="${AUTOMATION_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          echo "Updating openhands automation dependency to ${AUTOMATION_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"automation\")) |= (.version = \"${AUTOMATION_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update crd-check dependency version for openhands
-        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.crd-check == 'true'
-        run: |
-          CRD_CHECK_VERSION=$(yq '.version' charts/crd-check/Chart.yaml)
-          CRD_CHECK_PREVIEW="${CRD_CHECK_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          echo "Updating openhands crd-check dependency to ${CRD_CHECK_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"crd-check\")) |= (.version = \"${CRD_CHECK_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update plugin-directory dependency version for openhands
-        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.plugin-directory == 'true'
-        run: |
-          PLUGIN_DIRECTORY_VERSION=$(yq '.version' charts/plugin-directory/Chart.yaml)
-          PLUGIN_DIRECTORY_PREVIEW="${PLUGIN_DIRECTORY_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          echo "Updating openhands plugin-directory dependency to ${PLUGIN_DIRECTORY_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"plugin-directory\")) |= (.version = \"${PLUGIN_DIRECTORY_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update integrations-hub dependency version for openhands
-        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.integrations-hub == 'true'
-        run: |
-          INTEGRATIONS_HUB_VERSION=$(yq '.version' charts/integrations-hub/Chart.yaml)
-          INTEGRATIONS_HUB_PREVIEW="${INTEGRATIONS_HUB_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          echo "Updating openhands integrations-hub dependency to ${INTEGRATIONS_HUB_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"integrations-hub\")) |= (.version = \"${INTEGRATIONS_HUB_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
-
-      - name: Update agent-canvas dependency version for openhands
-        if: matrix.chart.name == 'openhands' && needs.detect-changes.outputs.agent-canvas == 'true'
-        run: |
-          AGENT_CANVAS_VERSION=$(yq '.version' charts/agent-canvas/Chart.yaml)
-          AGENT_CANVAS_PREVIEW="${AGENT_CANVAS_VERSION}-alpha.${{ github.event.pull_request.number }}"
-
-          echo "Updating openhands agent-canvas dependency to ${AGENT_CANVAS_PREVIEW}"
-          yq -i "(.dependencies[] | select(.name == \"agent-canvas\")) |= (.version = \"${AGENT_CANVAS_PREVIEW}\" | .repository = \"${PREVIEW_REPOSITORY}\")" charts/openhands/Chart.yaml
 
       - name: Lint ${{ matrix.chart.name }} chart
         run: |

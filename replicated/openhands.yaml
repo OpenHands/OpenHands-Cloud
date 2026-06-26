@@ -17,7 +17,6 @@ spec:
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
-      tag: 'sha-be6f446'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
@@ -91,7 +90,7 @@ spec:
         # takes over — both for new sandboxes (via AGENT_SERVER_IMAGE_*
         # env on the openhands server) and for the warm pool below.
         repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
-        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.28.0-python{{repl end}}'
+        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.29.0-python{{repl end}}'
 
     keycloak:
       enabled: true
@@ -314,7 +313,8 @@ spec:
         CPU_LIMIT: 'repl{{ ConfigOption "sandbox_cpu_limit" }}'
         LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
         ADDITIONAL_CONFIGMAPS: "openhands-ca-bundle:/etc/openhands/ca-bundle"
-        ADDITIONAL_HOST_PATHS: 'repl{{ ConfigOption "sandbox_additional_host_paths" }}'
+        # Textarea is "one per line"; normalize to a comma list so a multiline value isn't YAML-folded into a space-joined token.
+        ADDITIONAL_HOST_PATHS: 'repl{{ $hp := list }}repl{{ range $raw := splitList "\n" (ConfigOption "sandbox_additional_host_paths" | replace "\r" "\n") }}repl{{ $e := trim $raw }}repl{{ if $e }}repl{{ $hp = append $hp $e }}repl{{ end }}repl{{ end }}repl{{ $hp | join "," }}'
         SANDBOX_KVM_ENABLED: 'repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}'
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
       kvm:
@@ -331,7 +331,7 @@ spec:
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configs:
           - name: default
-            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.28.0-python{{repl end}}'
+            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.29.0-python{{repl end}}'
             working_dir: "/workspace"
             environment:
               LOG_JSON: "1"
@@ -559,6 +559,13 @@ spec:
           secretKey: webhook-secret
         automation:
           enabled: true
+          # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
+          # the Python TLS stack (httpx + requests) at the merged PEM. Required
+          # so automation can verify the OpenHands app cert (openhandsApiUrl /
+          # automationBaseUrl below) when the operator uploads a custom CA —
+          # otherwise outbound HTTPS callbacks/dispatches fail TLS verification.
+          caBundle:
+            enabled: true
           image:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/automation'
           imagePullSecrets:
@@ -596,11 +603,11 @@ spec:
         runtime:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.28.0-python'
+            tag: '1.29.0-python'
           warmRuntimes:
             configs:
               - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.28.0-python'
+                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.29.0-python'
                 working_dir: "/workspace"
                 environment:
                   LOG_JSON: "1"
@@ -918,6 +925,36 @@ spec:
           appServer:
             loadBalancer:
               enabled: false
+            # caBundle wiring: mount the trust-manager Bundle ConfigMap so the
+            # Rust app-server trusts an operator-supplied custom/self-signed CA
+            # on outbound HTTPS + gRPC. Needs the volume knobs added in the fork.
+            extraEnv:
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
+          appServerConsumer:
+            extraEnv:
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
           global:
             cloudProvider: "aws"
           clickhouse:
@@ -939,6 +976,22 @@ spec:
                     key: client-secret
               - name: AUTH_KEYCLOAK_ISSUER
                 value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://auth.app.{{repl ConfigOption "base_domain"}}/realms/allhands{{repl else}}https://{{repl ConfigOption "auth_hostname"}}/realms/allhands{{repl end}}'
+              # caBundle wiring (appended to the existing list — recursiveMerge
+              # REPLACES arrays, so these must live alongside the Keycloak vars).
+              # Next.js is Node, which honors NODE_EXTRA_CA_CERTS, not SSL_CERT_FILE;
+              # set both (SSL_CERT_FILE is harmless and helps any subprocess).
+              - name: NODE_EXTRA_CA_CERTS
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
             ingress:
               enabled: true
               hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
@@ -961,6 +1014,14 @@ spec:
       values:
         plugin-directory:
           enabled: true
+          # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
+          # the server (Python) and client (Node, via NODE_EXTRA_CA_CERTS) at the
+          # merged PEM. Required so the server can verify the marketplace catalog
+          # host (MARKETPLACE_SOURCE) and the client's SSR loader can verify
+          # Keycloak (oidc.issuerUrl) when the operator uploads a custom CA —
+          # otherwise outbound HTTPS fails TLS verification.
+          caBundle:
+            enabled: true
           appUrl: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}/plugins'
           # OpenHands API host (same host as appUrl, without the /plugins path).
           # The curl template appends /api/v1/app-conversations to this base.

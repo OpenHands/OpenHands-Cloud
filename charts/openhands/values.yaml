@@ -44,6 +44,14 @@ debuggingRoutes:
 userProvisioning:
   enabled: false
 
+# POST /api/organizations org-creation endpoint. By default this endpoint
+# is restricted to @openhands.dev admin users. When enabled, the enterprise
+# app server sets OPEN_ORG_CREATION_ENABLED=true and any authenticated user
+# is allowed to create an organization. This should only be enabled for OHE
+# deployments where end users are expected to self-serve organizations.
+openOrgCreation:
+  enabled: false
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false
@@ -246,7 +254,7 @@ resendSync:
 runtime:
   image:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.28.0-python
+    tag: 1.29.0-python
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -657,9 +665,14 @@ runtime-api:
     count: 1
     configs:
       - name: default
-        image: "ghcr.io/openhands/agent-server:1.28.0-python"
+        image: "ghcr.io/openhands/agent-server:1.29.0-python"
         working_dir: "/workspace"
         environment:
+          # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
+          LMNR_BASE_URL: ""
+          LMNR_FORCE_HTTP: ""
+          LMNR_HTTP_PORT: ""
+          LMNR_PROJECT_API_KEY: ""
           LOG_JSON: "1"
           LOG_JSON_LEVEL_KEY: "severity"
           OH_ALLOW_CORS_ORIGINS_0: ""
@@ -1061,6 +1074,10 @@ integrations-hub:
     runAsGroup: 42420
     runAsNonRoot: true
 
+  # Extra init containers rendered verbatim by the integrations-hub subchart.
+  # Kubernetes native sidecars can be supplied here with restartPolicy: Always.
+  extraInitContainers: []
+
   serviceAccount:
     create: true
     name: integrations-hub-sa
@@ -1086,27 +1103,30 @@ integrations-hub:
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000
 
-  # Path prefix that the hub is mounted under. This single value drives
-  # three things at once and they MUST agree:
+  # Path prefix that the hub is mounted under. This value must match:
   #   - The parent chart's `templates/ingress-integrations-hub.yaml`
-  #     routing rule (host-based ingress + this path).
-  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var, which causes
-  #     `backend/app/main.py::build_app` to mount every route under the
-  #     prefix.
-  #   - The Next.js SPA's `NEXT_PUBLIC_BASE_PATH`, which is baked into
-  #     the image at build time (default `/integrations-hub` in the
-  #     project Dockerfile). Override the image's build arg if you set a
-  #     different rootPath here.
+  #     routing rule.
+  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var.
+  #   - The SPA base path baked into the image at build time.
   rootPath: "/integrations-hub"
 
   # Bypass authentication for local development only -- never enable in
   # staging/production. Exposed as INTHUB_DISABLE_AUTH.
   disableAuth: false
 
+  ingress:
+    enabled: false
+    # Optional dedicated hostname, e.g. integrations.openhands.dev. When unset,
+    # the parent ingress mounts rootPath under the main OpenHands host.
+    host: ""
+    tls:
+      enabled: true
+      secretName: integrations-hub-tls
+
   # OpenHands identity provider used to validate session cookies / API keys.
   openhands:
     # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
-    # ingress host when left empty -- see charts/integrations-hub/templates/_env.yaml).
+    # ingress host when left empty -- see charts/openhands/charts/integrations-hub/templates/_env.yaml).
     baseUrl: ""
     # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
     authCookieName: "keycloak_auth"
@@ -1153,12 +1173,6 @@ integrations-hub:
     createDatabaseUser: false
     superuserSecretName: "postgres-password"
     superuserSecretKey: "password"
-
-  # GCP Cloud SQL (leave empty for non-GCP)
-  gcp:
-    dbInstance: ""
-    project: ""
-    region: ""
 
   # Datadog configuration
   datadog:

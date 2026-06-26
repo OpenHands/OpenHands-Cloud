@@ -35,6 +35,21 @@ server:
     limits:
       memory: 512Mi
 
+# Mount a trust-manager / user-supplied CA bundle into the plugin-directory
+# pod and point the runtimes at it. Required when the pod makes outbound HTTPS
+# calls to endpoints served by a cert signed by a CA that isn't in the OS trust
+# store — e.g. the server fetching the marketplace catalog from MARKETPLACE_SOURCE
+# (an https:// or github:// URL) and the client's SSR loader reaching Keycloak at
+# oidc.issuerUrl when an operator uploads a self-signed/custom cert. Otherwise TLS
+# verification fails and the marketplace/login silently break. The named ConfigMap
+# is created by the parent openhands chart's trust-manager Bundle; this subchart
+# only mounts it.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
 # Deployment configuration
 deployment:
   replicas: 1

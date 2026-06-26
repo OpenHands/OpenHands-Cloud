@@ -1,6 +1,7 @@
+# Agent-server image the loader pre-pulls onto nodes; keep tag in sync with the sandbox runtime.
 image:
   repository: ghcr.io/openhands/agent-server
-  tag: 1.28.0-python
+  tag: 1.29.0-python
   pullPolicy: Always
 
 runtimeClass: sysbox-runc
