@@ -505,6 +505,13 @@ litellm-helm:
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
+  # Pin the litellm image tag. The litellm-helm chart's default tag is its
+  # appVersion (currently v1.80.8-nightly), which predates the
+  # --use_v2_migration_resolver arg passed via the Replicated values and so
+  # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
+  # format BerriAI uses for 1.84.x+ stable images).
+  image:
+    tag: "1.84.1"
   # Migrations run automatically when litellm starts. This disables running them separately as a job.
   migrationJob:
     enabled: false

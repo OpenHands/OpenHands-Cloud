@@ -85,13 +85,8 @@ spec:
 
     runtime:
       image:
-        # Defaults to the Replicated-proxied agent-server image. When
-        # custom_sandbox_image_enabled=1, an admin-supplied repository/tag
-        # takes over — both for new sandboxes (via AGENT_SERVER_IMAGE_*
-        # env on the openhands server) and for the warm pool below.
-        repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
-        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.29.0-python{{repl end}}'
-
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+        # Do not override the image tag here. Pin to a stable version in the chart.
     keycloak:
       enabled: true
       url: 'http://keycloak'
@@ -183,7 +178,6 @@ spec:
         - --use_v2_migration_resolver
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/berriai/litellm-database'
-        tag: "1.84.1"  # bare semver, no "v" prefix or "-stable" suffix (format used by BerriAI for 1.84.x+ stable images)
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       environmentSecrets:
@@ -267,7 +261,7 @@ spec:
         enabled: false
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
-        tag: 'sha-8919a43'
+        # Do not override the image tag here. Pin to a stable version in the chart.
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       ingress:
@@ -320,12 +314,12 @@ spec:
       kvm:
         enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
         resourceName: smarter-devices/kvm
-        image:
+        image: 
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/smarter-project/smarter-device-manager'
-          tag: v1.20.11
+          # Do not override the image tag here. Pin to a stable version in the chart.
         initImage:
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
-          tag: "1.36"
+          # Do not override the image tag here. Pin to a stable version in the chart.
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
@@ -593,6 +587,13 @@ spec:
           postgresql:
             image:
               repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql'
+    - when: '{{repl ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        runtime:
+          image:
+            repository: 'repl{{ ConfigOption "custom_sandbox_image_repository" }}'
+            tag: 'repl{{ ConfigOption "custom_sandbox_image_tag" }}'
     - when: '{{repl HasLocalRegistry }}'
       recursiveMerge: true
       values:
@@ -603,7 +604,7 @@ spec:
         runtime:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.29.0-python'
+            # Do not override the image tag here. Pin to a stable version in the chart.
           warmRuntimes:
             configs:
               - name: default
