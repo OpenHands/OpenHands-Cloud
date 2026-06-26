@@ -1096,6 +1096,55 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
+        - name: laminar_signals_enabled
+          title: Enable Laminar Signals
+          help_text: Configure the LLM settings Laminar uses for AI features such as signals, chat-with-trace, and SQL-with-AI.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
+        - name: laminar_llm_provider
+          title: Laminar LLM Provider
+          help_text: LLM provider Laminar uses for AI features.
+          type: dropdown
+          default: "openai"
+          when: 'repl{{ and (ConfigOptionEquals "analytics_enabled" "1") (ConfigOptionEquals "laminar_signals_enabled" "1") }}'
+          items:
+            - name: "gemini"
+              title: "Gemini"
+            - name: "openai"
+              title: "OpenAI or OpenAI-compatible"
+            - name: "bedrock"
+              title: "AWS Bedrock"
+        - name: laminar_llm_api_key
+          title: Laminar LLM API Key
+          help_text: API key Laminar uses for Gemini, OpenAI, or OpenAI-compatible gateways. Leave blank when using Bedrock.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "analytics_enabled" "1") (ConfigOptionEquals "laminar_signals_enabled" "1") }}'
+          required: false
+        - name: laminar_llm_base_url
+          title: Laminar LLM Base URL
+          help_text: Optional base URL for an OpenAI-compatible gateway such as LiteLLM, OpenRouter, or vLLM.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "analytics_enabled" "1") (ConfigOptionEquals "laminar_signals_enabled" "1") }}'
+          required: false
+        - name: laminar_llm_model_small
+          title: Laminar Small Model
+          help_text: Optional model override for Laminar's small-model tier.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "analytics_enabled" "1") (ConfigOptionEquals "laminar_signals_enabled" "1") }}'
+          required: false
+        - name: laminar_llm_model_medium
+          title: Laminar Medium Model
+          help_text: Optional model override for Laminar's medium-model tier.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "analytics_enabled" "1") (ConfigOptionEquals "laminar_signals_enabled" "1") }}'
+          required: false
+        - name: laminar_llm_model_large
+          title: Laminar Large Model
+          help_text: Optional model override for Laminar's large-model tier.
+          type: text
+          when: 'repl{{ and (ConfigOptionEquals "analytics_enabled" "1") (ConfigOptionEquals "laminar_signals_enabled" "1") }}'
+          required: false
 
     - name: automations_configuration
       title: Automations
