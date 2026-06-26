@@ -137,6 +137,7 @@ azureDevOps:
   enabled: false
   tenantId: ""
   organization: ""
+  botUsername: ""
   auth:
     existingSecret: azure-devops-app
 
