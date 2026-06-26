@@ -2,25 +2,25 @@
   Environment variables consumed by the Integrations Hub backend
   (Python/FastAPI on the `development` branch of OpenHands/integrations-hub).
 
-  The backend reads its config in backend/app/config.py using the prefix
-  `INTHUB_*`, with legacy unprefixed fallbacks for backwards compatibility:
+  The backend reads its config in backend/app/config.py using the `INTHUB_*`
+  prefix only. Legacy unprefixed fallbacks were removed in
+  OpenHands/integrations-hub#264, so every variable below uses the prefixed
+  name:
 
-    INTHUB_POSTGRES_URL              fallback: POSTGRES_URL, DATABASE_URL
+    INTHUB_POSTGRES_URL              (built from database.* below, or database.url)
     INTHUB_DISABLE_AUTH              (bool, defaults to false)
-    INTHUB_OPENHANDS_BASE_URL        fallback: OPENHANDS_BASE_URL
-    INTHUB_OPENHANDS_AUTH_COOKIE_NAME  fallback: OPENHANDS_AUTH_COOKIE_NAME
-    INTHUB_INTERNAL_AUTH_SECRET      fallback: INTERNAL_AUTH_SECRET, AUTH_SECRET, NEXTAUTH_SECRET
-    INTHUB_CRON_SECRET               fallback: CRON_SECRET
-    APP_ADMIN_EMAILS                 (use the unprefixed name; the prefixed
-                                      form is JSON-decoded by the SDK env
-                                      parser and would require list syntax)
-    INTHUB_CREDENTIAL_ENCRYPTION_KEY fallback: CREDENTIAL_ENCRYPTION_KEY
+    INTHUB_OPENHANDS_BASE_URL
+    INTHUB_OPENHANDS_AUTH_COOKIE_NAME
+    INTHUB_INTERNAL_AUTH_SECRET
+    INTHUB_CRON_SECRET
+    INTHUB_APP_ADMIN_EMAILS          (comma-separated; JSON array also accepted)
+    INTHUB_CREDENTIAL_ENCRYPTION_KEY
     INTHUB_STATIC_DIR                set in the Dockerfile to /app/out
     INTHUB_ROOT_PATH                 sub-path mount from .Values.rootPath
 
   In addition, backend/app/oauth_flow.py reads:
-    AUTH_REDIRECT_PROXY_URL          stable origin for OAuth callback proxy
-    AUTH_URL / NEXTAUTH_URL          preview-deployment callback target
+    INTHUB_OAUTH_REDIRECT_PROXY_URL  stable origin for OAuth callback proxy
+    AUTH_URL                         preview-deployment callback target
 */}}
 {{- define "integrations-hub.env.defaults" }}
 # Database connection -- backend reads INTHUB_POSTGRES_URL first; we build
@@ -102,11 +102,10 @@
       key: {{ .Values.auth.internalSecretKey | default "internal-auth-secret" }}
 {{- end }}
 
-# Admin allowlist for /api/admin/* routes. Use the unprefixed name --
-# INTHUB_APP_ADMIN_EMAILS goes through the SDK env parser which expects
-# JSON list syntax.
+# Admin allowlist for /api/admin/* routes. The backend reads
+# INTHUB_APP_ADMIN_EMAILS and accepts comma-separated (or JSON array) syntax.
 {{- if .Values.admin.emails }}
-- name: APP_ADMIN_EMAILS
+- name: INTHUB_APP_ADMIN_EMAILS
   value: {{ .Values.admin.emails | quote }}
 {{- end }}
 
@@ -121,7 +120,7 @@
 # callbacks register/exchange against the stable origin and then forward
 # back to the preview deployment captured in OAuth state.
 {{- if .Values.openhands.redirectProxyUrl }}
-- name: AUTH_REDIRECT_PROXY_URL
+- name: INTHUB_OAUTH_REDIRECT_PROXY_URL
   value: {{ .Values.openhands.redirectProxyUrl | quote }}
 {{- end }}
 {{- if .Values.openhands.authUrl }}

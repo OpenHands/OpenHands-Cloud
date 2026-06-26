@@ -78,10 +78,9 @@ openhands:
   # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
   authCookieName: "keycloak_auth"
   # Stable-origin URL used as the OAuth callback proxy for preview
-  # deployments (mirrors the AUTH_REDIRECT_PROXY_URL pattern used by
-  # Auth.js on Vercel). Leave empty to register callbacks against the
+  # deployments. Leave empty to register callbacks against the
   # request host directly.
-  # Backend env var: AUTH_REDIRECT_PROXY_URL
+  # Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL
   redirectProxyUrl: ""
   # Optional callback target for preview deployments; used when
   # redirectProxyUrl is set and oauth_flow.py needs to forward back to
@@ -107,7 +106,7 @@ auth:
   internalSecretKey: "internal-auth-secret"
 
 # Admin configuration
-# Backend env var: APP_ADMIN_EMAILS (comma-separated)
+# Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted)
 admin:
   # Comma-separated list of admin email addresses.
   emails: "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev"

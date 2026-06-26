@@ -1131,7 +1131,7 @@ integrations-hub:
     # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
     authCookieName: "keycloak_auth"
     # Stable-origin URL used as the OAuth callback proxy for preview
-    # deployments. Backend env var: AUTH_REDIRECT_PROXY_URL.
+    # deployments. Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL.
     redirectProxyUrl: ""
     # Optional callback target for preview deployments paired with
     # redirectProxyUrl. Backend env var: AUTH_URL.
@@ -1152,7 +1152,7 @@ integrations-hub:
     internalSecretKey: "internal-auth-secret"
 
   # Admin allowlist for /api/admin/* routes.
-  # Backend env var: APP_ADMIN_EMAILS (comma-separated).
+  # Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted).
   admin:
     emails: ""
 
