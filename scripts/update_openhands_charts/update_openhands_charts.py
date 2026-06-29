@@ -59,7 +59,6 @@ AUTOMATION_VALUES_PATH = (
 )
 IMAGE_LOADER_CHART_PATH = REPO_ROOT / "charts" / "image-loader" / "Chart.yaml"
 IMAGE_LOADER_VALUES_PATH = REPO_ROOT / "charts" / "image-loader" / "values.yaml"
-REPLICATED_OPENHANDS_PATH = REPO_ROOT / "replicated" / "openhands.yaml"
 REPLICATED_CONFIG_PATH = REPO_ROOT / "replicated" / "config.yaml"
 
 # Regex patterns for values.yaml image tag updates
@@ -78,28 +77,6 @@ RUNTIME_API_TAG_PATTERN = (
 )
 AUTOMATION_TAG_PATTERN = (
     r'(image:\n\s+repository: ghcr\.io/openhands/automation\n\s+tag: )(sha-[a-f0-9]+)'
-)
-# The proxy-style refs wrap the agent-server image in the custom_sandbox_image_enabled
-# KOTS conditional ({{repl if ...}}...{{repl else}}<proxy image>{{repl end}}), so the
-# proxy URL/tag no longer sits flush against the opening quote. Anchor on the
-# ghcr.io/openhands/agent-server marker (a single-quoted scalar never contains an inner
-# single quote, so [^']* stays within the value) and capture the version with [^'{]+ so
-# it stops before the trailing {{repl end}} or closing quote — both of which are then
-# left untouched (no replacement_suffix needed). The patterns also match the unwrapped
-# form, where [^']* and the optional groups collapse to empty.
-REPLICATED_PROXY_AGENT_SERVER_TAG_PATTERN = (
-    r"(repository:\s*'[^']*ghcr\.io/openhands/agent-server(?:\{\{repl end\}\})?'\s*\n"
-    r"(?:\s*#[^\n]*\n)*"
-    r"\s*tag:\s*'(?:[^']*\{\{repl else\}\})?)([^'{]+)"
-)
-REPLICATED_PROXY_WARM_RUNTIME_IMAGE_PATTERN = (
-    r"(image:\s*'[^']*ghcr\.io/openhands/agent-server:)([^'{]+)"
-)
-REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN = (
-    r"(repository:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server'\s*\n\s*tag:\s*')([^']+)'"
-)
-REPLICATED_LOCAL_WARM_RUNTIME_IMAGE_PATTERN = (
-    r"(image:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server:)([^']+)'"
 )
 # image-loader's values.yaml has the agent-server image at the top level, so this
 # matches an image: { repository: ghcr.io/openhands/agent-server, tag: ... } block.
@@ -336,36 +313,6 @@ def update_tag_in_content(
     return content
 
 
-def update_all_tags_in_content(
-    content: str,
-    pattern: str,
-    new_tag: str,
-    tag_name: str,
-    result: UpdateResult,
-    replacement_suffix: str = "",
-    error_if_missing: bool = True,
-) -> str:
-    """Update all regex-matched tags in content and track grouped results."""
-    matches = list(re.finditer(pattern, content))
-    if not matches:
-        if error_if_missing:
-            result.errors.append(f"Could not find {tag_name} in values.yaml")
-        return content
-
-    old_tags = [match.group(2) for match in matches]
-    if all(old_tag == new_tag for old_tag in old_tags):
-        result.unchanged.append((tag_name, new_tag))
-        return content
-
-    replacement = rf"\g<1>{new_tag}{replacement_suffix}"
-    content = re.sub(pattern, replacement, content)
-    changed_old_tags = sorted({old_tag for old_tag in old_tags if old_tag != new_tag})
-    old_value_summary = ", ".join(changed_old_tags)
-    result.changes.append((tag_name, old_value_summary, new_tag))
-    result.has_changes = True
-    return content
-
-
 def bump_patch_version(version: str) -> str:
     """Bump the patch version of a semantic version string.
 
@@ -470,58 +417,6 @@ def update_openhands_values(
         runtime_image_tag,
         "agent-server image tag",
         result,
-    )
-
-    if not dry_run and result.has_changes:
-        values_path.write_text(content)
-
-    return result
-
-
-def update_replicated_openhands_values(
-    values_path: Path,
-    runtime_image_tag: str,
-    dry_run: bool = False,
-) -> UpdateResult:
-    """Update agent-server image tags in the replicated/openhands.yaml KOTS wrapper.
-
-    The wrapper carries its own copy of the agent-server tag in four locations:
-    proxy-style and LocalRegistry-style image refs, each in both the chart-level
-    image block and the warmRuntimes default config. The chart-values updater
-    cannot reach these because the templating only renders inside the KOTS wrapper.
-    """
-    content = values_path.read_text()
-    result = UpdateResult()
-
-    content = update_all_tags_in_content(
-        content,
-        REPLICATED_PROXY_AGENT_SERVER_TAG_PATTERN,
-        runtime_image_tag,
-        "replicated runtime image tag",
-        result,
-    )
-    content = update_tag_in_content(
-        content,
-        REPLICATED_PROXY_WARM_RUNTIME_IMAGE_PATTERN,
-        runtime_image_tag,
-        "replicated warmRuntimes image tag",
-        result,
-    )
-    content = update_all_tags_in_content(
-        content,
-        REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN,
-        runtime_image_tag,
-        "replicated local registry runtime image tag",
-        result,
-        replacement_suffix="'",
-    )
-    content = update_tag_in_content(
-        content,
-        REPLICATED_LOCAL_WARM_RUNTIME_IMAGE_PATTERN,
-        runtime_image_tag,
-        "replicated local registry warmRuntimes image tag",
-        result,
-        replacement_suffix="'",
     )
 
     if not dry_run and result.has_changes:
@@ -804,15 +699,6 @@ def update_openhands_workflow(
         dry_run=dry_run,
     )
     values_result.print_summary()
-
-    print()
-    print("Updating replicated/openhands.yaml...")
-    replicated_result = update_replicated_openhands_values(
-        REPLICATED_OPENHANDS_PATH,
-        runtime_image_tag,
-        dry_run=dry_run,
-    )
-    replicated_result.print_summary()
 
     print()
     print("Updating replicated/config.yaml...")

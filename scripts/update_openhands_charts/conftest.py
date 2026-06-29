@@ -496,46 +496,6 @@ spec:
 """
 
 
-@pytest.fixture
-def sample_replicated_openhands_wrapper_values():
-    """Sample replicated openhands wrapper YAML with agent-server image references.
-
-    The proxy block wraps its agent-server repository/tag/image refs in the
-    custom_sandbox_image_enabled KOTS conditional, mirroring the real
-    replicated/openhands.yaml: when the toggle is on an admin-supplied
-    repository/tag takes over, otherwise the Replicated-proxied image is used.
-    The proxy URL therefore no longer sits flush against the opening quote.
-
-    A commented-out alternate repository line sits between repository: and tag:
-    to exercise the pattern's tolerance of interleaved comments.
-    """
-    return """\
-spec:
-  values:
-    runtime:
-      image:
-        # this is what we need to use for real deployments
-        repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
-        # repository: 'ghcr.io/openhands/agent-server'
-        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.19.0-python{{repl end}}'
-      warmRuntimes:
-        configs:
-          - name: default
-            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.19.0-python{{repl end}}'
-    helmChart:
-      values:
-        runtime:
-          image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.19.0-python'
-          warmRuntimes:
-            configs:
-              - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.0-python'
-"""
-
-
-
 # =============================================================================
 # GitHub API mock fixtures
 # =============================================================================
@@ -802,23 +762,21 @@ def mock_github_ref(monkeypatch):
 
 @pytest.fixture
 def openhands_workflow_mocks(monkeypatch):
-    """Patch the four inner functions called by update_openhands_workflow.
+    """Patch the three inner functions called by update_openhands_workflow.
 
     Returns a namespace exposing each MagicMock by name (`.values`,
-    `.replicated`, `.replicated_config`, `.chart`) so each workflow-contract
-    test asserts on the calls it focuses on without depending on a positional
-    return shape. The values mock reports has_changes=True so the chart-bump
-    path is exercised; the others return a no-change UpdateResult and exist to
-    prevent writes to the real files.
+    `.replicated_config`, `.chart`) so each workflow-contract test asserts on
+    the calls it focuses on without depending on a positional return shape. The
+    values mock reports has_changes=True so the chart-bump path is exercised;
+    the others return a no-change UpdateResult and exist to prevent writes to
+    the real files.
     """
     mocks = SimpleNamespace(
         values=MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
-        replicated=MagicMock(return_value=update_openhands_charts.UpdateResult()),
         replicated_config=MagicMock(return_value=update_openhands_charts.UpdateResult()),
         chart=MagicMock(return_value=update_openhands_charts.UpdateResult()),
     )
     monkeypatch.setattr("update_openhands_charts.update_openhands_values", mocks.values)
-    monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mocks.replicated)
     monkeypatch.setattr("update_openhands_charts.update_replicated_config", mocks.replicated_config)
     monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mocks.chart)
     return mocks

@@ -63,7 +63,6 @@ from update_openhands_charts import (
     update_openhands_values,
     update_openhands_workflow,
     update_replicated_config,
-    update_replicated_openhands_values,
     update_runtime_api_values,
     update_runtime_api_workflow,
     update_automation_workflow,
@@ -1120,83 +1119,6 @@ serviceAccount:
 
 
 
-class TestUpdateReplicatedOpenhandsValues:
-    """Tests for replicated/openhands.yaml agent-server image updates."""
-
-    @pytest.fixture
-    def temp_replicated_wrapper_file(self, make_temp_yaml_file, sample_replicated_openhands_wrapper_values):
-        """Create a temporary replicated wrapper YAML file."""
-        return make_temp_yaml_file(sample_replicated_openhands_wrapper_values)
-
-    @pytest.mark.parametrize("expected_content", [
-        pytest.param(
-            "tag: '{{repl if ConfigOptionEquals \"custom_sandbox_image_enabled\" \"1\"}}{{repl ConfigOption \"custom_sandbox_image_tag\"}}{{repl else}}1.19.1-python{{repl end}}'",
-            id="proxy runtime tag (conditional preserved)",
-        ),
-        pytest.param(
-            "{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue \"appSlug\"}}/ghcr.io/openhands/agent-server:1.19.1-python{{repl end}}'",
-            id="proxy warmRuntimes image (conditional preserved)",
-        ),
-        pytest.param(
-            "tag: '1.19.1-python'",
-            id="local registry tag",
-        ),
-        pytest.param(
-            "image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.1-python'",
-            id="local registry image",
-        ),
-    ])
-    def test_replicated_wrapper_file_content_updated(self, temp_replicated_wrapper_file, expected_content):
-        """Test that each agent-server tag location in the replicated wrapper file is updated."""
-        update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-
-        assert_file_contains(temp_replicated_wrapper_file, expected_content)
-
-    @pytest.mark.parametrize("change_key", [
-        "replicated runtime image tag",
-        "replicated warmRuntimes image tag",
-        "replicated local registry runtime image tag",
-        "replicated local registry warmRuntimes image tag",
-    ])
-    def test_result_records_replicated_wrapper_change(self, temp_replicated_wrapper_file, change_key):
-        """Test that each replicated wrapper tag key is recorded as changed in the result."""
-        result = update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-
-        assert result.has_change_for(change_key)
-
-    @pytest.fixture
-    def reapplied_replicated_wrapper_result(self, temp_replicated_wrapper_file):
-        """Apply identical replicated wrapper values twice and return the second-call UpdateResult."""
-        update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-        return update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-
-    def test_reapplying_same_replicated_wrapper_values_reports_no_changes(self, reapplied_replicated_wrapper_result):
-        """Reapplying identical replicated wrapper values sets has_changes=False."""
-        assert reapplied_replicated_wrapper_result.has_changes is False
-
-    @pytest.mark.parametrize("unchanged_key", [
-        "replicated runtime image tag",
-        "replicated warmRuntimes image tag",
-        "replicated local registry runtime image tag",
-        "replicated local registry warmRuntimes image tag",
-    ])
-    def test_reapplying_same_replicated_wrapper_values_marks_key_unchanged(self, reapplied_replicated_wrapper_result, unchanged_key):
-        """Each replicated wrapper tag key is reported as unchanged when reapplied."""
-        assert reapplied_replicated_wrapper_result.is_unchanged(unchanged_key)
-
-
 class TestUpdateReplicatedConfig:
     """Tests for replicated/config.yaml sandbox image tag updates.
 
@@ -1478,19 +1400,6 @@ class TestReplicatedPatternsMatchRealFile:
             copy_path.write_text(real_path.read_text())
             return copy_path
         return _copy
-
-    def test_every_agent_server_ref_in_real_file_is_matched(self, copy_of_real_file):
-        """Running the updater against the real file reports zero unmatched patterns."""
-        result = update_replicated_openhands_values(
-            copy_of_real_file(update_openhands_charts.REPLICATED_OPENHANDS_PATH),
-            runtime_image_tag="0.0.0-canary",
-            dry_run=True,
-        )
-
-        assert result.errors == [], (
-            "A pattern stopped matching the real replicated/openhands.yaml — likely a "
-            "ref was wrapped in new templating. Loosen the affected pattern: " + "; ".join(result.errors)
-        )
 
     def test_every_sandbox_tag_ref_in_real_replicated_config_is_matched(self, copy_of_real_file):
         """Running the config updater against the real replicated/config.yaml reports zero unmatched patterns."""
@@ -2381,23 +2290,22 @@ class TestUpdateOpenhandsWorkflow:
 
     @pytest.fixture
     def make_patched_inner_calls(self, monkeypatch):
-        """Factory mocking all four inner update functions.
+        """Factory mocking all three inner update functions.
 
         Accepts values_changed to control the openhands values result. Returns
         the values/chart mocks asserted by this workflow-contract test class.
-        The replicated mocks are intentionally not returned here; they are
-        patched only to prevent writes to the real replicated files and have
-        dedicated assertions in the focused replicated workflow test classes.
+        The replicated_config mock is intentionally not returned here; it is
+        patched only to prevent writes to the real replicated/config.yaml and
+        has dedicated assertions in the focused replicated-config workflow test
+        class.
         """
         def _patch(values_changed: bool = True):
             mock_values = MagicMock(
                 return_value=update_openhands_charts.UpdateResult(has_changes=values_changed)
             )
-            mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult())
             mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
             mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
             monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
-            monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
             monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
             monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
             return mock_values, mock_chart
@@ -2520,17 +2428,14 @@ class TestSubchartChangeBumpsOpenhandsChartEndToEnd:
         make_temp_yaml_file,
         sample_openhands_chart_minimal,
         sample_openhands_values_minimal,
-        sample_replicated_openhands_wrapper_values,
         sample_replicated_config,
     ):
         """Point the workflow at temp copies of every file it touches."""
         chart_path = make_temp_yaml_file(sample_openhands_chart_minimal)
         values_path = make_temp_yaml_file(sample_openhands_values_minimal)
-        replicated_path = make_temp_yaml_file(sample_replicated_openhands_wrapper_values)
         replicated_config_path = make_temp_yaml_file(sample_replicated_config)
         monkeypatch.setattr("update_openhands_charts.CHART_PATH", chart_path)
         monkeypatch.setattr("update_openhands_charts.VALUES_PATH", values_path)
-        monkeypatch.setattr("update_openhands_charts.REPLICATED_OPENHANDS_PATH", replicated_path)
         monkeypatch.setattr("update_openhands_charts.REPLICATED_CONFIG_PATH", replicated_config_path)
         return chart_path, values_path
 
@@ -2562,46 +2467,6 @@ class TestSubchartChangeBumpsOpenhandsChartEndToEnd:
         )
 
         assert get_chart_value(chart_path, "version") == OPENHANDS_CHART_VERSION
-
-
-class TestUpdateOpenhandsWorkflowReplicated:
-    """Tests that update_openhands_workflow also updates replicated/openhands.yaml.
-
-    The replicated KOTS wrapper embeds its own copy of the agent-server image tag
-    (proxy + LocalRegistry variants) that the chart-values updater cannot reach.
-    The workflow must update that file too, or Replicated installs ship a stale tag.
-    """
-
-    def test_replicated_updater_invoked_with_replicated_openhands_path(self, openhands_workflow_mocks):
-        """The workflow points the replicated updater at replicated/openhands.yaml."""
-        update_openhands_workflow(
-            openhands_version="cloud-1.0.0",
-            runtime_image_tag="tag",
-            dry_run=False,
-        )
-
-        assert openhands_workflow_mocks.replicated.call_args.args[0] == update_openhands_charts.REPLICATED_OPENHANDS_PATH
-
-    def test_replicated_updater_receives_runtime_image_tag(self, openhands_workflow_mocks):
-        """runtime_image_tag is forwarded to the replicated updater."""
-        update_openhands_workflow(
-            openhands_version="cloud-1.0.0",
-            runtime_image_tag="9.9.9-python",
-            dry_run=False,
-        )
-
-        assert openhands_workflow_mocks.replicated.call_args.args[1] == "9.9.9-python"
-
-    @pytest.mark.parametrize("dry_run", [True, False])
-    def test_replicated_updater_receives_dry_run(self, openhands_workflow_mocks, dry_run):
-        """The dry_run flag is forwarded to the replicated updater."""
-        update_openhands_workflow(
-            openhands_version="cloud-1.0.0",
-            runtime_image_tag="tag",
-            dry_run=dry_run,
-        )
-
-        assert openhands_workflow_mocks.replicated.call_args.kwargs["dry_run"] is dry_run
 
 
 class TestUpdateOpenhandsWorkflowReplicatedConfig:
