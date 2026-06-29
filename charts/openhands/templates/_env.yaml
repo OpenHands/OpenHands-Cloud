@@ -61,6 +61,25 @@
 - name: SHARED_EVENT_STORAGE_PROVIDER
   value: {{ .Values.filestore.provider }}
 {{- end }}
+{{- if .Values.runtimeFileArchive.enabled }}
+# Archive a sandbox's workspace before an explicit delete. The s3 store reuses
+# the AWS_S3_*/AWS_*_KEY env above (in-cluster minio when ephemeral); google_cloud
+# uses the pod ServiceAccount's Workload Identity. See values.runtimeFileArchive.
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
+  value: {{ .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" .Values.filestore.ephemeral) | quote }}
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PATH
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "git-delta" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_REQUIRED
+  value: {{ .Values.runtimeFileArchive.required | default false | quote }}
+{{- end }}
 {{- if .Values.runtime.runAsRoot }}
 - name: SANDBOX_USER_ID
   value: '0'

@@ -249,6 +249,31 @@ cleanup:
   idle_seconds: 1200 # Default to 20 minutes
   dead_seconds: 86400 # Default to 1 day
 
+# Workspace archiving (primary, pause/reap path): before the cleanup CronJob
+# pauses/stops a runtime — while its pod is still reachable — copy the workspace
+# to object storage so it survives PVC deletion (eval/dataset creation).
+# Best-effort: a failed archive never blocks the reap. Disabled by default.
+#
+# storeType=google_cloud uses the cleanup ServiceAccount's Workload Identity
+# (GKE; needs roles/storage.objectAdmin on the bucket). storeType=s3 uses the
+# s3 block below — for self-hosted installs archiving to the in-cluster minio
+# (endpoint defaults to http://<release>-minio:9000) or any S3-compatible store.
+runtimeFileArchive:
+  enabled: false
+  storeType: google_cloud # google_cloud | s3 | local
+  bucket: "" # Object-storage bucket that receives the archives.
+  prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root).
+  format: git-delta # git-delta (compact), tar.gz, or both.
+  # S3-compatible connection — only used when storeType=s3.
+  s3:
+    endpoint: "" # Empty -> http://<release>-minio:9000 (in-cluster minio).
+    region: "" # Optional region for non-minio S3.
+    secure: false # true for HTTPS endpoints (external S3).
+    accessKeyId: "default" # Matches the chart's default minio svcacct.
+    secretAccessKey: "notasecret"
+    existingSecret: "" # Optional secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.
+
 warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config

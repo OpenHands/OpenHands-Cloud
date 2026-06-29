@@ -16,6 +16,50 @@
   value: {{ .Values.cleanup.idle_seconds | default 1200 | quote }}
 - name: RUNTIME_DEAD_SECONDS
   value: {{ printf "%.0f" .Values.cleanup.dead_seconds | quote }}
+{{- if .Values.runtimeFileArchive.enabled }}
+# Archive the workspace before the cleanup CronJob pauses/stops a runtime. See
+# values.runtimeFileArchive. s3 targets the in-cluster minio (or external S3);
+# google_cloud uses the cleanup ServiceAccount's Workload Identity.
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
+  value: {{ .Values.runtimeFileArchive.storeType | default "google_cloud" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PATH
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "git-delta" | quote }}
+{{- if eq (.Values.runtimeFileArchive.storeType | default "google_cloud") "s3" }}
+- name: AWS_S3_ENDPOINT
+  value: {{ .Values.runtimeFileArchive.s3.endpoint | default (printf "http://%s-minio:9000" .Release.Name) | quote }}
+- name: AWS_S3_SECURE
+  value: {{ .Values.runtimeFileArchive.s3.secure | default false | quote }}
+{{- if .Values.runtimeFileArchive.s3.region }}
+- name: AWS_REGION
+  value: {{ .Values.runtimeFileArchive.s3.region | quote }}
+{{- end }}
+{{- if .Values.runtimeFileArchive.s3.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.runtimeFileArchive.s3.existingSecret }}
+      key: {{ .Values.runtimeFileArchive.s3.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.runtimeFileArchive.s3.existingSecret }}
+      key: {{ .Values.runtimeFileArchive.s3.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ .Values.runtimeFileArchive.s3.accessKeyId | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ .Values.runtimeFileArchive.s3.secretAccessKey | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .Values.runtimeInSameCluster }}
 - name: RUNTIME_IN_SAME_CLUSTER
   value: "true"

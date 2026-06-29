@@ -85,6 +85,26 @@ filestore:
   ephemeral: false
   bucket: openhands-sessions
 
+# Workspace archiving (app-server, explicit-delete path): before a still-running
+# sandbox is deleted, copy its workspace to object storage so the agent's work
+# survives for eval/dataset creation. Disabled by default — existing deployments
+# are unaffected. The idle/expiry reap is archived separately by the runtime-api
+# cleanup CronJob (see runtime-api.runtimeFileArchive).
+#
+# storeType: "google_cloud" uses the app-server ServiceAccount's Workload
+# Identity (GKE; needs roles/storage.objectAdmin on the bucket). "s3" uses the
+# AWS_S3_*/AWS_*_KEY env, already populated from the in-cluster minio when
+# filestore.ephemeral=true — so self-hosted installs can archive to minio or any
+# S3-compatible store. Empty = auto (s3 if ephemeral, else google_cloud).
+runtimeFileArchive:
+  enabled: false
+  storeType: "" # google_cloud | s3 | local; empty = auto by filestore.ephemeral
+  bucket: "" # Object-storage bucket that receives the archives.
+  prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root).
+  format: git-delta # git-delta (compact), tar.gz, or both.
+  required: false # When true, a failed archive blocks the delete (retried later).
+
 github:
   enabled: false
 
