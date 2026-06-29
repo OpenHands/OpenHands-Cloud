@@ -76,7 +76,7 @@ fullnameOverride: openhands-admin-dashboard
 # The open-source ghcr.io/openhands/openhands image lacks SaaS backend features
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: pr-14846
+  tag: pr-15025
   pullPolicy: Always
 
 # =============================================================================
