@@ -14,6 +14,13 @@ spec:
       imageRegistry: 'images.r9.all-hands.dev'
       imagePullSecrets:
         - '{{repl ImagePullSecretName }}'
+      # Canonical agent-server image. runtime.image and every warmRuntimes
+      # configsByName entry fall back to this, so the proxy / custom-sandbox /
+      # local-registry variants only override the repository (and tag, for the
+      # admin-supplied custom image). The default tag is pinned in the chart's
+      # global.agentServerImage.
+      agentServerImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
@@ -83,10 +90,6 @@ spec:
       enabled: true
       env: '{{repl Namespace }}'
 
-    runtime:
-      image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
-        # Do not override the image tag here. Pin to a stable version in the chart.
     keycloak:
       enabled: true
       url: 'http://keycloak'
@@ -323,9 +326,11 @@ spec:
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
-        configs:
-          - name: default
-            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.29.0-python{{repl end}}'
+        configsByName:
+          default:
+            # image omitted -> inherits global.agentServerImage. Proxy by
+            # default; when custom_sandbox_image_enabled / HasLocalRegistry are
+            # active, the optionalValues blocks below override the global instead.
             working_dir: "/workspace"
             environment:
               LOG_JSON: "1"
@@ -614,8 +619,8 @@ spec:
     - when: '{{repl ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
       recursiveMerge: true
       values:
-        runtime:
-          image:
+        global:
+          agentServerImage:
             repository: 'repl{{ ConfigOption "custom_sandbox_image_repository" }}'
             tag: 'repl{{ ConfigOption "custom_sandbox_image_tag" }}'
     - when: '{{repl HasLocalRegistry }}'
@@ -623,46 +628,12 @@ spec:
       values:
         global:
           imageRegistry: '{{repl LocalRegistryHost }}'
+          # agent-server comes from the local registry; runtime.image and the
+          # warmRuntimes default entry both inherit this. Tag pinned in the chart.
+          agentServerImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
         image:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
-        runtime:
-          image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            # Do not override the image tag here. Pin to a stable version in the chart.
-          warmRuntimes:
-            configs:
-              - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.29.0-python'
-                working_dir: "/workspace"
-                environment:
-                  LOG_JSON: "1"
-                  LOG_JSON_LEVEL_KEY: "severity"
-                  OH_ALLOW_CORS_ORIGINS_0: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
-                  OH_BASH_EVENTS_DIR: "/workspace/bash_events"
-                  OH_CONVERSATIONS_PATH: "/workspace/conversations"
-                  OH_ENABLE_VNC: "0"
-                  OH_VSCODE_PORT: "60001"
-                  OH_WEBHOOKS_0_BASE_URL: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}/api/v1/webhooks'
-                  OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
-                  VSCODE_PORT: "60001"
-                  WORKER_1: "12000"
-                  WORKER_2: "12001"
-                  CURL_CA_BUNDLE: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  GIT_SSL_CAINFO: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  NODE_EXTRA_CA_CERTS: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  REQUESTS_CA_BUNDLE: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  SSL_CERT_FILE: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  LMNR_BASE_URL: *lmnr_base_url
-                  LMNR_FORCE_HTTP: *lmnr_force_http
-                  LMNR_HTTP_PORT: *lmnr_http_port
-                  LMNR_PROJECT_API_KEY: *lmnr_project_api_key
-                command:
-                  - /usr/local/bin/openhands-agent-server
-                  - "--port"
-                  - "60000"
-                run_as_user: 10001
-                run_as_group: 10001
-                fs_group: 10001
         keycloak:
           image:
             repository: '{{repl LocalRegistryNamespace }}/keycloak'

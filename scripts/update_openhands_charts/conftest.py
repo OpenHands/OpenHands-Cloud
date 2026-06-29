@@ -38,7 +38,7 @@ import base64
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
 from ruamel.yaml import YAML
@@ -326,7 +326,12 @@ appVersion: "1.0.0"
 
 @pytest.fixture
 def sample_openhands_values_full():
-    """Sample openhands values.yaml with all image tags."""
+    """Sample openhands values.yaml.
+
+    The agent-server image lives once in global.agentServerImage; runtime.image
+    and the warmRuntimes configsByName entry omit it and fall back to the global,
+    mirroring the real chart.
+    """
     return """\
 allowedUsers: null
 
@@ -336,8 +341,8 @@ image:
 
 runtime:
   image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.0.0-python
+    repository: ""
+    tag: ""
   runAsRoot: true
 
 runtime-api:
@@ -346,38 +351,43 @@ runtime-api:
   warmRuntimes:
     enabled: true
     count: 1
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.0.0-python"
+    configsByName:
+      default:
         working_dir: "/openhands/code/"
+
+global:
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.0.0-python
 """
 
 
 @pytest.fixture
 def sample_openhands_values_minimal():
-    """Minimal openhands values.yaml for dry-run tests."""
+    """Minimal openhands values.yaml for dry-run tests.
+
+    Carries the two tags update_openhands_values touches: the enterprise-server
+    image tag and the global agent-server image tag.
+    """
     return """\
 image:
   repository: ghcr.io/openhands/enterprise-server
   tag: cloud-1.0.0
 
-runtime:
-  image:
+global:
+  agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.0.0-python
-
-runtime-api:
-  enabled: true
-  warmRuntimes:
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.0.0-python"
 """
 
 
 @pytest.fixture
 def sample_runtime_api_values():
-    """Sample runtime-api values.yaml."""
+    """Sample runtime-api values.yaml.
+
+    The subchart carries its own global.agentServerImage default; the warmRuntimes
+    configsByName entry omits its image and falls back to it.
+    """
     return """\
 nameOverride: ""
 fullnameOverride: ""
@@ -393,33 +403,15 @@ warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config
   count: 0
-  configs:
-    - name: default
-      image: "ghcr.io/openhands/agent-server:1.0.0-python"
+  configsByName:
+    default:
       working_dir: "/openhands/code/"
       environment: {}
-"""
 
-
-@pytest.fixture
-def sample_automation_values():
-    """Sample automation values.yaml."""
-    return """\
-image:
-  repository: ghcr.io/openhands/automation
-  tag: sha-c58faa1
-
-imagePullSecrets: []
-
-deployment:
-  replicas: 1
-  resources:
-    requests:
-      memory: 256Mi
-      cpu: 100m
-    limits:
-      memory: 512Mi
-      cpu: 500m
+global:
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.0.0-python
 """
 
 
@@ -480,46 +472,6 @@ spec:
           type: text
           default: "1"
 """
-
-
-@pytest.fixture
-def sample_replicated_openhands_wrapper_values():
-    """Sample replicated openhands wrapper YAML with agent-server image references.
-
-    The proxy block wraps its agent-server repository/tag/image refs in the
-    custom_sandbox_image_enabled KOTS conditional, mirroring the real
-    replicated/openhands.yaml: when the toggle is on an admin-supplied
-    repository/tag takes over, otherwise the Replicated-proxied image is used.
-    The proxy URL therefore no longer sits flush against the opening quote.
-
-    A commented-out alternate repository line sits between repository: and tag:
-    to exercise the pattern's tolerance of interleaved comments.
-    """
-    return """\
-spec:
-  values:
-    runtime:
-      image:
-        # this is what we need to use for real deployments
-        repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
-        # repository: 'ghcr.io/openhands/agent-server'
-        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.19.0-python{{repl end}}'
-      warmRuntimes:
-        configs:
-          - name: default
-            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.19.0-python{{repl end}}'
-    helmChart:
-      values:
-        runtime:
-          image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.19.0-python'
-          warmRuntimes:
-            configs:
-              - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.0-python'
-"""
-
 
 
 # =============================================================================
@@ -644,7 +596,7 @@ def stub_latest_cloud_tag(monkeypatch):
 def stub_process_updates_chain(monkeypatch):
     """Factory fixture for stubbing the call chain inside process_updates().
 
-    Defaults give a fully-successful chain up to the deploy-config fetch.
+    Defaults give a fully-successful chain through the agent-server tag fetch.
     Pass None to any kwarg to simulate that step failing — this triggers the
     corresponding early-return guard so tests can verify downstream calls
     are skipped.
@@ -677,15 +629,16 @@ def stub_process_updates_chain(monkeypatch):
 
 @pytest.fixture
 def make_workflow_response():
-    """Factory fixture for creating mock GitHub API responses with workflow content.
+    """Factory fixture for creating mock GitHub API responses with file content.
 
     Returns a function that creates a mock response object with base64-encoded
-    YAML content. Use this to test get_deploy_config with various workflow
-    configurations without repeating the mock setup boilerplate.
+    content, mirroring the GitHub "get repository content" API. Use this to test
+    functions that fetch and decode a file from GitHub without repeating the mock
+    setup boilerplate.
 
     Usage:
         def test_something(make_workflow_response, monkeypatch):
-            response = make_workflow_response("env:\\n  RUNTIME_API_SHA: abc123")
+            response = make_workflow_response("AGENT_SERVER_IMAGE = 'x:1.2.3'")
             monkeypatch.setattr("update_openhands_charts.requests.get",
                                MagicMock(return_value=response))
             # ... test code ...
@@ -698,54 +651,6 @@ def make_workflow_response():
         return mock_response
 
     return _make_response
-
-
-# =============================================================================
-# Mock response helpers for get_deploy_config error path tests
-# These plain functions (not fixtures) are used inside @pytest.mark.parametrize
-# decorators, which are evaluated at class scope where fixtures cannot be
-# injected. They centralize mock-response construction for error scenarios.
-# =============================================================================
-
-def make_http_error_response(status_code: int, message: str) -> Mock:
-    """Create a mock requests.get that raises an exception on raise_for_status()."""
-    mock_response = Mock()
-    mock_response.status_code = status_code
-    mock_response.raise_for_status.side_effect = Exception(f"HTTP {status_code}: {message}")
-    return Mock(return_value=mock_response)
-
-
-def make_json_error_response() -> Mock:
-    """Create a mock requests.get whose .json() call raises an exception."""
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.side_effect = Exception("Invalid JSON")
-    return Mock(return_value=mock_response)
-
-
-def make_missing_key_response(json_data: dict) -> Mock:
-    """Create a mock requests.get returning JSON with the given (possibly incomplete) data."""
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.return_value = json_data
-    return Mock(return_value=mock_response)
-
-
-def make_invalid_base64_response(invalid_content: str) -> Mock:
-    """Create a mock requests.get returning JSON with malformed base64 content."""
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.return_value = {"content": invalid_content}
-    return Mock(return_value=mock_response)
-
-
-def make_invalid_yaml_response(invalid_yaml: str) -> Mock:
-    """Create a mock requests.get returning valid base64 but invalid YAML content."""
-    encoded = base64.b64encode(invalid_yaml.encode()).decode()
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.return_value = {"content": encoded}
-    return Mock(return_value=mock_response)
 
 
 @pytest.fixture
@@ -788,23 +693,21 @@ def mock_github_ref(monkeypatch):
 
 @pytest.fixture
 def openhands_workflow_mocks(monkeypatch):
-    """Patch the four inner functions called by update_openhands_workflow.
+    """Patch the three inner functions called by update_openhands_workflow.
 
     Returns a namespace exposing each MagicMock by name (`.values`,
-    `.replicated`, `.replicated_config`, `.chart`) so each workflow-contract
-    test asserts on the calls it focuses on without depending on a positional
-    return shape. The values mock reports has_changes=True so the chart-bump
-    path is exercised; the others return a no-change UpdateResult and exist to
-    prevent writes to the real files.
+    `.replicated_config`, `.chart`) so each workflow-contract test asserts on
+    the calls it focuses on without depending on a positional return shape. The
+    values mock reports has_changes=True so the chart-bump path is exercised;
+    the others return a no-change UpdateResult and exist to prevent writes to
+    the real files.
     """
     mocks = SimpleNamespace(
         values=MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
-        replicated=MagicMock(return_value=update_openhands_charts.UpdateResult()),
         replicated_config=MagicMock(return_value=update_openhands_charts.UpdateResult()),
         chart=MagicMock(return_value=update_openhands_charts.UpdateResult()),
     )
     monkeypatch.setattr("update_openhands_charts.update_openhands_values", mocks.values)
-    monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mocks.replicated)
     monkeypatch.setattr("update_openhands_charts.update_replicated_config", mocks.replicated_config)
     monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mocks.chart)
     return mocks

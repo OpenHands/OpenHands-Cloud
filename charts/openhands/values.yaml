@@ -254,9 +254,10 @@ resendSync:
       cpu: 200m
 
 runtime:
+  # repository/tag fall back to .Values.global.agentServerImage when left empty.
   image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.29.0-python
+    repository: ""
+    tag: ""
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -715,9 +716,11 @@ runtime-api:
   warmRuntimes:
     enabled: true
     count: 1
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.29.0-python"
+    # Map form keyed by config name; see runtime-api subchart values for the
+    # legacy `configs` list and precedence rules.
+    configsByName:
+      default:
+        # image omitted -> defaults to global.agentServerImage (repo:tag).
         working_dir: "/workspace"
         environment:
           # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
@@ -1037,6 +1040,12 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Canonical agent-server image. Defaults the runtime image (runtime.image) and
+  # any warm-runtime configsByName entry that omits its own `image`. Override
+  # either of those for per-use exceptions; set it here to move them together.
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.29.0-python
 
 vertexAI:
   enabled: false

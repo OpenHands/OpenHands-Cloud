@@ -7,7 +7,6 @@
 
 import argparse
 import base64
-import io
 import logging
 import os
 import re
@@ -22,10 +21,8 @@ from ruamel.yaml import YAML
 logging.getLogger("github").setLevel(logging.WARNING)
 
 CLOUD_SEMVER_PATTERN = re.compile(r"^cloud-(\d+\.\d+\.\d+)$")
-SHORT_SHA_LENGTH = 7
 OPENHANDS_REPO = "All-Hands-AI/OpenHands"
 OPENHANDS_ENTERPRISE_REPO = "OpenHands/OpenHands"
-DEPLOY_REPO = "OpenHands/deploy"
 SANDBOX_SPEC_PATH = "openhands/app_server/sandbox/sandbox_spec_service.py"
 AGENT_SERVER_IMAGE_PATTERN = re.compile(r"AGENT_SERVER_IMAGE\s*=\s*'[^:]+:([^']+)'")
 SEPARATOR = "=" * 60
@@ -54,52 +51,23 @@ VALUES_PATH = REPO_ROOT / "charts" / "openhands" / "values.yaml"
 RUNTIME_API_VALUES_PATH = (
     REPO_ROOT / "charts" / "openhands" / "charts" / "runtime-api" / "values.yaml"
 )
-AUTOMATION_VALUES_PATH = (
-    REPO_ROOT / "charts" / "openhands" / "charts" / "automation" / "values.yaml"
-)
 IMAGE_LOADER_CHART_PATH = REPO_ROOT / "charts" / "image-loader" / "Chart.yaml"
 IMAGE_LOADER_VALUES_PATH = REPO_ROOT / "charts" / "image-loader" / "values.yaml"
-REPLICATED_OPENHANDS_PATH = REPO_ROOT / "replicated" / "openhands.yaml"
 REPLICATED_CONFIG_PATH = REPO_ROOT / "replicated" / "config.yaml"
 
 # Regex patterns for values.yaml image tag updates
 ENTERPRISE_SERVER_TAG_PATTERN = (
     r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/enterprise-server\s*\n\s*tag:\s*)(\S+)"
 )
-RUNTIME_TAG_PATTERN = (
-    r"(runtime:\s*\n\s*image:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
+# The agent-server image now lives in one place: the openhands chart's
+# global.agentServerImage. runtime.image and warmRuntimes configsByName entries
+# fall back to it, so bumping this single tag moves them all. Same repository:/
+# tag: shape as the enterprise-server pattern.
+GLOBAL_AGENT_SERVER_TAG_PATTERN = (
+    r"(agentServerImage:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
 )
-WARM_RUNTIMES_TAG_PATTERN = r'(image:\s*"ghcr\.io/openhands/agent-server:)([^"]+)"'
-RUNTIME_API_TAG_PATTERN = (
-    r'(image:\n\s+repository: ghcr\.io/openhands/runtime-api\n\s+tag: )(sha-[a-f0-9]+)'
-)
-AUTOMATION_TAG_PATTERN = (
-    r'(image:\n\s+repository: ghcr\.io/openhands/automation\n\s+tag: )(sha-[a-f0-9]+)'
-)
-# The proxy-style refs wrap the agent-server image in the custom_sandbox_image_enabled
-# KOTS conditional ({{repl if ...}}...{{repl else}}<proxy image>{{repl end}}), so the
-# proxy URL/tag no longer sits flush against the opening quote. Anchor on the
-# ghcr.io/openhands/agent-server marker (a single-quoted scalar never contains an inner
-# single quote, so [^']* stays within the value) and capture the version with [^'{]+ so
-# it stops before the trailing {{repl end}} or closing quote — both of which are then
-# left untouched (no replacement_suffix needed). The patterns also match the unwrapped
-# form, where [^']* and the optional groups collapse to empty.
-REPLICATED_PROXY_AGENT_SERVER_TAG_PATTERN = (
-    r"(repository:\s*'[^']*ghcr\.io/openhands/agent-server(?:\{\{repl end\}\})?'\s*\n"
-    r"(?:\s*#[^\n]*\n)*"
-    r"\s*tag:\s*'(?:[^']*\{\{repl else\}\})?)([^'{]+)"
-)
-REPLICATED_PROXY_WARM_RUNTIME_IMAGE_PATTERN = (
-    r"(image:\s*'[^']*ghcr\.io/openhands/agent-server:)([^'{]+)"
-)
-REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN = (
-    r"(repository:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server'\s*\n\s*tag:\s*')([^']+)'"
-)
-REPLICATED_LOCAL_WARM_RUNTIME_IMAGE_PATTERN = (
-    r"(image:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server:)([^']+)'"
-)
-# Same shape as RUNTIME_TAG_PATTERN but without the runtime: prefix — image-loader's
-# values.yaml has the agent-server image at the top level.
+# image-loader's values.yaml has the agent-server image at the top level, so this
+# matches an image: { repository: ghcr.io/openhands/agent-server, tag: ... } block.
 IMAGE_LOADER_TAG_PATTERN = (
     r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
 )
@@ -175,11 +143,6 @@ class UpdateResult:
             print(f"Error: {err}")
 
 
-def get_short_sha(sha: str) -> str:
-    """Return the first 7 characters of a SHA hash."""
-    return sha[:SHORT_SHA_LENGTH]
-
-
 def extract_version_from_cloud_tag(cloud_tag: str) -> str | None:
     """Extract version number from cloud-X.Y.Z format."""
     match = CLOUD_SEMVER_PATTERN.match(cloud_tag)
@@ -198,19 +161,6 @@ def get_current_app_version(chart_path: Path) -> str | None:
         return chart_data.get("appVersion")
     except Exception:
         return None
-
-
-def format_sha_tag(sha: str) -> str:
-    """Format a SHA hash into a sha-SHORT_SHA tag format."""
-    return f"sha-{get_short_sha(sha)}"
-
-
-@dataclass
-class DeployConfig:
-    """Configuration values from the deploy workflow."""
-
-    runtime_api_sha: str
-    automation_sha: str = ""
 
 
 def get_latest_cloud_tag(token: str, repo_name: str) -> str | None:
@@ -236,31 +186,6 @@ def cloud_tag_exists(token: str, repo_name: str, tag_name: str) -> bool:
         return True
     except Exception:
         return False
-
-
-def get_deploy_config(token: str, repo_name: str, ref: str | None = None) -> DeployConfig | None:
-    """Fetch deployment config values from deploy.yaml workflow."""
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://api.github.com/repos/{repo_name}/contents/.github/workflows/deploy.yaml"
-    if ref:
-        url += f"?ref={ref}"
-
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        content = base64.b64decode(response.json()["content"]).decode("utf-8")
-        yaml = YAML()
-        workflow = yaml.load(io.StringIO(content))
-
-        env = workflow.get("env", {})
-        return DeployConfig(
-            runtime_api_sha=env.get("RUNTIME_API_SHA", ""),
-            automation_sha=env.get("AUTOMATION_SHA", ""),
-        )
-    except Exception as e:
-        print(f"Error fetching deploy config: {e}")
-        return None
 
 
 def get_runtime_image_tag_from_sandbox_spec(token: str, repo_name: str, ref: str) -> str | None:
@@ -330,36 +255,6 @@ def update_tag_in_content(
             result.has_changes = True
     elif error_if_missing:
         result.errors.append(f"Could not find {tag_name} in values.yaml")
-    return content
-
-
-def update_all_tags_in_content(
-    content: str,
-    pattern: str,
-    new_tag: str,
-    tag_name: str,
-    result: UpdateResult,
-    replacement_suffix: str = "",
-    error_if_missing: bool = True,
-) -> str:
-    """Update all regex-matched tags in content and track grouped results."""
-    matches = list(re.finditer(pattern, content))
-    if not matches:
-        if error_if_missing:
-            result.errors.append(f"Could not find {tag_name} in values.yaml")
-        return content
-
-    old_tags = [match.group(2) for match in matches]
-    if all(old_tag == new_tag for old_tag in old_tags):
-        result.unchanged.append((tag_name, new_tag))
-        return content
-
-    replacement = rf"\g<1>{new_tag}{replacement_suffix}"
-    content = re.sub(pattern, replacement, content)
-    changed_old_tags = sorted({old_tag for old_tag in old_tags if old_tag != new_tag})
-    old_value_summary = ", ".join(changed_old_tags)
-    result.changes.append((tag_name, old_value_summary, new_tag))
-    result.has_changes = True
     return content
 
 
@@ -463,70 +358,10 @@ def update_openhands_values(
     )
     content = update_tag_in_content(
         content,
-        RUNTIME_TAG_PATTERN,
+        GLOBAL_AGENT_SERVER_TAG_PATTERN,
         runtime_image_tag,
-        "runtime image tag",
+        "agent-server image tag",
         result,
-    )
-    content = update_tag_in_content(
-        content,
-        WARM_RUNTIMES_TAG_PATTERN,
-        runtime_image_tag,
-        "warmRuntimes image tag",
-        result,
-        replacement_suffix='"',
-    )
-
-    if not dry_run and result.has_changes:
-        values_path.write_text(content)
-
-    return result
-
-
-def update_replicated_openhands_values(
-    values_path: Path,
-    runtime_image_tag: str,
-    dry_run: bool = False,
-) -> UpdateResult:
-    """Update agent-server image tags in the replicated/openhands.yaml KOTS wrapper.
-
-    The wrapper carries its own copy of the agent-server tag in four locations:
-    proxy-style and LocalRegistry-style image refs, each in both the chart-level
-    image block and the warmRuntimes default config. The chart-values updater
-    cannot reach these because the templating only renders inside the KOTS wrapper.
-    """
-    content = values_path.read_text()
-    result = UpdateResult()
-
-    content = update_all_tags_in_content(
-        content,
-        REPLICATED_PROXY_AGENT_SERVER_TAG_PATTERN,
-        runtime_image_tag,
-        "replicated runtime image tag",
-        result,
-    )
-    content = update_tag_in_content(
-        content,
-        REPLICATED_PROXY_WARM_RUNTIME_IMAGE_PATTERN,
-        runtime_image_tag,
-        "replicated warmRuntimes image tag",
-        result,
-    )
-    content = update_all_tags_in_content(
-        content,
-        REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN,
-        runtime_image_tag,
-        "replicated local registry runtime image tag",
-        result,
-        replacement_suffix="'",
-    )
-    content = update_tag_in_content(
-        content,
-        REPLICATED_LOCAL_WARM_RUNTIME_IMAGE_PATTERN,
-        runtime_image_tag,
-        "replicated local registry warmRuntimes image tag",
-        result,
-        replacement_suffix="'",
     )
 
     if not dry_run and result.has_changes:
@@ -631,15 +466,19 @@ def bump_chart_version(
 
 def update_runtime_api_values(
     values_path: Path,
-    runtime_api_sha: str,
     runtime_image_tag: str,
     dry_run: bool = False,
 ) -> UpdateResult:
-    """Update image tag and warmRuntimes default config image in runtime-api values.yaml.
+    """Update the global agent-server image tag in runtime-api values.yaml.
+
+    The runtime-api image itself is pinned to a manually-released semver tag, so
+    this only bumps the agent-server tag. The subchart carries its own
+    global.agentServerImage default so it renders standalone; the umbrella's
+    parent global overrides it at deploy time. Keeping both in sync means a
+    standalone render shows the same agent-server tag.
 
     Args:
         values_path: Path to the values.yaml file
-        runtime_api_sha: The runtime-api commit SHA
         runtime_image_tag: The agent-server image tag from sandbox spec (e.g., '1.21.0-python')
         dry_run: If True, don't write changes to file
 
@@ -650,51 +489,9 @@ def update_runtime_api_values(
 
     content = update_tag_in_content(
         content,
-        RUNTIME_API_TAG_PATTERN,
-        format_sha_tag(runtime_api_sha),
-        "runtime-api image tag",
-        result,
-    )
-    content = update_tag_in_content(
-        content,
-        WARM_RUNTIMES_TAG_PATTERN,
+        GLOBAL_AGENT_SERVER_TAG_PATTERN,
         runtime_image_tag,
-        "runtime-api warmRuntimes image tag",
-        result,
-        replacement_suffix='"',
-    )
-
-    if not dry_run and result.has_changes:
-        values_path.write_text(content)
-
-    return result
-
-
-def update_automation_values(
-    values_path: Path,
-    automation_sha: str,
-    dry_run: bool = False,
-) -> UpdateResult:
-    """Update image tag in automation values.yaml.
-
-    Args:
-        values_path: Path to the values.yaml file
-        automation_sha: The automation commit SHA from deploy config
-        dry_run: If True, don't write changes to file
-
-    Returns UpdateResult containing changes made.
-    """
-    result = UpdateResult()
-    if not automation_sha:
-        result.errors.append("AUTOMATION_SHA missing from deploy config")
-        return result
-    content = values_path.read_text()
-
-    content = update_tag_in_content(
-        content,
-        AUTOMATION_TAG_PATTERN,
-        format_sha_tag(automation_sha),
-        "automation image tag",
+        "runtime-api agent-server image tag",
         result,
     )
 
@@ -759,7 +556,6 @@ def resolve_openhands_version(token: str, cloud_tag: str | None) -> str | None:
 
 
 def update_runtime_api_workflow(
-    deploy_config: DeployConfig,
     runtime_image_tag: str,
     dry_run: bool,
 ) -> UpdateResult:
@@ -774,7 +570,6 @@ def update_runtime_api_workflow(
     print("Updating runtime-api values.yaml...")
     values_result = update_runtime_api_values(
         RUNTIME_API_VALUES_PATH,
-        deploy_config.runtime_api_sha,
         runtime_image_tag,
         dry_run=dry_run,
     )
@@ -806,15 +601,6 @@ def update_openhands_workflow(
         dry_run=dry_run,
     )
     values_result.print_summary()
-
-    print()
-    print("Updating replicated/openhands.yaml...")
-    replicated_result = update_replicated_openhands_values(
-        REPLICATED_OPENHANDS_PATH,
-        runtime_image_tag,
-        dry_run=dry_run,
-    )
-    replicated_result.print_summary()
 
     print()
     print("Updating replicated/config.yaml...")
@@ -862,29 +648,6 @@ def update_image_loader_workflow(
     chart_result.print_summary()
 
 
-def update_automation_workflow(
-    deploy_config: DeployConfig,
-    dry_run: bool,
-) -> UpdateResult:
-    """Update automation subchart values. Returns the values UpdateResult.
-
-    automation is an embedded subchart of openhands, so it has no chart
-    version of its own to bump — value changes are released by the openhands
-    chart version bump instead.
-    """
-    print_section_header("Updating automation subchart...")
-
-    print("Updating automation values.yaml...")
-    values_result = update_automation_values(
-        AUTOMATION_VALUES_PATH,
-        deploy_config.automation_sha,
-        dry_run=dry_run,
-    )
-    values_result.print_summary()
-
-    return values_result
-
-
 def process_updates(
     token: str,
     dry_run: bool = False,
@@ -919,25 +682,10 @@ def process_updates(
         print(f"Could not fetch runtime image tag from sandbox spec at {openhands_version}")
         return
 
-    deploy_config = get_deploy_config(token, DEPLOY_REPO, ref=version_number)
-    if not deploy_config:
-        print(f"Could not fetch deploy config from tag {version_number}")
-        return
-    # All charts are released together; abort if any deploy-config SHA is missing.
-    if not deploy_config.automation_sha:
-        print("AUTOMATION_SHA missing from deploy config")
-        return
-
-    print(f"Deploy config (from {version_number}):")
-    print(f"  RUNTIME_API_SHA: {deploy_config.runtime_api_sha}")
-    print(f"  AUTOMATION_SHA: {deploy_config.automation_sha}")
-    print(f"  AGENT_SERVER_IMAGE tag (from sandbox spec): {runtime_image_tag}")
+    print(f"AGENT_SERVER_IMAGE tag (from sandbox spec): {runtime_image_tag}")
 
     print()
-    runtime_api_result = update_runtime_api_workflow(deploy_config, runtime_image_tag, dry_run)
-
-    print()
-    automation_result = update_automation_workflow(deploy_config, dry_run)
+    runtime_api_result = update_runtime_api_workflow(runtime_image_tag, dry_run)
 
     print()
     update_image_loader_workflow(runtime_image_tag, dry_run)
@@ -947,9 +695,7 @@ def process_updates(
         openhands_version,
         runtime_image_tag,
         dry_run,
-        subchart_values_changed=(
-            runtime_api_result.has_changes or automation_result.has_changes
-        ),
+        subchart_values_changed=runtime_api_result.has_changes,
     )
 
 
