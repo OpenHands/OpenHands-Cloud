@@ -43,4 +43,4 @@ jobs:
         env:
           REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
           REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
-        run: make release
+        run: make release ALLOW_MAIN_RELEASE=1
