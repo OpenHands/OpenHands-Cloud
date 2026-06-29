@@ -1,4 +1,18 @@
 {{- if .Values.warmRuntimes.enabled }}
+{{- /*
+  Normalize warm-runtime configs into a list of entries. The legacy list form
+  (.configs) wins when non-empty, for backwards compatibility; otherwise the map
+  form (.configsByName) is used, promoting each key to the entry's "name".
+  Prefer the map: maps merge cleanly across values layers, so a consumer can
+  override one field of one entry without re-declaring the whole list.
+*/ -}}
+{{- $configs := .Values.warmRuntimes.configs }}
+{{- if not $configs }}
+{{- $configs = list }}
+{{- range $name, $config := .Values.warmRuntimes.configsByName }}
+{{- $configs = append $configs (merge (dict "name" $name) $config) }}
+{{- end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,7 +24,7 @@ data:
     {
       "count": {{ .Values.warmRuntimes.count }},
       "configs": [
-        {{- range $index, $config := .Values.warmRuntimes.configs }}
+        {{- range $index, $config := $configs }}
         {{- if $index }},{{ end }}
         {
           "name": {{ $config.name | quote }},

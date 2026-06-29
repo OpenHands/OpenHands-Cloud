@@ -672,8 +672,10 @@ runtime-api:
   warmRuntimes:
     enabled: true
     count: 1
-    configs:
-      - name: default
+    # Map form keyed by config name; see runtime-api subchart values for the
+    # legacy `configs` list and precedence rules.
+    configsByName:
+      default:
         image: "ghcr.io/openhands/agent-server:1.29.0-python"
         working_dir: "/workspace"
         environment:

@@ -253,8 +253,14 @@ warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config
   count: 0
-  configs:
-    - name: default
+  # Legacy list form. Kept for backwards compatibility: when non-empty it takes
+  # precedence over configsByName. Prefer configsByName for new configuration.
+  configs: []
+  # Canonical map form. Each key is the config's name (promoted to "name" in the
+  # rendered JSON). Maps merge cleanly across values layers, so consumers can
+  # override one field of one entry without re-declaring every entry.
+  configsByName:
+    default:
       image: "ghcr.io/openhands/agent-server:1.29.0-python"
       working_dir: "/workspace"
       environment:

@@ -110,7 +110,7 @@ A ready-to-copy version is in
 | `component` | yes | — | Used in the branch, PR title, and commit message. |
 | `chart_file` | yes | — | YAML file to edit, relative to the chart repo root. |
 | `tag` | yes | — | New image tag to set. Must match the tag you pushed. |
-| `image_tag_path` | no | `.image.tag` | yq-style path to the tag scalar. Supports nested keys and list indices, e.g. `.warmRuntimes.configs[0].image`. |
+| `image_tag_path` | no | `.image.tag` | yq-style path to the tag scalar. Supports nested keys, e.g. `.warmRuntimes.configsByName.default.image`, and list indices, e.g. `.containers[0].image`. |
 | `base_branch` | no | `main` | Branch to open the PR against. |
 | `chart_repo` | no | `OpenHands/OpenHands-Cloud` | Repo to update, `owner/name`. |
 | `pr_branch` | no | `bump-image-tag/<component>` | Head branch. The default rolls a single open PR per component, advancing it to the latest tag. Set something tag-specific (e.g. `bump-image-tag/runtime-api/${{ needs.prepare-tag.outputs.tag }}`) to get one PR per release. |
