@@ -469,7 +469,7 @@ spec:
             persistence:
               enabled: true
               storageClass: openebs-hostpath
-              size: 20Gi
+              size: 50Gi
         # One-time migration of existing emptyDir data onto the PVC above. Renders
         # pre-upgrade hooks that seed a PVC from the live database, then delete the
         # old emptyDir StatefulSet so Helm recreates it PVC-backed (adopting the
@@ -478,7 +478,7 @@ spec:
         postgresMigration:
           enabled: true
           storageClass: openebs-hostpath
-          size: 20Gi
+          size: 50Gi
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
           images:
