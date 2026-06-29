@@ -38,7 +38,7 @@ import base64
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
 from ruamel.yaml import YAML
@@ -416,28 +416,6 @@ global:
 
 
 @pytest.fixture
-def sample_automation_values():
-    """Sample automation values.yaml."""
-    return """\
-image:
-  repository: ghcr.io/openhands/automation
-  tag: sha-c58faa1
-
-imagePullSecrets: []
-
-deployment:
-  replicas: 1
-  resources:
-    requests:
-      memory: 256Mi
-      cpu: 100m
-    limits:
-      memory: 512Mi
-      cpu: 500m
-"""
-
-
-@pytest.fixture
 def sample_image_loader_values():
     """Sample image-loader values.yaml with the agent-server image pre-loaded on nodes."""
     return """\
@@ -618,7 +596,7 @@ def stub_latest_cloud_tag(monkeypatch):
 def stub_process_updates_chain(monkeypatch):
     """Factory fixture for stubbing the call chain inside process_updates().
 
-    Defaults give a fully-successful chain up to the deploy-config fetch.
+    Defaults give a fully-successful chain through the agent-server tag fetch.
     Pass None to any kwarg to simulate that step failing — this triggers the
     corresponding early-return guard so tests can verify downstream calls
     are skipped.
@@ -651,15 +629,16 @@ def stub_process_updates_chain(monkeypatch):
 
 @pytest.fixture
 def make_workflow_response():
-    """Factory fixture for creating mock GitHub API responses with workflow content.
+    """Factory fixture for creating mock GitHub API responses with file content.
 
     Returns a function that creates a mock response object with base64-encoded
-    YAML content. Use this to test get_deploy_config with various workflow
-    configurations without repeating the mock setup boilerplate.
+    content, mirroring the GitHub "get repository content" API. Use this to test
+    functions that fetch and decode a file from GitHub without repeating the mock
+    setup boilerplate.
 
     Usage:
         def test_something(make_workflow_response, monkeypatch):
-            response = make_workflow_response("env:\\n  RUNTIME_API_SHA: abc123")
+            response = make_workflow_response("AGENT_SERVER_IMAGE = 'x:1.2.3'")
             monkeypatch.setattr("update_openhands_charts.requests.get",
                                MagicMock(return_value=response))
             # ... test code ...
@@ -672,54 +651,6 @@ def make_workflow_response():
         return mock_response
 
     return _make_response
-
-
-# =============================================================================
-# Mock response helpers for get_deploy_config error path tests
-# These plain functions (not fixtures) are used inside @pytest.mark.parametrize
-# decorators, which are evaluated at class scope where fixtures cannot be
-# injected. They centralize mock-response construction for error scenarios.
-# =============================================================================
-
-def make_http_error_response(status_code: int, message: str) -> Mock:
-    """Create a mock requests.get that raises an exception on raise_for_status()."""
-    mock_response = Mock()
-    mock_response.status_code = status_code
-    mock_response.raise_for_status.side_effect = Exception(f"HTTP {status_code}: {message}")
-    return Mock(return_value=mock_response)
-
-
-def make_json_error_response() -> Mock:
-    """Create a mock requests.get whose .json() call raises an exception."""
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.side_effect = Exception("Invalid JSON")
-    return Mock(return_value=mock_response)
-
-
-def make_missing_key_response(json_data: dict) -> Mock:
-    """Create a mock requests.get returning JSON with the given (possibly incomplete) data."""
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.return_value = json_data
-    return Mock(return_value=mock_response)
-
-
-def make_invalid_base64_response(invalid_content: str) -> Mock:
-    """Create a mock requests.get returning JSON with malformed base64 content."""
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.return_value = {"content": invalid_content}
-    return Mock(return_value=mock_response)
-
-
-def make_invalid_yaml_response(invalid_yaml: str) -> Mock:
-    """Create a mock requests.get returning valid base64 but invalid YAML content."""
-    encoded = base64.b64encode(invalid_yaml.encode()).decode()
-    mock_response = Mock()
-    mock_response.raise_for_status = Mock()
-    mock_response.json.return_value = {"content": encoded}
-    return Mock(return_value=mock_response)
 
 
 @pytest.fixture

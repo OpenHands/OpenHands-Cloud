@@ -27,14 +27,14 @@ jobs:
           # Extract image tags from chart values using yq
           RUNTIME_API_TAG=$(yq '.image.tag' charts/openhands/charts/runtime-api/values.yaml)
           ENTERPRISE_TAG=$(yq '.image.tag' charts/openhands/values.yaml)
-          RUNTIME_TAG=$(yq '.runtime.image.tag' charts/openhands/values.yaml)
+          AGENT_SERVER_TAG=$(yq '.global.agentServerImage.tag' charts/openhands/values.yaml)
 
           # Build the image list as JSON array
           IMAGES=$(jq -n -c \
             --arg runtime_api "openhands/runtime-api:${RUNTIME_API_TAG}" \
             --arg enterprise "openhands/enterprise-server:${ENTERPRISE_TAG}" \
-            --arg runtime "openhands/agent-server:${RUNTIME_TAG}" \
-            '[$runtime_api, $enterprise, $runtime]')
+            --arg agent_server "openhands/agent-server:${AGENT_SERVER_TAG}" \
+            '[$runtime_api, $enterprise, $agent_server]')
 
           echo "images=${IMAGES}" >> $GITHUB_OUTPUT
           echo "Discovered images: ${IMAGES}"
