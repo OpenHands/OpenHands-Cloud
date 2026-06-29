@@ -1,0 +1,372 @@
+{{- /*
+One-time migration of embedded PostgreSQL from an emptyDir volume to a PVC.
+
+Why this exists: the embedded Bitnami `postgresql` StatefulSet historically ran
+its data directory on an emptyDir, so any pod reschedule destroyed the database.
+The fix (postgresql.primary.persistence.enabled) makes the StatefulSet
+PVC-backed, but `volumeClaimTemplates` is immutable — an in-place upgrade of an
+existing emptyDir StatefulSet would fail. These pre-upgrade hooks carry the
+existing data across in a single deploy:
+
+  1. (-20) RBAC: a ServiceAccount + namespaced Role for the orchestrator.
+  2. (-18) ConfigMap: the seed script and the PVC / seeder-pod manifests.
+  3. (-10) Orchestrator Job: guards (no-op once migrated), pre-creates the
+     target PVC, launches a *transient* seeder pod that hydrates the PVC from
+     the live database, then deletes the old emptyDir StatefulSet. Helm then
+     recreates the StatefulSet PVC-backed and it ADOPTS the seeded PVC.
+
+The seeder pod is created imperatively by the orchestrator (not as a static
+hook) on purpose: once migrated, the target PVC is held read-write by the live
+postgres pod, so a static hook that mounted it would hit a multi-attach error
+and brick every future upgrade. Creating it only when migration is actually
+needed keeps no-op upgrades from ever touching the live PVC.
+
+Pre-upgrade only: there is nothing to migrate on a fresh install (Part A already
+makes it PVC-backed), and pre-upgrade hooks do not run on `helm install`.
+*/ -}}
+{{- if and .Values.postgresql.enabled .Values.postgresMigration.enabled }}
+{{- $rel := .Release.Name }}
+{{- $ns := .Release.Namespace }}
+{{- $m := .Values.postgresMigration }}
+{{- $sts := printf "%s-postgresql" $rel }}
+{{- $pvc := printf "data-%s-0" $sts }}
+{{- $name := printf "%s-postgres-migration" $rel }}
+{{- $seeder := printf "%s-seeder" $name }}
+{{- $marker := "postgres-pvc-migrated" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: postgres-migration
+    app.kubernetes.io/instance: {{ $rel }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+{{- with $m.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-18"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  # Manifest applied by the orchestrator to pre-create the target PVC.
+  pvc.yaml: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: {{ $pvc }}
+      namespace: {{ $ns }}
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      {{- if $m.storageClass }}
+      storageClassName: {{ $m.storageClass | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ $m.size | quote }}
+  # Transient pod that hydrates the PVC from the live database.
+  seeder-pod.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: {{ $seeder }}
+      namespace: {{ $ns }}
+      labels:
+        app.kubernetes.io/name: postgres-migration-seeder
+        app.kubernetes.io/instance: {{ $rel }}
+    spec:
+      restartPolicy: Never
+      activeDeadlineSeconds: 900
+      {{- with $m.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+        runAsNonRoot: true
+      containers:
+        - name: seed
+          image: "{{ $m.images.postgresql.repository }}:{{ $m.images.postgresql.tag }}"
+          imagePullPolicy: {{ $m.images.postgresql.pullPolicy | default "IfNotPresent" }}
+          command: ["bash", "/scripts/seed.sh"]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $m.auth.existingSecret | default "postgres-password" }}
+                  key: {{ $m.auth.secretKey | default "postgres-password" }}
+            - name: SOURCE_HOST
+              value: {{ $m.sourceHost | default "oh-main-postgresql" | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/postgresql
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $pvc }}
+        - name: scripts
+          configMap:
+            name: {{ $name }}
+            defaultMode: 0555
+            items:
+              - key: seed.sh
+                path: seed.sh
+  # Runs inside the seeder pod (Bitnami postgres image: bash + postgres tools).
+  seed.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    export PATH="/opt/bitnami/postgresql/bin:$PATH"
+    VOLUME_DIR="/bitnami/postgresql"
+    PGDATA_DIR="${VOLUME_DIR}/data"
+    SEEDED_MARKER="${VOLUME_DIR}/.openhands-migration-seeded"
+    SRC_HOST="${SOURCE_HOST:-oh-main-postgresql}"
+    PORT="5432"
+
+    log() { echo "[seed] $*"; }
+
+    # Idempotency: a prior run already fully seeded this PVC.
+    if [ -f "$SEEDED_MARKER" ]; then
+      log "PVC already seeded; nothing to do."
+      exit 0
+    fi
+
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+
+    log "Waiting for source ${SRC_HOST}:${PORT} to be ready..."
+    for _ in $(seq 1 30); do
+      if pg_isready -h "$SRC_HOST" -p "$PORT" -U postgres >/dev/null 2>&1; then break; fi
+      sleep 2
+    done
+    pg_isready -h "$SRC_HOST" -p "$PORT" -U postgres
+
+    # Discard any partial PGDATA from a previously crashed attempt (safe: the
+    # PVC is not yet marked seeded, so nothing depends on its contents).
+    log "Clearing any partial PGDATA from a prior attempt..."
+    rm -rf "${PGDATA_DIR:?}" 2>/dev/null || true
+    mkdir -p "$PGDATA_DIR"
+
+    # Let Bitnami's own scripts initialize a compatible PGDATA and start postgres
+    # locally. Only POSTGRES_PASSWORD is set, so Bitnami sets up just the
+    # superuser; the logical restore below recreates every role and database.
+    log "Initializing a fresh Bitnami PGDATA on the PVC..."
+    export POSTGRESQL_VOLUME_DIR="$VOLUME_DIR"
+    export PGDATA="$PGDATA_DIR"
+    /opt/bitnami/scripts/postgresql/entrypoint.sh /opt/bitnami/scripts/postgresql/run.sh >/tmp/local-pg.log 2>&1 &
+    SERVER_PID=$!
+
+    log "Waiting for the local server to accept connections..."
+    for _ in $(seq 1 60); do
+      if pg_isready -h 127.0.0.1 -p "$PORT" -U postgres >/dev/null 2>&1; then break; fi
+      if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        log "Local server exited early:"; cat /tmp/local-pg.log || true; exit 1
+      fi
+      sleep 2
+    done
+    pg_isready -h 127.0.0.1 -p "$PORT" -U postgres
+
+    log "Streaming logical dump from source into the PVC..."
+    set +e
+    pg_dumpall -h "$SRC_HOST" -p "$PORT" -U postgres --clean --if-exists \
+      | psql -h 127.0.0.1 -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=0 >/tmp/restore.log 2>&1
+    set -e
+
+    # Integrity check: the restored cluster must have the same number of
+    # non-template databases as the source.
+    SRC_DBS=$(psql -h "$SRC_HOST" -p "$PORT" -U postgres -d postgres -tAc \
+      "SELECT count(*) FROM pg_database WHERE datname NOT IN ('template0','template1')")
+    DST_DBS=$(psql -h 127.0.0.1 -p "$PORT" -U postgres -d postgres -tAc \
+      "SELECT count(*) FROM pg_database WHERE datname NOT IN ('template0','template1')")
+    log "Database count — source=${SRC_DBS} restored=${DST_DBS}"
+    if [ "${SRC_DBS}" != "${DST_DBS}" ] || [ "${DST_DBS:-0}" -lt 1 ]; then
+      log "ERROR: database count mismatch; restore incomplete. Last restore output:"
+      tail -n 50 /tmp/restore.log || true
+      exit 1
+    fi
+
+    log "Stopping the local server cleanly..."
+    if ! pg_ctl -D "$PGDATA_DIR" -m fast -w stop; then
+      kill -TERM "$SERVER_PID" 2>/dev/null || true
+      wait "$SERVER_PID" 2>/dev/null || true
+    fi
+
+    touch "$SEEDED_MARKER"
+    log "Seed complete; PGDATA is ready for adoption."
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: postgres-migration
+    app.kubernetes.io/instance: {{ $rel }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-migration
+        app.kubernetes.io/instance: {{ $rel }}
+    spec:
+      serviceAccountName: {{ $name }}
+      restartPolicy: Never
+      {{- with $m.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: "{{ $m.images.kubectl.repository }}:{{ $m.images.kubectl.tag }}"
+          imagePullPolicy: {{ $m.images.kubectl.pullPolicy | default "IfNotPresent" }}
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - name: manifests
+              mountPath: /migration
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              NS='{{ $ns }}'
+              STS='{{ $sts }}'
+              PVC='{{ $pvc }}'
+              SEEDER='{{ $seeder }}'
+              MARKER='{{ $marker }}'
+
+              log() { echo "[migrate] $*"; }
+
+              # ---- Guard: is migration needed? ----
+              if kubectl -n "$NS" get configmap "$MARKER" >/dev/null 2>&1; then
+                log "Marker '$MARKER' present; migration already complete. Skipping."
+                exit 0
+              fi
+              if kubectl -n "$NS" get statefulset "$STS" >/dev/null 2>&1; then
+                VCT=$(kubectl -n "$NS" get statefulset "$STS" -o jsonpath='{.spec.volumeClaimTemplates}' 2>/dev/null || echo "")
+                if [ -n "$VCT" ] && [ "$VCT" != "[]" ]; then
+                  log "StatefulSet '$STS' is already PVC-backed. Nothing to migrate."
+                  exit 0
+                fi
+              else
+                log "StatefulSet '$STS' not present (a prior run already cut over). Letting Helm recreate it."
+                exit 0
+              fi
+              log "Detected emptyDir StatefulSet '$STS'. Starting migration."
+
+              # ---- 1. Ensure the target PVC exists ----
+              if kubectl -n "$NS" get pvc "$PVC" >/dev/null 2>&1; then
+                log "PVC '$PVC' already exists."
+              else
+                log "Creating PVC '$PVC'."
+                kubectl -n "$NS" apply -f /migration/pvc.yaml
+              fi
+
+              # ---- 2. Seed the PVC from the live DB via a transient pod ----
+              kubectl -n "$NS" delete pod "$SEEDER" --ignore-not-found --wait=true >/dev/null 2>&1 || true
+              log "Launching seeder pod '$SEEDER'."
+              kubectl -n "$NS" apply -f /migration/seeder-pod.yaml
+
+              log "Waiting for seeder to finish (timeout 900s)..."
+              DEADLINE=$(( $(date +%s) + 900 ))
+              PHASE=""
+              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                PHASE=$(kubectl -n "$NS" get pod "$SEEDER" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+                if [ "$PHASE" = "Succeeded" ] || [ "$PHASE" = "Failed" ]; then break; fi
+                sleep 5
+              done
+              log "----- seeder logs -----"
+              kubectl -n "$NS" logs "$SEEDER" 2>/dev/null || true
+              log "-----------------------"
+              if [ "$PHASE" != "Succeeded" ]; then
+                log "ERROR: seeder did not succeed (phase='$PHASE'). Aborting; old database left intact."
+                exit 1
+              fi
+              log "Seeder completed successfully."
+
+              # ---- 3. Cutover: delete the old emptyDir StatefulSet ----
+              # Helm will recreate it PVC-backed in this same upgrade; the new
+              # pod adopts the seeded PVC.
+              log "Deleting old emptyDir StatefulSet '$STS'..."
+              kubectl -n "$NS" delete statefulset "$STS" --cascade=foreground --wait=true --timeout=180s
+
+              # ---- 4. Record success + clean up ----
+              kubectl -n "$NS" create configmap "$MARKER" \
+                --from-literal=pvc="$PVC" \
+                --from-literal=note="embedded postgres migrated from emptyDir to PVC" >/dev/null 2>&1 || true
+              kubectl -n "$NS" delete pod "$SEEDER" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+              log "Migration complete. Helm will now recreate '$STS' bound to PVC '$PVC'."
+      volumes:
+        - name: manifests
+          configMap:
+            name: {{ $name }}
+            items:
+              - key: pvc.yaml
+                path: pvc.yaml
+              - key: seeder-pod.yaml
+                path: seeder-pod.yaml
+{{- end }}

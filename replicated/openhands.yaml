@@ -462,8 +462,32 @@ spec:
             password: '{{repl ConfigOption "postgres_password" | Base64Encode }}'
             postgresPassword: '{{repl ConfigOption "postgres_password" | Base64Encode }}'
             database: '{{repl ConfigOption "postgres_database"}}'
-          persistence:
-            enabled: true
+          # Persistence MUST be nested under primary — the Bitnami chart ignores a
+          # top-level postgresql.persistence, which is why embedded postgres ran on
+          # an emptyDir (data lost on any pod reschedule).
+          primary:
+            persistence:
+              enabled: true
+              storageClass: openebs-hostpath
+              size: 50Gi
+        # One-time migration of existing emptyDir data onto the PVC above. Renders
+        # pre-upgrade hooks that seed a PVC from the live database, then delete the
+        # old emptyDir StatefulSet so Helm recreates it PVC-backed (adopting the
+        # seeded PVC) within the same deploy. A guard makes it a no-op once
+        # migrated, so it is safe to leave enabled across future upgrades.
+        postgresMigration:
+          enabled: true
+          storageClass: openebs-hostpath
+          size: 50Gi
+          imagePullSecrets:
+            - name: '{{repl ImagePullSecretName }}'
+          images:
+            kubectl:
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
+              tag: "1.30.0"
+            postgresql:
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql'
+              tag: "16.4.0-debian-12-r14"
     - when: '{{repl ConfigOptionEquals "postgres_type" "external_postgres" }}'
       recursiveMerge: true
       values:
