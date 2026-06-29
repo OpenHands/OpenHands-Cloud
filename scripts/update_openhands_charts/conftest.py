@@ -326,7 +326,12 @@ appVersion: "1.0.0"
 
 @pytest.fixture
 def sample_openhands_values_full():
-    """Sample openhands values.yaml with all image tags."""
+    """Sample openhands values.yaml.
+
+    The agent-server image lives once in global.agentServerImage; runtime.image
+    and the warmRuntimes configsByName entry omit it and fall back to the global,
+    mirroring the real chart.
+    """
     return """\
 allowedUsers: null
 
@@ -336,8 +341,8 @@ image:
 
 runtime:
   image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.0.0-python
+    repository: ""
+    tag: ""
   runAsRoot: true
 
 runtime-api:
@@ -346,38 +351,43 @@ runtime-api:
   warmRuntimes:
     enabled: true
     count: 1
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.0.0-python"
+    configsByName:
+      default:
         working_dir: "/openhands/code/"
+
+global:
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.0.0-python
 """
 
 
 @pytest.fixture
 def sample_openhands_values_minimal():
-    """Minimal openhands values.yaml for dry-run tests."""
+    """Minimal openhands values.yaml for dry-run tests.
+
+    Carries the two tags update_openhands_values touches: the enterprise-server
+    image tag and the global agent-server image tag.
+    """
     return """\
 image:
   repository: ghcr.io/openhands/enterprise-server
   tag: cloud-1.0.0
 
-runtime:
-  image:
+global:
+  agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.0.0-python
-
-runtime-api:
-  enabled: true
-  warmRuntimes:
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.0.0-python"
 """
 
 
 @pytest.fixture
 def sample_runtime_api_values():
-    """Sample runtime-api values.yaml."""
+    """Sample runtime-api values.yaml.
+
+    The subchart carries its own global.agentServerImage default; the warmRuntimes
+    configsByName entry omits its image and falls back to it.
+    """
     return """\
 nameOverride: ""
 fullnameOverride: ""
@@ -393,11 +403,15 @@ warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config
   count: 0
-  configs:
-    - name: default
-      image: "ghcr.io/openhands/agent-server:1.0.0-python"
+  configsByName:
+    default:
       working_dir: "/openhands/code/"
       environment: {}
+
+global:
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.0.0-python
 """
 
 

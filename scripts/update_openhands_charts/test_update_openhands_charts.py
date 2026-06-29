@@ -944,7 +944,7 @@ class TestUpdateValues:
     - test_reports_error_*: Error handling for missing patterns
 
     TDD Rationale: Tests drive regex-based image tag replacement that must
-    handle three distinct tag locations (enterprise-server, runtime, warmRuntimes).
+    handle two distinct tag locations (enterprise-server, global agent-server).
     Error tests ensure graceful handling when expected patterns are missing,
     preventing silent failures in CI/CD pipelines.
     """
@@ -956,14 +956,13 @@ class TestUpdateValues:
 
     @pytest.mark.parametrize("expected_content", [
         pytest.param("tag: cloud-1.1.0", id="enterprise-server tag"),
-        pytest.param(f"tag: {NEW_RUNTIME_IMAGE_TAG}", id="runtime tag"),
-        pytest.param(f'image: "ghcr.io/openhands/agent-server:{NEW_RUNTIME_IMAGE_TAG}"', id="warmRuntimes tag"),
+        pytest.param(f"tag: {NEW_RUNTIME_IMAGE_TAG}", id="agent-server global tag"),
     ])
     def test_each_image_tag_is_updated(self, temp_values_file, expected_content):
-        """Test that enterprise-server, runtime, and warmRuntimes image tags are each updated.
+        """Test that the enterprise-server and global agent-server image tags are each updated.
 
-        All three tags are written by one call; each parametrize case verifies
-        one tag location in the output file.
+        Both tags are written by one call; each parametrize case verifies one tag
+        location in the output file.
         """
         update_openhands_values(
             temp_values_file,
@@ -999,8 +998,7 @@ class TestUpdateValues:
 
     @pytest.mark.parametrize("unchanged_key", [
         "enterprise-server image tag",
-        "runtime image tag",
-        "warmRuntimes image tag",
+        "agent-server image tag",
     ])
     def test_reapplying_same_values_marks_key_unchanged(self, reapplied_values_result, unchanged_key):
         """Each image-tag key is reported as unchanged when reapplied with the same value."""
@@ -1066,25 +1064,23 @@ runtime-api:
 
         assert result.has_error_containing("Could not find enterprise-server image tag")
 
-    def test_reports_error_when_runtime_tag_missing(self, make_temp_yaml_file):
-        """Test that error is reported when runtime image tag pattern not found.
+    def test_reports_error_when_agent_server_tag_missing(self, make_temp_yaml_file):
+        """Test that error is reported when the global agent-server tag pattern is not found.
 
-        Edge case rationale: The runtime image runs user code in sandboxed containers.
-        Version mismatch between enterprise-server and runtime can cause compatibility
-        issues (API changes, protocol mismatches). Detecting missing runtime patterns
-        ensures both images stay synchronized during updates.
+        Edge case rationale: the agent-server image (the sandbox runtime) now lives
+        once in global.agentServerImage; runtime.image and warmRuntimes fall back to
+        it. If that block is missing, the sandbox runtime version can't be bumped, so
+        the updater must surface it rather than silently leave a stale runtime.
         """
-        # YAML without runtime image section - enterprise-server present but runtime missing
+        # enterprise-server present, but no global.agentServerImage block
         values_content = """\
 image:
   repository: ghcr.io/openhands/enterprise-server
   tag: cloud-1.0.0
 
-runtime-api:
-  warmRuntimes:
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.0.0-python"
+global:
+  security:
+    allowInsecureImages: true
 """
         temp_file = make_temp_yaml_file(values_content)
 
@@ -1094,40 +1090,7 @@ runtime-api:
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
-        assert result.has_error_containing("Could not find runtime image tag")
-
-    def test_reports_error_when_warm_runtimes_tag_missing(self, make_temp_yaml_file):
-        """Test that error is reported when warmRuntimes image tag pattern not found.
-
-        Edge case rationale: warmRuntimes pre-provisions runtime containers for faster
-        cold starts. If this image isn't updated but runtime is, pre-warmed containers
-        would run stale versions until recycled. This creates inconsistent behavior
-        where some requests use new runtime and others use old pre-warmed instances.
-        """
-        # YAML with warmRuntimes disabled - pattern missing but section exists
-        values_content = """\
-image:
-  repository: ghcr.io/openhands/enterprise-server
-  tag: cloud-1.0.0
-
-runtime:
-  image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.0.0-python
-
-runtime-api:
-  warmRuntimes:
-    enabled: false
-"""
-        temp_file = make_temp_yaml_file(values_content)
-
-        result = update_openhands_values(
-            temp_file,
-            openhands_version="cloud-1.1.0",
-            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
-        )
-
-        assert result.has_error_containing("Could not find warmRuntimes image tag")
+        assert result.has_error_containing("Could not find agent-server image tag")
 
     def test_collects_multiple_errors_when_multiple_patterns_missing(self, make_temp_yaml_file):
         """Test that all missing patterns are reported as errors.
@@ -1151,10 +1114,9 @@ serviceAccount:
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
-        assert result.error_count == 3
+        assert result.error_count == 2
         assert result.has_error_containing("enterprise-server")
-        assert result.has_error_containing("runtime image tag")
-        assert result.has_error_containing("warmRuntimes")
+        assert result.has_error_containing("agent-server image tag")
 
 
 
@@ -1775,8 +1737,7 @@ class TestDryRun:
 
         # Assert: changes are tracked even though file wasn't modified
         assert result.has_change_for("enterprise-server image tag")
-        assert result.has_change_for("runtime image tag")
-        assert result.has_change_for("warmRuntimes image tag")
+        assert result.has_change_for("agent-server image tag")
 
     def test_update_chart_without_dry_run_modifies_file(self, temp_chart_file):
         """Test that without dry-run, Chart.yaml is modified."""
@@ -1824,8 +1785,8 @@ class TestUpdateRuntimeApiValues:
 
         assert_file_contains(temp_runtime_api_values_file, "tag: sha-abc1234")
 
-    def test_update_warm_runtimes_image_uses_runtime_image_tag(self, temp_runtime_api_values_file):
-        """Test that warmRuntimes image tag uses value from deploy config."""
+    def test_update_agent_server_image_uses_runtime_image_tag(self, temp_runtime_api_values_file):
+        """Test that the global agent-server image tag uses the value from deploy config."""
         update_runtime_api_values(
             temp_runtime_api_values_file,
             runtime_api_sha="abc1234567890def",
@@ -1833,7 +1794,7 @@ class TestUpdateRuntimeApiValues:
         )
 
         # Should use runtime_image_tag from deploy config
-        assert_file_contains(temp_runtime_api_values_file, f'image: "ghcr.io/openhands/agent-server:{NEW_RUNTIME_IMAGE_TAG}"')
+        assert_file_contains(temp_runtime_api_values_file, f"tag: {NEW_RUNTIME_IMAGE_TAG}")
 
     @pytest.fixture
     def reapplied_runtime_api_values_result(self, temp_runtime_api_values_file):
@@ -1859,7 +1820,7 @@ class TestUpdateRuntimeApiValues:
 
     @pytest.mark.parametrize("unchanged_key", [
         "runtime-api image tag",
-        "runtime-api warmRuntimes image tag",
+        "runtime-api agent-server image tag",
     ])
     def test_reapplying_same_runtime_api_values_marks_key_unchanged(self, reapplied_runtime_api_values_result, unchanged_key):
         """Each runtime-api image-tag key is reported as unchanged when reapplied."""

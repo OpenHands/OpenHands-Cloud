@@ -261,7 +261,7 @@ warmRuntimes:
   # override one field of one entry without re-declaring every entry.
   configsByName:
     default:
-      image: "ghcr.io/openhands/agent-server:1.29.0-python"
+      # image omitted -> defaults to global.agentServerImage (repo:tag).
       working_dir: "/workspace"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
@@ -321,3 +321,9 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Canonical agent-server image. Defaults any warm-runtime configsByName entry
+  # that omits its own `image`. In the openhands umbrella the parent chart's
+  # global wins; this default only applies when rendering the subchart alone.
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.29.0-python

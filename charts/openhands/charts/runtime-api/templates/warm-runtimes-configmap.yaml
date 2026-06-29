@@ -13,6 +13,8 @@
 {{- $configs = append $configs (merge (dict "name" $name) $config) }}
 {{- end }}
 {{- end }}
+{{- /* Default image for any entry that omits one: the global agent-server image. */ -}}
+{{- $agentServerImage := printf "%s:%s" .Values.global.agentServerImage.repository .Values.global.agentServerImage.tag }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -28,7 +30,7 @@ data:
         {{- if $index }},{{ end }}
         {
           "name": {{ $config.name | quote }},
-          "image": {{ $config.image | quote }},
+          "image": {{ $config.image | default $agentServerImage | quote }},
           "working_dir": {{ $config.working_dir | quote }},
           {{- with $config.count }}
           "count": {{ $config.count }},

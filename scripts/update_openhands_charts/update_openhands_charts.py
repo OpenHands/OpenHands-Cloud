@@ -66,10 +66,13 @@ REPLICATED_CONFIG_PATH = REPO_ROOT / "replicated" / "config.yaml"
 ENTERPRISE_SERVER_TAG_PATTERN = (
     r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/enterprise-server\s*\n\s*tag:\s*)(\S+)"
 )
-RUNTIME_TAG_PATTERN = (
-    r"(runtime:\s*\n\s*image:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
+# The agent-server image now lives in one place: the openhands chart's
+# global.agentServerImage. runtime.image and warmRuntimes configsByName entries
+# fall back to it, so bumping this single tag moves them all. Same repository:/
+# tag: shape as the enterprise-server pattern.
+GLOBAL_AGENT_SERVER_TAG_PATTERN = (
+    r"(agentServerImage:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
 )
-WARM_RUNTIMES_TAG_PATTERN = r'(image:\s*"ghcr\.io/openhands/agent-server:)([^"]+)"'
 RUNTIME_API_TAG_PATTERN = (
     r'(image:\n\s+repository: ghcr\.io/openhands/runtime-api\n\s+tag: )(sha-[a-f0-9]+)'
 )
@@ -98,8 +101,8 @@ REPLICATED_LOCAL_AGENT_SERVER_TAG_PATTERN = (
 REPLICATED_LOCAL_WARM_RUNTIME_IMAGE_PATTERN = (
     r"(image:\s*'\{\{repl LocalRegistryHost \}\}/\{\{repl LocalRegistryNamespace \}\}/agent-server:)([^']+)'"
 )
-# Same shape as RUNTIME_TAG_PATTERN but without the runtime: prefix — image-loader's
-# values.yaml has the agent-server image at the top level.
+# image-loader's values.yaml has the agent-server image at the top level, so this
+# matches an image: { repository: ghcr.io/openhands/agent-server, tag: ... } block.
 IMAGE_LOADER_TAG_PATTERN = (
     r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
 )
@@ -463,18 +466,10 @@ def update_openhands_values(
     )
     content = update_tag_in_content(
         content,
-        RUNTIME_TAG_PATTERN,
+        GLOBAL_AGENT_SERVER_TAG_PATTERN,
         runtime_image_tag,
-        "runtime image tag",
+        "agent-server image tag",
         result,
-    )
-    content = update_tag_in_content(
-        content,
-        WARM_RUNTIMES_TAG_PATTERN,
-        runtime_image_tag,
-        "warmRuntimes image tag",
-        result,
-        replacement_suffix='"',
     )
 
     if not dry_run and result.has_changes:
@@ -635,7 +630,11 @@ def update_runtime_api_values(
     runtime_image_tag: str,
     dry_run: bool = False,
 ) -> UpdateResult:
-    """Update image tag and warmRuntimes default config image in runtime-api values.yaml.
+    """Update the runtime-api image tag and global agent-server image tag in runtime-api values.yaml.
+
+    The subchart carries its own global.agentServerImage default so it renders
+    standalone; the umbrella's parent global overrides it at deploy time. Keeping
+    both in sync means a standalone render shows the same agent-server tag.
 
     Args:
         values_path: Path to the values.yaml file
@@ -657,11 +656,10 @@ def update_runtime_api_values(
     )
     content = update_tag_in_content(
         content,
-        WARM_RUNTIMES_TAG_PATTERN,
+        GLOBAL_AGENT_SERVER_TAG_PATTERN,
         runtime_image_tag,
-        "runtime-api warmRuntimes image tag",
+        "runtime-api agent-server image tag",
         result,
-        replacement_suffix='"',
     )
 
     if not dry_run and result.has_changes:
