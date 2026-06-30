@@ -44,8 +44,14 @@
 - name: AWS_S3_ENDPOINT
   value: {{ printf "http://%s-minio:9000" .Release.Name | quote }}
 {{- end }}
+{{- if .Values.runtimeFileArchive.s3.secure }}
+# Only emitted when explicitly enabled. Otherwise TLS is inferred from the
+# endpoint scheme (bundled minio is http://), and an endpoint-less external S3
+# (region/existingSecret) defaults to TLS in the client — so plain HTTP is never
+# forced onto a real S3 endpoint.
 - name: AWS_S3_SECURE
-  value: {{ .Values.runtimeFileArchive.s3.secure | default false | quote }}
+  value: "true"
+{{- end }}
 {{- if .Values.runtimeFileArchive.s3.region }}
 - name: AWS_REGION
   value: {{ .Values.runtimeFileArchive.s3.region | quote }}
@@ -62,13 +68,13 @@
       name: {{ .Values.runtimeFileArchive.s3.existingSecret }}
       key: {{ .Values.runtimeFileArchive.s3.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
 {{- else }}
-# Default to the shared bundled-minio creds (global.minioCredentials, derived
-# from minio.svcaccts) so this reap path can't drift from the app-server path;
-# an explicit s3.accessKeyId/secretAccessKey still overrides.
+# Explicit creds — default to the bundled minio dev creds (s3.accessKeyId /
+# secretAccessKey in values, matching minio.svcaccts). Set them (or use
+# existingSecret) for a real store.
 - name: AWS_ACCESS_KEY_ID
-  value: {{ .Values.runtimeFileArchive.s3.accessKeyId | default (dig "minioCredentials" "accessKey" "" .Values.global) | quote }}
+  value: {{ .Values.runtimeFileArchive.s3.accessKeyId | quote }}
 - name: AWS_SECRET_ACCESS_KEY
-  value: {{ .Values.runtimeFileArchive.s3.secretAccessKey | default (dig "minioCredentials" "secretKey" "" .Values.global) | quote }}
+  value: {{ .Values.runtimeFileArchive.s3.secretAccessKey | quote }}
 {{- end }}
 {{- end }}
 {{- end }}

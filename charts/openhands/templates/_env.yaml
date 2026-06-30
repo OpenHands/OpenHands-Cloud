@@ -63,12 +63,12 @@
 {{- end }}
 {{- if .Values.runtimeFileArchive.enabled }}
 {{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" .Values.filestore.ephemeral) }}
-# Archive a sandbox's workspace before an explicit delete. The s3 store needs
-# the AWS_S3_*/AWS_*_KEY connection env: when filestore.ephemeral it is already
-# set above (in-cluster minio); otherwise the block at the end supplies it from
-# the bundled minio so an explicit storeType=s3 still has an endpoint + creds.
-# google_cloud uses the pod ServiceAccount's Workload Identity. See
-# values.runtimeFileArchive.
+# Archive a sandbox's workspace before an explicit delete. The s3 store reuses
+# the AWS_S3_*/AWS_*_KEY connection env: with filestore.ephemeral it is the
+# in-cluster minio set above; on a non-ephemeral external-S3 store the operator
+# supplies it through the pod's normal AWS credential mechanism (IRSA, a mounted
+# secret, etc.). google_cloud uses the pod ServiceAccount's Workload Identity.
+# See values.runtimeFileArchive.
 - name: RUNTIME_FILE_ARCHIVE_ENABLED
   value: "true"
 - name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
@@ -83,19 +83,6 @@
   value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
 - name: RUNTIME_FILE_ARCHIVE_REQUIRED
   value: {{ .Values.runtimeFileArchive.required | default false | quote }}
-{{- if and (eq $archiveStore "s3") (not .Values.filestore.ephemeral) }}
-# Non-ephemeral filestore did not emit the S3 connection env above; supply it
-# from the bundled minio so archive uploads have an endpoint + credentials
-# instead of silently targeting the AWS default endpoint with no creds.
-- name: AWS_ACCESS_KEY_ID
-  value: {{ (index .Values.minio.svcaccts 0).accessKey }}
-- name: AWS_SECRET_ACCESS_KEY
-  value: {{ (index .Values.minio.svcaccts 0).secretKey }}
-- name: AWS_S3_ENDPOINT
-  value: {{ printf "http://%s-minio:9000" $.Release.Name }}
-- name: AWS_S3_SECURE
-  value: 'false'
-{{- end }}
 {{- end }}
 {{- if .Values.runtime.runAsRoot }}
 - name: SANDBOX_USER_ID

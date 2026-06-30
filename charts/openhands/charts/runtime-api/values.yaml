@@ -276,10 +276,10 @@ runtimeFileArchive:
     endpoint: ""
     region: "" # Set for external (non-minio) S3; also drops the minio endpoint default.
     secure: false # true for HTTPS endpoints (external S3).
-    # Empty -> inherit the bundled minio creds (global.minioCredentials). Set to
-    # override for an external store, or use existingSecret below.
-    accessKeyId: ""
-    secretAccessKey: ""
+    # Defaults to the bundled minio dev creds (match minio.svcaccts). Override
+    # for an external store, or use existingSecret below.
+    accessKeyId: "default"
+    secretAccessKey: "notasecret"
     existingSecret: "" # Optional secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.
 
 warmRuntimes:
@@ -360,10 +360,3 @@ global:
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.29.0-python
-  # Bundled minio creds for the s3 workspace-archive path. In the openhands
-  # umbrella the parent chart's global.minioCredentials (anchored to
-  # minio.svcaccts) wins; this default only applies when rendering the subchart
-  # alone. Overridden per-deployment by runtimeFileArchive.s3.accessKeyId.
-  minioCredentials:
-    accessKey: "default"
-    secretKey: "notasecret"

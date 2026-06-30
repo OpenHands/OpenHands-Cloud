@@ -610,11 +610,12 @@ minio:
       policy: none
       purge: false
   svcaccts:
-    # Single in-file source for the bundled minio creds. The runtime-api reap
-    # path reads these via global.minioCredentials (it can't see .Values.minio),
-    # so editing them here keeps both archive paths in sync.
-    - accessKey: &minioAccessKey "default"
-      secretKey: &minioSecretKey "notasecret"
+    # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
+    # (separate subchart), so it carries its own matching default in
+    # runtime-api.runtimeFileArchive.s3.{accessKeyId,secretAccessKey}; change
+    # both together, or point the archive at an existingSecret.
+    - accessKey: "default"
+      secretKey: "notasecret"
       user: root
   rootUser: "root"
   resources:
@@ -1080,15 +1081,6 @@ global:
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.29.0-python
-  # Bundled minio credentials, shared so the workspace-archive reap path in the
-  # runtime-api subchart (which cannot read .Values.minio) uses the same creds
-  # as the app-server. Anchored to minio.svcaccts[0] above — rotate the creds
-  # there. NOTE: a `--set minio.svcaccts[0].*` override does not flow here (the
-  # anchor is resolved before --set); to rotate via --set, also set
-  # global.minioCredentials.* (and runtime-api.runtimeFileArchive.s3.* if used).
-  minioCredentials:
-    accessKey: *minioAccessKey
-    secretKey: *minioSecretKey
 
 vertexAI:
   enabled: false
