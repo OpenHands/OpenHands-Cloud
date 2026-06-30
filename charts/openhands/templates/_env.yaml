@@ -61,6 +61,40 @@
 - name: SHARED_EVENT_STORAGE_PROVIDER
   value: {{ .Values.filestore.provider }}
 {{- end }}
+{{- if .Values.runtimeFileArchive.enabled }}
+{{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" .Values.filestore.ephemeral) }}
+# Archive a sandbox's workspace before an explicit delete. The s3 store reuses
+# the AWS_S3_*/AWS_*_KEY connection env: with filestore.ephemeral it is the
+# in-cluster minio set above; on a non-ephemeral external-S3 store the operator
+# supplies it through the pod's normal AWS credential mechanism (IRSA, a mounted
+# secret, etc.). google_cloud uses the pod ServiceAccount's Workload Identity.
+# See values.runtimeFileArchive.
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
+  value: {{ $archiveStore | quote }}
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PATH
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_REQUIRED
+  value: {{ .Values.runtimeFileArchive.required | default false | quote }}
+{{- if .Values.runtimeFileArchive.initial.enabled }}
+# Also snapshot the INITIAL workspace (repo as cloned, before setup.sh) — the
+# eval "base" state. Reuses STORE_TYPE/BUCKET/PREFIX above; awaited inline at
+# conversation start (bounded by INITIAL_DEADLINE, best-effort).
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_FORMAT
+  value: {{ .Values.runtimeFileArchive.initial.format | default "tar.gz" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_DEADLINE
+  value: {{ .Values.runtimeFileArchive.initial.deadline | default 120 | quote }}
+{{- end }}
+{{- end }}
 {{- if .Values.runtime.runAsRoot }}
 - name: SANDBOX_USER_ID
   value: '0'

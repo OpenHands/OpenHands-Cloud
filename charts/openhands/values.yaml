@@ -85,6 +85,39 @@ filestore:
   ephemeral: false
   bucket: openhands-sessions
 
+# Workspace archiving (app-server, explicit-delete path): before a still-running
+# sandbox is deleted, copy its workspace to object storage so the agent's work
+# survives for eval/dataset creation. Disabled by default — existing deployments
+# are unaffected. The idle/expiry reap is archived separately by the runtime-api
+# cleanup CronJob (see runtime-api.runtimeFileArchive).
+#
+# storeType: "google_cloud" uses the app-server ServiceAccount's Workload
+# Identity (GKE; needs roles/storage.objectAdmin on the bucket). "s3" uses the
+# AWS_S3_*/AWS_*_KEY env, already populated from the in-cluster minio when
+# filestore.ephemeral=true — so self-hosted installs can archive to minio or any
+# S3-compatible store. Empty = auto (s3 if ephemeral, else google_cloud).
+runtimeFileArchive:
+  enabled: false
+  storeType: "" # google_cloud | s3; empty = auto by filestore.ephemeral
+  # Existing object-storage bucket that receives the archives. The chart does
+  # not create it; provision it and grant the app-server identity write access.
+  bucket: ""
+  prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root).
+  # Safe default: capture BOTH the compact git-delta and a self-contained
+  # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
+  # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
+  format: both # both, git-delta (compact), or tar.gz.
+  required: false # When true, a failed archive blocks the delete (retried later).
+  # Also snapshot the INITIAL workspace (repo as cloned, before setup.sh) — the
+  # "base" state for reconstructing an eval (initial + final). App-server only;
+  # reuses storeType/bucket/prefix above. Awaited inline at conversation start
+  # (bounded by deadline, best-effort), so it adds bounded startup latency.
+  initial:
+    enabled: false
+    format: tar.gz # tar.gz (self-contained base) or git-delta.
+    deadline: 120 # Max seconds to await the snapshot before proceeding without it.
+
 github:
   enabled: false
 
@@ -579,6 +612,10 @@ minio:
       policy: none
       purge: true
   svcaccts:
+    # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
+    # (separate subchart), so it carries its own matching default in
+    # runtime-api.runtimeFileArchive.s3.{accessKeyId,secretAccessKey}; change
+    # both together, or point the archive at an existingSecret.
     - accessKey: "default"
       secretKey: "notasecret"
       user: root
@@ -1274,4 +1311,3 @@ agent-canvas:
     tls:
       enabled: true
       secretName: agent-canvas-tls
-

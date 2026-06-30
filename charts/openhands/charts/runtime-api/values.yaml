@@ -249,6 +249,41 @@ cleanup:
   idle_seconds: 1200 # Default to 20 minutes
   dead_seconds: 5184000 # Default to 60 days (stopgap until workspace archiving ships; runtime-api#624)
 
+# Workspace archiving (primary, pause/reap path): before the cleanup CronJob
+# pauses/stops a runtime — while its pod is still reachable — copy the workspace
+# to object storage so it survives PVC deletion (eval/dataset creation).
+# Best-effort: a failed archive never blocks the reap. Disabled by default.
+#
+# storeType=google_cloud uses the cleanup ServiceAccount's Workload Identity
+# (GKE; needs roles/storage.objectAdmin on the bucket). storeType=s3 uses the
+# s3 block below — for self-hosted installs archiving to the in-cluster minio
+# (endpoint defaults to http://<release>-minio:9000) or any S3-compatible store.
+runtimeFileArchive:
+  enabled: false
+  storeType: google_cloud # google_cloud | s3
+  # Existing object-storage bucket that receives the archives. The chart does
+  # not create it; provision it and grant the cleanup identity write access.
+  bucket: ""
+  prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root).
+  # Safe default: capture BOTH the compact git-delta and a self-contained
+  # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
+  # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
+  format: both # both, git-delta (compact), or tar.gz.
+  # S3-compatible connection — only used when storeType=s3.
+  s3:
+    # Empty endpoint -> bundled in-cluster minio (http://<release>-minio:9000),
+    # UNLESS region or existingSecret is set (external S3), in which case the
+    # endpoint is left unset so boto3 targets the AWS regional endpoint.
+    endpoint: ""
+    region: "" # Set for external (non-minio) S3; also drops the minio endpoint default.
+    secure: false # true for HTTPS endpoints (external S3).
+    # Defaults to the bundled minio dev creds (match minio.svcaccts). Override
+    # for an external store, or use existingSecret below.
+    accessKeyId: "default"
+    secretAccessKey: "notasecret"
+    existingSecret: "" # Optional secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.
+
 warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config
