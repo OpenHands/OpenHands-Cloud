@@ -119,7 +119,19 @@ data:
     # POSIX sh — alpine/k8s ships a shell and kubectl. Do NOT swap in
     # rancher/kubectl here: it is FROM scratch and has no shell.
     set -u
-
+    # Sandbox upgrade coordinator — keeps sandbox PDBs out of the way during
+    # k0s upgrades, then locks them back down. Control loop:
+    #
+    #   1. Every INTERVAL seconds, read status.state of all Installation CRDs.
+    #   2. If any is in a drain state (upgrade rolling nodes) → relax every
+    #      sandbox PDB to maxUnavailable=100% so the node can drain.
+    #   3. Otherwise (idle) → restore every sandbox PDB to maxUnavailable=0
+    #      to protect running sandboxes.
+    #   4. If state is unreadable (CRD missing / API error) → leave PDBs as-is.
+    #
+    # Only PDBs matching the sandbox selector are touched, and only when the
+    # value actually differs — steady state writes nothing and logs nothing.
+    # 
     # Namespace runtime-api drops sandboxes into (its K8S_NAMESPACE), which in
     # the openhands chart is the openhands release namespace. The sandbox PDBs
     # live here and carry the sandbox label.
