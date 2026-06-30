@@ -7,8 +7,8 @@ name: Bump chart image tag
 # It updates ONLY the tag scalar - it deliberately does not bump the chart
 # `version` in Chart.yaml. The PR is titled `feat(<component>): …` so release-please
 # folds it into that chart's release PR under Features; the chart `version` is then
-# bumped automatically when the release PR is merged (a patch bump while the chart
-# is pre-1.0, since the configs set bump-patch-for-minor-pre-major).
+# bumped automatically when the release PR is merged (a minor bump, since feats
+# move the minor for these pre-1.0 charts).
 #
 # See docs/automated-image-tag-bumps.md for caller setup and the auth model.
 

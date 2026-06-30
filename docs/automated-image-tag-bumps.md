@@ -21,8 +21,8 @@ bump the chart `version` in `Chart.yaml` and does nothing else.
 The PR is titled `feat(<component>): bump image tag to <tag>`, so release-please
 categorizes it under Features and folds it into the chart's open release PR. The
 chart `version` in `Chart.yaml` is then bumped automatically when that release PR
-is merged (a patch bump while the chart is pre-1.0, since the configs set
-bump-patch-for-minor-pre-major). No manual version bump, and no version-bump CI gate.
+is merged (a minor bump, since feats move the minor for these pre-1.0 charts). No
+manual version bump, and no version-bump CI gate.
 
 The edit is path-aware and minimal by design. `runtime-api/values.yaml` has three
 `tag:` keys (`image.tag`, `kvm.image.tag`, `kvm.initImage.tag`); the script edits
