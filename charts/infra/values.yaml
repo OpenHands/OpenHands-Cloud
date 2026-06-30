@@ -81,3 +81,40 @@ crdCheck:
       memory: 64Mi
     limits:
       memory: 128Mi
+
+# Keeps the per-sandbox PodDisruptionBudgets in place across a Kubernetes (k0s)
+# upgrade. A small controller watches the embedded-cluster `Installation` state
+# and, while a k0s upgrade is rolling nodes, scales sandbox deployments to zero
+# so nothing blocks autopilot's node drains; it restores them when the upgrade
+# finishes. See templates/sandbox-upgrade-coordinator.yaml for the full design.
+#
+# Enable ONLY on embedded-cluster installs (where the Installation CRD exists).
+# Disabled by default; on other clusters the controller would just idle.
+sandboxUpgradeCoordinator:
+  enabled: false
+  # Namespace where runtime-api creates sandbox pods (its K8S_NAMESPACE).
+  runtimeNamespace: runtime-pods
+  # Label selector identifying sandbox deployments (runtime-api labels each
+  # sandbox with runtime_id).
+  sandboxSelector: runtime_id
+  # Installation states that mean a k0s node roll is underway. While any
+  # Installation reports one of these, sandboxes are held at zero replicas.
+  # "Enqueued" and "Installing" are the states embedded-cluster sets around the
+  # autopilot plan; widen for more lead time or narrow to reduce false starts.
+  drainStates:
+    - Enqueued
+    - Installing
+  # Seconds between Installation-state polls.
+  pollIntervalSeconds: 10
+  # Needs a shell AND kubectl. Do NOT use rancher/kubectl (FROM scratch, no shell).
+  image:
+    repository: docker.io/alpine/k8s
+    tag: "1.30.0"
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
