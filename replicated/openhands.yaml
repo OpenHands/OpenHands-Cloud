@@ -290,10 +290,6 @@ spec:
       cleanup:
         idle_seconds: repl{{ ConfigOption "sandbox_idle_seconds" }}
         dead_seconds: repl{{ ConfigOption "sandbox_dead_seconds" }}
-      runtimeFileArchive:
-        enabled: repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}
-        storeType: s3
-        bucket: 'repl{{ ConfigOption "sandbox_archive_bucket" }}'
       env:
         DB_HOST: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
         DB_PORT: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
@@ -387,13 +383,6 @@ spec:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
     filestore:
       ephemeral: true
-    runtimeFileArchive:
-      enabled: repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}
-      storeType: s3
-      bucket: 'repl{{ ConfigOption "sandbox_archive_bucket" }}'
-      required: repl{{ ConfigOptionEquals "sandbox_archive_required" "1" }}
-      initial:
-        enabled: repl{{ ConfigOptionEquals "sandbox_archive_initial" "1" }}
     minio:
       persistence:
         enabled: true

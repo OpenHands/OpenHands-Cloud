@@ -99,7 +99,9 @@ filestore:
 runtimeFileArchive:
   enabled: false
   storeType: "" # google_cloud | s3; empty = auto by filestore.ephemeral
-  bucket: "" # Object-storage bucket that receives the archives.
+  # Existing object-storage bucket that receives the archives. The chart does
+  # not create it; provision it and grant the app-server identity write access.
+  bucket: ""
   prefix: workspace-archives # Key prefix within the bucket.
   path: /workspace/project # Source path to archive (git repo root).
   # Safe default: capture BOTH the compact git-delta and a self-contained
@@ -609,14 +611,6 @@ minio:
     - name: openhands-sessions
       policy: none
       purge: true
-    # Workspace archives must survive upgrades, so this bucket is NOT purged
-    # (unlike openhands-sessions above, which is emptied on every upgrade). It
-    # is the default target for runtimeFileArchive — see replicated
-    # sandbox_archive_bucket. Provisioned up front so archives never silently
-    # no-op against a missing bucket.
-    - name: openhands-archives
-      policy: none
-      purge: false
   svcaccts:
     # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
     # (separate subchart), so it carries its own matching default in
@@ -1317,4 +1311,3 @@ agent-canvas:
     tls:
       enabled: true
       secretName: agent-canvas-tls
-
