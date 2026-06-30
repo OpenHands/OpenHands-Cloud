@@ -22,12 +22,6 @@ from conftest import (
     assert_version_bumped,
     get_chart_value,
     get_dependency_version,
-    # Mock response helpers for get_deploy_config error path tests
-    make_http_error_response,
-    make_invalid_base64_response,
-    make_invalid_yaml_response,
-    make_json_error_response,
-    make_missing_key_response,
     # Fixture baseline constants for self-documenting assertions
     IMAGE_LOADER_CHART_APP_VERSION,
     IMAGE_LOADER_CHART_VERSION,
@@ -41,32 +35,25 @@ from conftest import (
     RUNTIME_IMAGE_TAG,
 )
 from update_openhands_charts import (
-    DeployConfig,
     bump_chart_version,
     bump_patch_version,
     cloud_tag_exists,
     extract_version_from_cloud_tag,
-    format_sha_tag,
     get_current_app_version,
-    get_deploy_config,
     get_latest_cloud_tag,
     get_runtime_image_tag_from_sandbox_spec,
-    get_short_sha,
     main,
     parse_args,
     process_updates,
     resolve_openhands_version,
-    update_automation_values,
     update_image_loader_values,
     update_image_loader_workflow,
     update_openhands_chart,
     update_openhands_values,
     update_openhands_workflow,
     update_replicated_config,
-    update_replicated_openhands_values,
     update_runtime_api_values,
     update_runtime_api_workflow,
-    update_automation_workflow,
 )
 
 
@@ -130,51 +117,6 @@ class TestExtractVersionFromCloudTag:
         safely filter cloud tags from mixed tag lists without try/except blocks.
         """
         assert extract_version_from_cloud_tag(invalid_tag) is None
-
-
-class TestGetShortSha:
-    """Tests for get_short_sha function.
-
-    Git short SHAs are conventionally 7 characters for readability while
-    maintaining uniqueness in most repositories.
-
-    TDD Rationale: Tests drive a simple slice operation. Boundary cases
-    (exactly 7 chars, shorter than 7) ensure the implementation handles
-    edge cases gracefully without raising IndexError.
-    """
-
-    @pytest.mark.parametrize("sha,expected", [
-        # Happy path: typical input longer than 7 chars
-        ("abcdefghijklmnop", "abcdefg"),
-        # Real-world: full 40-character git SHA (most common input)
-        ("6ccd42bb2975866f1abc21e635c01d2afbdd1acf", "6ccd42b"),
-        # Boundary: input exactly 7 chars (no truncation needed)
-        ("a1b2c3d", "a1b2c3d"),
-        # Boundary: input shorter than 7 chars (returns full input)
-        pytest.param("abc", "abc", id="input shorter than 7 chars"),
-    ])
-    def test_short_sha_is_first_seven_characters_of_full_sha(self, sha, expected):
-        """Verify short SHA extraction returns exactly 7 characters or full input if shorter."""
-        assert get_short_sha(sha) == expected
-
-
-class TestFormatShaTag:
-    """Tests for format_sha_tag function.
-
-    Container registries use 'sha-<hash>' tags to identify images built from
-    specific commits. Note: Truncation behavior is tested in TestGetShortSha.
-    These tests focus on the sha- prefix formatting.
-    """
-
-    @pytest.mark.parametrize("sha,expected", [
-        # Happy path: verifies "sha-" prefix is prepended
-        ("abcdefghijklmnop", "sha-abcdefg"),
-        # Real-world: actual GitHub Actions workflow SHA (ensures production compatibility)
-        ("743f6256a690efc388af6e960ad8009f5952e721", "sha-743f625"),
-    ])
-    def test_sha_tag_format_is_sha_prefix_followed_by_short_sha(self, sha, expected):
-        """Verify SHA tag format follows the 'sha-<7-char-hash>' convention used in container registries."""
-        assert format_sha_tag(sha) == expected
 
 
 class TestFindRepoRoot:
@@ -632,265 +574,6 @@ def get_agent_server_image():
         assert "AGENT_SERVER_IMAGE" in out
 
 
-class TestGetDeployConfig:
-    """Tests for get_deploy_config function.
-
-    Uses parameterized tests for comprehensive error path coverage.
-    All error scenarios should return None and print an error message.
-    """
-
-    # Valid workflow YAML for success case tests
-    VALID_WORKFLOW_YAML = """\
-env:
-  RUNTIME_API_SHA: abc123def456
-  AUTOMATION_SHA: 1234567890abcdef1234567890abcdef12345678
-  OTHER_VAR: value
-"""
-
-    def test_returns_deploy_config_instance_on_success(self, monkeypatch, make_workflow_response):
-        """Test that a valid response yields a non-None DeployConfig instance.
-
-        Type-level contract: callers rely on the returned object being a
-        DeployConfig (so they can access typed fields like runtime_api_sha).
-        Kept separate from the value-extraction test below so a failure here
-        unambiguously signals "wrong return type or None" rather than a parsing
-        regression.
-        """
-        monkeypatch.setattr(
-            "update_openhands_charts.requests.get",
-            Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
-        )
-
-        result = get_deploy_config("fake-token", "owner/repo", ref="1.0.0")
-
-        assert isinstance(result, DeployConfig)
-
-    def test_runtime_api_sha_parsed_from_workflow_env(self, monkeypatch, make_workflow_response):
-        """Test that runtime_api_sha is correctly extracted from the workflow env section.
-
-        Value-extraction contract: the RUNTIME_API_SHA key in the workflow's
-        env section must surface as DeployConfig.runtime_api_sha. A failure
-        here unambiguously signals a regression in the env-parsing logic.
-        """
-        monkeypatch.setattr(
-            "update_openhands_charts.requests.get",
-            Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
-        )
-
-        result = get_deploy_config("fake-token", "owner/repo", ref="1.0.0")
-
-        assert result.runtime_api_sha == "abc123def456"
-
-    def test_automation_sha_parsed_from_workflow_env(self, monkeypatch, make_workflow_response):
-        """Test that automation_sha is correctly extracted from the workflow env section."""
-        monkeypatch.setattr(
-            "update_openhands_charts.requests.get",
-            Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
-        )
-
-        result = get_deploy_config("fake-token", "owner/repo", ref="1.0.0")
-
-        assert result.automation_sha == "1234567890abcdef1234567890abcdef12345678"
-
-    def test_constructs_correct_url_without_ref(self, monkeypatch, make_workflow_response):
-        """Test that URL is constructed correctly without ref parameter."""
-        mock_get = Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
-        monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
-
-        get_deploy_config("fake-token", "owner/repo")
-
-        called_url = mock_get.call_args[0][0]
-        assert called_url == "https://api.github.com/repos/owner/repo/contents/.github/workflows/deploy.yaml"
-
-    def test_constructs_correct_url_with_ref(self, monkeypatch, make_workflow_response):
-        """Test that URL includes ref parameter when provided."""
-        mock_get = Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
-        monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
-
-        get_deploy_config("fake-token", "owner/repo", ref="v1.2.3")
-
-        called_url = mock_get.call_args[0][0]
-        assert "?ref=v1.2.3" in called_url
-
-    def test_includes_authorization_header(self, monkeypatch, make_workflow_response):
-        """Test that Authorization header is included with token."""
-        mock_get = Mock(return_value=make_workflow_response(self.VALID_WORKFLOW_YAML))
-        monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
-
-        get_deploy_config("my-secret-token", "owner/repo")
-
-        called_headers = mock_get.call_args[1]["headers"]
-        assert called_headers["Authorization"] == "Bearer my-secret-token"
-
-    def test_returns_empty_string_when_env_key_missing(self, monkeypatch, make_workflow_response):
-        """Test that missing env keys return empty string (not None).
-
-        Edge case: Workflow has env section but lacks expected keys.
-        This tests graceful handling via dict.get() default behavior.
-        """
-        # Workflow without expected keys - simulates incomplete workflow config
-        response = make_workflow_response("env:\n  OTHER_VAR: value\n")
-        monkeypatch.setattr(
-            "update_openhands_charts.requests.get",
-            Mock(return_value=response)
-        )
-
-        result = get_deploy_config("token", "owner/repo")
-
-        assert result is not None
-        assert result.runtime_api_sha == ""
-        assert result.automation_sha == ""
-
-    def test_returns_empty_string_when_env_section_missing(self, monkeypatch, make_workflow_response):
-        """Test that missing env section returns empty string.
-
-        Edge case: Valid workflow YAML but no env section at all.
-        This tests defensive handling when expected structure is absent.
-        """
-        # Workflow without env section - simulates minimal workflow file
-        response = make_workflow_response("name: deploy\njobs: {}\n")
-        monkeypatch.setattr(
-            "update_openhands_charts.requests.get",
-            Mock(return_value=response)
-        )
-
-        result = get_deploy_config("token", "owner/repo")
-
-        assert result is not None
-        assert result.runtime_api_sha == ""
-        assert result.automation_sha == ""
-
-    # =========================================================================
-    # Parameterized error path tests
-    #
-    # Recovery behavior: All errors return None rather than raising exceptions.
-    # This design allows the caller (main()) to gracefully skip the update when
-    # deploy config is unavailable, rather than failing the entire CI/CD run.
-    # The printed error message enables operators to diagnose issues from logs.
-    # =========================================================================
-
-    _error_scenarios = pytest.mark.parametrize("error_name,setup_mock", [
-        # =====================================================================
-        # Network-level errors (transient, typically retryable)
-        # Recovery: Caller should retry with exponential backoff or skip update
-        # =====================================================================
-        (
-            "connection_timeout",
-            lambda: Mock(side_effect=Exception("Connection timed out")),
-        ),
-        (
-            "connection_refused",
-            lambda: Mock(side_effect=Exception("Connection refused")),
-        ),
-        (
-            "dns_resolution_failed",
-            lambda: Mock(side_effect=Exception("Name resolution failed")),
-        ),
-        # =====================================================================
-        # HTTP error responses (4xx client errors vs 5xx server errors)
-        # Recovery: 4xx errors indicate config issues (check token/repo path);
-        #           5xx errors are transient (retry or wait for GitHub recovery)
-        # =====================================================================
-        (
-            "http_401_unauthorized",
-            lambda: make_http_error_response(401, "Unauthorized"),
-        ),
-        (
-            "http_403_forbidden",
-            lambda: make_http_error_response(403, "Forbidden"),
-        ),
-        (
-            "http_404_not_found",
-            lambda: make_http_error_response(404, "Not Found"),
-        ),
-        (
-            "http_500_server_error",
-            lambda: make_http_error_response(500, "Internal Server Error"),
-        ),
-        (
-            "http_502_bad_gateway",
-            lambda: make_http_error_response(502, "Bad Gateway"),
-        ),
-        (
-            "http_503_unavailable",
-            lambda: make_http_error_response(503, "Service Unavailable"),
-        ),
-        # =====================================================================
-        # Response parsing errors (data corruption or API contract violations)
-        # Recovery: These indicate unexpected API behavior; check GitHub status
-        #           or report bug if persistent. Update should be skipped.
-        # =====================================================================
-        (
-            "invalid_json_response",
-            lambda: make_json_error_response(),
-        ),
-        (
-            "missing_content_key",
-            lambda: make_missing_key_response({}),
-        ),
-        (
-            "null_content_value",
-            lambda: make_missing_key_response({"content": None}),
-        ),
-        # =====================================================================
-        # Base64 decoding errors (corrupted file content in repository)
-        # Recovery: Check the workflow file in the repository for corruption;
-        #           these errors indicate the file content itself is invalid.
-        # =====================================================================
-        (
-            "invalid_base64_content",
-            lambda: make_invalid_base64_response("not-valid-base64!!!"),
-        ),
-        (
-            "corrupted_base64_content",
-            lambda: make_invalid_base64_response("YWJj==="),  # Invalid padding
-        ),
-        # =====================================================================
-        # YAML parsing errors (malformed workflow file syntax)
-        # Recovery: Fix the workflow YAML syntax in the source repository.
-        #           These errors indicate the deploy workflow file is invalid.
-        # =====================================================================
-        (
-            "invalid_yaml_syntax",
-            lambda: make_invalid_yaml_response("{{invalid: yaml: ::"),
-        ),
-        (
-            "yaml_with_tabs",
-            lambda: make_invalid_yaml_response("env:\n\t\tinvalid_indent: true"),
-        ),
-    ])
-    @_error_scenarios
-    def test_returns_none_on_error(self, error_name, setup_mock, monkeypatch):
-        """Every error path returns None (not raising), enabling graceful degradation.
-
-        This fail-safe design lets CI/CD pipelines continue even when the deploy
-        config is temporarily unavailable.
-        """
-        mock_get = setup_mock()
-        monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
-
-        result = get_deploy_config("fake-token", "owner/repo")
-
-        assert result is None, f"Expected None for {error_name}, got {result}"
-
-    @_error_scenarios
-    def test_prints_error_on_error(self, error_name, setup_mock, monkeypatch, capsys):
-        """Every error path prints a message containing "Error fetching deploy config".
-
-        Clear diagnostic output lets operators investigate and resolve the
-        underlying issue.
-        """
-        mock_get = setup_mock()
-        monkeypatch.setattr("update_openhands_charts.requests.get", mock_get)
-
-        get_deploy_config("fake-token", "owner/repo")
-
-        captured = capsys.readouterr()
-        assert "Error fetching deploy config" in captured.out, (
-            f"Expected error message for {error_name}, got: {captured.out}"
-        )
-
-
 class TestResolveOpenhandsVersion:
     """Tests for resolve_openhands_version function.
 
@@ -944,7 +627,7 @@ class TestUpdateValues:
     - test_reports_error_*: Error handling for missing patterns
 
     TDD Rationale: Tests drive regex-based image tag replacement that must
-    handle three distinct tag locations (enterprise-server, runtime, warmRuntimes).
+    handle two distinct tag locations (enterprise-server, global agent-server).
     Error tests ensure graceful handling when expected patterns are missing,
     preventing silent failures in CI/CD pipelines.
     """
@@ -956,14 +639,13 @@ class TestUpdateValues:
 
     @pytest.mark.parametrize("expected_content", [
         pytest.param("tag: cloud-1.1.0", id="enterprise-server tag"),
-        pytest.param(f"tag: {NEW_RUNTIME_IMAGE_TAG}", id="runtime tag"),
-        pytest.param(f'image: "ghcr.io/openhands/agent-server:{NEW_RUNTIME_IMAGE_TAG}"', id="warmRuntimes tag"),
+        pytest.param(f"tag: {NEW_RUNTIME_IMAGE_TAG}", id="agent-server global tag"),
     ])
     def test_each_image_tag_is_updated(self, temp_values_file, expected_content):
-        """Test that enterprise-server, runtime, and warmRuntimes image tags are each updated.
+        """Test that the enterprise-server and global agent-server image tags are each updated.
 
-        All three tags are written by one call; each parametrize case verifies
-        one tag location in the output file.
+        Both tags are written by one call; each parametrize case verifies one tag
+        location in the output file.
         """
         update_openhands_values(
             temp_values_file,
@@ -999,8 +681,7 @@ class TestUpdateValues:
 
     @pytest.mark.parametrize("unchanged_key", [
         "enterprise-server image tag",
-        "runtime image tag",
-        "warmRuntimes image tag",
+        "agent-server image tag",
     ])
     def test_reapplying_same_values_marks_key_unchanged(self, reapplied_values_result, unchanged_key):
         """Each image-tag key is reported as unchanged when reapplied with the same value."""
@@ -1066,25 +747,23 @@ runtime-api:
 
         assert result.has_error_containing("Could not find enterprise-server image tag")
 
-    def test_reports_error_when_runtime_tag_missing(self, make_temp_yaml_file):
-        """Test that error is reported when runtime image tag pattern not found.
+    def test_reports_error_when_agent_server_tag_missing(self, make_temp_yaml_file):
+        """Test that error is reported when the global agent-server tag pattern is not found.
 
-        Edge case rationale: The runtime image runs user code in sandboxed containers.
-        Version mismatch between enterprise-server and runtime can cause compatibility
-        issues (API changes, protocol mismatches). Detecting missing runtime patterns
-        ensures both images stay synchronized during updates.
+        Edge case rationale: the agent-server image (the sandbox runtime) now lives
+        once in global.agentServerImage; runtime.image and warmRuntimes fall back to
+        it. If that block is missing, the sandbox runtime version can't be bumped, so
+        the updater must surface it rather than silently leave a stale runtime.
         """
-        # YAML without runtime image section - enterprise-server present but runtime missing
+        # enterprise-server present, but no global.agentServerImage block
         values_content = """\
 image:
   repository: ghcr.io/openhands/enterprise-server
   tag: cloud-1.0.0
 
-runtime-api:
-  warmRuntimes:
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.0.0-python"
+global:
+  security:
+    allowInsecureImages: true
 """
         temp_file = make_temp_yaml_file(values_content)
 
@@ -1094,40 +773,7 @@ runtime-api:
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
-        assert result.has_error_containing("Could not find runtime image tag")
-
-    def test_reports_error_when_warm_runtimes_tag_missing(self, make_temp_yaml_file):
-        """Test that error is reported when warmRuntimes image tag pattern not found.
-
-        Edge case rationale: warmRuntimes pre-provisions runtime containers for faster
-        cold starts. If this image isn't updated but runtime is, pre-warmed containers
-        would run stale versions until recycled. This creates inconsistent behavior
-        where some requests use new runtime and others use old pre-warmed instances.
-        """
-        # YAML with warmRuntimes disabled - pattern missing but section exists
-        values_content = """\
-image:
-  repository: ghcr.io/openhands/enterprise-server
-  tag: cloud-1.0.0
-
-runtime:
-  image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.0.0-python
-
-runtime-api:
-  warmRuntimes:
-    enabled: false
-"""
-        temp_file = make_temp_yaml_file(values_content)
-
-        result = update_openhands_values(
-            temp_file,
-            openhands_version="cloud-1.1.0",
-            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
-        )
-
-        assert result.has_error_containing("Could not find warmRuntimes image tag")
+        assert result.has_error_containing("Could not find agent-server image tag")
 
     def test_collects_multiple_errors_when_multiple_patterns_missing(self, make_temp_yaml_file):
         """Test that all missing patterns are reported as errors.
@@ -1151,88 +797,10 @@ serviceAccount:
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
-        assert result.error_count == 3
+        assert result.error_count == 2
         assert result.has_error_containing("enterprise-server")
-        assert result.has_error_containing("runtime image tag")
-        assert result.has_error_containing("warmRuntimes")
+        assert result.has_error_containing("agent-server image tag")
 
-
-
-class TestUpdateReplicatedOpenhandsValues:
-    """Tests for replicated/openhands.yaml agent-server image updates."""
-
-    @pytest.fixture
-    def temp_replicated_wrapper_file(self, make_temp_yaml_file, sample_replicated_openhands_wrapper_values):
-        """Create a temporary replicated wrapper YAML file."""
-        return make_temp_yaml_file(sample_replicated_openhands_wrapper_values)
-
-    @pytest.mark.parametrize("expected_content", [
-        pytest.param(
-            "tag: '{{repl if ConfigOptionEquals \"custom_sandbox_image_enabled\" \"1\"}}{{repl ConfigOption \"custom_sandbox_image_tag\"}}{{repl else}}1.19.1-python{{repl end}}'",
-            id="proxy runtime tag (conditional preserved)",
-        ),
-        pytest.param(
-            "{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue \"appSlug\"}}/ghcr.io/openhands/agent-server:1.19.1-python{{repl end}}'",
-            id="proxy warmRuntimes image (conditional preserved)",
-        ),
-        pytest.param(
-            "tag: '1.19.1-python'",
-            id="local registry tag",
-        ),
-        pytest.param(
-            "image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.19.1-python'",
-            id="local registry image",
-        ),
-    ])
-    def test_replicated_wrapper_file_content_updated(self, temp_replicated_wrapper_file, expected_content):
-        """Test that each agent-server tag location in the replicated wrapper file is updated."""
-        update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-
-        assert_file_contains(temp_replicated_wrapper_file, expected_content)
-
-    @pytest.mark.parametrize("change_key", [
-        "replicated runtime image tag",
-        "replicated warmRuntimes image tag",
-        "replicated local registry runtime image tag",
-        "replicated local registry warmRuntimes image tag",
-    ])
-    def test_result_records_replicated_wrapper_change(self, temp_replicated_wrapper_file, change_key):
-        """Test that each replicated wrapper tag key is recorded as changed in the result."""
-        result = update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-
-        assert result.has_change_for(change_key)
-
-    @pytest.fixture
-    def reapplied_replicated_wrapper_result(self, temp_replicated_wrapper_file):
-        """Apply identical replicated wrapper values twice and return the second-call UpdateResult."""
-        update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-        return update_replicated_openhands_values(
-            temp_replicated_wrapper_file,
-            runtime_image_tag="1.19.1-python",
-        )
-
-    def test_reapplying_same_replicated_wrapper_values_reports_no_changes(self, reapplied_replicated_wrapper_result):
-        """Reapplying identical replicated wrapper values sets has_changes=False."""
-        assert reapplied_replicated_wrapper_result.has_changes is False
-
-    @pytest.mark.parametrize("unchanged_key", [
-        "replicated runtime image tag",
-        "replicated warmRuntimes image tag",
-        "replicated local registry runtime image tag",
-        "replicated local registry warmRuntimes image tag",
-    ])
-    def test_reapplying_same_replicated_wrapper_values_marks_key_unchanged(self, reapplied_replicated_wrapper_result, unchanged_key):
-        """Each replicated wrapper tag key is reported as unchanged when reapplied."""
-        assert reapplied_replicated_wrapper_result.is_unchanged(unchanged_key)
 
 
 class TestUpdateReplicatedConfig:
@@ -1517,19 +1085,6 @@ class TestReplicatedPatternsMatchRealFile:
             return copy_path
         return _copy
 
-    def test_every_agent_server_ref_in_real_file_is_matched(self, copy_of_real_file):
-        """Running the updater against the real file reports zero unmatched patterns."""
-        result = update_replicated_openhands_values(
-            copy_of_real_file(update_openhands_charts.REPLICATED_OPENHANDS_PATH),
-            runtime_image_tag="0.0.0-canary",
-            dry_run=True,
-        )
-
-        assert result.errors == [], (
-            "A pattern stopped matching the real replicated/openhands.yaml — likely a "
-            "ref was wrapped in new templating. Loosen the affected pattern: " + "; ".join(result.errors)
-        )
-
     def test_every_sandbox_tag_ref_in_real_replicated_config_is_matched(self, copy_of_real_file):
         """Running the config updater against the real replicated/config.yaml reports zero unmatched patterns."""
         result = update_replicated_config(
@@ -1566,54 +1121,31 @@ class TestReplicatedPatternsMatchRealFile:
         """
         assert get_chart_value(update_openhands_charts.IMAGE_LOADER_CHART_PATH, "name") == "image-loader"
 
-    @pytest.mark.parametrize("path_constant,relative_parts", [
-        pytest.param(
-            "RUNTIME_API_VALUES_PATH",
-            ("charts", "openhands", "charts", "runtime-api", "values.yaml"),
-            id="runtime-api embedded values path",
-        ),
-        pytest.param(
-            "AUTOMATION_VALUES_PATH",
-            ("charts", "openhands", "charts", "automation", "values.yaml"),
-            id="automation embedded values path",
-        ),
-    ])
-    def test_embedded_subchart_values_path_resolves_to_real_file(self, path_constant, relative_parts):
-        """The subchart values path constants point at the embedded subchart locations.
+    def test_embedded_subchart_values_path_resolves_to_real_file(self):
+        """The runtime-api subchart values path constant points at the embedded location.
 
-        runtime-api and automation moved from charts/<name>/ into
-        charts/openhands/charts/<name>/; if a constant still pointed at the old
-        standalone location, the script would update a file Helm never packages.
+        runtime-api moved from charts/runtime-api/ into
+        charts/openhands/charts/runtime-api/; if the constant still pointed at the
+        old standalone location, the script would update a file Helm never packages.
         """
-        path = getattr(update_openhands_charts, path_constant)
-        assert path == update_openhands_charts.REPO_ROOT.joinpath(*relative_parts)
+        path = update_openhands_charts.RUNTIME_API_VALUES_PATH
+        assert path == update_openhands_charts.REPO_ROOT.joinpath(
+            "charts", "openhands", "charts", "runtime-api", "values.yaml"
+        )
         assert path.is_file()
 
-    def test_every_runtime_api_ref_in_real_embedded_values_is_matched(self, copy_of_real_file):
+    def test_agent_server_ref_in_real_embedded_runtime_api_values_is_matched(self, copy_of_real_file):
         """Running the runtime-api updater against the real embedded values.yaml reports zero unmatched patterns."""
         result = update_runtime_api_values(
             copy_of_real_file(update_openhands_charts.RUNTIME_API_VALUES_PATH),
-            runtime_api_sha="0000000cafef00d",
             runtime_image_tag="0.0.0-canary",
             dry_run=True,
         )
 
         assert result.errors == [], (
-            "A pattern stopped matching the real embedded runtime-api values.yaml — "
-            "likely the image block was restructured. Fix the pattern: " + "; ".join(result.errors)
-        )
-
-    def test_automation_ref_in_real_embedded_values_is_matched(self, copy_of_real_file):
-        """Running the automation updater against the real embedded values.yaml reports zero unmatched patterns."""
-        result = update_automation_values(
-            copy_of_real_file(update_openhands_charts.AUTOMATION_VALUES_PATH),
-            automation_sha="0000000cafef00d",
-            dry_run=True,
-        )
-
-        assert result.errors == [], (
-            "The automation image pattern stopped matching the real embedded "
-            "automation values.yaml. Fix the pattern: " + "; ".join(result.errors)
+            "The agent-server image pattern stopped matching the real embedded "
+            "runtime-api values.yaml — likely global.agentServerImage was "
+            "restructured. Fix the pattern: " + "; ".join(result.errors)
         )
 
 
@@ -1775,8 +1307,7 @@ class TestDryRun:
 
         # Assert: changes are tracked even though file wasn't modified
         assert result.has_change_for("enterprise-server image tag")
-        assert result.has_change_for("runtime image tag")
-        assert result.has_change_for("warmRuntimes image tag")
+        assert result.has_change_for("agent-server image tag")
 
     def test_update_chart_without_dry_run_modifies_file(self, temp_chart_file):
         """Test that without dry-run, Chart.yaml is modified."""
@@ -1807,33 +1338,25 @@ class TestDryRun:
 
 
 class TestUpdateRuntimeApiValues:
-    """Tests for update_runtime_api_values function."""
+    """Tests for update_runtime_api_values function.
+
+    The runtime-api image is pinned to a manually-released semver tag, so the
+    updater only bumps the global agent-server image tag from the sandbox spec.
+    """
 
     @pytest.fixture
     def temp_runtime_api_values_file(self, make_temp_yaml_file, sample_runtime_api_values):
         """Create a temporary runtime-api values.yaml file using shared fixtures."""
         return make_temp_yaml_file(sample_runtime_api_values)
 
-    def test_update_image_tag(self, temp_runtime_api_values_file):
-        """Test that runtime-api image tag is updated correctly."""
+    def test_update_agent_server_image_uses_runtime_image_tag(self, temp_runtime_api_values_file):
+        """Test that the global agent-server image tag uses the value from the sandbox spec."""
         update_runtime_api_values(
             temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
-        assert_file_contains(temp_runtime_api_values_file, "tag: sha-abc1234")
-
-    def test_update_warm_runtimes_image_uses_runtime_image_tag(self, temp_runtime_api_values_file):
-        """Test that warmRuntimes image tag uses value from deploy config."""
-        update_runtime_api_values(
-            temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
-            runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
-        )
-
-        # Should use runtime_image_tag from deploy config
-        assert_file_contains(temp_runtime_api_values_file, f'image: "ghcr.io/openhands/agent-server:{NEW_RUNTIME_IMAGE_TAG}"')
+        assert_file_contains(temp_runtime_api_values_file, f"tag: {NEW_RUNTIME_IMAGE_TAG}")
 
     @pytest.fixture
     def reapplied_runtime_api_values_result(self, temp_runtime_api_values_file):
@@ -1844,12 +1367,10 @@ class TestUpdateRuntimeApiValues:
         """
         update_runtime_api_values(
             temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
         return update_runtime_api_values(
             temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
@@ -1857,19 +1378,14 @@ class TestUpdateRuntimeApiValues:
         """Reapplying identical runtime-api values sets has_changes=False."""
         assert reapplied_runtime_api_values_result.has_changes is False
 
-    @pytest.mark.parametrize("unchanged_key", [
-        "runtime-api image tag",
-        "runtime-api warmRuntimes image tag",
-    ])
-    def test_reapplying_same_runtime_api_values_marks_key_unchanged(self, reapplied_runtime_api_values_result, unchanged_key):
-        """Each runtime-api image-tag key is reported as unchanged when reapplied."""
-        assert reapplied_runtime_api_values_result.is_unchanged(unchanged_key)
+    def test_reapplying_same_runtime_api_values_marks_key_unchanged(self, reapplied_runtime_api_values_result):
+        """The agent-server image-tag key is reported as unchanged when reapplied."""
+        assert reapplied_runtime_api_values_result.is_unchanged("runtime-api agent-server image tag")
 
     def test_preserves_other_content(self, temp_runtime_api_values_file):
         """Test that other content is preserved."""
         update_runtime_api_values(
             temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
@@ -1884,7 +1400,6 @@ class TestUpdateRuntimeApiValues:
 
         update_runtime_api_values(
             temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
             dry_run=True,
         )
@@ -1895,117 +1410,10 @@ class TestUpdateRuntimeApiValues:
         """Test that function returns True when changes are made."""
         result = update_runtime_api_values(
             temp_runtime_api_values_file,
-            runtime_api_sha="abc1234567890def",
             runtime_image_tag=NEW_RUNTIME_IMAGE_TAG,
         )
 
         assert result.has_changes is True
-
-
-class TestUpdateAutomationValues:
-    """Tests for update_automation_values function."""
-
-    @pytest.fixture
-    def temp_automation_values_file(self, make_temp_yaml_file, sample_automation_values):
-        """Create a temporary automation values.yaml file."""
-        return make_temp_yaml_file(sample_automation_values)
-
-    def test_updates_automation_image_tag(self, temp_automation_values_file):
-        """Test that automation image tag is written from the deploy-config SHA."""
-        sha = "1234567890abcdef1234567890abcdef12345678"
-
-        update_automation_values(temp_automation_values_file, automation_sha=sha)
-
-        assert_file_contains(temp_automation_values_file, "tag: sha-1234567\n")
-
-    def test_reports_has_changes_when_automation_tag_updated(self, temp_automation_values_file):
-        """Test that updating the automation tag reports has_changes is True."""
-        sha = "1234567890abcdef1234567890abcdef12345678"
-
-        result = update_automation_values(temp_automation_values_file, automation_sha=sha)
-
-        assert result.has_changes is True
-
-    def test_bare_short_automation_sha_matches_prefixed_chart_tag(self, temp_automation_values_file):
-        """Test that a short bare automation SHA still follows the sha-<short> tag convention."""
-        result = update_automation_values(temp_automation_values_file, automation_sha="c58faa1")
-
-        assert_file_contains(temp_automation_values_file, "tag: sha-c58faa1\n")
-        assert result.has_changes is False
-        assert result.is_unchanged("automation image tag")
-
-    def test_idempotent_when_reapplying_same_values(self, temp_automation_values_file):
-        """Test that reapplying the same automation tag reports no changes."""
-        result = update_automation_values(
-            temp_automation_values_file,
-            automation_sha="c58faa1000000000000000000000000000000000",
-        )
-
-        assert result.has_changes is False
-        assert result.is_unchanged("automation image tag")
-
-    def test_preserves_other_content(self, temp_automation_values_file):
-        """Test that other content is preserved."""
-        update_automation_values(
-            temp_automation_values_file,
-            automation_sha="1234567890abcdef1234567890abcdef12345678",
-        )
-
-        assert_file_contains_all(temp_automation_values_file, [
-            "repository: ghcr.io/openhands/automation",
-            "replicas: 1",
-            "memory: 256Mi",
-        ])
-
-    def test_dry_run_no_file_changes(self, temp_automation_values_file):
-        """Test that dry-run doesn't modify the file."""
-        original_content = temp_automation_values_file.read_text()
-
-        update_automation_values(
-            temp_automation_values_file,
-            automation_sha="1234567890abcdef1234567890abcdef12345678",
-            dry_run=True,
-        )
-
-        assert temp_automation_values_file.read_text() == original_content
-
-    def test_missing_automation_sha_reports_error_without_file_changes(self, temp_automation_values_file):
-        """Test that missing deploy config input does not corrupt the image tag."""
-        original_content = temp_automation_values_file.read_text()
-
-        result = update_automation_values(temp_automation_values_file, automation_sha="")
-
-        assert temp_automation_values_file.read_text() == original_content
-        assert result.has_changes is False
-        assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
-
-    def test_missing_automation_sha_returns_before_reading_values_file(self, tmp_path):
-        """Test that missing deploy config input does not require values.yaml to exist."""
-        result = update_automation_values(tmp_path / "missing-values.yaml", automation_sha="")
-
-        assert result.has_changes is False
-        assert result.has_error_containing("AUTOMATION_SHA missing from deploy config")
-
-    def test_direct_version_tag_is_not_treated_as_managed_automation_tag(self, make_temp_yaml_file):
-        """Test that automation only updates tags following the sha-<short> convention."""
-        values_file = make_temp_yaml_file("""\
-image:
-  repository: ghcr.io/openhands/automation
-  tag: 1.20.0
-
-deployment:
-  replicas: 1
-""")
-        original_content = values_file.read_text()
-
-        result = update_automation_values(
-            values_file,
-            automation_sha="1234567890abcdef1234567890abcdef12345678",
-        )
-
-        assert values_file.read_text() == original_content
-        assert result.has_changes is False
-        assert result.has_error_containing("Could not find automation image tag in values.yaml")
 
 
 class TestBumpChartVersion:
@@ -2102,67 +1510,25 @@ class TestProcessUpdates:
     """
 
     def test_returns_early_when_version_resolution_fails(self, monkeypatch, stub_process_updates_chain):
-        """When resolve_openhands_version returns None, no deploy config fetch is attempted."""
+        """When resolve_openhands_version returns None, no file updates are attempted."""
         stub_process_updates_chain(openhands_version=None)
-        mock_get_deploy_config = MagicMock()
-        monkeypatch.setattr("update_openhands_charts.get_deploy_config", mock_get_deploy_config)
+        mock_update_runtime_api = MagicMock()
+        monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", mock_update_runtime_api)
 
         process_updates("token")
 
-        mock_get_deploy_config.assert_not_called()
+        mock_update_runtime_api.assert_not_called()
 
     def test_returns_early_when_runtime_image_tag_unavailable(self, monkeypatch, stub_process_updates_chain, capsys):
-        """When runtime image tag fetch fails, no deploy config fetch is attempted."""
+        """When the agent-server tag fetch fails, no file updates are attempted."""
         stub_process_updates_chain(runtime_image_tag=None)
-        mock_get_deploy_config = MagicMock()
-        monkeypatch.setattr("update_openhands_charts.get_deploy_config", mock_get_deploy_config)
-
-        process_updates("token")
-
-        mock_get_deploy_config.assert_not_called()
-        assert "Could not fetch runtime image tag" in capsys.readouterr().out
-
-    def test_returns_early_when_deploy_config_unavailable(self, monkeypatch, stub_process_updates_chain, capsys):
-        """When deploy config fetch fails, no file updates are attempted."""
-        stub_process_updates_chain()
-        monkeypatch.setattr(
-            "update_openhands_charts.get_deploy_config",
-            lambda token, repo, ref: None,
-        )
         mock_update_runtime_api = MagicMock()
-        monkeypatch.setattr(
-            "update_openhands_charts.update_runtime_api_workflow",
-            mock_update_runtime_api,
-        )
-
-        process_updates("token")
-
-        mock_update_runtime_api.assert_not_called()
-        assert "Could not fetch deploy config" in capsys.readouterr().out
-
-    def test_returns_early_when_automation_sha_missing(self, monkeypatch, stub_process_updates_chain, capsys):
-        """When AUTOMATION_SHA is missing, no partial chart updates are attempted."""
-        stub_process_updates_chain()
-        monkeypatch.setattr(
-            "update_openhands_charts.get_deploy_config",
-            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha=""),
-        )
-        mock_update_runtime_api = MagicMock()
-        mock_update_automation = MagicMock()
-        mock_update_image_loader = MagicMock()
-        mock_update_openhands = MagicMock()
         monkeypatch.setattr("update_openhands_charts.update_runtime_api_workflow", mock_update_runtime_api)
-        monkeypatch.setattr("update_openhands_charts.update_automation_workflow", mock_update_automation)
-        monkeypatch.setattr("update_openhands_charts.update_image_loader_workflow", mock_update_image_loader)
-        monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", mock_update_openhands)
 
         process_updates("token")
 
         mock_update_runtime_api.assert_not_called()
-        mock_update_automation.assert_not_called()
-        mock_update_image_loader.assert_not_called()
-        mock_update_openhands.assert_not_called()
-        assert "AUTOMATION_SHA missing from deploy config" in capsys.readouterr().out
+        assert "Could not fetch runtime image tag" in capsys.readouterr().out
 
     def test_invokes_image_loader_workflow_with_runtime_image_tag(self, monkeypatch, stub_process_updates_chain):
         """When all upstream data is available, the image-loader workflow runs with the sandbox tag.
@@ -2172,15 +1538,7 @@ class TestProcessUpdates:
         """
         stub_process_updates_chain()
         monkeypatch.setattr(
-            "update_openhands_charts.get_deploy_config",
-            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha="auto-sha"),
-        )
-        monkeypatch.setattr(
             "update_openhands_charts.update_runtime_api_workflow",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_automation_workflow",
             MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=True)),
         )
         monkeypatch.setattr("update_openhands_charts.update_openhands_workflow", MagicMock())
@@ -2191,33 +1549,23 @@ class TestProcessUpdates:
 
         mock_update_image_loader.assert_called_once_with("1.20.0-python", True)
 
-    @pytest.mark.parametrize("runtime_api_changed,automation_changed,expected", [
-        pytest.param(False, False, False, id="no subchart values changed"),
-        pytest.param(True, False, True, id="runtime-api values changed"),
-        pytest.param(False, True, True, id="automation values changed"),
-        pytest.param(True, True, True, id="both subchart values changed"),
+    @pytest.mark.parametrize("runtime_api_changed", [
+        pytest.param(False, id="no subchart values changed"),
+        pytest.param(True, id="runtime-api values changed"),
     ])
     def test_subchart_values_changes_feed_openhands_workflow(
-        self, monkeypatch, stub_process_updates_chain, runtime_api_changed, automation_changed, expected
+        self, monkeypatch, stub_process_updates_chain, runtime_api_changed
     ):
-        """Embedded subchart values results are ORed into subchart_values_changed.
+        """The runtime-api values result feeds subchart_values_changed.
 
-        runtime-api and automation values ship inside the openhands chart, so a
-        change to either alone must reach update_openhands_workflow as
-        subchart_values_changed=True to trigger an openhands version bump.
+        runtime-api values ship inside the openhands chart, so a change there must
+        reach update_openhands_workflow as subchart_values_changed=True to trigger
+        an openhands version bump.
         """
         stub_process_updates_chain()
         monkeypatch.setattr(
-            "update_openhands_charts.get_deploy_config",
-            lambda token, repo, ref: DeployConfig(runtime_api_sha="runtime-sha", automation_sha="auto-sha"),
-        )
-        monkeypatch.setattr(
             "update_openhands_charts.update_runtime_api_workflow",
             MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=runtime_api_changed)),
-        )
-        monkeypatch.setattr(
-            "update_openhands_charts.update_automation_workflow",
-            MagicMock(return_value=update_openhands_charts.UpdateResult(has_changes=automation_changed)),
         )
         monkeypatch.setattr("update_openhands_charts.update_image_loader_workflow", MagicMock())
         mock_update_openhands = MagicMock()
@@ -2225,7 +1573,7 @@ class TestProcessUpdates:
 
         process_updates("token", dry_run=True)
 
-        assert mock_update_openhands.call_args.kwargs["subchart_values_changed"] is expected
+        assert mock_update_openhands.call_args.kwargs["subchart_values_changed"] is runtime_api_changed
 
 
 class TestUpdateRuntimeApiWorkflow:
@@ -2248,84 +1596,28 @@ class TestUpdateRuntimeApiWorkflow:
         values_result = update_openhands_charts.UpdateResult(has_changes=True)
         patched_values_call.return_value = values_result
 
-        result = update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=False)
+        result = update_runtime_api_workflow("tag", dry_run=False)
 
         assert result is values_result
 
     def test_values_call_targets_embedded_subchart_values_path(self, patched_values_call):
         """The workflow points the values updater at the embedded subchart's values.yaml."""
-        update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=False)
+        update_runtime_api_workflow("tag", dry_run=False)
 
         assert patched_values_call.call_args.args[0] == update_openhands_charts.RUNTIME_API_VALUES_PATH
 
-    def test_values_call_receives_runtime_api_sha_from_deploy_config(self, patched_values_call):
-        """The runtime_api_sha is extracted from deploy_config and passed positionally to values."""
-        update_runtime_api_workflow(DeployConfig(runtime_api_sha="cafef00d"), "tag", dry_run=False)
-
-        # update_runtime_api_values(path, sha, image_tag, dry_run=...) — sha is the 2nd positional arg
-        assert patched_values_call.call_args.args[1] == "cafef00d"
-
     def test_values_call_receives_runtime_image_tag(self, patched_values_call):
-        """The runtime_image_tag is passed through to values as the 3rd positional argument."""
-        update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "image-tag-v9", dry_run=False)
+        """The runtime_image_tag is passed through to values as the 2nd positional argument."""
+        update_runtime_api_workflow("image-tag-v9", dry_run=False)
 
-        assert patched_values_call.call_args.args[2] == "image-tag-v9"
+        assert patched_values_call.call_args.args[1] == "image-tag-v9"
 
     @pytest.mark.parametrize("dry_run", [True, False])
     def test_dry_run_is_propagated_to_values_call(self, patched_values_call, dry_run):
         """The dry_run flag is forwarded to update_runtime_api_values."""
-        update_runtime_api_workflow(DeployConfig(runtime_api_sha="abc"), "tag", dry_run=dry_run)
+        update_runtime_api_workflow("tag", dry_run=dry_run)
 
         assert patched_values_call.call_args.kwargs["dry_run"] is dry_run
-
-
-class TestUpdateAutomationWorkflow:
-    """Tests for update_automation_workflow orchestration.
-
-    automation is an embedded subchart of openhands: no chart version bump
-    happens here — the workflow updates values.yaml and returns the values
-    UpdateResult for process_updates to feed into the openhands chart bump.
-    """
-
-    def test_updates_values_and_returns_values_result(
-        self,
-        monkeypatch,
-        make_temp_yaml_file,
-        sample_automation_values,
-    ):
-        """The automation values file is updated and the values result is returned."""
-        values_path = make_temp_yaml_file(sample_automation_values)
-        monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
-
-        result = update_automation_workflow(
-            DeployConfig(
-                runtime_api_sha="unused",
-                automation_sha="1234567890abcdef1234567890abcdef12345678",
-            ),
-            dry_run=False,
-        )
-
-        assert_file_contains(values_path, "tag: sha-1234567\n")
-        assert result.has_changes is True
-        assert result.has_change_for("automation image tag")
-
-    def test_unchanged_values_return_no_changes(
-        self,
-        monkeypatch,
-        make_temp_yaml_file,
-        sample_automation_values,
-    ):
-        """Reapplying the tag already in the values file reports no changes upward."""
-        values_path = make_temp_yaml_file(sample_automation_values)
-        monkeypatch.setattr("update_openhands_charts.AUTOMATION_VALUES_PATH", values_path)
-
-        result = update_automation_workflow(
-            DeployConfig(runtime_api_sha="unused", automation_sha="c58faa1"),
-            dry_run=False,
-        )
-
-        assert result.has_changes is False
-        assert result.is_unchanged("automation image tag")
 
 
 class TestUpdateImageLoaderWorkflow:
@@ -2420,23 +1712,22 @@ class TestUpdateOpenhandsWorkflow:
 
     @pytest.fixture
     def make_patched_inner_calls(self, monkeypatch):
-        """Factory mocking all four inner update functions.
+        """Factory mocking all three inner update functions.
 
         Accepts values_changed to control the openhands values result. Returns
         the values/chart mocks asserted by this workflow-contract test class.
-        The replicated mocks are intentionally not returned here; they are
-        patched only to prevent writes to the real replicated files and have
-        dedicated assertions in the focused replicated workflow test classes.
+        The replicated_config mock is intentionally not returned here; it is
+        patched only to prevent writes to the real replicated/config.yaml and
+        has dedicated assertions in the focused replicated-config workflow test
+        class.
         """
         def _patch(values_changed: bool = True):
             mock_values = MagicMock(
                 return_value=update_openhands_charts.UpdateResult(has_changes=values_changed)
             )
-            mock_replicated = MagicMock(return_value=update_openhands_charts.UpdateResult())
             mock_replicated_config = MagicMock(return_value=update_openhands_charts.UpdateResult())
             mock_chart = MagicMock(return_value=update_openhands_charts.UpdateResult())
             monkeypatch.setattr("update_openhands_charts.update_openhands_values", mock_values)
-            monkeypatch.setattr("update_openhands_charts.update_replicated_openhands_values", mock_replicated)
             monkeypatch.setattr("update_openhands_charts.update_replicated_config", mock_replicated_config)
             monkeypatch.setattr("update_openhands_charts.update_openhands_chart", mock_chart)
             return mock_values, mock_chart
@@ -2559,17 +1850,14 @@ class TestSubchartChangeBumpsOpenhandsChartEndToEnd:
         make_temp_yaml_file,
         sample_openhands_chart_minimal,
         sample_openhands_values_minimal,
-        sample_replicated_openhands_wrapper_values,
         sample_replicated_config,
     ):
         """Point the workflow at temp copies of every file it touches."""
         chart_path = make_temp_yaml_file(sample_openhands_chart_minimal)
         values_path = make_temp_yaml_file(sample_openhands_values_minimal)
-        replicated_path = make_temp_yaml_file(sample_replicated_openhands_wrapper_values)
         replicated_config_path = make_temp_yaml_file(sample_replicated_config)
         monkeypatch.setattr("update_openhands_charts.CHART_PATH", chart_path)
         monkeypatch.setattr("update_openhands_charts.VALUES_PATH", values_path)
-        monkeypatch.setattr("update_openhands_charts.REPLICATED_OPENHANDS_PATH", replicated_path)
         monkeypatch.setattr("update_openhands_charts.REPLICATED_CONFIG_PATH", replicated_config_path)
         return chart_path, values_path
 
@@ -2601,46 +1889,6 @@ class TestSubchartChangeBumpsOpenhandsChartEndToEnd:
         )
 
         assert get_chart_value(chart_path, "version") == OPENHANDS_CHART_VERSION
-
-
-class TestUpdateOpenhandsWorkflowReplicated:
-    """Tests that update_openhands_workflow also updates replicated/openhands.yaml.
-
-    The replicated KOTS wrapper embeds its own copy of the agent-server image tag
-    (proxy + LocalRegistry variants) that the chart-values updater cannot reach.
-    The workflow must update that file too, or Replicated installs ship a stale tag.
-    """
-
-    def test_replicated_updater_invoked_with_replicated_openhands_path(self, openhands_workflow_mocks):
-        """The workflow points the replicated updater at replicated/openhands.yaml."""
-        update_openhands_workflow(
-            openhands_version="cloud-1.0.0",
-            runtime_image_tag="tag",
-            dry_run=False,
-        )
-
-        assert openhands_workflow_mocks.replicated.call_args.args[0] == update_openhands_charts.REPLICATED_OPENHANDS_PATH
-
-    def test_replicated_updater_receives_runtime_image_tag(self, openhands_workflow_mocks):
-        """runtime_image_tag is forwarded to the replicated updater."""
-        update_openhands_workflow(
-            openhands_version="cloud-1.0.0",
-            runtime_image_tag="9.9.9-python",
-            dry_run=False,
-        )
-
-        assert openhands_workflow_mocks.replicated.call_args.args[1] == "9.9.9-python"
-
-    @pytest.mark.parametrize("dry_run", [True, False])
-    def test_replicated_updater_receives_dry_run(self, openhands_workflow_mocks, dry_run):
-        """The dry_run flag is forwarded to the replicated updater."""
-        update_openhands_workflow(
-            openhands_version="cloud-1.0.0",
-            runtime_image_tag="tag",
-            dry_run=dry_run,
-        )
-
-        assert openhands_workflow_mocks.replicated.call_args.kwargs["dry_run"] is dry_run
 
 
 class TestUpdateOpenhandsWorkflowReplicatedConfig:

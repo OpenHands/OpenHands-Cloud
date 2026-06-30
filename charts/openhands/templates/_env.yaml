@@ -75,9 +75,9 @@
 - name: NO_SETUP
   value: 'true'
 - name: AGENT_SERVER_IMAGE_REPOSITORY
-  value: "{{ .Values.runtime.image.repository }}"
+  value: "{{ .Values.runtime.image.repository | default .Values.global.agentServerImage.repository }}"
 - name: AGENT_SERVER_IMAGE_TAG
-  value: "{{ .Values.runtime.image.tag }}"
+  value: "{{ .Values.runtime.image.tag | default .Values.global.agentServerImage.tag }}"
 - name: SANDBOX_REMOTE_RUNTIME_API_URL
   value: {{ .Values.sandbox.apiHostname }}
 - name: SANDBOX_API_KEY

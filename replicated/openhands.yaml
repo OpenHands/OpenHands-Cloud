@@ -14,10 +14,16 @@ spec:
       imageRegistry: 'images.r9.all-hands.dev'
       imagePullSecrets:
         - '{{repl ImagePullSecretName }}'
+      # Canonical agent-server image. runtime.image and every warmRuntimes
+      # configsByName entry fall back to this, so the proxy / custom-sandbox /
+      # local-registry variants only override the repository (and tag, for the
+      # admin-supplied custom image). The default tag is pinned in the chart's
+      # global.agentServerImage.
+      agentServerImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
-      tag: 'sha-be6f446'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
@@ -28,7 +34,7 @@ spec:
       # Falls back to claude-sonnet-4-5-20250929 — today's hardcoded default
       # and the textarea's prefilled first line — if the textarea resolves
       # empty (e.g. while another provider is selected).
-      LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "claude-sonnet-4-5-20250929" }}'
+      LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "claude-sonnet-4-5-20250929" }}'
       REQUIRE_PAYMENT: 0
       ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: false
@@ -83,15 +89,6 @@ spec:
     tls:
       enabled: true
       env: '{{repl Namespace }}'
-
-    runtime:
-      image:
-        # Defaults to the Replicated-proxied agent-server image. When
-        # custom_sandbox_image_enabled=1, an admin-supplied repository/tag
-        # takes over — both for new sandboxes (via AGENT_SERVER_IMAGE_*
-        # env on the openhands server) and for the warm pool below.
-        repository: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server{{repl end}}'
-        tag: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}1.28.0-python{{repl end}}'
 
     keycloak:
       enabled: true
@@ -184,7 +181,6 @@ spec:
         - --use_v2_migration_resolver
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/berriai/litellm-database'
-        tag: "1.84.1"  # bare semver, no "v" prefix or "-stable" suffix (format used by BerriAI for 1.84.x+ stable images)
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       environmentSecrets:
@@ -259,7 +255,7 @@ spec:
         # If the textarea resolves empty (e.g. while another provider is
         # selected — this base block renders unconditionally), fall back to
         # those same two routes so the proxy always has a non-empty list.
-        model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "anthropic/%s" $m) "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (dict "model" "anthropic/claude-sonnet-4-5-20250929" "api_key" "os.environ/ANTHROPIC_API_KEY")) (dict "model_name" "claude-opus-4-7" "litellm_params" (dict "model" "anthropic/claude-opus-4-7" "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ $models | mustToJson }}
+        model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "anthropic/%s" $m) "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (dict "model" "anthropic/claude-sonnet-4-5-20250929" "api_key" "os.environ/ANTHROPIC_API_KEY")) (dict "model_name" "claude-opus-4-7" "litellm_params" (dict "model" "anthropic/claude-opus-4-7" "api_key" "os.environ/ANTHROPIC_API_KEY")) }}repl{{ end }}repl{{ $models | mustToJson }}
 
     runtime-api:
       enabled: true
@@ -268,7 +264,7 @@ spec:
         enabled: false
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
-        tag: 'sha-8919a43'
+        # Do not override the image tag here. Pin to a stable version in the chart.
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       ingress:
@@ -321,18 +317,20 @@ spec:
       kvm:
         enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
         resourceName: smarter-devices/kvm
-        image:
+        image: 
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/smarter-project/smarter-device-manager'
-          tag: v1.20.11
+          # Do not override the image tag here. Pin to a stable version in the chart.
         initImage:
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
-          tag: "1.36"
+          # Do not override the image tag here. Pin to a stable version in the chart.
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
-        configs:
-          - name: default
-            image: '{{repl if ConfigOptionEquals "custom_sandbox_image_enabled" "1"}}{{repl ConfigOption "custom_sandbox_image_repository"}}:{{repl ConfigOption "custom_sandbox_image_tag"}}{{repl else}}images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server:1.28.0-python{{repl end}}'
+        configsByName:
+          default:
+            # image omitted -> inherits global.agentServerImage. Proxy by
+            # default; when custom_sandbox_image_enabled / HasLocalRegistry are
+            # active, the optionalValues blocks below override the global instead.
             working_dir: "/workspace"
             environment:
               LOG_JSON: "1"
@@ -469,8 +467,32 @@ spec:
             password: '{{repl ConfigOption "postgres_password" | Base64Encode }}'
             postgresPassword: '{{repl ConfigOption "postgres_password" | Base64Encode }}'
             database: '{{repl ConfigOption "postgres_database"}}'
-          persistence:
-            enabled: true
+          # Persistence MUST be nested under primary — the Bitnami chart ignores a
+          # top-level postgresql.persistence, which is why embedded postgres ran on
+          # an emptyDir (data lost on any pod reschedule).
+          primary:
+            persistence:
+              enabled: true
+              storageClass: openebs-hostpath
+              size: 50Gi
+        # One-time migration of existing emptyDir data onto the PVC above. Renders
+        # pre-upgrade hooks that seed a PVC from the live database, then delete the
+        # old emptyDir StatefulSet so Helm recreates it PVC-backed (adopting the
+        # seeded PVC) within the same deploy. A guard makes it a no-op once
+        # migrated, so it is safe to leave enabled across future upgrades.
+        postgresMigration:
+          enabled: true
+          storageClass: openebs-hostpath
+          size: 50Gi
+          imagePullSecrets:
+            - name: '{{repl ImagePullSecretName }}'
+          images:
+            kubectl:
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
+              tag: "1.30.0"
+            postgresql:
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql'
+              tag: "16.4.0-debian-12-r14"
     - when: '{{repl ConfigOptionEquals "postgres_type" "external_postgres" }}'
       recursiveMerge: true
       values:
@@ -594,51 +616,24 @@ spec:
           postgresql:
             image:
               repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql'
+    - when: '{{repl ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        global:
+          agentServerImage:
+            repository: 'repl{{ ConfigOption "custom_sandbox_image_repository" }}'
+            tag: 'repl{{ ConfigOption "custom_sandbox_image_tag" }}'
     - when: '{{repl HasLocalRegistry }}'
       recursiveMerge: true
       values:
         global:
           imageRegistry: '{{repl LocalRegistryHost }}'
+          # agent-server comes from the local registry; runtime.image and the
+          # warmRuntimes default entry both inherit this. Tag pinned in the chart.
+          agentServerImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
         image:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
-        runtime:
-          image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
-            tag: '1.28.0-python'
-          warmRuntimes:
-            configs:
-              - name: default
-                image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server:1.28.0-python'
-                working_dir: "/workspace"
-                environment:
-                  LOG_JSON: "1"
-                  LOG_JSON_LEVEL_KEY: "severity"
-                  OH_ALLOW_CORS_ORIGINS_0: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
-                  OH_BASH_EVENTS_DIR: "/workspace/bash_events"
-                  OH_CONVERSATIONS_PATH: "/workspace/conversations"
-                  OH_ENABLE_VNC: "0"
-                  OH_VSCODE_PORT: "60001"
-                  OH_WEBHOOKS_0_BASE_URL: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}/api/v1/webhooks'
-                  OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
-                  VSCODE_PORT: "60001"
-                  WORKER_1: "12000"
-                  WORKER_2: "12001"
-                  CURL_CA_BUNDLE: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  GIT_SSL_CAINFO: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  NODE_EXTRA_CA_CERTS: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  REQUESTS_CA_BUNDLE: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  SSL_CERT_FILE: "/etc/openhands/ca-bundle/ca-bundle.crt"
-                  LMNR_BASE_URL: *lmnr_base_url
-                  LMNR_FORCE_HTTP: *lmnr_force_http
-                  LMNR_HTTP_PORT: *lmnr_http_port
-                  LMNR_PROJECT_API_KEY: *lmnr_project_api_key
-                command:
-                  - /usr/local/bin/openhands-agent-server
-                  - "--port"
-                  - "60000"
-                run_as_user: 10001
-                run_as_group: 10001
-                fs_group: 10001
         keycloak:
           image:
             repository: '{{repl LocalRegistryNamespace }}/keycloak'
@@ -732,7 +727,7 @@ spec:
           # azure-<first line of "Azure OpenAI Deployments">. Upgrades seed the
           # textarea's first line from the legacy azure_deployment_name value,
           # so this stays byte-identical to today's azure-<deployment> default.
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"AZURE_API_KEY\": \"%s\", \"AZURE_API_BASE\": \"%s\", \"AZURE_API_VERSION\": \"%s\"}" (ConfigOption "azure_api_key") (ConfigOption "azure_endpoint") (ConfigOption "azure_api_version") }}'
         litellm-helm:
           proxy_config:
@@ -744,19 +739,19 @@ spec:
             # keep resolving without aliases (an admin who later removes that
             # line orphans settings still referencing it — accepted, the app
             # shows an unavailable badge).
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $name := printf "azure-%s" $m }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" (printf "azure/%s" $m) "api_key" "os.environ/AZURE_API_KEY" "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $name := printf "azure-%s" $m }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" (printf "azure/%s" $m) "api_key" "os.environ/AZURE_API_KEY" "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
     - when: '{{repl and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
       recursiveMerge: true
       values:
         env:
           # Same first-line rule as the api_key block above.
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
         litellm-helm:
           proxy_config:
             # Same structure as the api_key block above: one azure-<name>
             # entry per line of "Azure OpenAI Deployments", all using
             # service-principal litellm_params.
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $name := printf "azure-%s" $m }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" (printf "azure/%s" $m) "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION" "tenant_id" "os.environ/AZURE_TENANT_ID" "client_id" "os.environ/AZURE_CLIENT_ID" "client_secret" "os.environ/AZURE_CLIENT_SECRET")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $name := printf "azure-%s" $m }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" (printf "azure/%s" $m) "api_base" "os.environ/AZURE_API_BASE" "api_version" "os.environ/AZURE_API_VERSION" "tenant_id" "os.environ/AZURE_TENANT_ID" "client_id" "os.environ/AZURE_CLIENT_ID" "client_secret" "os.environ/AZURE_CLIENT_SECRET")) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ $models | mustToJson }}
 
     # Custom / Local LLM — pass the configured model through as a full LiteLLM
     # model string. OpenAI-compatible custom endpoints should be configured as
@@ -774,7 +769,7 @@ spec:
           # custom_model value), and the old custom-llm route name is still
           # served via the hidden alias in the model_list below, so existing
           # user/org settings keep working.
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = splitList "/" $m | last }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = splitList "/" $m | last }}repl{{ end }}repl{{ end }}repl{{ $first }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"CUSTOM_API_KEY\": \"%s\", \"CUSTOM_API_BASE\": \"%s\", \"SSL_CERT_FILE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"REQUESTS_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"GIT_SSL_CAINFO\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"CURL_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"NODE_EXTRA_CA_CERTS\": \"/etc/openhands/ca-bundle/ca-bundle.crt\"}" (ConfigOption "custom_api_key") (ConfigOption "custom_base_url") }}'
         litellm-helm:
           proxy_config:
@@ -792,7 +787,7 @@ spec:
             # canonical name), so user/org settings from before the textarea
             # existed keep resolving. The alias is skipped only if a line
             # already produces a route literally named custom-llm.
-            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $model := $m }}repl{{ if not (contains "/" $m) }}repl{{ $model = printf "openai/%s" $m }}repl{{ end }}repl{{ $name := splitList "/" $m | last }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "custom-llm")) }}repl{{ $models = append $models (dict "model_name" "custom-llm" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $headers := dict }}repl{{ if ConfigOptionEquals "custom_llm_extra_headers_enabled" "1" }}repl{{ $headers = ConfigOption "custom_llm_extra_headers" | trim | default "{}" | mustFromJson }}repl{{ end }}repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if $m }}repl{{ $model := $m }}repl{{ if not (contains "/" $m) }}repl{{ $model = printf "openai/%s" $m }}repl{{ end }}repl{{ $name := splitList "/" $m | last }}repl{{ if not (hasKey $seen $name) }}repl{{ $seen = set $seen $name true }}repl{{ $models = append $models (dict "model_name" $name "litellm_params" (dict "model" $model "api_key" "os.environ/CUSTOM_API_KEY" "api_base" "os.environ/CUSTOM_API_BASE" "extra_headers" $headers)) }}repl{{ end }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "custom-llm")) }}repl{{ $models = append $models (dict "model_name" "custom-llm" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
 
     - when: '{{repl ConfigOptionEquals "google_api_type" "vertex" }}'
       recursiveMerge: true
@@ -801,7 +796,7 @@ spec:
           # First non-empty line of the "Vertex AI Models" KOTS textarea,
           # falling back to gemini-2.5-flash — today's hardcoded default and
           # the textarea's prefilled line — if it resolves empty.
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "gemini-2.5-flash" }}'
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "gemini-2.5-flash" }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"VERTEXAI_CREDENTIALS\": %s, \"VERTEXAI_PROJECT\": \"%s\", \"VERTEXAI_LOCATION\": \"%s\", \"SSL_CERT_FILE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"REQUESTS_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"GIT_SSL_CAINFO\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"CURL_CA_BUNDLE\": \"/etc/openhands/ca-bundle/ca-bundle.crt\", \"NODE_EXTRA_CA_CERTS\": \"/etc/openhands/ca-bundle/ca-bundle.crt\"}" (ConfigOptionData "google_vertex_credentials" | toJson) (ConfigOption "google_vertex_project_id") (ConfigOption "google_vertex_location") }}'
         litellm-helm:
           # volumes / volumeMounts are arrays — recursiveMerge replaces them,
@@ -836,7 +831,7 @@ spec:
             # removes it orphans settings still referencing it — accepted, the
             # app shows an unavailable badge). If the textarea resolves empty,
             # fall back to the old hardcoded route.
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "vertex_ai/%s" $m) "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "gemini-2.5-flash" "litellm_params" (dict "model" "vertex_ai/gemini-2.5-flash" "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "vertex_ai/%s" $m) "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "gemini-2.5-flash" "litellm_params" (dict "model" "vertex_ai/gemini-2.5-flash" "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ $models | mustToJson }}
           vertexAI:
             enabled: true
             project: '{{repl ConfigOption "google_vertex_project_id"}}'
@@ -856,7 +851,7 @@ spec:
           # and the old bedrock route name is still served via the hidden
           # alias in the model_list below, so existing user/org settings keep
           # working.
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
           OH_AGENT_SERVER_ENV: '{{repl printf "{\"AWS_ACCESS_KEY_ID\": \"%s\", \"AWS_SECRET_ACCESS_KEY\": \"%s\", \"AWS_REGION_NAME\": \"%s\"}" (ConfigOption "aws_access_key_id") (ConfigOption "aws_secret_access_key") (ConfigOption "aws_region_name") }}'
         litellm-helm:
           proxy_config:
@@ -871,7 +866,7 @@ spec:
             # display the alias under its canonical name), so user/org
             # settings from before the textarea existed keep resolving. The
             # alias is skipped only if a line is literally named bedrock.
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_access_key_id" "os.environ/AWS_ACCESS_KEY_ID" "aws_secret_access_key" "os.environ/AWS_SECRET_ACCESS_KEY" "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # AWS Bedrock — instance profile / IRSA. Omit AWS_ACCESS_KEY_ID/SECRET so
     # boto3 falls back to its default credential chain (IMDS on EC2, web
     # identity token on EKS). Region still injected explicitly.
@@ -881,14 +876,14 @@ spec:
         env:
           # Same first-line rule and hidden bedrock alias as the static-keys
           # block above.
-          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
         litellm-helm:
           proxy_config:
             # Same structure as the static-keys block above: one entry per
             # line of "Bedrock Model IDs" plus the hidden bedrock alias,
             # region-only litellm_params (credentials come from the instance
             # profile).
-            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs
@@ -926,6 +921,36 @@ spec:
           appServer:
             loadBalancer:
               enabled: false
+            # caBundle wiring: mount the trust-manager Bundle ConfigMap so the
+            # Rust app-server trusts an operator-supplied custom/self-signed CA
+            # on outbound HTTPS + gRPC. Needs the volume knobs added in the fork.
+            extraEnv:
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
+          appServerConsumer:
+            extraEnv:
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
           global:
             cloudProvider: "aws"
           clickhouse:
@@ -947,6 +972,22 @@ spec:
                     key: client-secret
               - name: AUTH_KEYCLOAK_ISSUER
                 value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://auth.app.{{repl ConfigOption "base_domain"}}/realms/allhands{{repl else}}https://{{repl ConfigOption "auth_hostname"}}/realms/allhands{{repl end}}'
+              # caBundle wiring (appended to the existing list — recursiveMerge
+              # REPLACES arrays, so these must live alongside the Keycloak vars).
+              # Next.js is Node, which honors NODE_EXTRA_CA_CERTS, not SSL_CERT_FILE;
+              # set both (SSL_CERT_FILE is harmless and helps any subprocess).
+              - name: NODE_EXTRA_CA_CERTS
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+              - name: SSL_CERT_FILE
+                value: /etc/openhands/ca-bundle/ca-bundle.crt
+            extraVolumes:
+              - name: openhands-ca-bundle
+                configMap:
+                  name: openhands-ca-bundle
+            extraVolumeMounts:
+              - name: openhands-ca-bundle
+                mountPath: /etc/openhands/ca-bundle
+                readOnly: true
             ingress:
               enabled: true
               hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'

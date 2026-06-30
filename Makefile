@@ -19,10 +19,16 @@ CHART_YAMLS := $(shell find $(CHARTDIR) -name 'Chart.yaml')
 # Release metadata: version comes from the openhands chart, channel from the current git branch
 VERSION     ?= $(shell yq .version $(CHARTDIR)/openhands/Chart.yaml)
 REPLICATED_APP ?= openhands
-CHANNEL     := $(shell git branch --show-current)
+BRANCH      := $(shell git branch --show-current)
+CHANNEL     := $(BRANCH)
 ifeq ($(CHANNEL), main)
 	CHANNEL=Unstable
 endif
+
+# Guard: releasing from the main branch (which maps to the Unstable channel)
+# or to the Unstable channel directly is reserved for CI. Require an explicit
+# opt-in flag so a human can't accidentally publish local work to Unstable.
+ALLOW_MAIN_RELEASE ?=
 
 BUILDDIR      := $(PROJECTDIR)/build
 RELEASE_FILES :=
@@ -92,9 +98,19 @@ clean:
 lint: clean $(RELEASE_FILES)
 	replicated release lint --yaml-dir $(BUILDDIR)
 
+# Refuse to release from main or to the Unstable channel unless explicitly
+# allowed via ALLOW_MAIN_RELEASE=1. CI passes this flag; humans should not.
+.PHONY: check-release-guard
+check-release-guard:
+	@if [ -z "$(ALLOW_MAIN_RELEASE)" ] && { [ "$(BRANCH)" = "main" ] || [ "$(CHANNEL)" = "Unstable" ]; }; then \
+		echo "ERROR: refusing to release from 'main' or to the 'Unstable' channel (branch=$(BRANCH) channel=$(CHANNEL))."; \
+		echo "       This is reserved for CI. If you really mean to do this, re-run with ALLOW_MAIN_RELEASE=1."; \
+		exit 1; \
+	fi
+
 # Build everything, lint, then publish a release to the Replicated channel
 .PHONY: release
-release: clean $(RELEASE_FILES) lint
+release: check-release-guard clean $(RELEASE_FILES) lint
 	replicated release create \
 	 	--app $(REPLICATED_APP) \
 		--version $(VERSION) \

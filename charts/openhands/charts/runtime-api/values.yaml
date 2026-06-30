@@ -10,7 +10,9 @@ databaseMigrations:
 
 image:
   repository: ghcr.io/openhands/runtime-api
-  tag: sha-61fc535
+  # You must use a stable, semver tag. Do not use sha-based tags.
+  # If you are hotfixing, you MUST create a patch release and use the semver tag.
+  tag: 0.2.0
   pullPolicy: Always
 
 imagePullSecrets:
@@ -251,9 +253,15 @@ warmRuntimes:
   enabled: false
   configMapName: warm-runtimes-config
   count: 0
-  configs:
-    - name: default
-      image: "ghcr.io/openhands/agent-server:1.29.0-python"
+  # Legacy list form. Kept for backwards compatibility: when non-empty it takes
+  # precedence over configsByName. Prefer configsByName for new configuration.
+  configs: []
+  # Canonical map form. Each key is the config's name (promoted to "name" in the
+  # rendered JSON). Maps merge cleanly across values layers, so consumers can
+  # override one field of one entry without re-declaring every entry.
+  configsByName:
+    default:
+      # image omitted -> defaults to global.agentServerImage (repo:tag).
       working_dir: "/workspace"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
@@ -313,3 +321,9 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Canonical agent-server image. Defaults any warm-runtime configsByName entry
+  # that omits its own `image`. In the openhands umbrella the parent chart's
+  # global wins; this default only applies when rendering the subchart alone.
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.29.0-python

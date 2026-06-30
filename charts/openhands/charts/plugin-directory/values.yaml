@@ -15,7 +15,7 @@ databaseMigrations:
 client:
   image:
     repository: ghcr.io/openhands/plugin-directory-client
-    tag: "sha-0e9a6d1"
+    tag: "1.2.0"
   resources:
     requests:
       memory: 256Mi
@@ -27,7 +27,9 @@ client:
 server:
   image:
     repository: ghcr.io/openhands/plugin-directory-server
-    tag: "sha-0e9a6d1"
+    # You must use a stable, semver tag. Do not use sha-based tags.
+    # If you are hotfixing, you MUST create a patch release and use the semver tag.
+    tag: "1.2.0"
   resources:
     requests:
       memory: 256Mi

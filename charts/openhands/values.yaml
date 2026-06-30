@@ -157,7 +157,9 @@ gitlabWebhookInstallation:
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  tag: sha-be6f446
+  # You must use a stable, semver tag. Do not use sha-based tags.
+  # If you are hotfixing, you MUST create a patch release and use the semver tag.
+  tag: cloud-1.40.0
 
 ingress:
   enabled: false
@@ -252,9 +254,10 @@ resendSync:
       cpu: 200m
 
 runtime:
+  # repository/tag fall back to .Values.global.agentServerImage when left empty.
   image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.29.0-python
+    repository: ""
+    tag: ""
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -505,6 +508,13 @@ litellm-helm:
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
+  # Pin the litellm image tag. The litellm-helm chart's default tag is its
+  # appVersion (currently v1.80.8-nightly), which predates the
+  # --use_v2_migration_resolver arg passed via the Replicated values and so
+  # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
+  # format BerriAI uses for 1.84.x+ stable images).
+  image:
+    tag: "1.84.1"
   # Migrations run automatically when litellm starts. This disables running them separately as a job.
   migrationJob:
     enabled: false
@@ -600,6 +610,49 @@ postgresql:
   image:
     repository: bitnamilegacy/postgresql
 
+# One-time migration of embedded PostgreSQL data from an emptyDir volume to a
+# PVC. Renders pre-upgrade Helm hooks ONLY and is disabled by default; the
+# Replicated layer enables it for embedded postgres. The hooks seed a
+# PVC-backed PGDATA from the live database, then delete the old emptyDir
+# StatefulSet so Helm recreates it PVC-backed (adopting the seeded PVC) within
+# the same upgrade. A guard makes the whole thing a no-op once migrated, so it
+# is safe to leave enabled across future upgrades.
+# See templates/postgres-pvc-migration.yaml.
+postgresMigration:
+  enabled: false
+  # PVC size / storageClass. These MUST match postgresql.primary.persistence so
+  # the recreated StatefulSet adopts (rather than re-creates) the seeded PVC.
+  # An empty storageClass falls back to the cluster default StorageClass.
+  storageClass: ""
+  size: 8Gi
+  # Superuser credentials used to dump/restore. Bitnami stores the superuser
+  # password under the `postgres-password` key of this secret.
+  auth:
+    existingSecret: postgres-password
+    secretKey: postgres-password
+  # Stable in-cluster service that fronts the live primary while it is still up.
+  sourceHost: oh-main-postgresql
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  imagePullSecrets: []
+  images:
+    # Orchestrator image — needs a shell AND kubectl. Do NOT use rancher/kubectl
+    # (it ships no shell, so `sh -c` fails).
+    kubectl:
+      repository: docker.io/alpine/k8s
+      tag: "1.30.0"
+      pullPolicy: IfNotPresent
+    # Seeder image — reuse the SAME pinned image as the postgresql subchart so
+    # the seeded PGDATA matches the version the recreated StatefulSet runs.
+    postgresql:
+      repository: docker.io/bitnami/postgresql
+      tag: 16.4.0-debian-12-r14
+      pullPolicy: IfNotPresent
+
 externalDatabase:
   enabled: false
   port: "5432"
@@ -663,9 +716,11 @@ runtime-api:
   warmRuntimes:
     enabled: true
     count: 1
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.29.0-python"
+    # Map form keyed by config name; see runtime-api subchart values for the
+    # legacy `configs` list and precedence rules.
+    configsByName:
+      default:
+        # image omitted -> defaults to global.agentServerImage (repo:tag).
         working_dir: "/workspace"
         environment:
           # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
@@ -985,6 +1040,12 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Canonical agent-server image. Defaults the runtime image (runtime.image) and
+  # any warm-runtime configsByName entry that omits its own `image`. Override
+  # either of those for per-use exceptions; set it here to move them together.
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.29.0-python
 
 vertexAI:
   enabled: false
@@ -1131,7 +1192,7 @@ integrations-hub:
     # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
     authCookieName: "keycloak_auth"
     # Stable-origin URL used as the OAuth callback proxy for preview
-    # deployments. Backend env var: AUTH_REDIRECT_PROXY_URL.
+    # deployments. Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL.
     redirectProxyUrl: ""
     # Optional callback target for preview deployments paired with
     # redirectProxyUrl. Backend env var: AUTH_URL.
@@ -1152,7 +1213,7 @@ integrations-hub:
     internalSecretKey: "internal-auth-secret"
 
   # Admin allowlist for /api/admin/* routes.
-  # Backend env var: APP_ADMIN_EMAILS (comma-separated).
+  # Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted).
   admin:
     emails: ""
 
