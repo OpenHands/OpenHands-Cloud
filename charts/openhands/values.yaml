@@ -98,11 +98,14 @@ filestore:
 # S3-compatible store. Empty = auto (s3 if ephemeral, else google_cloud).
 runtimeFileArchive:
   enabled: false
-  storeType: "" # google_cloud | s3 | local; empty = auto by filestore.ephemeral
+  storeType: "" # google_cloud | s3; empty = auto by filestore.ephemeral
   bucket: "" # Object-storage bucket that receives the archives.
   prefix: workspace-archives # Key prefix within the bucket.
   path: /workspace/project # Source path to archive (git repo root).
-  format: git-delta # git-delta (compact), tar.gz, or both.
+  # Safe default: capture BOTH the compact git-delta and a self-contained
+  # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
+  # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
+  format: both # both, git-delta (compact), or tar.gz.
   required: false # When true, a failed archive blocks the delete (retried later).
 
 github:
@@ -598,9 +601,20 @@ minio:
     - name: openhands-sessions
       policy: none
       purge: true
+    # Workspace archives must survive upgrades, so this bucket is NOT purged
+    # (unlike openhands-sessions above, which is emptied on every upgrade). It
+    # is the default target for runtimeFileArchive — see replicated
+    # sandbox_archive_bucket. Provisioned up front so archives never silently
+    # no-op against a missing bucket.
+    - name: openhands-archives
+      policy: none
+      purge: false
   svcaccts:
-    - accessKey: "default"
-      secretKey: "notasecret"
+    # Single in-file source for the bundled minio creds. The runtime-api reap
+    # path reads these via global.minioCredentials (it can't see .Values.minio),
+    # so editing them here keeps both archive paths in sync.
+    - accessKey: &minioAccessKey "default"
+      secretKey: &minioSecretKey "notasecret"
       user: root
   rootUser: "root"
   resources:
@@ -1066,6 +1080,15 @@ global:
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.29.0-python
+  # Bundled minio credentials, shared so the workspace-archive reap path in the
+  # runtime-api subchart (which cannot read .Values.minio) uses the same creds
+  # as the app-server. Anchored to minio.svcaccts[0] above — rotate the creds
+  # there. NOTE: a `--set minio.svcaccts[0].*` override does not flow here (the
+  # anchor is resolved before --set); to rotate via --set, also set
+  # global.minioCredentials.* (and runtime-api.runtimeFileArchive.s3.* if used).
+  minioCredentials:
+    accessKey: *minioAccessKey
+    secretKey: *minioSecretKey
 
 vertexAI:
   enabled: false

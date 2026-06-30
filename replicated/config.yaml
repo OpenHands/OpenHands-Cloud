@@ -908,11 +908,13 @@ spec:
           title: Archive Bucket
           help_text: >-
             Object-storage bucket that receives workspace archives (under the
-            "workspace-archives/" prefix). Defaults to the bundled sessions
-            bucket; point at a dedicated, pre-created bucket to keep archives
-            separate.
+            "workspace-archives/" prefix). Defaults to the bundled
+            "openhands-archives" bucket, which is provisioned for you and
+            preserved across upgrades. Do NOT use "openhands-sessions" — that
+            bucket is emptied on every upgrade. To use your own bucket, create
+            it first in the object store.
           type: text
-          default: "openhands-sessions"
+          default: "openhands-archives"
           when: 'repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}'
         - name: sandbox_archive_required
           title: Require Archive to Succeed Before Deleting
