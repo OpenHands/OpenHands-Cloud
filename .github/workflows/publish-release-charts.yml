@@ -8,16 +8,16 @@ name: Publish Released Helm Chart
 # event triggers workflows (a tag pushed by the default GITHUB_TOKEN would be
 # suppressed by GitHub's recursion guard and never fire this job).
 #
-# Tag shape is <component>-v<version> (e.g. openhands-v0.7.69). The patterns below
-# don't overlap: `openhands-v*` matches openhands-v0.7.69 but not
-# openhands-secrets-v0.1.25 (that needs the explicit `openhands-secrets-v*`).
+# Tag shape is <component>/<version> (e.g. openhands/0.7.69). The patterns below
+# don't overlap: `openhands/*` matches openhands/0.7.69 but not
+# openhands-secrets/0.1.25 (that needs the explicit `openhands-secrets/*`).
 on:
   push:
     tags:
-      - 'crd-check-v*'
-      - 'image-loader-v*'
-      - 'openhands-v*'
-      - 'openhands-secrets-v*'
+      - 'crd-check/*'
+      - 'image-loader/*'
+      - 'openhands/*'
+      - 'openhands-secrets/*'
 
 jobs:
   publish:
@@ -31,10 +31,10 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          # <component>-v<version>: strip the trailing -v<version> for the
-          # component, and everything up to the last -v for the version.
-          COMPONENT="${TAG%-v*}"
-          VERSION="${TAG##*-v}"
+          # <component>/<version>: strip the trailing /<version> for the
+          # component, and everything up to the last / for the version.
+          COMPONENT="${TAG%/*}"
+          VERSION="${TAG##*/}"
           echo "component=${COMPONENT}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "path=charts/${COMPONENT}" >> "$GITHUB_OUTPUT"

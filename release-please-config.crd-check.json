@@ -20,6 +20,8 @@
     "charts/crd-check": {
       "release-type": "helm",
       "component": "crd-check",
+      "tag-separator": "/",
+      "include-v-in-tag": false,
       "changelog-type": "github-scoped",
       "skip-changelog": true
     }

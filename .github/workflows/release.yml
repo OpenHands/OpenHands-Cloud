@@ -3,7 +3,7 @@ name: release
 # Per-chart release automation via the shared OpenHands/release-actions
 # (release-please) reusable workflow. Each chart is its OWN independent release
 # line: its own config + manifest, its own release PR, its own tag
-# (<chart>-v<version>) and GitHub Release. Each job passes github-scoped-notes:
+# (<chart>/<version>) and GitHub Release. Each job passes github-scoped-notes:
 # true, so the release PR body and the published Release carry the same
 # GitHub-style `## What's Changed` notes, scoped to that chart's commits.
 # release-please owns the chart `version:` in Chart.yaml; contributors no longer
