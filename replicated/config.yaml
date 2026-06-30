@@ -924,6 +924,17 @@ spec:
           type: bool
           default: "0"
           when: 'repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}'
+        - name: sandbox_archive_initial
+          title: Also Snapshot Initial Workspace State
+          help_text: >-
+            In addition to the final state, snapshot each conversation's INITIAL
+            workspace (the repository exactly as cloned, before setup runs) — the
+            "base" state needed to reconstruct an evaluation from the archive.
+            Captured at conversation start (bounded, best-effort), so it adds a
+            small amount of startup latency to repo-backed conversations.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "sandbox_archive_enabled" "1" }}'
         - name: sandbox_storage_size
           title: Storage Size
           help_text: How much persistent storage each sandbox gets.

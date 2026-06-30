@@ -83,6 +83,17 @@
   value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
 - name: RUNTIME_FILE_ARCHIVE_REQUIRED
   value: {{ .Values.runtimeFileArchive.required | default false | quote }}
+{{- if .Values.runtimeFileArchive.initial.enabled }}
+# Also snapshot the INITIAL workspace (repo as cloned, before setup.sh) — the
+# eval "base" state. Reuses STORE_TYPE/BUCKET/PREFIX above; awaited inline at
+# conversation start (bounded by INITIAL_DEADLINE, best-effort).
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_FORMAT
+  value: {{ .Values.runtimeFileArchive.initial.format | default "tar.gz" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_DEADLINE
+  value: {{ .Values.runtimeFileArchive.initial.deadline | default 120 | quote }}
+{{- end }}
 {{- end }}
 {{- if .Values.runtime.runAsRoot }}
 - name: SANDBOX_USER_ID

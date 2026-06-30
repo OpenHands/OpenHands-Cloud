@@ -392,6 +392,8 @@ spec:
       storeType: s3
       bucket: 'repl{{ ConfigOption "sandbox_archive_bucket" }}'
       required: repl{{ ConfigOptionEquals "sandbox_archive_required" "1" }}
+      initial:
+        enabled: repl{{ ConfigOptionEquals "sandbox_archive_initial" "1" }}
     minio:
       persistence:
         enabled: true

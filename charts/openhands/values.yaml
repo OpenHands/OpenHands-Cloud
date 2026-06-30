@@ -107,6 +107,14 @@ runtimeFileArchive:
   # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
   format: both # both, git-delta (compact), or tar.gz.
   required: false # When true, a failed archive blocks the delete (retried later).
+  # Also snapshot the INITIAL workspace (repo as cloned, before setup.sh) — the
+  # "base" state for reconstructing an eval (initial + final). App-server only;
+  # reuses storeType/bucket/prefix above. Awaited inline at conversation start
+  # (bounded by deadline, best-effort), so it adds bounded startup latency.
+  initial:
+    enabled: false
+    format: tar.gz # tar.gz (self-contained base) or git-delta.
+    deadline: 120 # Max seconds to await the snapshot before proceeding without it.
 
 github:
   enabled: false
