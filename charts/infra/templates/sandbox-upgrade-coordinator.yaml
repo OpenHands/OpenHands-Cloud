@@ -1,39 +1,51 @@
 {{- /*
-sandbox-upgrade-coordinator — keeps the per-sandbox PodDisruptionBudgets in
-place across a Kubernetes (k0s) upgrade by scaling sandbox deployments to zero
-while the upgrade rolls nodes, then restoring them when it finishes.
+sandbox-upgrade-coordinator — lets a Kubernetes (k0s) upgrade drain the node
+without giving up the per-sandbox PodDisruptionBudgets that protect sandboxes
+from involuntary eviction the rest of the time.
 
 Why this exists: runtime-api gives every sandbox a PDB with maxUnavailable=0,
-so the pod is never voluntarily evicted. That same PDB blocks the node drains
-that embedded-cluster's k0s upgrade (autopilot) performs — the drain uses the
-eviction API, which the PDB rejects, and the upgrade stalls on a cordoned node.
-Rather than drop the PDB, this controller removes the *pods* ahead of the drain
-so there is nothing for the PDB to protect, then brings them back afterwards.
+so the sandbox pod is never voluntarily evicted. That same PDB blocks the node
+drains that embedded-cluster's k0s upgrade (autopilot) performs — the drain uses
+the eviction API, which a maxUnavailable=0 PDB always rejects, so the upgrade
+stalls on a cordoned node.
+
+What it does: while an upgrade is rolling nodes, it relaxes the sandbox PDBs to
+maxUnavailable=100% so the drain can evict the pods, then sets them back to
+maxUnavailable=0 when the upgrade finishes. It does NOT touch the sandbox
+Deployments — those stay at replicas=1, so Kubernetes recreates each pod as soon
+as the node uncordons, and the node-local workspace PVC survives the reboot.
+Sandboxes come back on their own with their workspace intact; the interruption
+is the pod being killed and rescheduled.
+
+Why it relaxes the PDB instead of scaling the Deployment: the Deployments are
+owned and reconciled by runtime-api, which owns spec.replicas and the runtime
+lifecycle state in its database. An external scale-to-0 fights that owner and
+bypasses runtime-api's own pause/stop bookkeeping. The PDB is just an obstacle to
+the drain, so relaxing it is the minimal, ownership-respecting way to let the
+node roll.
 
 Why it reacts continuously and not via a Helm hook: embedded-cluster upgrades
 k0s BEFORE it upgrades the application Helm charts (operator Upgrade():
-upgradeK0s → addons → extensions). A chart pre-upgrade hook would therefore fire
-only AFTER the node roll already happened — too late. This controller runs
+upgradeK0s → addons → extensions). A chart pre-upgrade hook would fire only
+AFTER the node roll already happened — too late. This controller runs
 continuously and reacts to the embedded-cluster `Installation` state, which
 flips to a drain state at the very start of the k0s upgrade.
 
 Why a DaemonSet and not a Deployment: the upgrade drains the node, and most
 installs are single-node, so a Deployment's pod would be evicted along with
-everything else and never be around to scale the sandboxes down — deadlock,
-because the sandbox PDBs then block the very drain that would let the node
-upgrade. `kubectl drain` and k0s autopilot both pass IgnoreAllDaemonSets, so a
-DaemonSet pod is NOT evicted by the drain. It stays running on the draining node
-and removes the sandbox pods, which unblocks the drain. After the node reboots
-into the new k0s, the DaemonSet pod is recreated and restores the sandboxes.
+everything else and never be around to relax the PDBs. `kubectl drain` and k0s
+autopilot both pass IgnoreAllDaemonSets, so a DaemonSet pod is NOT evicted by the
+drain. It stays running on the draining node, relaxes the PDBs so the drain
+proceeds, and after the node reboots into the new k0s it restores them.
 
-Safety: the PDB stays as a hard interlock. If this controller is down or slow,
-the worst case is the upgrade stalls on a cordoned node (autopilot's drain
-retries every 120s, never force-deleting past the PDB) — a sandbox is never
-killed without its workspace first being released by scaling to zero.
+Safety: the relax is idempotent and only widens a PDB during a detected upgrade;
+the moment the Installation leaves a drain state the PDBs go back to
+maxUnavailable=0. If this controller is down, the worst case is the upgrade
+stalls on a cordoned node (autopilot's drain retries every 120s) — PDB
+protection is never silently lost.
 
-On multi-node clusters a pod runs per node; all reconcile the same cluster-wide
-sandboxes, which is redundant but idempotent (scale state is tracked per
-deployment via an annotation, so duplicate or concurrent actions converge).
+On multi-node clusters a pod runs per node; all reconcile the same sandbox PDBs,
+which is redundant but idempotent.
 
 Disabled by default. Enable only on embedded-cluster installs, where the
 `installations.embeddedcluster.replicated.com` CRD exists. On any other cluster
@@ -57,11 +69,11 @@ imagePullSecrets:
 {{- end }}
 ---
 # Cluster-scoped read of the embedded-cluster Installation (the upgrade signal),
-# plus deployment get/list/watch/patch/update so the controller can scale
-# sandboxes. This is a ClusterRole (not a namespaced Role) because the
-# controller runs in the infra release namespace but scales sandbox deployments
-# in the openhands namespace, which the openhands chart creates later and which
-# may not exist when this chart installs.
+# plus poddisruptionbudgets get/list/watch/patch so the controller can relax and
+# restore the sandbox PDBs. This is a ClusterRole (not a namespaced Role) because
+# the controller runs in the infra release namespace but acts on PDBs in the
+# openhands namespace, which the openhands chart creates later and which may not
+# exist when this chart installs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -73,9 +85,9 @@ rules:
   - apiGroups: ["embeddedcluster.replicated.com"]
     resources: ["installations"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -109,18 +121,18 @@ data:
     set -u
 
     # Namespace runtime-api drops sandboxes into (its K8S_NAMESPACE), which in
-    # the openhands chart is the openhands release namespace.
+    # the openhands chart is the openhands release namespace. The sandbox PDBs
+    # live here and carry the sandbox label.
     NS='{{ $c.runtimeNamespace }}'
     SELECTOR='{{ $c.sandboxSelector }}'
     INTERVAL='{{ $c.pollIntervalSeconds }}'
     DRAIN_STATES='{{ join " " $c.drainStates }}'
-    ANNOTATION='infra.openhands.dev/pre-upgrade-replicas'
 
     log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [sandbox-upgrade-coordinator] $*"; }
 
     # Print each Installation's status.state, one per line. Exits non-zero if
     # the CRD is absent or the API is unreachable, which the caller treats as
-    # "unknown" and leaves sandboxes untouched.
+    # "unknown" and leaves the PDBs untouched.
     read_states() {
       kubectl get installations.embeddedcluster.replicated.com \
         -o jsonpath='{range .items[*]}{.status.state}{"\n"}{end}'
@@ -137,38 +149,38 @@ data:
       return 1
     }
 
-    # Scale every running sandbox to zero, recording its prior replica count in
-    # an annotation so the exact count can be restored. Idempotent: a sandbox
-    # that already carries the annotation, or is already at zero, is skipped.
-    scale_down() {
-      kubectl get deploy -n "$NS" -l "$SELECTOR" \
-        -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.replicas}{"\n"}{end}' 2>/dev/null \
-      | while read -r name replicas; do
-          [ -z "$name" ] && continue
-          saved=$(kubectl get deploy -n "$NS" "$name" \
-            -o "jsonpath={.metadata.annotations['$ANNOTATION']}" 2>/dev/null || true)
-          if [ -z "$saved" ] && [ "${replicas:-0}" -gt 0 ]; then
-            log "scaling $name down (was $replicas) for the upgrade"
-            kubectl annotate deploy -n "$NS" "$name" "$ANNOTATION=$replicas" --overwrite >/dev/null 2>&1 || true
-            kubectl scale deploy -n "$NS" "$name" --replicas=0 >/dev/null 2>&1 || true
-          fi
-        done
+    # Names of the sandbox PDBs. runtime-api labels each sandbox PDB with the
+    # sandbox selector (e.g. runtime_id), so this matches only sandboxes and not
+    # the app's own PDBs (keycloak/postgres/redis).
+    list_pdbs() {
+      kubectl get pdb -n "$NS" -l "$SELECTOR" \
+        -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null
     }
 
-    # Restore every sandbox this controller scaled down, then drop the marker
-    # annotation. Sandboxes without the annotation are left alone, so a sandbox
-    # that was intentionally paused (at zero) before the upgrade stays paused.
-    scale_up() {
-      for name in $(kubectl get deploy -n "$NS" -l "$SELECTOR" \
-        -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
-          saved=$(kubectl get deploy -n "$NS" "$name" \
-            -o "jsonpath={.metadata.annotations['$ANNOTATION']}" 2>/dev/null || true)
-          if [ -n "$saved" ]; then
-            log "restoring $name to $saved replica(s)"
-            kubectl scale deploy -n "$NS" "$name" --replicas="$saved" >/dev/null 2>&1 || true
-            kubectl annotate deploy -n "$NS" "$name" "${ANNOTATION}-" >/dev/null 2>&1 || true
-          fi
-        done
+    # spec.maxUnavailable of one PDB as a plain string ("0" or "100%"). Empty if
+    # the PDB is gone or expresses its budget with minAvailable instead.
+    current_max_unavailable() {
+      kubectl get pdb -n "$NS" "$1" -o jsonpath='{.spec.maxUnavailable}' 2>/dev/null
+    }
+
+    # Set spec.maxUnavailable on every sandbox PDB to the desired value, patching
+    # only the ones that differ so steady state is a no-op (no writes, no log
+    # spam) and runtime-api creating fresh PDBs at 0 is left alone.
+    #   $1 = value as it appears in jsonpath output ("0" or "100%")
+    #   $2 = the same value as a JSON literal (0 or "100%")
+    set_pdbs() {
+      want_str="$1"
+      want_json="$2"
+      list_pdbs | while read -r name; do
+        [ -z "$name" ] && continue
+        cur=$(current_max_unavailable "$name")
+        if [ "$cur" != "$want_str" ]; then
+          log "PDB $name maxUnavailable ${cur:-none} -> $want_str"
+          kubectl patch pdb -n "$NS" "$name" --type=merge \
+            -p "{\"spec\":{\"maxUnavailable\":$want_json}}" >/dev/null 2>&1 \
+            || log "WARN: failed to patch PDB $name"
+        fi
+      done
     }
 
     log "starting; namespace=$NS selector='$SELECTOR' drainStates='$DRAIN_STATES' interval=${INTERVAL}s"
@@ -176,16 +188,16 @@ data:
     while true; do
       if states=$(read_states 2>/dev/null); then
         if is_draining "$states"; then
-          [ "$PHASE" != "draining" ] && log "k0s upgrade in progress; scaling sandboxes down"
+          [ "$PHASE" != "draining" ] && log "k0s upgrade in progress; relaxing sandbox PDBs (maxUnavailable=100%) so the node can drain"
           PHASE="draining"
-          scale_down
+          set_pdbs '100%' '"100%"'
         else
-          [ "$PHASE" = "draining" ] && log "k0s upgrade finished; restoring sandboxes"
+          [ "$PHASE" = "draining" ] && log "k0s upgrade finished; restoring sandbox PDBs (maxUnavailable=0)"
           PHASE="idle"
-          scale_up
+          set_pdbs '0' '0'
         fi
       else
-        [ "$PHASE" != "unknown" ] && log "WARN: cannot read Installation state (CRD missing or API error); leaving sandboxes unchanged"
+        [ "$PHASE" != "unknown" ] && log "WARN: cannot read Installation state (CRD missing or API error); leaving PDBs unchanged"
         PHASE="unknown"
       fi
       sleep "$INTERVAL"
@@ -193,7 +205,7 @@ data:
 ---
 apiVersion: apps/v1
 # DaemonSet, not Deployment: drains pass IgnoreAllDaemonSets, so this pod is not
-# evicted by the node drain it must survive to scale the sandboxes down. See the
+# evicted by the node drain it must survive to relax the sandbox PDBs. See the
 # header comment.
 kind: DaemonSet
 metadata:
