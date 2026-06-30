@@ -1,0 +1,67 @@
+name: release
+
+# Per-chart release automation via the shared OpenHands/release-actions
+# (release-please) reusable workflow. Each chart is its OWN independent release
+# line: its own config + manifest, its own release PR, its own tag
+# (<chart>-v<version>) and GitHub Release. Each job passes github-scoped-notes:
+# true, so the release PR body and the published Release carry the same
+# GitHub-style `## What's Changed` notes, scoped to that chart's commits.
+# release-please owns the chart `version:` in Chart.yaml; contributors no longer
+# bump it by hand.
+#
+# On a normal push, each job just opens/updates that chart's release PR. Merging
+# a release PR tags the chart; the tag (created with the release App token, so it
+# can trigger workflows) fires publish-release-charts.yml to publish the stable
+# chart to GHCR.
+on:
+  push:
+    branches:
+      - main
+      # Maintenance/freeze lines (e.g. release/0.7); release-please scopes the
+      # release to whichever branch triggered the run.
+      - 'release/**'
+
+jobs:
+  crd-check:
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets: inherit
+    uses: OpenHands/release-actions/.github/workflows/release-please.yml@main
+    with:
+      config-file: release-please-config.crd-check.json
+      manifest-file: .release-please-manifest.crd-check.json
+      github-scoped-notes: true
+
+  image-loader:
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets: inherit
+    uses: OpenHands/release-actions/.github/workflows/release-please.yml@main
+    with:
+      config-file: release-please-config.image-loader.json
+      manifest-file: .release-please-manifest.image-loader.json
+      github-scoped-notes: true
+
+  openhands:
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets: inherit
+    uses: OpenHands/release-actions/.github/workflows/release-please.yml@main
+    with:
+      config-file: release-please-config.openhands.json
+      manifest-file: .release-please-manifest.openhands.json
+      github-scoped-notes: true
+
+  openhands-secrets:
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets: inherit
+    uses: OpenHands/release-actions/.github/workflows/release-please.yml@main
+    with:
+      config-file: release-please-config.openhands-secrets.json
+      manifest-file: .release-please-manifest.openhands-secrets.json
+      github-scoped-notes: true

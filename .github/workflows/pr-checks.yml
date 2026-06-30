@@ -27,9 +27,3 @@ jobs:
           python3 -m pytest
           scripts/test_keycloak_realm_template.py
           scripts/test_openhands_secrets_template.py
-
-  validate-chart-versions:
-    uses: ./.github/workflows/validate-chart-versions.yml
-    with:
-      base_ref: origin/${{ github.base_ref }}
-      enforce_version_bump: true
