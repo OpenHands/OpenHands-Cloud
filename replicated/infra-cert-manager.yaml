@@ -15,6 +15,17 @@ spec:
   values:
     trust-manager:
       enabled: false
+    # Sandbox upgrade coordinator: scales sandboxes to zero during a k0s node
+    # roll so their PodDisruptionBudgets don't block the drain, then restores
+    # them. Enabled here (one of the two infra releases) so it ships with the
+    # embedded-cluster installer. Runs as a DaemonSet so it survives the drain.
+    # See charts/infra/templates/sandbox-upgrade-coordinator.yaml.
+    sandboxUpgradeCoordinator:
+      enabled: true
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
     cert-manager:
       enabled: true
       global:

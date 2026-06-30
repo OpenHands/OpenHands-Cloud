@@ -10,18 +10,30 @@ eviction API, which the PDB rejects, and the upgrade stalls on a cordoned node.
 Rather than drop the PDB, this controller removes the *pods* ahead of the drain
 so there is nothing for the PDB to protect, then brings them back afterwards.
 
-Why a Deployment and not a Helm hook: embedded-cluster upgrades k0s BEFORE it
-upgrades the application Helm charts (operator Upgrade(): upgradeK0s → addons →
-extensions). A chart pre-upgrade hook would therefore fire only AFTER the node
-roll already happened — too late. This controller runs continuously and reacts
-to the embedded-cluster `Installation` state, which flips to a drain state at
-the very start of the k0s upgrade (controllers roll before workers, so there is
-ample lead time before the first worker drain).
+Why it reacts continuously and not via a Helm hook: embedded-cluster upgrades
+k0s BEFORE it upgrades the application Helm charts (operator Upgrade():
+upgradeK0s → addons → extensions). A chart pre-upgrade hook would therefore fire
+only AFTER the node roll already happened — too late. This controller runs
+continuously and reacts to the embedded-cluster `Installation` state, which
+flips to a drain state at the very start of the k0s upgrade.
+
+Why a DaemonSet and not a Deployment: the upgrade drains the node, and most
+installs are single-node, so a Deployment's pod would be evicted along with
+everything else and never be around to scale the sandboxes down — deadlock,
+because the sandbox PDBs then block the very drain that would let the node
+upgrade. `kubectl drain` and k0s autopilot both pass IgnoreAllDaemonSets, so a
+DaemonSet pod is NOT evicted by the drain. It stays running on the draining node
+and removes the sandbox pods, which unblocks the drain. After the node reboots
+into the new k0s, the DaemonSet pod is recreated and restores the sandboxes.
 
 Safety: the PDB stays as a hard interlock. If this controller is down or slow,
 the worst case is the upgrade stalls on a cordoned node (autopilot's drain
 retries every 120s, never force-deleting past the PDB) — a sandbox is never
 killed without its workspace first being released by scaling to zero.
+
+On multi-node clusters a pod runs per node; all reconcile the same cluster-wide
+sandboxes, which is redundant but idempotent (scale state is tracked per
+deployment via an annotation, so duplicate or concurrent actions converge).
 
 Disabled by default. Enable only on embedded-cluster installs, where the
 `installations.embeddedcluster.replicated.com` CRD exists. On any other cluster
@@ -178,7 +190,10 @@ data:
     done
 ---
 apiVersion: apps/v1
-kind: Deployment
+# DaemonSet, not Deployment: drains pass IgnoreAllDaemonSets, so this pod is not
+# evicted by the node drain it must survive to scale the sandboxes down. See the
+# header comment.
+kind: DaemonSet
 metadata:
   name: {{ $name }}
   namespace: {{ $ns }}
@@ -186,10 +201,6 @@ metadata:
     app.kubernetes.io/name: sandbox-upgrade-coordinator
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
-  replicas: 1
-  # One coordinator at a time — there is no leader election in the script.
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: sandbox-upgrade-coordinator
@@ -201,6 +212,11 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       serviceAccountName: {{ $name }}
+      # Run on every node — including tainted control-plane nodes — so the pod is
+      # present on whichever node the upgrade drains (the single node, in the
+      # common case).
+      tolerations:
+        - operator: Exists
       {{- with $c.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
