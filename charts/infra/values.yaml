@@ -92,8 +92,9 @@ crdCheck:
 # Disabled by default; on other clusters the controller would just idle.
 sandboxUpgradeCoordinator:
   enabled: false
-  # Namespace where runtime-api creates sandbox pods (its K8S_NAMESPACE).
-  runtimeNamespace: runtime-pods
+  # Namespace where runtime-api creates sandbox pods (its K8S_NAMESPACE). In the
+  # openhands chart this is the openhands release namespace.
+  runtimeNamespace: openhands
   # Label selector identifying sandbox deployments (runtime-api labels each
   # sandbox with runtime_id).
   sandboxSelector: runtime_id

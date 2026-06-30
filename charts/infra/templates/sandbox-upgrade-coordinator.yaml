@@ -57,11 +57,11 @@ imagePullSecrets:
 {{- end }}
 ---
 # Cluster-scoped read of the embedded-cluster Installation (the upgrade signal),
-# plus deployment get/list/watch/patch so the controller can scale sandboxes.
-# Deployment access is cluster-wide because the runtime namespace is created
-# lazily by runtime-api and may not exist when this chart installs; the script
-# only ever touches `runtimeNamespace`. Narrow this to a namespaced Role if you
-# can guarantee the namespace exists first.
+# plus deployment get/list/watch/patch/update so the controller can scale
+# sandboxes. This is a ClusterRole (not a namespaced Role) because the
+# controller runs in the infra release namespace but scales sandbox deployments
+# in the openhands namespace, which the openhands chart creates later and which
+# may not exist when this chart installs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -108,6 +108,8 @@ data:
     # rancher/kubectl here: it is FROM scratch and has no shell.
     set -u
 
+    # Namespace runtime-api drops sandboxes into (its K8S_NAMESPACE), which in
+    # the openhands chart is the openhands release namespace.
     NS='{{ $c.runtimeNamespace }}'
     SELECTOR='{{ $c.sandboxSelector }}'
     INTERVAL='{{ $c.pollIntervalSeconds }}'

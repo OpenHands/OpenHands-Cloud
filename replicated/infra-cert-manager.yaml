@@ -22,6 +22,8 @@ spec:
     # See charts/infra/templates/sandbox-upgrade-coordinator.yaml.
     sandboxUpgradeCoordinator:
       enabled: true
+      # runtime-api's K8S_NAMESPACE in the openhands chart.
+      runtimeNamespace: openhands
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
       imagePullSecrets:
