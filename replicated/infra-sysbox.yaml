@@ -1,0 +1,54 @@
+apiVersion: kots.io/v1beta2
+kind: HelmChart
+metadata:
+  name: infra-sysbox
+spec:
+  chart:
+    name: infra
+  releaseName: infra-sysbox
+  # kube-system already permits the privileged, host-namespace pods the Sysbox
+  # installer needs, and is where node-level DaemonSets conventionally live.
+  namespace: kube-system
+  # Weight 7 runs after cert-manager (5) and trust-manager (6) and before the
+  # openhands app (10), so Sysbox is installed on the node before any runtime
+  # pod that requests runtimeClassName: sysbox can be scheduled.
+  weight: 7
+  helmUpgradeFlags: ["--wait", "--timeout", "600s"]
+  values:
+    # This release only carries the Sysbox installer; cert-manager and
+    # trust-manager are installed by their own releases.
+    cert-manager:
+      enabled: false
+    trust-manager:
+      enabled: false
+    sysbox:
+      # Off by default. The "Sandbox Isolation" config option flips it on below.
+      enabled: false
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/debian'
+
+  optionalValues:
+    # Install Sysbox only when the operator selects the Sysbox isolation level.
+    - when: '{{repl ConfigOptionEquals "sandbox_isolation" "sysbox" }}'
+      recursiveMerge: true
+      values:
+        sysbox:
+          enabled: true
+    - when: '{{repl HasLocalRegistry }}'
+      recursiveMerge: true
+      values:
+        sysbox:
+          image:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/debian'
+
+  builder:
+    # Render only the sysbox installer so `replicated release` discovers its
+    # image; cert-manager/trust-manager images come from their own releases.
+    cert-manager:
+      enabled: false
+    trust-manager:
+      enabled: false
+    sysbox:
+      enabled: true

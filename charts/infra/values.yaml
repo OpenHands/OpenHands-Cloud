@@ -123,3 +123,36 @@ sandboxUpgradeCoordinator:
       memory: 32Mi
     limits:
       memory: 64Mi
+
+# Sysbox installer. When enabled, a privileged DaemonSet installs the Sysbox
+# container runtime on every node and registers the sysbox RuntimeClass,
+# giving pods with runtimeClassName: sysbox VM-like (user-namespace)
+# isolation. Disabled by default; the Replicated "Sandbox Isolation" config
+# option turns it on. Requires a Debian/Ubuntu host with internet access to
+# download the Sysbox package.
+sysbox:
+  enabled: false
+  # Sysbox CE version to install (see downloads.nestybox.com/sysbox/releases).
+  version: "0.7.0"
+  downloadBase: "https://downloads.nestybox.com/sysbox/releases"
+  # Name of the RuntimeClass + handler. Must stay in sync with the containerd
+  # runtime name in files/install-sysbox.sh and the runtime-api RUNTIME_CLASS
+  # value (replicated/openhands.yaml).
+  runtimeClassName: sysbox
+  image:
+    # Minimal image providing nsenter + bash; the install runs on the host.
+    repository: docker.io/library/debian
+    tag: bookworm-slim
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Run on every Linux node, tolerating all taints (incl. control-plane).
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 512Mi

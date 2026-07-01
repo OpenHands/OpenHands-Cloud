@@ -1,0 +1,80 @@
+{{- if .Values.sysbox.enabled }}
+# RuntimeClass that maps pods (runtimeClassName: sysbox) to the sysbox
+# containerd runtime the DaemonSet below registers on each node. Cluster-scoped,
+# so it is created once regardless of the release namespace.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: {{ .Values.sysbox.runtimeClassName }}
+  labels:
+    app.kubernetes.io/name: sysbox-installer
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+handler: {{ .Values.sysbox.runtimeClassName }}
+---
+# Privileged DaemonSet that installs Sysbox onto every node and wires up the
+# sysbox containerd runtime via a k0s drop-in. The container only bootstraps
+# nsenter; the real work runs on the host (see files/install-sysbox.sh).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sysbox-installer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: sysbox-installer
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sysbox-installer
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sysbox-installer
+    spec:
+      # hostPID lets `nsenter --target 1` reach the host's init namespaces.
+      hostPID: true
+      {{- with .Values.sysbox.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sysbox.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sysbox.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: installer
+          image: "{{ .Values.sysbox.image.repository }}:{{ .Values.sysbox.image.tag }}"
+          imagePullPolicy: {{ .Values.sysbox.image.pullPolicy }}
+          securityContext:
+            privileged: true
+          env:
+            - name: SYSBOX_VERSION
+              value: {{ .Values.sysbox.version | quote }}
+            - name: SYSBOX_DEB_BASE
+              value: {{ .Values.sysbox.downloadBase | quote }}
+            - name: INSTALL_SCRIPT
+              value: |
+{{ .Files.Get "files/install-sysbox.sh" | indent 16 }}
+          # Run the install script on the host. The container bash expands
+          # $INSTALL_SCRIPT, then hands the text to the host's bash via nsenter.
+          command:
+            - /bin/bash
+            - -c
+            - exec nsenter --target 1 --mount --uts --ipc --net --pid -- /bin/bash -c "$INSTALL_SCRIPT"
+          # Ready only once the host has been fully configured (sentinel on host).
+          readinessProbe:
+            exec:
+              command: ["nsenter", "--target", "1", "--mount", "--", "test", "-f", "/run/sysbox-installer.ready"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.sysbox.resources | nindent 12 }}
+{{- end }}

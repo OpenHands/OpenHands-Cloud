@@ -863,6 +863,19 @@ spec:
       title: Sandbox Configuration
       description: OpenHands conversations run in isolated sandboxes. Configure sandbox resources and lifecycle settings here. Adjust these settings based on your expected workload and the size of your cluster.
       items:
+        - name: sandbox_isolation
+          title: Sandbox Isolation
+          help_text: |
+            The container runtime used to isolate each sandbox.
+            runc is the standard Kubernetes runtime (process-level isolation).
+            Sysbox runs each sandbox in a stronger, VM-like boundary using the Linux user namespace. Selecting Sysbox installs the Sysbox runtime on every node during deployment; this requires a Debian/Ubuntu host with internet access to download the Sysbox package.
+          type: select_one
+          default: "runc"
+          items:
+            - name: "runc"
+              title: "runc (standard)"
+            - name: "sysbox"
+              title: "Sysbox (stronger isolation)"
         - name: runtime_routing_mode
           title: Sandbox Routing Mode
           help_text: |
