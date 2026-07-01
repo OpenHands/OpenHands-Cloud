@@ -152,7 +152,7 @@ sysbox:
     # to stage the binaries onto the host and run the install in the host's
     # namespaces. The tag encodes the Sysbox version as v<version>-0; keep it in
     # sync with .version above.
-    repository: registry.nestybox.com/nestybox/sysbox-deploy-k8s
+    repository: ghcr.io/nestybox/sysbox-deploy-k8s
     tag: v0.7.0-0
     pullPolicy: IfNotPresent
   imagePullSecrets: []

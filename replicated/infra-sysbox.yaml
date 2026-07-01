@@ -27,7 +27,7 @@ spec:
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/registry.nestybox.com/nestybox/sysbox-deploy-k8s'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/nestybox/sysbox-deploy-k8s'
 
   optionalValues:
     # Install Sysbox only when the operator selects the Sysbox isolation level.
