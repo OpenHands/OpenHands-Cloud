@@ -13,9 +13,13 @@ handler: {{ .Values.sysbox.runtimeClassName }}
 ---
 # Privileged DaemonSet that installs Sysbox onto every node and wires up the
 # sysbox containerd runtime via a k0s drop-in. The Sysbox binaries + systemd
-# units ship inside the image (/opt/sysbox); the container stages them onto the
-# host under /run/sysbox-install, then runs the installer in the host's
-# namespaces via nsenter (see files/install-sysbox.sh).
+# units ship inside the nestybox image (/opt/sysbox); an init container using
+# that image stages them onto the host under /run/sysbox-install, then the
+# installer container (a modern image, for a working nsenter) enters the host's
+# namespaces and runs the installer from those staged artifacts (see
+# files/install-sysbox.sh). Two images are needed because the nestybox image is
+# centos:7-based and its nsenter (util-linux 2.23.2) cannot enter PID 1's
+# namespaces on recent kernels.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -49,29 +53,19 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      containers:
-        - name: installer
+      # Stage the image-baked Sysbox artifacts onto the host. The binaries live
+      # in the nestybox image's filesystem (/opt/sysbox), so they are copied to
+      # the host-shared staging dir here; the installer container below then
+      # enters the host mount namespace (where /opt/sysbox is not visible) and
+      # reads them back from $SYSBOX_ARTIFACTS_DIR. This is the ONLY use of the
+      # nestybox image — its ancient nsenter is never invoked.
+      initContainers:
+        - name: stage-artifacts
           image: "{{ .Values.sysbox.image.repository }}:{{ .Values.sysbox.image.tag }}"
           imagePullPolicy: {{ .Values.sysbox.image.pullPolicy }}
-          securityContext:
-            privileged: true
           env:
-            - name: SYSBOX_VERSION
-              value: {{ .Values.sysbox.version | quote }}
-            # Host path (in the host mount namespace) where the container stages
-            # the image-baked Sysbox artifacts for the installer to read.
             - name: SYSBOX_ARTIFACTS_DIR
               value: /run/sysbox-install
-            - name: INSTALL_SCRIPT
-              value: |
-{{ .Files.Get "files/install-sysbox.sh" | indent 16 }}
-          # Stage the image-baked Sysbox artifacts onto the host, then run the
-          # installer in the host's namespaces. The binaries live in THIS
-          # container's filesystem (/opt/sysbox), so they are copied to the
-          # host-shared staging dir first; `nsenter --mount` then enters the host
-          # mount namespace (where /opt/sysbox is not visible) and the installer
-          # reads them back from $SYSBOX_ARTIFACTS_DIR. The container bash
-          # expands $INSTALL_SCRIPT and hands the text to the host's bash.
           command:
             - /bin/bash
             - -c
@@ -81,12 +75,39 @@ spec:
               mkdir -p /host-staging/bin /host-staging/systemd
               cp -a /opt/sysbox/bin/generic/. /host-staging/bin/
               cp -a /opt/sysbox/systemd/. /host-staging/systemd/
-              exec nsenter --target 1 --mount --uts --ipc --net --pid -- /bin/bash -c "$INSTALL_SCRIPT"
           volumeMounts:
-            # Maps to host $SYSBOX_ARTIFACTS_DIR; the container writes the staged
-            # binaries/units here, the host-side installer reads them back.
+            # Maps to host $SYSBOX_ARTIFACTS_DIR; the init container writes the
+            # staged binaries/units here, the host-side installer reads them back.
             - name: sysbox-staging
               mountPath: /host-staging
+      containers:
+        - name: installer
+          # Modern util-linux (nsenter >= 2.38) as the runner: it enters the host
+          # namespaces and runs the installer from the artifacts the init
+          # container staged under $SYSBOX_ARTIFACTS_DIR on the host. Not the
+          # nestybox image, whose centos:7 nsenter (2.23.2) fails on kernel 6.x.
+          image: "{{ .Values.sysbox.runnerImage.repository }}:{{ .Values.sysbox.runnerImage.tag }}"
+          imagePullPolicy: {{ .Values.sysbox.runnerImage.pullPolicy }}
+          securityContext:
+            privileged: true
+          env:
+            - name: SYSBOX_VERSION
+              value: {{ .Values.sysbox.version | quote }}
+            # Host path (in the host mount namespace) where the init container
+            # staged the image-baked Sysbox artifacts for the installer to read.
+            - name: SYSBOX_ARTIFACTS_DIR
+              value: /run/sysbox-install
+            - name: INSTALL_SCRIPT
+              value: |
+{{ .Files.Get "files/install-sysbox.sh" | indent 16 }}
+          # `nsenter --mount` enters the host mount namespace (where the staged
+          # artifacts live at $SYSBOX_ARTIFACTS_DIR) and the host's bash runs the
+          # installer. The container bash expands $INSTALL_SCRIPT and hands the
+          # text to the host's bash.
+          command:
+            - /bin/bash
+            - -c
+            - exec nsenter --target 1 --mount --uts --ipc --net --pid -- /bin/bash -c "$INSTALL_SCRIPT"
           # Ready only once the host has been fully configured (sentinel on host).
           readinessProbe:
             exec:

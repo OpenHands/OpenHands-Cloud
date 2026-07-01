@@ -28,6 +28,8 @@ spec:
         - name: '{{repl ImagePullSecretName }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/nestybox/sysbox-deploy-k8s'
+      runnerImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/debian'
 
   optionalValues:
     # Install Sysbox only when the operator selects the Sysbox isolation level.
@@ -42,6 +44,8 @@ spec:
         sysbox:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/sysbox-deploy-k8s'
+          runnerImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/debian'
 
   builder:
     # Render only the sysbox installer so `replicated release` discovers its
