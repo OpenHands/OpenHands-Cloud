@@ -21,7 +21,7 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -35,9 +35,11 @@ jobs:
           # component, and everything up to the last / for the version.
           COMPONENT="${TAG%/*}"
           VERSION="${TAG##*/}"
-          echo "component=${COMPONENT}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "path=charts/${COMPONENT}" >> "$GITHUB_OUTPUT"
+          {
+            echo "component=${COMPONENT}"
+            echo "version=${VERSION}"
+            echo "path=charts/${COMPONENT}"
+          } >> "$GITHUB_OUTPUT"
           echo "Publishing ${COMPONENT} ${VERSION} from charts/${COMPONENT}"
 
       - name: Checkout (at the release tag)
