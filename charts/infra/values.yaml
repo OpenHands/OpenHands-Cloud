@@ -128,21 +128,32 @@ sandboxUpgradeCoordinator:
 # container runtime on every node and registers the sysbox RuntimeClass,
 # giving pods with runtimeClassName: sysbox-runc VM-like (user-namespace)
 # isolation. Disabled by default; the Replicated "Sandbox Isolation" config
-# option turns it on. Requires a Debian/Ubuntu host with internet access to
-# download the Sysbox package.
+# option turns it on.
+#
+# The Sysbox binaries and systemd units are baked into the image below (the
+# official nestybox/sysbox-deploy-k8s image), so the install needs no internet
+# access (fixes air-gap) and is not tied to Debian/Ubuntu: the binaries are
+# portable Go builds and k0s ships its own containerd, so any systemd host with
+# kernel >= 6.3 works. Kernel >= 6.3 is enforced by the openhands chart's Sysbox
+# preflight.
 sysbox:
   enabled: false
-  # Sysbox CE version to install (see downloads.nestybox.com/sysbox/releases).
+  # Sysbox CE version, used for the on-host idempotency/version check and for
+  # logging. Must match the Sysbox version encoded in image.tag below.
   version: "0.7.0"
-  downloadBase: "https://downloads.nestybox.com/sysbox/releases"
   # Name of the RuntimeClass + handler. Must stay in sync with the containerd
   # runtime name in files/install-sysbox.sh and the runtime-api RUNTIME_CLASS
   # value (replicated/openhands.yaml).
   runtimeClassName: sysbox-runc
   image:
-    # Minimal image providing nsenter + bash; the install runs on the host.
-    repository: docker.io/library/debian
-    tag: bookworm-slim
+    # Official nestybox image that ships the Sysbox binaries under
+    # /opt/sysbox/bin/generic and the systemd units under /opt/sysbox/systemd.
+    # It is centos7-based and carries bash + nsenter, which the DaemonSet uses
+    # to stage the binaries onto the host and run the install in the host's
+    # namespaces. The tag encodes the Sysbox version as v<version>-0; keep it in
+    # sync with .version above.
+    repository: registry.nestybox.com/nestybox/sysbox-deploy-k8s
+    tag: v0.7.0-0
     pullPolicy: IfNotPresent
   imagePullSecrets: []
   # Run on every Linux node, tolerating all taints (incl. control-plane).

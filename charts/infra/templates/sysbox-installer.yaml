@@ -12,8 +12,10 @@ metadata:
 handler: {{ .Values.sysbox.runtimeClassName }}
 ---
 # Privileged DaemonSet that installs Sysbox onto every node and wires up the
-# sysbox containerd runtime via a k0s drop-in. The container only bootstraps
-# nsenter; the real work runs on the host (see files/install-sysbox.sh).
+# sysbox containerd runtime via a k0s drop-in. The Sysbox binaries + systemd
+# units ship inside the image (/opt/sysbox); the container stages them onto the
+# host under /run/sysbox-install, then runs the installer in the host's
+# namespaces via nsenter (see files/install-sysbox.sh).
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -56,17 +58,35 @@ spec:
           env:
             - name: SYSBOX_VERSION
               value: {{ .Values.sysbox.version | quote }}
-            - name: SYSBOX_DEB_BASE
-              value: {{ .Values.sysbox.downloadBase | quote }}
+            # Host path (in the host mount namespace) where the container stages
+            # the image-baked Sysbox artifacts for the installer to read.
+            - name: SYSBOX_ARTIFACTS_DIR
+              value: /run/sysbox-install
             - name: INSTALL_SCRIPT
               value: |
 {{ .Files.Get "files/install-sysbox.sh" | indent 16 }}
-          # Run the install script on the host. The container bash expands
-          # $INSTALL_SCRIPT, then hands the text to the host's bash via nsenter.
+          # Stage the image-baked Sysbox artifacts onto the host, then run the
+          # installer in the host's namespaces. The binaries live in THIS
+          # container's filesystem (/opt/sysbox), so they are copied to the
+          # host-shared staging dir first; `nsenter --mount` then enters the host
+          # mount namespace (where /opt/sysbox is not visible) and the installer
+          # reads them back from $SYSBOX_ARTIFACTS_DIR. The container bash
+          # expands $INSTALL_SCRIPT and hands the text to the host's bash.
           command:
             - /bin/bash
             - -c
-            - exec nsenter --target 1 --mount --uts --ipc --net --pid -- /bin/bash -c "$INSTALL_SCRIPT"
+            - |
+              set -euo pipefail
+              echo "==> staging Sysbox artifacts from image to host ${SYSBOX_ARTIFACTS_DIR}"
+              mkdir -p /host-staging/bin /host-staging/systemd
+              cp -a /opt/sysbox/bin/generic/. /host-staging/bin/
+              cp -a /opt/sysbox/systemd/. /host-staging/systemd/
+              exec nsenter --target 1 --mount --uts --ipc --net --pid -- /bin/bash -c "$INSTALL_SCRIPT"
+          volumeMounts:
+            # Maps to host $SYSBOX_ARTIFACTS_DIR; the container writes the staged
+            # binaries/units here, the host-side installer reads them back.
+            - name: sysbox-staging
+              mountPath: /host-staging
           # Ready only once the host has been fully configured (sentinel on host).
           readinessProbe:
             exec:
@@ -77,4 +97,12 @@ spec:
             failureThreshold: 30
           resources:
             {{- toYaml .Values.sysbox.resources | nindent 12 }}
+      volumes:
+        # Staging area on the host for the image-baked Sysbox artifacts. Lives
+        # on tmpfs (/run); re-created on every pod (re)start, which is fine since
+        # the installer is idempotent and re-stages each run.
+        - name: sysbox-staging
+          hostPath:
+            path: /run/sysbox-install
+            type: DirectoryOrCreate
 {{- end }}

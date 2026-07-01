@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
 # install-sysbox.sh — runs on each node, installed by the infra chart's sysbox
-# DaemonSet. The DaemonSet execs this on the HOST via `nsenter --target 1`, so
-# apt/dpkg/systemctl and the containerd drop-in all act on the node itself.
+# DaemonSet. The DaemonSet stages the image-baked Sysbox artifacts onto the host
+# under $SYSBOX_ARTIFACTS_DIR, then execs this script on the HOST via
+# `nsenter --target 1`, so systemctl and the containerd drop-in all act on the
+# node itself.
 #
-# It installs Sysbox and registers the sysbox containerd runtime through a
-# k0s containerd drop-in, so pods with runtimeClassName: sysbox-runc get
-# VM-like (user-namespace) isolation. Idempotent: safe to re-run on every pod
-# restart.
+# It installs Sysbox from those staged artifacts (no download, no apt/dpkg) and
+# registers the sysbox containerd runtime through a k0s containerd drop-in, so
+# pods with runtimeClassName: sysbox-runc get VM-like (user-namespace) isolation.
+# Idempotent: safe to re-run on every pod restart.
+#
+# Because the binaries are portable Go builds and k0s ships its own containerd,
+# this works on any systemd host with kernel >= 6.3 — not just Debian/Ubuntu.
+# (Kernel >= 6.3 is enforced by the openhands chart's Sysbox preflight.)
 #
 # Order matters: Sysbox is installed BEFORE the containerd drop-in is written.
 # That way, when k0s reloads containerd to pick up the drop-in, containerd's
-# first registration of the sysbox runtime queries the binary's `features` subcommand
-# and reports userns support to kubelet — no second containerd bounce needed.
+# first registration of the sysbox runtime queries the binary's `features`
+# subcommand and reports userns support to kubelet — no second containerd bounce.
 
 set -euo pipefail
 
 SYSBOX_VERSION="${SYSBOX_VERSION:-0.7.0}"
-SYSBOX_DEB_BASE="${SYSBOX_DEB_BASE:-https://downloads.nestybox.com/sysbox/releases}"
+SYSBOX_ARTIFACTS_DIR="${SYSBOX_ARTIFACTS_DIR:-/run/sysbox-install}"
 READY_FILE=/run/sysbox-installer.ready
 
 err() { echo "ERROR: $*" >&2; exit 1; }
@@ -24,12 +30,6 @@ log() { echo "==> $*"; }
 
 # Re-gate readiness until this run finishes configuring the node.
 rm -f "$READY_FILE"
-
-case "$(uname -m)" in
-  aarch64|arm64) ARCH=arm64 ;;
-  x86_64|amd64)  ARCH=amd64 ;;
-  *) err "unsupported architecture: $(uname -m)" ;;
-esac
 
 # --- Discover the k0s-managed containerd config + binary --------------------
 # Embedded Cluster runs k0s with a custom --data-dir, so don't assume /etc/k0s.
@@ -63,40 +63,65 @@ log "containerd config: $CONTAINERD_CONF"
 log "containerd binary: ${CONTAINERD_BIN:-<unresolved>}"
 log "drop-in:           $DROPIN"
 
-# --- 1. Install Sysbox -------------------------------------------------------
-installed_ok=false
+# --- 1. Install Sysbox from the staged, image-baked artifacts ----------------
+# The DaemonSet copied the Sysbox binaries and systemd units out of the nestybox
+# image into $SYSBOX_ARTIFACTS_DIR (bin/ + systemd/). We install them the same
+# way nestybox's own installer does for a containerd node, minus the CRI-O,
+# shiftfs and apt steps: shiftfs is unneeded for kernel >= 6.3, and the binaries
+# have no package dependencies for our validated Docker-in-Docker path.
+#
+# We deliberately do NOT touch /etc/subuid or /etc/subgid. nestybox's installer
+# only configures those on its CRI-O path; on containerd with `hostUsers: false`
+# (which runtime-api sets for sysbox sandboxes) the kubelet owns user-namespace
+# ID allocation, so a "containers" subid range is never consulted — and blindly
+# appending one would overlap the host's default user range.
+SYSBOX_BIN_DIR="$SYSBOX_ARTIFACTS_DIR/bin"
+SYSBOX_UNIT_DIR="$SYSBOX_ARTIFACTS_DIR/systemd"
+[ -f "$SYSBOX_BIN_DIR/sysbox-runc" ] \
+  || err "staged sysbox binaries not found in $SYSBOX_BIN_DIR (did the DaemonSet stage them?)"
+
+need_install=true
 if command -v sysbox-runc >/dev/null 2>&1; then
   cur="$(sysbox-runc --version 2>/dev/null | awk '/^[[:space:]]*version:/ {print $2}')"
-  if [ "$cur" = "$SYSBOX_VERSION" ]; then
-    log "sysbox-runc $SYSBOX_VERSION already installed"
-    installed_ok=true
+  if [ "$cur" = "$SYSBOX_VERSION" ] \
+     && systemctl is-active --quiet sysbox-mgr \
+     && systemctl is-active --quiet sysbox-fs; then
+    log "sysbox-runc $SYSBOX_VERSION already installed and active; skipping reinstall"
+    need_install=false
   else
-    log "sysbox-runc ${cur:-unknown} present; upgrading to $SYSBOX_VERSION"
+    log "sysbox-runc ${cur:-unknown} present; (re)installing $SYSBOX_VERSION"
   fi
 fi
 
-if ! $installed_ok; then
-  command -v apt-get >/dev/null \
-    || err "apt-get not found; Sysbox install requires a Debian/Ubuntu host"
-  log "installing apt dependencies"
-  export DEBIAN_FRONTEND=noninteractive
-  # Stop needrestart from bouncing k0scontroller (and the whole control plane)
-  # when apt upgrades a library k0s links against. k0s reloads containerd on its
-  # own when the drop-in changes, so we never need needrestart's help here.
-  export NEEDRESTART_SUSPEND=1
-  apt-get update -qq
-  # fuse3 provides fusermount3 (sysbox-fs); iptables/nftables are pulled in by
-  # the sysbox-ce deb anyway but listing them keeps minimal images happy.
-  apt-get install -y -qq jq rsync iproute2 fuse3 iptables nftables curl ca-certificates
+if $need_install; then
+  # Stop Sysbox (if running) so the binaries can be replaced without a
+  # "text file busy". mgr/fs are PartOf sysbox.service, so this stops all three;
+  # tolerate absence on first install.
+  systemctl stop sysbox 2>/dev/null || true
 
-  DEB="sysbox-ce_${SYSBOX_VERSION}-0.linux_${ARCH}.deb"
-  URL="${SYSBOX_DEB_BASE}/v${SYSBOX_VERSION}/${DEB}"
-  TMP="$(mktemp -d)"
-  log "downloading $URL"
-  curl -fsSL "$URL" -o "$TMP/$DEB" || { rm -rf -- "$TMP"; err "download failed: $URL"; }
-  log "dpkg -i $DEB"
-  dpkg -i "$TMP/$DEB" || apt-get install -f -y -qq
-  rm -rf -- "$TMP"
+  log "installing sysbox binaries into /usr/bin"
+  install -m 0755 "$SYSBOX_BIN_DIR/sysbox-mgr"  /usr/bin/sysbox-mgr
+  install -m 0755 "$SYSBOX_BIN_DIR/sysbox-fs"   /usr/bin/sysbox-fs
+  install -m 0755 "$SYSBOX_BIN_DIR/sysbox-runc" /usr/bin/sysbox-runc
+
+  # Kernel sysctls + modules Sysbox needs. `sysctl -e` ignores keys absent on
+  # this kernel (e.g. kernel.unprivileged_userns_clone on non-Debian kernels),
+  # so a single missing key can't abort the install.
+  log "applying sysbox sysctls and kernel modules"
+  install -D -m 0644 "$SYSBOX_UNIT_DIR/99-sysbox-sysctl.conf" /etc/sysctl.d/99-sysbox-sysctl.conf
+  install -D -m 0644 "$SYSBOX_UNIT_DIR/50-sysbox-mod.conf"    /etc/modules-load.d/50-sysbox-mod.conf
+  sysctl -e -p /etc/sysctl.d/99-sysbox-sysctl.conf || true
+  modprobe configfs 2>/dev/null || true
+
+  log "installing sysbox systemd units"
+  install -m 0644 "$SYSBOX_UNIT_DIR/sysbox.service"     /etc/systemd/system/sysbox.service
+  install -m 0644 "$SYSBOX_UNIT_DIR/sysbox-mgr.service" /etc/systemd/system/sysbox-mgr.service
+  install -m 0644 "$SYSBOX_UNIT_DIR/sysbox-fs.service"  /etc/systemd/system/sysbox-fs.service
+  systemctl daemon-reload
+  systemctl enable sysbox.service sysbox-mgr.service sysbox-fs.service
+
+  log "starting sysbox"
+  systemctl restart sysbox
 fi
 
 # --- 2. Verify Sysbox services ----------------------------------------------

@@ -867,15 +867,14 @@ spec:
           title: Sandbox Isolation
           help_text: |
             The container runtime used to isolate each sandbox.
-            runc is the standard Kubernetes runtime (process-level isolation).
-            Sysbox runs each sandbox in a stronger, VM-like boundary using the Linux user namespace. Selecting Sysbox installs the Sysbox runtime on every node during deployment; this requires a Debian/Ubuntu host with internet access to download the Sysbox package.
+            Sysbox (default) provides stronger isolation between sandboxes and enables Docker-in-Docker. It requires Linux kernel 6.3+ (e.g. Ubuntu 24.04).
           type: select_one
-          default: "runc"
+          default: "sysbox"
           items:
+            - name: "sysbox"
+              title: "Sysbox (stronger isolation, default)"
             - name: "runc"
               title: "runc (standard)"
-            - name: "sysbox"
-              title: "Sysbox (stronger isolation)"
         - name: runtime_routing_mode
           title: Sandbox Routing Mode
           help_text: |
