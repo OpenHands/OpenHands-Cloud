@@ -18,10 +18,11 @@ tag inside it, and the new **tag**.
 The PR changes **only the image tag scalar** — a single line. It does **not**
 bump the chart `version` in `Chart.yaml` and does nothing else.
 
-Because of that, the **Validate Chart Versions** check (`enforce_version_bump:
-true`) will **fail** on these PRs: a chart file changed without a version bump.
-This is intentional — a maintainer bumps the chart version while reviewing/merging
-the bump.
+The PR is titled `feat(<component>): bump image tag to <tag>`, so release-please
+categorizes it under Features and folds it into the chart's open release PR. The
+chart `version` in `Chart.yaml` is then bumped automatically when that release PR
+is merged (a minor bump, since feats move the minor for these pre-1.0 charts). No
+manual version bump, and no version-bump CI gate.
 
 The edit is path-aware and minimal by design. `runtime-api/values.yaml` has three
 `tag:` keys (`image.tag`, `kvm.image.tag`, `kvm.initImage.tag`); the script edits
@@ -110,7 +111,7 @@ A ready-to-copy version is in
 | `component` | yes | — | Used in the branch, PR title, and commit message. |
 | `chart_file` | yes | — | YAML file to edit, relative to the chart repo root. |
 | `tag` | yes | — | New image tag to set. Must match the tag you pushed. |
-| `image_tag_path` | no | `.image.tag` | yq-style path to the tag scalar. Supports nested keys, e.g. `.warmRuntimes.configsByName.default.image`, and list indices, e.g. `.containers[0].image`. |
+| `image_tag_path` | no | `.image.tag` | yq-style path to the tag scalar. Supports nested keys and list indices, e.g. `.warmRuntimes.configs[0].image`. |
 | `base_branch` | no | `main` | Branch to open the PR against. |
 | `chart_repo` | no | `OpenHands/OpenHands-Cloud` | Repo to update, `owner/name`. |
 | `pr_branch` | no | `bump-image-tag/<component>` | Head branch. The default rolls a single open PR per component, advancing it to the latest tag. Set something tag-specific (e.g. `bump-image-tag/runtime-api/${{ needs.prepare-tag.outputs.tag }}`) to get one PR per release. |

@@ -1,0 +1,23 @@
+name: pr
+
+# Lints every PR title for Conventional Commits format and applies a matching
+# `type: <type>` label, via the shared OpenHands/release-actions reusable
+# workflow. release-please reads the squash-merged commit subject (the PR title,
+# given the repo's PR_TITLE squash setting) to decide each chart's next version,
+# so a conventional title is what drives versioning + release notes.
+#
+# Trigger is pull_request_target (NOT pull_request) so the lint/label also runs
+# on fork PRs from non-members. It is safe because the reusable workflow never
+# checks out or runs PR code and runs on GITHUB_TOKEN alone — so this caller must
+# NOT pass `secrets: inherit` (keeps the release App token out of scope). The
+# `synchronize` type keeps the check green when release-please force-pushes new
+# commits onto its release PRs.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  pr-title:
+    permissions:
+      pull-requests: write
+    uses: OpenHands/release-actions/.github/workflows/pr-title.yml@main

@@ -4,10 +4,11 @@ name: Bump chart image tag
 # from its own release workflow to open a PR in the chart repo that points a
 # chart's image tag at the newly released image.
 #
-# It updates ONLY the tag scalar — it deliberately does not bump the chart
-# `version` in Chart.yaml or change anything else. (As a result the
-# "Validate Chart Versions" check will fail on the PR until a maintainer bumps
-# the chart version while merging; this is intentional.)
+# It updates ONLY the tag scalar - it deliberately does not bump the chart
+# `version` in Chart.yaml. The PR is titled `feat(<component>): …` so release-please
+# folds it into that chart's release PR under Features; the chart `version` is then
+# bumped automatically when the release PR is merged (a minor bump, since feats
+# move the minor for these pre-1.0 charts).
 #
 # See docs/automated-image-tag-bumps.md for caller setup and the auth model.
 
@@ -147,8 +148,8 @@ jobs:
           base: ${{ inputs.base_branch }}
           branch: ${{ inputs.pr_branch != '' && inputs.pr_branch || format('bump-image-tag/{0}', inputs.component) }}
           delete-branch: true
-          commit-message: 'chore(${{ inputs.component }}): bump image tag to ${{ inputs.tag }}'
-          title: 'chore(${{ inputs.component }}): bump image tag to ${{ inputs.tag }}'
+          commit-message: 'feat(${{ inputs.component }}): bump image tag to ${{ inputs.tag }}'
+          title: 'feat(${{ inputs.component }}): bump image tag to ${{ inputs.tag }}'
           labels: ${{ inputs.pr_labels }}
           draft: ${{ inputs.draft }}
           body: |

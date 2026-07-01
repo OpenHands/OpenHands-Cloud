@@ -1,0 +1,72 @@
+name: Publish Released Helm Chart
+
+# Publishes the STABLE chart version to GHCR when release-please tags a chart
+# release. This replaces the old "publish a stable version on every merge to
+# main" — stable charts now publish only when a release is cut.
+#
+# release-please creates the tag with the shared release App token, so this push
+# event triggers workflows (a tag pushed by the default GITHUB_TOKEN would be
+# suppressed by GitHub's recursion guard and never fire this job).
+#
+# Tag shape is <component>/<version> (e.g. openhands/0.7.69). The patterns below
+# don't overlap: `openhands/*` matches openhands/0.7.69 but not
+# openhands-secrets/0.1.25 (that needs the explicit `openhands-secrets/*`).
+on:
+  push:
+    tags:
+      - 'crd-check/*'
+      - 'image-loader/*'
+      - 'openhands/*'
+      - 'openhands-secrets/*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Parse component and version from tag
+        id: parse
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # <component>/<version>: strip the trailing /<version> for the
+          # component, and everything up to the last / for the version.
+          COMPONENT="${TAG%/*}"
+          VERSION="${TAG##*/}"
+          {
+            echo "component=${COMPONENT}"
+            echo "version=${VERSION}"
+            echo "path=charts/${COMPONENT}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing ${COMPONENT} ${VERSION} from charts/${COMPONENT}"
+
+      - name: Checkout (at the release tag)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Lowercase registry owner
+        id: owner
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "repo_owner=${REPO_OWNER}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish ${{ steps.parse.outputs.component }} chart to GHCR
+        uses: appany/helm-oci-chart-releaser@v0.4.2
+        with:
+          name: ${{ steps.parse.outputs.component }}
+          repository: helm-charts
+          path: ${{ steps.parse.outputs.path }}
+          registry: ghcr.io/${{ steps.owner.outputs.repo_owner }}
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+          update_dependencies: 'true'
+          tag: ${{ steps.parse.outputs.version }}
