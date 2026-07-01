@@ -13,6 +13,9 @@ spec:
   additionalNamespaces:
     - openhands
     - cert-manager
+    # The Sysbox installer DaemonSet runs in kube-system (privileged, host
+    # namespaces), so KOTS must provision the image pull secret there too.
+    - kube-system
 
   statusInformers:
     # openhands

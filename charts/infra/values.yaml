@@ -126,7 +126,7 @@ sandboxUpgradeCoordinator:
 
 # Sysbox installer. When enabled, a privileged DaemonSet installs the Sysbox
 # container runtime on every node and registers the sysbox RuntimeClass,
-# giving pods with runtimeClassName: sysbox VM-like (user-namespace)
+# giving pods with runtimeClassName: sysbox-runc VM-like (user-namespace)
 # isolation. Disabled by default; the Replicated "Sandbox Isolation" config
 # option turns it on. Requires a Debian/Ubuntu host with internet access to
 # download the Sysbox package.
@@ -138,7 +138,7 @@ sysbox:
   # Name of the RuntimeClass + handler. Must stay in sync with the containerd
   # runtime name in files/install-sysbox.sh and the runtime-api RUNTIME_CLASS
   # value (replicated/openhands.yaml).
-  runtimeClassName: sysbox
+  runtimeClassName: sysbox-runc
   image:
     # Minimal image providing nsenter + bash; the install runs on the host.
     repository: docker.io/library/debian

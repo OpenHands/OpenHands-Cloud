@@ -4,7 +4,7 @@
 # apt/dpkg/systemctl and the containerd drop-in all act on the node itself.
 #
 # It installs Sysbox and registers the sysbox containerd runtime through a
-# k0s containerd drop-in, so pods with runtimeClassName: sysbox get
+# k0s containerd drop-in, so pods with runtimeClassName: sysbox-runc get
 # VM-like (user-namespace) isolation. Idempotent: safe to re-run on every pod
 # restart.
 #
@@ -31,26 +31,24 @@ case "$(uname -m)" in
   *) err "unsupported architecture: $(uname -m)" ;;
 esac
 
-# --- Discover the k0s-managed containerd config ------------------------------
+# --- Discover the k0s-managed containerd config + binary --------------------
 # Embedded Cluster runs k0s with a custom --data-dir, so don't assume /etc/k0s.
-# Find containerd's actual --config from its running command line instead.
-discover_containerd_conf() {
-  local pid args
-  for pid in $(pgrep -x containerd 2>/dev/null || true); do
-    args="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-    case "$args" in
-      *--config*)
-        echo "$args" | grep -oE -- '--config[ =][^ ]+' | head -1 | sed -E 's/--config[ =]//'
-        return 0 ;;
-    esac
-  done
-  return 1
+# Find containerd's actual --config and binary from the running process.
+conf_from_pid() {
+  local pid="$1" args
+  args="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  echo "$args" | grep -oE -- '--config[ =][^ ]+' | head -1 | sed -E 's/--config[ =]//'
 }
 
 CONTAINERD_CONF=""
+CONTAINERD_BIN=""
 for _ in $(seq 1 30); do
-  CONTAINERD_CONF="$(discover_containerd_conf || true)"
-  [ -n "$CONTAINERD_CONF" ] && break
+  pid="$(pgrep -x containerd 2>/dev/null | head -1 || true)"
+  if [ -n "$pid" ]; then
+    CONTAINERD_CONF="$(conf_from_pid "$pid")"
+    CONTAINERD_BIN="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+    [ -n "$CONTAINERD_CONF" ] && break
+  fi
   sleep 2
 done
 [ -n "$CONTAINERD_CONF" ] || CONTAINERD_CONF=/etc/k0s/containerd.toml
@@ -61,14 +59,9 @@ grep -q '^# k0s_managed=true' "$CONTAINERD_CONF" \
 DROPIN_DIR="$(dirname "$CONTAINERD_CONF")/containerd.d"
 DROPIN="$DROPIN_DIR/sysbox.toml"
 
-# The merged CRI config k0s regenerates from the drop-ins. Discover it from the
-# containerd config's imports; fall back to the well-known k0s path.
-MERGED_CRI="$(grep -oE '"[^"]*containerd-cri\.toml"' "$CONTAINERD_CONF" 2>/dev/null | tr -d '"' | head -1 || true)"
-[ -n "$MERGED_CRI" ] || MERGED_CRI=/run/k0s/containerd-cri.toml
-
 log "containerd config: $CONTAINERD_CONF"
+log "containerd binary: ${CONTAINERD_BIN:-<unresolved>}"
 log "drop-in:           $DROPIN"
-log "merged CRI:        $MERGED_CRI"
 
 # --- 1. Install Sysbox -------------------------------------------------------
 installed_ok=false
@@ -87,6 +80,10 @@ if ! $installed_ok; then
     || err "apt-get not found; Sysbox install requires a Debian/Ubuntu host"
   log "installing apt dependencies"
   export DEBIAN_FRONTEND=noninteractive
+  # Stop needrestart from bouncing k0scontroller (and the whole control plane)
+  # when apt upgrades a library k0s links against. k0s reloads containerd on its
+  # own when the drop-in changes, so we never need needrestart's help here.
+  export NEEDRESTART_SUSPEND=1
   apt-get update -qq
   # fuse3 provides fusermount3 (sysbox-fs); iptables/nftables are pulled in by
   # the sysbox-ce deb anyway but listing them keeps minimal images happy.
@@ -108,33 +105,55 @@ systemctl is-active --quiet sysbox     || systemctl restart sysbox
 systemctl is-active --quiet sysbox-mgr || err "sysbox-mgr not active"
 systemctl is-active --quiet sysbox-fs  || err "sysbox-fs not active"
 
-# --- 3. containerd drop-in ---------------------------------------------------
-# k0s requires version = 3 in the drop-in (the containerd v2 plugin path),
-# despite the public docs example showing version = 2.
-log "writing $DROPIN"
+# --- 3. containerd drop-in (write only when changed) -------------------------
+# k0s's main containerd.toml imports this dir directly (imports =
+# ["<dir>/containerd.d/*.toml"]) and watches it, restarting containerd to load
+# changes. So there is NO separate merged-CRI file to grep, and writing only on
+# change avoids bouncing containerd every time the DaemonSet pod restarts.
+# k0s requires version = 3 (the containerd v2 plugin path), despite the public
+# docs example showing version = 2.
+log "ensuring $DROPIN"
 mkdir -p "$DROPIN_DIR"
-cat > "$DROPIN" <<'EOF'
+NEW_DROPIN="$(mktemp)"
+cat > "$NEW_DROPIN" <<'EOF'
 version = 3
 
-[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.sysbox]
+[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.sysbox-runc]
   runtime_type = "io.containerd.runc.v2"
   pod_annotations = ["nestybox.sysbox-runtime"]
 
-[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.sysbox.options]
+[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.sysbox-runc.options]
   BinaryName = "/usr/bin/sysbox-runc"
   SystemdCgroup = false
 EOF
+if cmp -s "$NEW_DROPIN" "$DROPIN" 2>/dev/null; then
+  log "drop-in already current"
+  rm -f "$NEW_DROPIN"
+else
+  mv "$NEW_DROPIN" "$DROPIN"
+  log "drop-in written; k0s will reload containerd"
+fi
 
-log "waiting for k0s to merge drop-in into $MERGED_CRI"
-merged=false
-for i in $(seq 1 30); do
-  if grep -q sysbox "$MERGED_CRI" 2>/dev/null; then
-    merged=true
-    break
+# --- 4. Verify the sysbox runtime is wired into containerd -------------------
+# Dump containerd's effective, import-merged config and confirm the runtime is
+# present. This proves the drop-in parses and is imported; k0s's directory watch
+# then (re)starts containerd so the runtime goes live before any sysbox pod is
+# scheduled. (crictl isn't shipped with k0s, so we can't query the live CRI.)
+log "verifying sysbox runtime in containerd effective config"
+verify_runtime() {
+  if [ -n "$CONTAINERD_BIN" ] && [ -x "$CONTAINERD_BIN" ]; then
+    "$CONTAINERD_BIN" --config "$CONTAINERD_CONF" config dump 2>/dev/null | grep -qi sysbox-runc
+  else
+    # No containerd binary resolved; fall back to confirming the drop-in exists.
+    grep -q 'runtimes\.sysbox-runc' "$DROPIN"
   fi
+}
+verified=false
+for _ in $(seq 1 30); do
+  if verify_runtime; then verified=true; break; fi
   sleep 2
 done
-[ "$merged" = true ] || err "drop-in not merged after 60s; check k0s logs"
+[ "$verified" = true ] || err "sysbox runtime not found in containerd config after 60s; check k0s logs"
 
 log "sysbox runtime ready on $(hostname)"
 : > "$READY_FILE"
