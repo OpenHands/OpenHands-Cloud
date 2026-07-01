@@ -37,7 +37,14 @@ rm -f "$READY_FILE"
 conf_from_pid() {
   local pid="$1" args
   args="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-  echo "$args" | grep -oE -- '--config[ =][^ ]+' | head -1 | sed -E 's/--config[ =]//'
+  # Trailing `|| true` is load-bearing: under `set -e`, a bare
+  # VAR="$(conf_from_pid ...)" assignment aborts the whole script if this
+  # pipeline exits non-zero — which it does when containerd was launched without
+  # --config (k0s often runs it bare: cmdline is just "/usr/bin/containerd"), as
+  # grep then matches nothing. Returning success emits an empty string and lets
+  # discovery fall through to the k0s default path below instead of dying
+  # silently with exit 1.
+  echo "$args" | grep -oE -- '--config[ =][^ ]+' | head -1 | sed -E 's/--config[ =]//' || true
 }
 
 CONTAINERD_CONF=""
@@ -47,7 +54,12 @@ for _ in $(seq 1 30); do
   if [ -n "$pid" ]; then
     CONTAINERD_CONF="$(conf_from_pid "$pid")"
     CONTAINERD_BIN="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
-    [ -n "$CONTAINERD_CONF" ] && break
+    # containerd is up. Its config path is either parsed from the cmdline above
+    # or, when it was launched without --config, the k0s default set just below.
+    # Either way there is nothing more to wait for, so stop once the process is
+    # found — don't keep looping (and stalling ~60s) just because the cmdline
+    # carried no --config.
+    break
   fi
   sleep 2
 done
@@ -159,26 +171,19 @@ else
   log "drop-in written; k0s will reload containerd"
 fi
 
-# --- 4. Verify the sysbox runtime is wired into containerd -------------------
-# Dump containerd's effective, import-merged config and confirm the runtime is
-# present. This proves the drop-in parses and is imported; k0s's directory watch
-# then (re)starts containerd so the runtime goes live before any sysbox pod is
-# scheduled. (crictl isn't shipped with k0s, so we can't query the live CRI.)
-log "verifying sysbox runtime in containerd effective config"
-verify_runtime() {
-  if [ -n "$CONTAINERD_BIN" ] && [ -x "$CONTAINERD_BIN" ]; then
-    "$CONTAINERD_BIN" --config "$CONTAINERD_CONF" config dump 2>/dev/null | grep -qi sysbox-runc
-  else
-    # No containerd binary resolved; fall back to confirming the drop-in exists.
-    grep -q 'runtimes\.sysbox-runc' "$DROPIN"
-  fi
-}
-verified=false
-for _ in $(seq 1 30); do
-  if verify_runtime; then verified=true; break; fi
-  sleep 2
-done
-[ "$verified" = true ] || err "sysbox runtime not found in containerd config after 60s; check k0s logs"
+# --- 4. Verify the sysbox runtime drop-in is in place ------------------------
+# Confirm the drop-in that registers the runtime is present and names it. We do
+# NOT read it back from `containerd config dump`: run as a one-off command it
+# does not expand the main config's `imports`, so it never shows the drop-in even
+# though the running containerd has loaded it (verified in practice — sysbox
+# sandboxes run). The k0s-managed containerd binary is also not reliably
+# executable from the host mount namespace (k0s launches it from a path that need
+# not exist on the host fs, e.g. cmdline "/usr/bin/containerd" with no such file).
+# k0s watches $DROPIN_DIR and reloads containerd to apply changes, so a correct
+# drop-in file is what makes the runtime live.
+log "verifying sysbox runtime drop-in"
+grep -q 'runtimes\.sysbox-runc' "$DROPIN" \
+  || err "sysbox runtime drop-in missing or malformed at $DROPIN"
 
 log "sysbox runtime ready on $(hostname)"
 : > "$READY_FILE"

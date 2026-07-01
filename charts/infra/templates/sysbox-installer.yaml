@@ -63,6 +63,8 @@ spec:
         - name: stage-artifacts
           image: "{{ .Values.sysbox.image.repository }}:{{ .Values.sysbox.image.tag }}"
           imagePullPolicy: {{ .Values.sysbox.image.pullPolicy }}
+          securityContext:
+            privileged: true
           env:
             - name: SYSBOX_ARTIFACTS_DIR
               value: /run/sysbox-install
