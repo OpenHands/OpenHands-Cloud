@@ -175,6 +175,8 @@ env: {}
 # Service name will be "{release-name}-postgresql", secret name also "{release-name}-postgresql"
 postgresql:
   enabled: false
+  image:
+    repository: bitnamilegacy/postgresql
   auth:
     username: postgres
     database: integrations_hub
@@ -186,8 +188,6 @@ postgresql:
   service:
     ports:
       postgresql: 5432
-  image:
-    repository: bitnamilegacy/postgresql
 
 global:
   security:
