@@ -8,7 +8,7 @@ spec:
   releaseName: openhands
   namespace: openhands
   weight: 10
-  helmUpgradeFlags: ["--wait", "--timeout", "600s", "--force-conflicts"]
+  helmUpgradeFlags: ["--wait", "--timeout", "600s"]
   values:
     global:
       imageRegistry: 'images.r9.all-hands.dev'
