@@ -642,25 +642,40 @@
 */}}
 {{- define "openhands.env" }}
 {{- $defaults := include "openhands.env.defaults" . | fromYamlArray }}
+{{- /*
+    Effective env-var overrides. Start from .Values.env, then fold the
+    structured .Values.agentServerEnv map into OH_AGENT_SERVER_ENV: the map is
+    merged on top of any JSON string already present at
+    .Values.env.OH_AGENT_SERVER_ENV and re-serialised to JSON. This lets callers
+    (e.g. replicated/openhands.yaml) assemble OH_AGENT_SERVER_ENV from a
+    recursively-merged map of individual keys instead of repeating a hand-written
+    JSON blob in every optionalValues block. When agentServerEnv is empty,
+    .Values.env passes through unchanged, so existing callers are unaffected.
+   */}}
+{{- $envOverrides := .Values.env | default dict }}
+{{- if .Values.agentServerEnv }}
+{{- $envOverrides = deepCopy $envOverrides }}
+{{- $base := dict }}
+{{- with (get $envOverrides "OH_AGENT_SERVER_ENV") }}
+{{- $base = mustFromJson (. | toString) }}
+{{- end }}
+{{- $_ := set $envOverrides "OH_AGENT_SERVER_ENV" (mustToJson (mergeOverwrite $base (deepCopy .Values.agentServerEnv))) }}
+{{- end }}
 {{- /* Build a lookup dict of override keys for O(1) membership checks */}}
 {{- $overrideKeys := dict }}
-{{- if .Values.env }}
-{{- range $key, $_ := .Values.env }}
+{{- range $key, $_ := $envOverrides }}
 {{- $_ := set $overrideKeys $key true }}
 {{- end }}
-{{- end }}
-{{- /* Keep only default entries that are NOT overridden by .Values.env */}}
+{{- /* Keep only default entries that are NOT overridden by the effective overrides */}}
 {{- $filtered := list }}
 {{- range $entry := $defaults }}
 {{- if not (hasKey $overrideKeys (get $entry "name")) }}
 {{- $filtered = append $filtered $entry }}
 {{- end }}
 {{- end }}
-{{- /* Append user overrides from .Values.env (these take precedence) */}}
-{{- if .Values.env }}
-{{- range $key, $value := .Values.env }}
+{{- /* Append overrides (these take precedence) */}}
+{{- range $key, $value := $envOverrides }}
 {{- $filtered = append $filtered (dict "name" $key "value" ($value | toString)) }}
-{{- end }}
 {{- end }}
 {{- $filtered | toYaml }}
 {{- end }}
