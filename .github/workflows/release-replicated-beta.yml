@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   beta:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -64,9 +64,6 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Install yq
-        uses: mikefarah/yq@v4
-
       - name: Install Replicated CLI
         run: |
           curl -s https://api.github.com/repos/replicatedhq/replicated/releases/latest \
@@ -80,11 +77,13 @@ jobs:
 
       - name: Build and publish to Beta
         id: release
+        shell: bash
         env:
           REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
           REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
         run: |
-          set -o pipefail
+          # shell: bash runs with -o pipefail, so a failing `make` fails the step
+          # even though its output is piped to tee.
           # CHANNEL=Beta overrides the Makefile default, which maps the current
           # branch to a channel. On a tag checkout there's no branch, so we set
           # the channel explicitly. VERSION is read from
