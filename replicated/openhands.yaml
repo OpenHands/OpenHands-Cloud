@@ -1042,6 +1042,13 @@ spec:
             env:
               nextauthUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
               nextPublicUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+          apiIngress:
+            enabled: true
+            hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+            className: "traefik"
+            tls:
+              enabled: true
+              secretName: "openhands-tls"
           postgres:
             persistence:
               storageClass: "openebs-hostpath"
