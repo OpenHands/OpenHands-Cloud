@@ -116,9 +116,10 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # Embedded subcharts live under charts/openhands/charts/, so their
-          # changes count as openhands changes via the ^charts/openhands/ match.
-          for chart in crd-check image-loader openhands openhands-secrets; do
+          # crd-check, image-loader, and openhands-secrets are independent
+          # release lines: each changes only when files under its own chart
+          # directory change.
+          for chart in crd-check image-loader openhands-secrets; do
             if echo "$CHANGED_FILES" | grep -q "^charts/${chart}/"; then
               echo "${chart}=true" >> "$GITHUB_OUTPUT"
               echo "Changes detected in charts/${chart}"
@@ -127,6 +128,23 @@ jobs:
               echo "No changes in charts/${chart}"
             fi
           done
+
+          # openhands is the umbrella release line: its release-please config is
+          # rooted at the repo root with exclude-paths for the three charts above
+          # (see release-please-config.openhands.json), so a change to
+          # charts/infra/, replicated/, or anything else outside those charts
+          # counts as an openhands change — as do its own embedded subcharts
+          # under charts/openhands/charts/. openhands is "changed" whenever any
+          # touched file is NOT under one of those three independent charts.
+          OPENHANDS_CHANGES=$(echo "$CHANGED_FILES" | \
+            grep -vE '^charts/(crd-check|image-loader|openhands-secrets)/' || true)
+          if [ -n "$OPENHANDS_CHANGES" ]; then
+            echo "openhands=true" >> "$GITHUB_OUTPUT"
+            echo "Changes detected for openhands (outside the independent charts)"
+          else
+            echo "openhands=false" >> "$GITHUB_OUTPUT"
+            echo "No openhands-relevant changes"
+          fi
 
   # Edge alpha publish. Waits for the release-please jobs so each chart's release
   # PR (and therefore its proposed next version) reflects this push, then
@@ -187,7 +205,14 @@ jobs:
           # wasn't release-worthy, e.g. a chore) ⇒ no candidate ⇒ no alpha.
           BRANCH="release-please--branches--main--components--${CHART_NAME}"
           MANIFEST=".release-please-manifest.${CHART_NAME}.json"
-          KEY="charts/${CHART_NAME}"
+          # openhands is the umbrella release line rooted at the repo root, so its
+          # manifest key is "." (not charts/openhands); the other charts key on
+          # their own chart path.
+          if [ "$CHART_NAME" = "openhands" ]; then
+            KEY="."
+          else
+            KEY="charts/${CHART_NAME}"
+          fi
 
           CAND_RAW=$(gh api -H "Accept: application/vnd.github.raw" \
             "repos/${REPO}/contents/${MANIFEST}?ref=${BRANCH}" 2>/dev/null) || CAND_RAW=""

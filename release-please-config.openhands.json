@@ -17,13 +17,25 @@
     { "type": "revert",   "section": "Maintenance" }
   ],
   "packages": {
-    "charts/openhands": {
+    ".": {
       "release-type": "helm",
       "component": "openhands",
       "tag-separator": "/",
       "include-v-in-tag": false,
       "changelog-type": "github-scoped",
-      "skip-changelog": true
+      "skip-changelog": true,
+      "exclude-paths": [
+        "charts/crd-check",
+        "charts/image-loader",
+        "charts/openhands-secrets"
+      ],
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "charts/openhands/Chart.yaml",
+          "jsonpath": "$.version"
+        }
+      ]
     }
   }
 }
