@@ -498,6 +498,20 @@ laminar:
         clusterIssuer: ""
       annotations: {}
 
+  # OpenHands-managed ingress that exposes only Laminar's public ingestion API
+  # paths on the analytics hostname. This avoids exposing the full app-server
+  # surface through the upstream Laminar appServer.ingress, which routes "/".
+  apiIngress:
+    enabled: false
+    hostname: ""
+    className: ""
+    path: /v1
+    pathType: Prefix
+    tls:
+      enabled: false
+      secretName: "laminar-frontend-tls"
+    annotations: {}
+
   appServer:
     # loadBalancer creates an L4 Network Load Balancer Service for the app-server (OTLP trace ingestion).
     # Use this on AWS (NLB) where runtimes send traces directly over TCP.

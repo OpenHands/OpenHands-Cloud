@@ -1,0 +1,33 @@
+{{- $apiIngress := .Values.laminar.apiIngress | default dict -}}
+{{- $tls := $apiIngress.tls | default dict -}}
+{{- if and .Values.laminar.enabled $apiIngress.enabled $apiIngress.hostname }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: laminar-api-ingress
+  {{ with $apiIngress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $apiIngress.className }}
+  ingressClassName: {{ $apiIngress.className }}
+  {{- end }}
+  {{- if $tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $apiIngress.hostname }}
+      secretName: {{ $tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $apiIngress.hostname }}
+      http:
+        paths:
+          - path: {{ $apiIngress.path | default "/v1" }}
+            pathType: {{ $apiIngress.pathType | default "Prefix" }}
+            backend:
+              service:
+                name: laminar-app-server-service
+                port:
+                  number: 8000
+{{- end }}
