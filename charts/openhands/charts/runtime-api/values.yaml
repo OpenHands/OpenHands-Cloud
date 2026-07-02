@@ -1,3 +1,10 @@
+image:
+  repository: ghcr.io/openhands/runtime-api
+  # You must use a stable, semver tag. Do not use sha-based tags.
+  # If you are hotfixing, you MUST create a patch release and use the semver tag.
+  tag: 0.2.0
+  pullPolicy: Always
+
 nameOverride: ""
 fullnameOverride: ""
 
@@ -7,13 +14,6 @@ databaseMigrations:
   waitForDatabase: true
   createDatabases: false
   migrate: true
-
-image:
-  repository: ghcr.io/openhands/runtime-api
-  # You must use a stable, semver tag. Do not use sha-based tags.
-  # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.2.0
-  pullPolicy: Always
 
 imagePullSecrets:
   - name: ghcr-login-secret
@@ -117,12 +117,12 @@ securityContext: {}
 # other device plugins; the sandbox pods do not.
 kvm:
   enabled: false
-  resourceName: smarter-devices/kvm
-  maxDevices: 20
   image:
     repository: ghcr.io/smarter-project/smarter-device-manager
     tag: v1.20.11
     pullPolicy: IfNotPresent
+  resourceName: smarter-devices/kvm
+  maxDevices: 20
   # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
   # perms still block the non-root sandbox UID from opening it. An init container
   # relaxes /dev/kvm to 0666 so unprivileged sandboxes can use it. Disable only if
@@ -148,6 +148,8 @@ affinity: {}
 
 postgresql:
   enabled: false
+  image:
+    repository: bitnamilegacy/postgresql
   isFeatureDeploy: false
   primary:
     persistence:
@@ -160,8 +162,6 @@ postgresql:
     password: "" # This should be set externally for security reasons
     existingSecret: postgres-password
     database: runtime_api_db
-  image:
-    repository: bitnamilegacy/postgresql
 
 externalDatabase:
   enabled: false
@@ -352,13 +352,13 @@ replicated:
   enabled: false
 
 global:
-  security:
-    # This allows using the bitnamilegacy image repo.
-    # See: https://github.com/bitnami/containers/issues/83267
-    allowInsecureImages: true
   # Canonical agent-server image. Defaults any warm-runtime configsByName entry
   # that omits its own `image`. In the openhands umbrella the parent chart's
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.29.0-python
+  security:
+    # This allows using the bitnamilegacy image repo.
+    # See: https://github.com/bitnami/containers/issues/83267
+    allowInsecureImages: true
