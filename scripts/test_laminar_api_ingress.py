@@ -19,8 +19,9 @@ def test_laminar_api_ingress_exposes_only_v1_prefix() -> None:
     assert 'name: laminar-api-ingress' in template
     assert 'path: {{ $apiIngress.path | default "/v1" }}' in template
     assert 'pathType: {{ $apiIngress.pathType | default "Prefix" }}' in template
-    assert "name: laminar-app-server-service" in template
-    assert "number: 8000" in template
+    assert '{{- $laminarBaseUrl := get $env "LMNR_BASE_URL" | default "" -}}' in template
+    assert "name: {{ $laminarServiceName }}" in template
+    assert "number: {{ .Values.laminar.httpPort | default 8000 }}" in template
     assert "path: /" not in template
 
 
