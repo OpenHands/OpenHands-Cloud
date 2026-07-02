@@ -1,0 +1,118 @@
+name: Release Replicated to Beta
+
+# When an openhands release is cut, build the Replicated app from that tagged
+# commit and publish it to the Beta channel.
+#
+# openhands and the replicated config are versioned together (see
+# release-please-config.openhands.json), so the openhands/<version> tag that
+# release-please creates on a release-PR merge is exactly the point at which a
+# matching Replicated release should go to Beta. The per-push "Release to
+# Replicated" workflow keeps publishing bleeding-edge main to Unstable; this adds
+# the Beta line, gated on an actual release.
+#
+# After promoting, we record the release sequence Replicated assigned by tagging
+# the same commit Replicated/Beta/<sequence>, linking each openhands release to
+# its Replicated Beta release in git history. <sequence> is the global release
+# sequence (what `replicated release inspect <sequence>` takes).
+#
+# The openhands/* pattern matches openhands/0.7.85 but not
+# openhands-secrets/0.1.25 (that would need an explicit openhands-secrets/*).
+on:
+  push:
+    tags:
+      - 'openhands/*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "openhands/<version> tag to (re)publish to Beta"
+        required: true
+
+# Never let two Beta publishes for the same release tag race.
+concurrency:
+  group: release-replicated-beta-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  beta:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Publishing Replicated Beta release for ${TAG}"
+
+      - name: Checkout (at the release tag)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Install yq
+        uses: mikefarah/yq@v4
+
+      - name: Install Replicated CLI
+        run: |
+          curl -s https://api.github.com/repos/replicatedhq/replicated/releases/latest \
+            | grep "browser_download_url.*linux_amd64.tar.gz" \
+            | cut -d : -f 2,3 \
+            | tr -d \" \
+            | wget -qi -
+          mkdir -p /tmp/replicated-cli
+          tar -xzf replicated_*_linux_amd64.tar.gz -C /tmp/replicated-cli replicated
+          sudo mv /tmp/replicated-cli/replicated /usr/local/bin/
+
+      - name: Build and publish to Beta
+        id: release
+        env:
+          REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
+          REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+        run: |
+          set -o pipefail
+          # CHANNEL=Beta overrides the Makefile default, which maps the current
+          # branch to a channel. On a tag checkout there's no branch, so we set
+          # the channel explicitly. VERSION is read from
+          # charts/openhands/Chart.yaml at this tagged commit.
+          make release CHANNEL=Beta 2>&1 | tee release.log
+          # `replicated release create` prints `SEQUENCE: <n>` for the release it
+          # created — the global release sequence `replicated release inspect`
+          # takes. Capture it to tag the commit.
+          SEQUENCE=$(grep -oE 'SEQUENCE:[[:space:]]*[0-9]+' release.log | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$SEQUENCE" ]; then
+            echo "::error::Could not parse a release SEQUENCE from the Replicated CLI output"
+            exit 1
+          fi
+          echo "sequence=${SEQUENCE}" >> "$GITHUB_OUTPUT"
+          echo "Replicated Beta release sequence: ${SEQUENCE}"
+
+      - name: Tag the commit with the Beta release sequence
+        env:
+          SEQUENCE: ${{ steps.release.outputs.sequence }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          TAG="Replicated/Beta/${SEQUENCE}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on origin — leaving it in place."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Replicated Beta release ${SEQUENCE} for ${RELEASE_TAG}"
+          git push origin "${TAG}"
+          echo "Tagged ${GITHUB_SHA} as ${TAG}"
