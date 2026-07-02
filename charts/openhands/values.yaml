@@ -87,6 +87,16 @@ env:
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
+# Structured source for the OH_AGENT_SERVER_ENV environment variable, which the
+# enterprise-server passes through to every agent-server (sandbox) runtime it
+# spawns. Rather than hand-writing that JSON blob, list the runtime's env vars
+# as a map here and the chart serialises it to JSON (see the "openhands.env"
+# helper). The map is merged on top of any OH_AGENT_SERVER_ENV string set
+# directly in .Values.env, so callers that layer values — e.g. KOTS
+# optionalValues with recursiveMerge — can add keys without repeating the whole
+# blob in every block. Empty by default, which emits no OH_AGENT_SERVER_ENV.
+agentServerEnv: {}
+
 filestore:
   ephemeral: false
   bucket: openhands-sessions
