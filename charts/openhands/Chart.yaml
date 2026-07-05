@@ -2,7 +2,7 @@ apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
 appVersion: cloud-1.40.0
-version: 0.7.84
+version: 0.8.0
 dependencies:
   - name: keycloak
     version: 24.7.5
@@ -35,21 +35,18 @@ dependencies:
   - name: crd-check
     repository: oci://ghcr.io/openhands/helm-charts
     version: 0.1.0
-  # The entries below have no repository: they are embedded subcharts that
-  # live in this chart's charts/ directory and version with the openhands
-  # chart itself. The dependency entries exist only for the condition flags.
   - name: runtime-api
-    version: "*"
+    version: '*'
     condition: runtime-api.enabled
   - name: automation
-    version: "*"
+    version: '*'
     condition: automation.enabled
   - name: plugin-directory
-    version: "*"
+    version: '*'
     condition: plugin-directory.enabled
   - name: integrations-hub
-    version: "*"
+    version: '*'
     condition: integrations-hub.enabled
   - name: agent-canvas
-    version: "*"
+    version: '*'
     condition: agent-canvas.enabled
