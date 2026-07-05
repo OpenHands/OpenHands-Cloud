@@ -1,6 +1,10 @@
 {{- define "openhands.env.defaults" }}
 - name: RUNTIME
   value: remote
+- name: OH_SANDBOX_SPEC_KIND
+  value: openhands.app_server.sandbox.dynamic_remote_sandbox_spec_service.DynamicRemoteSandboxSpecServiceInjector
+- name: OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME
+  value: v1_current
 - name: OPENHANDS_CONFIG_CLS
   value: {{ .Values.appConfig.OPENHANDS_CONFIG_CLS }}
 - name: OPENHANDS_GITHUB_SERVICE_CLS
