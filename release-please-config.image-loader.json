@@ -3,6 +3,8 @@
   "bump-minor-pre-major": true,
   "include-commit-authors": true,
   "bootstrap-sha": "9a1529f375680a2b928375ad25d13d00c1a9dbfd",
+  "label": "autorelease: image-loader pending",
+  "release-label": "autorelease: image-loader tagged",
   "changelog-sections": [
     { "type": "feat",     "section": "Features" },
     { "type": "fix",      "section": "Bug Fixes" },
