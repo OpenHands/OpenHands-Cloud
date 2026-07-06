@@ -171,9 +171,40 @@ tavily:
   enabled: false
 
 # =============================================================================
+# Email + budget maintenance (added in OpenHands-Cloud PR #780)
+# =============================================================================
+smtp:
+  enabled: false
+  host: ""
+  port: "587"
+  fromEmail: ""
+  useSsl: false
+  useTls: true
+  auth:
+    existingSecret: smtp-credentials
+
+budgetMaintenance:
+  enabled: true
+  schedule: "*/15 * * * *" # Run every 15 minutes
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+
+# =============================================================================
 # Runtime-API - Per-branch instance (replaces shared)
 # =============================================================================
 runtime-api:
+  branchSanitized: admin-dashboard
+
   enabled: true
   fullnameOverride: openhands-admin-dashboard-runtime-api
   env:
