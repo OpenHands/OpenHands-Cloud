@@ -27,6 +27,11 @@ config:
   keycloak_client_id: "openhands"
   keycloak_smtp_password: ""
   
+  # SMTP configuration
+  smtp_username: ""
+  smtp_password: ""
+
+
   # LLM provider secrets
   anthropic_api_key: ""
   openai_api_key: ""
