@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/automation
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.0.0a12
+  tag: 1.1.2
 
 imagePullSecrets: []
 
