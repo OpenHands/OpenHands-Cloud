@@ -318,6 +318,28 @@
       name: {{ .Values.resend.auth.existingSecret }}
       key: resend-api-key
 {{- end }}
+{{- if .Values.smtp.enabled }}
+- name: SMTP_HOST
+  value: {{ .Values.smtp.host | quote }}
+- name: SMTP_PORT
+  value: {{ .Values.smtp.port | quote }}
+- name: SMTP_FROM_EMAIL
+  value: {{ .Values.smtp.fromEmail | quote }}
+- name: SMTP_USE_SSL
+  value: {{ .Values.smtp.useSsl | default false | quote }}
+- name: SMTP_USE_TLS
+  value: {{ .Values.smtp.useTls | default true | quote }}
+- name: SMTP_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.smtp.auth.existingSecret }}
+      key: smtp-username
+- name: SMTP_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.smtp.auth.existingSecret }}
+      key: smtp-password
+{{- end }}
 {{- if .Values.tavily.enabled }}
 - name: TAVILY_API_KEY
   valueFrom:
