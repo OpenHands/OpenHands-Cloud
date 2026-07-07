@@ -1,3 +1,44 @@
+{{- define "openhands.agentServerImage" -}}
+{{- printf "%s:%s" (.Values.runtime.image.repository | default .Values.global.agentServerImage.repository) (.Values.runtime.image.tag | default .Values.global.agentServerImage.tag) -}}
+{{- end -}}
+
+{{- define "openhands.defaultWarmRuntimeConfig" -}}
+{{- $runtimeApi := index .Values "runtime-api" | default dict -}}
+{{- $warmRuntimes := get $runtimeApi "warmRuntimes" | default dict -}}
+{{- $configsByName := get $warmRuntimes "configsByName" | default dict -}}
+{{- get $configsByName "default" | default dict | toYaml -}}
+{{- end -}}
+
+{{- define "openhands.defaultSandboxSpecCommand" -}}
+{{- $config := include "openhands.defaultWarmRuntimeConfig" . | fromYaml -}}
+{{- get $config "command" | default (list "/usr/local/bin/openhands-agent-server" "--port" "60000") | toYaml -}}
+{{- end -}}
+
+{{- define "openhands.defaultSandboxSpecWorkingDir" -}}
+{{- $config := include "openhands.defaultWarmRuntimeConfig" . | fromYaml -}}
+{{- get $config "working_dir" | default "/workspace/project" -}}
+{{- end -}}
+
+{{- define "openhands.defaultSandboxSpecInitialEnv" -}}
+{{- $config := include "openhands.defaultWarmRuntimeConfig" . | fromYaml -}}
+{{- $initialEnv := deepCopy (get $config "environment" | default dict) -}}
+{{- $envOverrides := .Values.env | default dict -}}
+{{- $agentServerEnv := dict -}}
+{{- with (get $envOverrides "OH_AGENT_SERVER_ENV") -}}
+{{- $agentServerEnv = mustFromJson (. | toString) -}}
+{{- end -}}
+{{- if .Values.agentServerEnv -}}
+{{- $agentServerEnv = mergeOverwrite $agentServerEnv (deepCopy .Values.agentServerEnv) -}}
+{{- end -}}
+{{- $initialEnv = mergeOverwrite $initialEnv $agentServerEnv -}}
+{{- range $key, $value := $envOverrides -}}
+{{- if or (hasPrefix "LLM_" $key) (hasPrefix "LMNR_" $key) -}}
+{{- $_ := set $initialEnv $key ($value | toString) -}}
+{{- end -}}
+{{- end -}}
+{{- mustToJson $initialEnv -}}
+{{- end -}}
+
 {{- define "openhands.env.defaults" }}
 - name: RUNTIME
   value: remote
@@ -112,6 +153,19 @@
 {{- end }}
 - name: NO_SETUP
   value: 'true'
+- name: OH_SANDBOX_SPEC_KIND
+  value: RemoteSandboxSpecServiceInjector
+- name: OH_SANDBOX_SPEC_SPECS_0_ID
+  value: {{ include "openhands.agentServerImage" . | quote }}
+{{- $sandboxSpecCommand := include "openhands.defaultSandboxSpecCommand" . | fromYamlArray }}
+{{- range $index, $part := $sandboxSpecCommand }}
+- name: OH_SANDBOX_SPEC_SPECS_0_COMMAND_{{ $index }}
+  value: {{ $part | quote }}
+{{- end }}
+- name: OH_SANDBOX_SPEC_SPECS_0_INITIAL_ENV
+  value: {{ include "openhands.defaultSandboxSpecInitialEnv" . | quote }}
+- name: OH_SANDBOX_SPEC_SPECS_0_WORKING_DIR
+  value: {{ include "openhands.defaultSandboxSpecWorkingDir" . | quote }}
 - name: AGENT_SERVER_IMAGE_REPOSITORY
   value: "{{ .Values.runtime.image.repository | default .Values.global.agentServerImage.repository }}"
 - name: AGENT_SERVER_IMAGE_TAG
