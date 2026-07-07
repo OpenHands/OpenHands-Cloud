@@ -43,8 +43,11 @@ from create_chart_bump_dispatcher import (
 
 
 REPO_ROOT = SCRIPT_DIR.parents[1]
-STAGING_APP_NAME = "saas-deploy-staging-chart-dispatcher"
-OLD_STAGING_APP_NAME = "saas-deploy-staging-chart-dispatcher-openhands"
+STAGING_APP_NAME = "saas-deploy-staging-chart-bump-dispatcher"
+OLD_STAGING_APP_NAMES = (
+    "saas-deploy-staging-chart-dispatcher",
+    "saas-deploy-staging-chart-dispatcher-openhands",
+)
 
 
 def make_code_holder(code: str | None = "test-code") -> MagicMock:
@@ -406,7 +409,7 @@ class TestParseArgs:
 
 
 class TestOperatorDocs:
-    def test_staging_examples_use_short_dispatcher_app_name(self):
+    def test_staging_examples_use_chart_bump_dispatcher_app_name(self):
         docs = [
             REPO_ROOT / "docs" / "staging-chart-bumps.md",
             SCRIPT_DIR / "README.md",
@@ -415,7 +418,8 @@ class TestOperatorDocs:
         for path in docs:
             text = path.read_text()
             assert f"--app-name {STAGING_APP_NAME}" in text
-            assert OLD_STAGING_APP_NAME not in text
+            for old_app_name in OLD_STAGING_APP_NAMES:
+                assert old_app_name not in text
 
 
 class TestWaitForInstallation:
