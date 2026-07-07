@@ -32,6 +32,7 @@ ALLOW_MAIN_RELEASE ?=
 
 BUILDDIR      := $(PROJECTDIR)/build
 RELEASE_FILES :=
+RELEASE_CHART_PACKAGES = $(filter %.tgz,$(RELEASE_FILES))
 
 # ── Manifest targets ────────────────────────────────────────────────
 # For each replicated manifest, generate a build rule that:
@@ -87,15 +88,31 @@ $(BUILDDIR):
 
 # ── Phony targets ───────────────────────────────────────────────────
 
-# Remove the build directory. Runs before lint/release to prevent stale
-# chart tarballs (from previous versions) from conflicting with current ones.
+# Remove generated release output and ignored Helm dependency archives. Runs
+# before lint/release so stale subchart archives cannot contaminate packages.
 .PHONY: clean
 clean:
 	rm -rf $(BUILDDIR)
+	find $(CHARTDIR) -path '*/charts/*.tgz' -type f -exec rm -f {} +
+
+# Fail if any packaged chart contains duplicate archive paths. Duplicate paths
+# let stale dependency contents win during extraction even when sources are new.
+.PHONY: check-duplicate-chart-entries
+check-duplicate-chart-entries: $(RELEASE_CHART_PACKAGES)
+	@set -eu; \
+	for chart in $(RELEASE_CHART_PACKAGES); do \
+		listing=$$(tar tzf "$$chart") || { echo "ERROR: failed to list $$chart"; exit 1; }; \
+		duplicates=$$(printf '%s\n' "$$listing" | sort | uniq -d); \
+		if [ -n "$$duplicates" ]; then \
+			echo "ERROR: $$chart contains duplicate archive paths:"; \
+			echo "$$duplicates"; \
+			exit 1; \
+		fi; \
+	done
 
 # Validate all built manifests and charts with the Replicated linter
 .PHONY: lint
-lint: clean $(RELEASE_FILES)
+lint: clean $(RELEASE_FILES) check-duplicate-chart-entries
 	replicated release lint --yaml-dir $(BUILDDIR)
 
 # Refuse to release from main or to the Unstable channel unless explicitly
@@ -110,7 +127,7 @@ check-release-guard:
 
 # Build everything, lint, then publish a release to the Replicated channel
 .PHONY: release
-release: check-release-guard clean $(RELEASE_FILES) lint
+release: check-release-guard clean $(RELEASE_FILES) check-duplicate-chart-entries lint
 	replicated release create \
 	 	--app $(REPLICATED_APP) \
 		--version $(VERSION) \
