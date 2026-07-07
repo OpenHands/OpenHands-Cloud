@@ -43,8 +43,9 @@ from create_chart_bump_dispatcher import (
 
 
 REPO_ROOT = SCRIPT_DIR.parents[1]
-STAGING_APP_NAME = "saas-deploy-staging-chart-bump-dispatcher"
+STAGING_APP_NAME = "staging-chart-bump-dispatcher"
 OLD_STAGING_APP_NAMES = (
+    "saas-deploy-staging-chart-bump-dispatcher",
     "saas-deploy-staging-chart-dispatcher",
     "saas-deploy-staging-chart-dispatcher-openhands",
 )
