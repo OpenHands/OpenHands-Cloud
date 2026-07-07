@@ -92,8 +92,8 @@ jobs:
         id: dispatcher-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.STAGING_CHART_DISPATCHER_APP_ID }}
-          private-key: ${{ secrets.STAGING_CHART_DISPATCHER_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.STAGING_CHART_BUMP_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.STAGING_CHART_BUMP_DISPATCHER_APP_PRIVATE_KEY }}
           owner: OpenHands
           repositories: saas-deploy
           permission-contents: write

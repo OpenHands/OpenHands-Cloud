@@ -68,8 +68,8 @@ workflow permission, webhook events, or OAuth-on-install flow. Do not add it to
 Store these secrets for this repository in the `staging-chart-bump-dispatcher`
 environment:
 
-- `STAGING_CHART_DISPATCHER_APP_ID`
-- `STAGING_CHART_DISPATCHER_APP_PRIVATE_KEY`
+- `STAGING_CHART_BUMP_DISPATCHER_APP_ID`
+- `STAGING_CHART_BUMP_DISPATCHER_APP_PRIVATE_KEY`
 
 The environment must allow `openhands/*` tag-triggered runs. A branch-only
 environment, such as one restricted to `main`, will hide the secrets from this
