@@ -57,7 +57,7 @@ Create a generic chart-bump dispatcher GitHub App with
 ```bash
 uv run scripts/create_chart_bump_dispatcher/create_chart_bump_dispatcher.py \
   --org OpenHands \
-  --app-name saas-deploy-staging-chart-dispatcher-openhands
+  --app-name saas-deploy-staging-chart-dispatcher
 ```
 
 Install it only on `OpenHands/saas-deploy`. The generated App has

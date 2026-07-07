@@ -26,7 +26,7 @@ Install the App only on `OpenHands/saas-deploy`, and do not add it to
 # staging
 uv run scripts/create_chart_bump_dispatcher/create_chart_bump_dispatcher.py \
   --org OpenHands \
-  --app-name saas-deploy-staging-chart-dispatcher-openhands
+  --app-name saas-deploy-staging-chart-dispatcher
 
 # future dev
 uv run scripts/create_chart_bump_dispatcher/create_chart_bump_dispatcher.py \

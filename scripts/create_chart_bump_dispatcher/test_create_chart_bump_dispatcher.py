@@ -42,6 +42,11 @@ from create_chart_bump_dispatcher import (
 )
 
 
+REPO_ROOT = SCRIPT_DIR.parents[1]
+STAGING_APP_NAME = "saas-deploy-staging-chart-dispatcher"
+OLD_STAGING_APP_NAME = "saas-deploy-staging-chart-dispatcher-openhands"
+
+
 def make_code_holder(code: str | None = "test-code") -> MagicMock:
     holder = MagicMock()
     holder.code = code
@@ -118,7 +123,7 @@ def mocked_main_flow(data: dict, code: str | None = "test-code", installed: bool
 
 class TestManifest:
     def test_uses_provided_app_name(self):
-        assert build_app_manifest(app_name="saas-deploy-staging-chart-dispatcher-openhands")["name"] == "saas-deploy-staging-chart-dispatcher-openhands"
+        assert build_app_manifest(app_name=STAGING_APP_NAME)["name"] == STAGING_APP_NAME
 
     def test_default_app_name_is_generic_and_unique(self):
         first = build_app_manifest()["name"]
@@ -304,11 +309,11 @@ class TestMainFlow:
         stop.assert_called_once()
 
     def test_main_sets_installation_url_and_polls_with_app_auth(self):
-        with mocked_main_flow({"id": 123, "slug": "saas-deploy-staging-chart-dispatcher-openhands", "pem": "pem"}) as mocks:
+        with mocked_main_flow({"id": 123, "slug": STAGING_APP_NAME, "pem": "pem"}) as mocks:
             main(dry_run=False, app_name="my-app")
 
         assert mocks["code_holder"].installation_url == (
-            "https://github.com/apps/saas-deploy-staging-chart-dispatcher-openhands/installations/new"
+            f"https://github.com/apps/{STAGING_APP_NAME}/installations/new"
         )
         mocks["wait_for_installation"].assert_called_once_with(app_id=123, private_key="pem")
 
@@ -345,7 +350,7 @@ class TestMainFlow:
             with mocked_main_flow(
                 {
                     "id": 123,
-                    "slug": "saas-deploy-staging-chart-dispatcher-openhands",
+                    "slug": STAGING_APP_NAME,
                     "client_secret": "client-secret",
                     "webhook_secret": "webhook-secret",
                     "pem": pem,
@@ -385,7 +390,7 @@ class TestParseArgs:
                 "--org",
                 "OpenHands",
                 "--app-name",
-                "saas-deploy-staging-chart-dispatcher-openhands",
+                STAGING_APP_NAME,
                 "--callback-port",
                 "18080",
                 "--dry-run",
@@ -395,9 +400,22 @@ class TestParseArgs:
         args = parse_args()
 
         assert args.org == "OpenHands"
-        assert args.app_name == "saas-deploy-staging-chart-dispatcher-openhands"
+        assert args.app_name == STAGING_APP_NAME
         assert args.callback_port == 18080
         assert args.dry_run is True
+
+
+class TestOperatorDocs:
+    def test_staging_examples_use_short_dispatcher_app_name(self):
+        docs = [
+            REPO_ROOT / "docs" / "staging-chart-bumps.md",
+            SCRIPT_DIR / "README.md",
+        ]
+
+        for path in docs:
+            text = path.read_text()
+            assert f"--app-name {STAGING_APP_NAME}" in text
+            assert OLD_STAGING_APP_NAME not in text
 
 
 class TestWaitForInstallation:
