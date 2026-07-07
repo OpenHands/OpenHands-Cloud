@@ -94,6 +94,14 @@ Use patterns that make it easy for chart consumers to override defaults. Environ
 
 **Check for**: Can a consumer override every default value without forking the chart or patching templates?
 
+### 7. Defaults Serve the Self-Hosted User
+
+Evaluate every change to a default value through the lens of what makes the most sense for a **self-hosted user** — someone deploying OpenHands with our chart or the Replicated installer. The defaults we ship should be the most appropriate and most broadly applicable values for that user.
+
+Our own dev/staging/prod environments are scaled much more, and are generally used differently than a typical self-hosted installation. When we need a different value for our environment, we should set it in our own environment's values — **not** change the chart default.
+
+**Treat with suspicion** any PR that justifies changing a default by referencing our dev/staging/prod environment (e.g., "we need this in prod", "this matches our staging config"). That is a signal the change belongs in our environment's overrides, not in the shipped defaults. Ask whether the new value is genuinely better for self-hosted users; if it is only better for our scaled-up environment, the default should stay put and the value should be overridden on our side.
+
 ## Helm Chart-Specific Checks
 
 ### Environment Variables
