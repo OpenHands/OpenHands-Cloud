@@ -859,6 +859,62 @@ spec:
           type: text
           default: "runtime_api_db"
 
+    - name: object_storage_configuration
+      title: Object Storage Configuration
+      description: Configure S3-compatible object storage for session data, conversation files, and integration artifacts. By default, OpenHands uses an embedded MinIO instance. For production deployments, we recommend using external S3 or S3-compatible storage for better scalability and durability.
+      items:
+        - name: object_storage_type
+          title: Object Storage Type
+          help_text: Choose between embedded MinIO (simpler) or external S3-compatible storage (production-ready, scalable)
+          type: select_one
+          default: "embedded_minio"
+          items:
+            - name: "embedded_minio"
+              title: "Embedded MinIO (In-Cluster)"
+            - name: "external_s3"
+              title: "External S3 / S3-Compatible Storage"
+        - name: external_s3_endpoint
+          title: S3 Endpoint URL
+          help_text: |
+            S3 endpoint URL for S3-compatible storage (e.g., https://minio.example.com, https://s3.us-west-2.amazonaws.com).
+            Leave empty for AWS S3 (will use default AWS S3 endpoint based on region).
+          type: text
+          when: 'repl{{ ConfigOptionEquals "object_storage_type" "external_s3" }}'
+          required: false
+        - name: external_s3_region
+          title: AWS Region
+          help_text: AWS region for S3 (e.g., us-east-1, eu-west-1). Required for AWS S3, optional for other S3-compatible services.
+          type: text
+          default: "us-east-1"
+          when: 'repl{{ ConfigOptionEquals "object_storage_type" "external_s3" }}'
+        - name: external_s3_bucket
+          title: S3 Bucket Name
+          help_text: |
+            Bucket name for storing OpenHands session data and files. The bucket must exist and be accessible with the provided credentials.
+            Used by: main app (sessions), integrations service (GitHub/GitLab/Bitbucket files), MCP service.
+          type: text
+          default: "openhands-sessions"
+          when: 'repl{{ ConfigOptionEquals "object_storage_type" "external_s3" }}'
+          required: true
+        - name: external_s3_access_key_id
+          title: S3 Access Key ID
+          help_text: Access key ID for authenticating to S3. The associated IAM user/role must have s3:GetObject, s3:PutObject, s3:DeleteObject, and s3:ListBucket permissions on the bucket.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "object_storage_type" "external_s3" }}'
+          required: true
+        - name: external_s3_secret_access_key
+          title: S3 Secret Access Key
+          help_text: Secret access key paired with the Access Key ID above.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "object_storage_type" "external_s3" }}'
+          required: true
+        - name: external_s3_use_ssl
+          title: Use HTTPS for S3 Connections
+          help_text: Whether to use HTTPS when connecting to S3. Recommended for production. Disable only for local/development S3-compatible services without SSL.
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "object_storage_type" "external_s3" }}'
+
     - name: sandbox_configuration
       title: Sandbox Configuration
       description: OpenHands conversations run in isolated sandboxes. Configure sandbox resources and lifecycle settings here. Adjust these settings based on your expected workload and the size of your cluster.
