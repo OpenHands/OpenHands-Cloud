@@ -65,7 +65,7 @@ Install it only on `OpenHands/saas-deploy`. The generated App has
 workflow permission, webhook events, or OAuth-on-install flow. Do not add it to
 `saas-deploy` ruleset bypass actors.
 
-Store these secrets for this repository in the `staging-chart-dispatch`
+Store these secrets for this repository in the `staging-chart-bump-dispatcher`
 environment:
 
 - `STAGING_CHART_DISPATCHER_APP_ID`

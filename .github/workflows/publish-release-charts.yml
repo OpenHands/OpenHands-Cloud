@@ -84,7 +84,7 @@ jobs:
     needs: publish
     if: ${{ needs.publish.outputs.component == 'openhands' }}
     runs-on: ubuntu-24.04
-    environment: staging-chart-dispatch
+    environment: staging-chart-bump-dispatcher
     permissions:
       contents: read
     steps:
