@@ -205,12 +205,29 @@ data:
     rm -rf "${PGDATA_DIR:?}" 2>/dev/null || true
     mkdir -p "$PGDATA_DIR"
 
-    # Let Bitnami's own scripts initialize a compatible PGDATA and start postgres
-    # locally. Only POSTGRES_PASSWORD is set, so Bitnami sets up just the
-    # superuser; the logical restore below recreates every role and database.
-    log "Initializing a fresh Bitnami PGDATA on the PVC..."
+    # Bitnami's first-boot init starts a *transient* server (only to set the
+    # superuser password) and then fast-stops it before the entrypoint execs the
+    # real foreground server. Both listen on 127.0.0.1:5432, so a readiness probe
+    # cannot tell them apart — a restore begun against the transient server is
+    # killed mid-stream when Bitnami hands off ("terminating connection due to
+    # administrator command"). We remove that race by splitting init from serving.
+    # Only POSTGRES_PASSWORD is set, so Bitnami configures just the superuser;
+    # the logical restore below recreates every role and database.
     export POSTGRESQL_VOLUME_DIR="$VOLUME_DIR"
     export PGDATA="$PGDATA_DIR"
+
+    # Phase 1: initialize the PGDATA to completion. Passing setup.sh (not run.sh)
+    # runs Bitnami's init and, via setup.sh's EXIT trap, leaves the server
+    # STOPPED — so there is no init->foreground handoff to race.
+    log "Initializing a fresh Bitnami PGDATA on the PVC..."
+    if ! /opt/bitnami/scripts/postgresql/entrypoint.sh /opt/bitnami/scripts/postgresql/setup.sh >/tmp/local-pg-init.log 2>&1; then
+      log "PGDATA initialization failed:"; tail -n 50 /tmp/local-pg-init.log || true; exit 1
+    fi
+
+    # Phase 2: start the server for the restore. The PGDATA is now populated, so
+    # this boot takes Bitnami's persisted-data path and starts NO transient
+    # server; the readiness probe below can only match this one durable server.
+    log "Starting the local server for the restore..."
     /opt/bitnami/scripts/postgresql/entrypoint.sh /opt/bitnami/scripts/postgresql/run.sh >/tmp/local-pg.log 2>&1 &
     SERVER_PID=$!
 
@@ -240,6 +257,7 @@ data:
     if [ "${SRC_DBS}" != "${DST_DBS}" ] || [ "${DST_DBS:-0}" -lt 1 ]; then
       log "ERROR: database count mismatch; restore incomplete. Last restore output:"
       tail -n 50 /tmp/restore.log || true
+      log "----- local server log (tail) -----"; tail -n 30 /tmp/local-pg.log || true
       exit 1
     fi
 
