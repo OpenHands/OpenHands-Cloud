@@ -42,6 +42,6 @@ jobs:
     secrets: inherit
     with:
       component: runtime-api
-      chart_file: charts/runtime-api/values.yaml
+      chart_file: charts/openhands/charts/runtime-api/values.yaml
       image_tag_path: .image.tag          # optional — this is the default
       tag: ${{ needs.prepare-tag.outputs.tag }}
