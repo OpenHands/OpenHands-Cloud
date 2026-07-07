@@ -214,6 +214,19 @@ data:
     /opt/bitnami/scripts/postgresql/entrypoint.sh /opt/bitnami/scripts/postgresql/run.sh >/tmp/local-pg.log 2>&1 &
     SERVER_PID=$!
 
+    # Bitnami setup runs a TEMPORARY server (stopped when setup ends) that also
+    # passes pg_isready; restoring into it loses the data mid-stream. Gate on
+    # run.sh's final-server marker before probing readiness.
+    log "Waiting for Bitnami setup to finish (final server start)..."
+    for _ in $(seq 1 120); do
+      if grep -qF '** Starting PostgreSQL **' /tmp/local-pg.log 2>/dev/null; then break; fi
+      if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        log "Local server exited early:"; cat /tmp/local-pg.log || true; exit 1
+      fi
+      sleep 2
+    done
+    grep -qF '** Starting PostgreSQL **' /tmp/local-pg.log
+
     log "Waiting for the local server to accept connections..."
     for _ in $(seq 1 60); do
       if pg_isready -h 127.0.0.1 -p "$PORT" -U postgres >/dev/null 2>&1; then break; fi
