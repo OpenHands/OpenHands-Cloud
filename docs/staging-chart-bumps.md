@@ -51,10 +51,19 @@ after GHCR has the stable chart package available for the receiver to relock.
 
 ## Prerequisites
 
-Create a dedicated staging-chart dispatcher GitHub App and install it on
-`OpenHands/saas-deploy` with `Contents: Read and write`. The App does not need
-pull-request permissions because it only fires `repository_dispatch`; the
-`saas-deploy` receiver mints its own bot token to create the PR.
+Create a generic chart-bump dispatcher GitHub App with
+[`scripts/create_chart_bump_dispatcher`](../scripts/create_chart_bump_dispatcher/):
+
+```bash
+uv run scripts/create_chart_bump_dispatcher/create_chart_bump_dispatcher.py \
+  --org OpenHands \
+  --app-name saas-deploy-staging-chart-dispatcher-openhands
+```
+
+Install it only on `OpenHands/saas-deploy`. The generated App has
+`contents: write` and `metadata: read`, with no pull-request permission,
+workflow permission, webhook events, or OAuth-on-install flow. Do not add it to
+`saas-deploy` ruleset bypass actors.
 
 Store these secrets for this repository in the `staging-chart-dispatch`
 environment:
