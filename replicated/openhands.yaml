@@ -1101,3 +1101,5 @@ spec:
       enabled: true
     runtime-api:
       enabled: true
+    automation:
+      enabled: true
