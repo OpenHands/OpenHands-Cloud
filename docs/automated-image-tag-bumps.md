@@ -83,7 +83,7 @@ jobs:
     secrets: inherit
     with:
       component: runtime-api
-      chart_file: charts/runtime-api/values.yaml
+      chart_file: charts/openhands/charts/runtime-api/values.yaml
       image_tag_path: .image.tag          # optional — this is the default
       tag: ${{ needs.prepare-tag.outputs.tag }}
 ```
@@ -100,7 +100,7 @@ A ready-to-copy version is in
     secrets: inherit
     with:
       component: automation
-      chart_file: charts/automation/values.yaml
+      chart_file: charts/openhands/charts/automation/values.yaml
       tag: ${{ needs.prepare-tag.outputs.tag }}
 ```
 
@@ -140,7 +140,7 @@ current and no PR was needed).
 ```bash
 # Dry run against a real chart file (prints old -> new, writes nothing):
 uv run scripts/bump_image_tag/bump_image_tag.py \
-  --file charts/runtime-api/values.yaml --path .image.tag --tag sha-1234567 --dry-run
+  --file charts/openhands/charts/runtime-api/values.yaml --path .image.tag --tag sha-1234567 --dry-run
 
 # Unit tests:
 uv run scripts/bump_image_tag/test_bump_image_tag.py
