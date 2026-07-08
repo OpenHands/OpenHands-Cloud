@@ -1,6 +1,6 @@
 # Chart bump dispatcher App
 
-Creates weak GitHub App credentials for OpenHands-Cloud workflows that need to
+Creates GitHub App credentials for OpenHands-Cloud workflows that need to
 send `repository_dispatch` events to `OpenHands/saas-deploy`.
 
 The script is intentionally generic. It does not encode dev, staging, or any
@@ -13,9 +13,6 @@ The generated App manifest grants only:
 
 - `contents: write` — required by GitHub's `repository_dispatch` endpoint.
 - `metadata: read` — required for every GitHub App.
-
-It grants no pull-request permission, no workflow permission, no webhook events,
-and no OAuth-on-install flow.
 
 Install the App only on `OpenHands/saas-deploy`, and do not add it to
 `saas-deploy` ruleset bypass actors.

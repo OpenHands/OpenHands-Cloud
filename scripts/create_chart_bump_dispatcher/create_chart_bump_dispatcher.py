@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyGithub", "requests", "fastapi", "uvicorn"]
 # ///
-"""Create weak GitHub App credentials for chart-bump repository_dispatch senders."""
+"""Create GitHub App credentials for chart-bump repository_dispatch senders."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def is_safe_app_name(app_name: str | None) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a weak GitHub App for chart-bump repository_dispatch senders."
+        description="Create a GitHub App for chart-bump repository_dispatch senders."
     )
     parser.add_argument(
         "--dry-run",

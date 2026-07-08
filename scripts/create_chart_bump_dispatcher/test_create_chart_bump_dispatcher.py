@@ -416,6 +416,18 @@ class TestReadme:
         for old_app_name in OLD_STAGING_APP_NAMES:
             assert old_app_name not in text
 
+    def test_reviewer_facing_text_uses_neutral_app_wording(self):
+        forbidden_term = "we" + "ak"
+        text = "\n".join(
+            [
+                (SCRIPT_DIR / "README.md").read_text(),
+                (SCRIPT_DIR / "create_chart_bump_dispatcher.py").read_text(),
+                parse_args.__doc__ or "",
+            ]
+        )
+
+        assert forbidden_term not in text.lower()
+
 
 class TestWaitForInstallation:
     def test_returns_false_when_app_auth_fails(self, capsys):
