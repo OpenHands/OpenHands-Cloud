@@ -889,7 +889,7 @@ spec:
           title: Deletion Time (seconds)
           help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed.
           type: text
-          default: "86400"
+          default: "259200"
           validation:
             regex:
               pattern: ^[1-9][0-9]*$
