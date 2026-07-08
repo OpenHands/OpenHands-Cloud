@@ -5,7 +5,7 @@ on:
     paths:
       - 'scripts/**'
       - '.github/workflows/publish-release-charts.yml'
-      - '.github/workflows/test-update-openhands-charts.yml'
+      - '.github/workflows/test-scripts.yml'
 
 jobs:
   test-scripts:
