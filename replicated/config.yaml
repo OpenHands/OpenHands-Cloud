@@ -66,6 +66,21 @@ spec:
           type: text
           default: "runtime.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+        - name: additional_cors_origins
+          title: Additional Permitted CORS Origins
+          help_text: >-
+            Optional. Comma-separated list of extra origins allowed to make
+            cross-origin browser requests to OpenHands. Each origin must include
+            the scheme and host (e.g. https://example.com) and may include
+            a port (e.g. https://example.com:8443 or http://localhost:8000);
+            it must NOT include a path or a trailing slash. The application's own
+            origin is always permitted automatically.
+          type: text
+          default: ""
+          validation:
+            regex:
+              pattern: '^\s*(https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?(\s*,\s*https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?)*)?\s*$'
+              message: 'Must be blank or a comma-separated list of origins like https://example.com or http://localhost:8000, with no paths or trailing slashes.'
 
     - name: tls_configuration
       title: Certificate Configuration
