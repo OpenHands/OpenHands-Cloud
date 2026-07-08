@@ -550,6 +550,7 @@ spec:
       values:
         env:
           ENABLE_V1_GITHUB_RESOLVER: "true"
+          OH_RESOLVER_LABEL: '{{repl ConfigOption "github_resolver_label"}}'
         githubApp:
           enabled: true
           appId: '{{repl ConfigOption "github_app_id"}}'

@@ -718,6 +718,15 @@ spec:
           type: file
           when: 'repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}'
           required: true
+        - name: github_resolver_label
+          title: OpenHands Resolver Label
+          help_text: >-
+            The GitHub label that triggers the OpenHands resolver on issues and
+            pull requests. Defaults to "openhands". Set a custom value so this
+            instance only responds to that label and ignores the default.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}'
+          default: "openhands"
 
     - name: gitlab_authentication
       title: GitLab Authentication
