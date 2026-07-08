@@ -1111,6 +1111,14 @@ spec:
       title: Advanced Options
       description: Optional components and advanced configuration settings
       items:
+        - name: openhands_resolver_label
+          title: OpenHands Resolver Label
+          help_text: >-
+            The OpenHands trigger label and @mention for supported issue and pull
+            request integrations. Defaults to "openhands". Set a custom value so
+            this instance only responds to that label and ignores the default.
+          type: text
+          default: "openhands"
         - name: litellm_forward_client_headers
           title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
           help_text: >-
