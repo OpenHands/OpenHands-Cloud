@@ -5,8 +5,11 @@ on:
     paths:
       - '.github/workflows/pr-checks.yml'
       - 'charts/**'
+      - 'replicated/config.yaml'
+      - 'replicated/openhands.yaml'
       - 'scripts/test_keycloak_realm_template.py'
       - 'scripts/test_openhands_secrets_template.py'
+      - 'scripts/test_replicated_resolver_label.py'
 
 jobs:
   test-keycloak-realm-template:
@@ -27,3 +30,4 @@ jobs:
           python3 -m pytest
           scripts/test_keycloak_realm_template.py
           scripts/test_openhands_secrets_template.py
+          scripts/test_replicated_resolver_label.py

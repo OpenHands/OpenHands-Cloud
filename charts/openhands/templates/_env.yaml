@@ -1,4 +1,5 @@
 {{- define "openhands.env.defaults" }}
+{{- $integrations := .Values.integrations | default dict }}
 - name: RUNTIME
   value: remote
 - name: OH_SANDBOX_SPEC_KIND
@@ -29,6 +30,8 @@
   value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
 - name: OPENHANDS_EXPERIMENT_MANAGER_CLS
   value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
+- name: OH_RESOLVER_LABEL
+  value: {{ get $integrations "resolverLabel" | default "openhands" | quote }}
 - name: LOG_JSON # Configure structured logging for Google Cloud
   value: '1'
 - name: LOG_JSON_LEVEL_KEY

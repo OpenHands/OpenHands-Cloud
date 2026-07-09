@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
+OPENHANDS_VALUES = OPENHANDS_CHART / "values.yaml"
 REPLICATED_CONFIG = REPO_ROOT / "replicated" / "config.yaml"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 
@@ -38,6 +41,24 @@ def extract_base_env_block(text: str) -> str:
     return match.group(0)
 
 
+def extract_chart_values_block(text: str, name: str) -> str:
+    match = re.search(
+        rf"(?ms)^{re.escape(name)}:\n.*?(?=^[A-Za-z0-9_-]+:|\Z)",
+        text,
+    )
+    assert match, f"{name} chart values block not found"
+    return match.group(0)
+
+
+def extract_replicated_values_block(text: str, name: str) -> str:
+    match = re.search(
+        rf"(?ms)^    {re.escape(name)}:\n.*?(?=^    [A-Za-z0-9_-]+:|\Z)",
+        text,
+    )
+    assert match, f"{name} replicated values block not found"
+    return match.group(0)
+
+
 def extract_optional_values_block(text: str, when: str) -> str:
     match = re.search(
         rf"(?ms)^    - when: {re.escape(when)}\n.*?(?=^    - when: |\Z)",
@@ -45,6 +66,33 @@ def extract_optional_values_block(text: str, when: str) -> str:
     )
     assert match, f"optionalValues block not found for {when}"
     return match.group(0)
+
+
+def render_openhands_deployment(resolver_label: str) -> str:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "openhands",
+            str(OPENHANDS_CHART),
+            "--show-only",
+            "templates/deployment.yaml",
+            "--set-string",
+            f"integrations.resolverLabel={resolver_label}",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
+
+
+def rendered_env_values(manifest: str, env_name: str) -> list[str]:
+    return re.findall(
+        rf"(?m)^\s+- name: {re.escape(env_name)}\n\s+value: \"?([^\"\n]+)\"?$",
+        manifest,
+    )
 
 
 def test_installer_exposes_global_openhands_resolver_label() -> None:
@@ -63,14 +111,27 @@ def test_installer_exposes_global_openhands_resolver_label() -> None:
     assert "custom value" in resolver_label
 
 
-def test_openhands_resolver_label_is_rendered_globally_for_all_integrations() -> None:
+def test_chart_renders_resolver_label_env_from_integrations_value() -> None:
+    chart_values = OPENHANDS_VALUES.read_text(encoding="utf-8")
+    integrations = extract_chart_values_block(chart_values, "integrations")
+    manifest = render_openhands_deployment("custom-openhands")
+
+    assert 'resolverLabel: "openhands"' in integrations
+    assert set(rendered_env_values(manifest, "OH_RESOLVER_LABEL")) == {
+        "custom-openhands"
+    }
+
+
+def test_replicated_wires_resolver_label_through_chart_integrations_value() -> None:
     openhands_values = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
+    integrations = extract_replicated_values_block(openhands_values, "integrations")
     base_env = extract_base_env_block(openhands_values)
 
     assert (
-        "OH_RESOLVER_LABEL: 'repl{{ ConfigOption \"openhands_resolver_label\" }}'"
-        in base_env
+        "resolverLabel: 'repl{{ ConfigOption \"openhands_resolver_label\" }}'"
+        in integrations
     )
+    assert "OH_RESOLVER_LABEL" not in base_env
 
     github_auth = extract_optional_values_block(
         openhands_values,
