@@ -1,5 +1,6 @@
 {{- define "troubleshoot.preflights" -}}
 {{- $tls := include "troubleshoot.tlsHostname.vars" . | fromYaml -}}
+{{- $sysbox := include "troubleshoot.sysbox.vars" . | fromYaml -}}
 apiVersion: troubleshoot.sh/v1beta2
 kind: Preflight
 metadata:
@@ -12,6 +13,9 @@ spec:
     {{- end }}
   analyzers:
     {{- include "troubleshoot.analyzers.shared" . | nindent 4 }}
+    {{- if $sysbox.selected }}
+    {{- include "troubleshoot.analyzers.sysbox" . | nindent 4 }}
+    {{- end }}
     {{- if $tls.cert }}
     {{- include "troubleshoot.analyzers.tlsHostname" . | nindent 4 }}
     {{- end }}
