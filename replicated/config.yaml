@@ -66,6 +66,21 @@ spec:
           type: text
           default: "runtime.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+        - name: additional_cors_origins
+          title: Additional Permitted CORS Origins
+          help_text: >-
+            Optional. Comma-separated list of extra origins allowed to make
+            cross-origin browser requests to OpenHands. Each origin must include
+            the scheme and host (e.g. https://example.com) and may include
+            a port (e.g. https://example.com:8443 or http://localhost:8000);
+            it must NOT include a path or a trailing slash. The application's own
+            origin is always permitted automatically.
+          type: text
+          default: ""
+          validation:
+            regex:
+              pattern: '^\s*(https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?(\s*,\s*https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?)*)?\s*$'
+              message: 'Must be blank or a comma-separated list of origins like https://example.com or http://localhost:8000, with no paths or trailing slashes.'
 
     - name: tls_configuration
       title: Certificate Configuration
@@ -961,9 +976,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.31.1-python
+          help_text: Image tag, e.g. 1.34.0-python
           type: text
-          default: "1.31.1-python"
+          default: "1.34.0-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server

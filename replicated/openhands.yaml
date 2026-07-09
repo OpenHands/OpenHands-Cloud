@@ -465,6 +465,11 @@ spec:
         {{repl ConfigOptionData "tls_ca_certificate" | nindent 8 }}
 
   optionalValues:
+    - when: '{{repl ne (ConfigOption "additional_cors_origins" | trim) "" }}'
+      recursiveMerge: true
+      values:
+        env:
+          PERMITTED_CORS_ORIGINS: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}},{{repl ConfigOption "additional_cors_origins" | trim }}'
     - when: '{{repl ConfigOptionEquals "postgres_type" "embedded_postgres" }}'
       recursiveMerge: true
       values:
