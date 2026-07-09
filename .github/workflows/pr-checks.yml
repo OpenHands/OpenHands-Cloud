@@ -23,6 +23,8 @@ jobs:
         uses: azure/setup-helm@v3
         with:
           version: 'latest'
+      - name: Build chart dependencies
+        run: helm dependency build charts/openhands
       - name: Install test dependencies
         run: python3 -m pip install pytest
       - name: Test chart template invariants
