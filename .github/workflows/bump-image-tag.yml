@@ -4,11 +4,12 @@ name: Bump chart image tag
 # from its own release workflow to open a PR in the chart repo that points a
 # chart's image tag at the newly released image.
 #
-# It updates ONLY the tag scalar - it deliberately does not bump the chart
-# `version` in Chart.yaml. The PR is titled `feat(<component>): …` so release-please
-# folds it into that chart's release PR under Features; the chart `version` is then
-# bumped automatically when the release PR is merged (a minor bump, since feats
-# move the minor for these pre-1.0 charts).
+# It updates the image tag and can optionally update a related chart metadata
+# scalar to the same value. It deliberately does not bump the chart `version` in
+# Chart.yaml. The PR is titled `feat(<component>): …` so release-please folds it
+# into that chart's release PR under Features; the chart `version` is then bumped
+# automatically when the release PR is merged (a minor bump, since feats move the
+# minor for these pre-1.0 charts).
 #
 # See docs/automated-image-tag-bumps.md for caller setup and the auth model.
 
@@ -31,6 +32,16 @@ on:
         description: 'yq-style path to the image tag scalar within chart_file.'
         required: false
         default: '.image.tag'
+        type: string
+      metadata_file:
+        description: 'Optional YAML file containing a metadata scalar that should track tag (for example, a Chart.yaml).'
+        required: false
+        default: ''
+        type: string
+      metadata_path:
+        description: 'yq-style path to the optional metadata scalar within metadata_file.'
+        required: false
+        default: '.appVersion'
         type: string
       base_branch:
         description: 'Branch to open the PR against.'
@@ -138,13 +149,27 @@ jobs:
             --path "$IMAGE_TAG_PATH" \
             --tag "$NEW_TAG"
 
+      - name: Bump related metadata
+        if: ${{ inputs.metadata_file != '' }}
+        env:
+          METADATA_FILE: ${{ inputs.metadata_file }}
+          METADATA_PATH: ${{ inputs.metadata_path }}
+          NEW_TAG: ${{ inputs.tag }}
+        run: |
+          uv run scripts/bump_image_tag/bump_image_tag.py \
+            --file "$METADATA_FILE" \
+            --path "$METADATA_PATH" \
+            --tag "$NEW_TAG"
+
       - name: Create or update pull request
         id: cpr
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
-          # Commit only the file we edited — never anything else the runner touched.
-          add-paths: ${{ inputs.chart_file }}
+          # Commit only the files we edited — never anything else the runner touched.
+          add-paths: |
+            ${{ inputs.chart_file }}
+            ${{ inputs.metadata_file }}
           base: ${{ inputs.base_branch }}
           branch: ${{ inputs.pr_branch != '' && inputs.pr_branch || format('bump-image-tag/{0}', inputs.component) }}
           delete-branch: true
