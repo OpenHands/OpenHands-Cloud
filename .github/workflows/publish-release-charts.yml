@@ -51,6 +51,7 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve source commit
         id: source
@@ -123,7 +124,6 @@ jobs:
       ${{
         needs.publish.result == 'success' &&
         needs.publish.outputs.component == 'openhands' &&
-        github.actor == 'openhands-release-bot[bot]' &&
         github.actor_id == '290150379'
       }}
     runs-on: ubuntu-24.04
