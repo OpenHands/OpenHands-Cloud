@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: cloud-1.42.0
+  tag: cloud-1.45.1
 
 autoscaling:
   enabled: false
@@ -96,6 +96,9 @@ env:
 # optionalValues with recursiveMerge — can add keys without repeating the whole
 # blob in every block. Empty by default, which emits no OH_AGENT_SERVER_ENV.
 agentServerEnv: {}
+
+integrations:
+  resolverLabel: "openhands"
 
 filestore:
   ephemeral: false
@@ -667,6 +670,18 @@ postgresql:
     service:
       ports:
         postgresql: 5432
+    # Bitnami defaults to the "nano" resourcesPreset (192Mi memory limit), which
+    # is too small for a real workload — the primary settles around ~250Mi at
+    # idle and gets OOM-killed into a crash loop. Set resourcesPreset: none so
+    # the explicit resources below take effect.
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
     # Add the following if using Karpenter with persistence
     # podAnnotations:
     #   karpenter.sh/do-not-evict: "true"
@@ -1102,7 +1117,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.31.1-python
+    tag: 1.34.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

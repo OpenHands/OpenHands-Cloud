@@ -71,6 +71,9 @@ spec:
       OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
 
+    integrations:
+      resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
+
     # Runtime (agent-server sandbox) env vars. The chart serialises this map into
     # OH_AGENT_SERVER_ENV (see the openhands.env helper). These CA-bundle
     # defaults apply to every provider; the provider optionalValues blocks below
@@ -314,7 +317,22 @@ spec:
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
-        RUNTIME_CLASS: ""
+        RUNTIME_CLASS: '{{repl if ConfigOptionEquals "sandbox_isolation" "sysbox"}}sysbox-runc{{repl else}}{{repl end}}'
+        # The embedded-cluster node carries no sysbox-install label or
+        # sysbox-runtime taint, so clear the scheduling defaults the runtime-api
+        # injects for the sysbox-runc class (node selector sysbox-install=yes +
+        # the sysbox-runtime toleration). Empty JSON collections mean "no node
+        # selector / no tolerations", keeping sandboxes schedulable on the single
+        # node. Scheduling is independent from the userns/hostUsers config
+        # (SET_HOST_USERS below). (runtime-api env vars from OpenHands/runtime-api#631.)
+        RUNTIME_TOLERATIONS: "[]"
+        RUNTIME_NODE_SELECTOR: "{}"
+        # Make the runtime-api set hostUsers: false on sysbox-runc sandboxes
+        # (native K8s user namespace). Required on k0s/containerd: without it the
+        # runtime-api uses a CRI-O-only userns annotation that is a no-op here, and
+        # sysbox-runc then can't mount sysfs into the sandbox ("operation not
+        # permitted"). Harmless for runc (only the sysbox-runc path reads it).
+        SET_HOST_USERS: "true"
         RUNTIME_DISABLE_SSL: "false"
         PERSISTENT_STORAGE_SIZE: 'repl{{ ConfigOption "sandbox_storage_size" }}'
         MEMORY_REQUEST: 'repl{{ ConfigOption "sandbox_memory_request" }}'
@@ -462,6 +480,11 @@ spec:
         {{repl ConfigOptionData "tls_ca_certificate" | nindent 8 }}
 
   optionalValues:
+    - when: '{{repl ne (ConfigOption "additional_cors_origins" | trim) "" }}'
+      recursiveMerge: true
+      values:
+        env:
+          PERMITTED_CORS_ORIGINS: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}},{{repl ConfigOption "additional_cors_origins" | trim }}'
     - when: '{{repl ConfigOptionEquals "postgres_type" "embedded_postgres" }}'
       recursiveMerge: true
       values:

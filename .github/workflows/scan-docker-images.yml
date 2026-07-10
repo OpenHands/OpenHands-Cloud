@@ -52,6 +52,14 @@ jobs:
       matrix:
         IMAGE: ${{ fromJson(needs.discover_images.outputs.images) }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for image manifest
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ matrix.IMAGE }}
+        run: |
+          python3 scripts/wait_for_image_manifest.py "$IMAGE_REF"
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
