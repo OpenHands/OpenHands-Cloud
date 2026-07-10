@@ -49,6 +49,8 @@ jobs:
       - name: Checkout (at the release tag)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Bind publication to the immutable commit from the push event. The
+          # tag name could otherwise resolve to a commit moved after this run began.
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
