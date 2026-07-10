@@ -49,7 +49,7 @@ jobs:
       - name: Checkout (at the release tag)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78 # v3
         with:
-          version: 'latest'
+          version: 'v3.18.4'
 
       - name: Lowercase registry owner
         id: owner
