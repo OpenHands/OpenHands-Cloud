@@ -40,7 +40,35 @@ jobs:
           sudo mv /tmp/replicated-cli/replicated /usr/local/bin/
 
       - name: Build and release to Replicated
+        id: release
+        shell: bash
         env:
           REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
           REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
-        run: make release ALLOW_MAIN_RELEASE=1
+        run: |
+          # shell: bash runs with -o pipefail, so a failing `make` fails the step
+          # even though its output is piped to tee. main maps to the Unstable
+          # channel in the Makefile.
+          make release ALLOW_MAIN_RELEASE=1 2>&1 | tee release.log
+          # `replicated release create` prints `SEQUENCE: <n>` for the release it
+          # created — the global release sequence the vendor portal URL uses.
+          SEQUENCE=$(grep -oE 'SEQUENCE:[[:space:]]*[0-9]+' release.log | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$SEQUENCE" ]; then
+            echo "::warning::Could not parse a release SEQUENCE from the Replicated CLI output — skipping the vendor-portal link."
+            exit 0
+          fi
+          echo "sequence=${SEQUENCE}" >> "$GITHUB_OUTPUT"
+
+          # Generate replicated URL for sequence release
+          APP_SLUG=openhands
+          URL="https://vendor.replicated.com/apps/${APP_SLUG}/releases/${SEQUENCE}/overview"
+          echo "::notice title=Replicated Unstable release ${SEQUENCE}::${URL}"
+          {
+            echo "### Replicated Unstable release published"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Channel | Unstable |"
+            echo "| Sequence | ${SEQUENCE} |"
+            echo "| Vendor portal | [Release ${SEQUENCE} overview](${URL}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
