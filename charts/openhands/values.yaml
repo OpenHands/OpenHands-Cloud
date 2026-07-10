@@ -667,6 +667,18 @@ postgresql:
     service:
       ports:
         postgresql: 5432
+    # Bitnami defaults to the "nano" resourcesPreset (192Mi memory limit), which
+    # is too small for a real workload — the primary settles around ~250Mi at
+    # idle and gets OOM-killed into a crash loop. Set resourcesPreset: none so
+    # the explicit resources below take effect.
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
     # Add the following if using Karpenter with persistence
     # podAnnotations:
     #   karpenter.sh/do-not-evict: "true"
