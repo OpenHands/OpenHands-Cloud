@@ -256,7 +256,7 @@ def test_development_sender_docs_match_live_app_and_environment() -> None:
     assert "accepted the dispatch" in text
     assert "does not mean" in text
     assert "without starting a receiver run" in text
-    assert "tag ruleset" in text.lower()
+    assert "tag ruleset" not in text.lower()
     assert "openhands-release-bot[bot]" in text
     assert "290150379" in text
     assert "docs/development-chart-bumps.md" in README.read_text(encoding="utf-8")
