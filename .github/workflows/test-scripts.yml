@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/**'
-      - '.github/workflows/test-update-openhands-charts.yml'
+      - '.github/workflows/publish-release-charts.yml'
+      - '.github/workflows/test-scripts.yml'
 
 jobs:
   test-scripts:
