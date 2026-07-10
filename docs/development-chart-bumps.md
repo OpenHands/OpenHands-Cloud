@@ -54,13 +54,9 @@ GitHub Environment:
 
 The Environment must allow the `openhands/*` tag pattern.
 
-A repository tag ruleset that protects `openhands/*` creation, updates, and
-deletion, with the release App as the intended bypass actor, remains recommended
-hardening for the existing release process but is not a prerequisite for this
-sender. The expected release identity is `openhands-release-bot[bot]` (GitHub
-user ID `290150379`). The sender checks the stable user ID as defense in depth,
-but a workflow check cannot protect secrets from workflow code on an untrusted
-tag.
+The expected release identity is `openhands-release-bot[bot]` (GitHub user ID
+`290150379`). The sender checks the stable user ID before minting the dispatcher
+token.
 
 The `bump-chart-to-development` receiver must already exist on the default
 branch of `OpenHands/saas-deploy`. Otherwise, GitHub can accept the event
