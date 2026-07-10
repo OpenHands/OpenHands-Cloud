@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -92,11 +93,12 @@ def test_development_dispatch_runs_only_after_openhands_publish() -> None:
     job = load_workflow()["jobs"][DEV_JOB]
 
     assert job["needs"] == "publish"
-    condition = job["if"]
-    assert "needs.publish.result == 'success'" in condition
-    assert "needs.publish.outputs.component == 'openhands'" in condition
-    assert "github.actor ==" not in condition
-    assert "github.actor_id == '290150379'" in condition
+    condition = " ".join(job["if"].split())
+    assert condition == (
+        "${{ needs.publish.result == 'success' && "
+        "needs.publish.outputs.component == 'openhands' && "
+        "github.actor_id == '290150379' }}"
+    )
     assert job["environment"] == "dev-chart-bump-dispatcher"
     assert job["permissions"] == {"contents": "read"}
     assert job["timeout-minutes"] == 5
@@ -125,6 +127,7 @@ def test_development_dispatch_payload_matches_receiver_contract(tmp_path: Path) 
     dispatch = step_by_name(job, "Dispatch bump-chart-to-development")
 
     assert dispatch["shell"] == "bash"
+    assert dispatch.get("continue-on-error", False) is False
     assert dispatch["env"] == {
         "GH_TOKEN": "${{ steps.dispatcher-token.outputs.token }}",
         "COMPONENT": "${{ needs.publish.outputs.component }}",
@@ -139,7 +142,8 @@ def test_development_dispatch_payload_matches_receiver_contract(tmp_path: Path) 
     fake_gh = bin_dir / "gh"
     fake_gh.write_text(
         "#!/usr/bin/env bash\n"
-        'printf "%s\\n" "$@" > "$GH_CAPTURE"\n',
+        'printf "%s\\n" "$@" > "$GH_CAPTURE"\n'
+        'exit "${GH_EXIT_CODE:-0}"\n',
         encoding="utf-8",
     )
     fake_gh.chmod(0o755)
@@ -157,17 +161,18 @@ def test_development_dispatch_payload_matches_receiver_contract(tmp_path: Path) 
         }
     )
 
+    command = [
+        "bash",
+        "--noprofile",
+        "--norc",
+        "-e",
+        "-o",
+        "pipefail",
+        "-c",
+        dispatch["run"],
+    ]
     result = subprocess.run(
-        [
-            "bash",
-            "--noprofile",
-            "--norc",
-            "-e",
-            "-o",
-            "pipefail",
-            "-c",
-            dispatch["run"],
-        ],
+        command,
         check=False,
         capture_output=True,
         env=environment,
@@ -194,6 +199,16 @@ def test_development_dispatch_payload_matches_receiver_contract(tmp_path: Path) 
         f"client_payload[source-sha]={'a' * 40}",
     ]
 
+    failure = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        env=environment | {"GH_EXIT_CODE": "23"},
+        text=True,
+    )
+
+    assert failure.returncode == 23
+
 
 def test_development_and_staging_dispatches_are_independent_siblings() -> None:
     jobs = load_workflow()["jobs"]
@@ -206,15 +221,27 @@ def test_development_and_staging_dispatches_are_independent_siblings() -> None:
 
 
 def test_chart_publish_supply_chain_uses_immutable_action_revisions() -> None:
-    publish = load_workflow()["jobs"]["publish"]
+    workflow = load_workflow()
+    publish = workflow["jobs"]["publish"]
     actions = {step["uses"] for step in publish["steps"] if "uses" in step}
+    all_actions = {
+        step["uses"]
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if "uses" in step
+    }
     checkout = step_by_name(publish, "Checkout (at the release tag)")
+    helm = step_by_name(publish, "Set up Helm")
 
     assert CHECKOUT_ACTION in actions
     assert HELM_ACTION in actions
     assert PUBLISH_ACTION in actions
-    assert all("@v" not in action for action in actions)
+    assert all(
+        re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", action) for action in all_actions
+    )
+    assert checkout["with"]["ref"] == "${{ github.sha }}"
     assert checkout["with"]["persist-credentials"] is False
+    assert helm["with"]["version"] == "v3.18.4"
 
 
 def test_development_sender_docs_match_live_app_and_environment() -> None:
