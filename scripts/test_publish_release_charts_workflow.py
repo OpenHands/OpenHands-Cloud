@@ -95,7 +95,7 @@ def test_development_dispatch_runs_only_after_openhands_publish() -> None:
     condition = job["if"]
     assert "needs.publish.result == 'success'" in condition
     assert "needs.publish.outputs.component == 'openhands'" in condition
-    assert "github.actor == 'openhands-release-bot[bot]'" in condition
+    assert "github.actor ==" not in condition
     assert "github.actor_id == '290150379'" in condition
     assert job["environment"] == "dev-chart-bump-dispatcher"
     assert job["permissions"] == {"contents": "read"}
@@ -208,11 +208,13 @@ def test_development_and_staging_dispatches_are_independent_siblings() -> None:
 def test_chart_publish_supply_chain_uses_immutable_action_revisions() -> None:
     publish = load_workflow()["jobs"]["publish"]
     actions = {step["uses"] for step in publish["steps"] if "uses" in step}
+    checkout = step_by_name(publish, "Checkout (at the release tag)")
 
     assert CHECKOUT_ACTION in actions
     assert HELM_ACTION in actions
     assert PUBLISH_ACTION in actions
     assert all("@v" not in action for action in actions)
+    assert checkout["with"]["persist-credentials"] is False
 
 
 def test_development_sender_docs_match_live_app_and_environment() -> None:
