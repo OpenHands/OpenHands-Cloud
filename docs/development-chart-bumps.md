@@ -52,12 +52,15 @@ GitHub Environment:
 - `CHART_BUMP_DISPATCHER_APP_ID`
 - `CHART_BUMP_DISPATCHER_APP_PRIVATE_KEY`
 
-The Environment must allow the `openhands/*` tag pattern. Before merging the
-sender, also add an active tag ruleset that protects `openhands/*` creation,
-updates, and deletion, with the release App as the intended bypass actor. The
-expected release identity is `openhands-release-bot[bot]` (GitHub user ID
-`290150379`). The sender checks the stable user ID as defense in depth, but a
-workflow check cannot protect secrets from workflow code on an untrusted tag.
+The Environment must allow the `openhands/*` tag pattern.
+
+A repository tag ruleset that protects `openhands/*` creation, updates, and
+deletion, with the release App as the intended bypass actor, remains recommended
+hardening for the existing release process but is not a prerequisite for this
+sender. The expected release identity is `openhands-release-bot[bot]` (GitHub
+user ID `290150379`). The sender checks the stable user ID as defense in depth,
+but a workflow check cannot protect secrets from workflow code on an untrusted
+tag.
 
 The `bump-chart-to-development` receiver must already exist on the default
 branch of `OpenHands/saas-deploy`. Otherwise, GitHub can accept the event
