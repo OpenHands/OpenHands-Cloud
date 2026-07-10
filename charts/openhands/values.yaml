@@ -97,6 +97,9 @@ env:
 # blob in every block. Empty by default, which emits no OH_AGENT_SERVER_ENV.
 agentServerEnv: {}
 
+integrations:
+  resolverLabel: "openhands"
+
 filestore:
   ephemeral: false
   bucket: openhands-sessions

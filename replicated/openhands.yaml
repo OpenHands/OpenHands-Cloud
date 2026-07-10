@@ -71,6 +71,9 @@ spec:
       OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
 
+    integrations:
+      resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
+
     # Runtime (agent-server sandbox) env vars. The chart serialises this map into
     # OH_AGENT_SERVER_ENV (see the openhands.env helper). These CA-bundle
     # defaults apply to every provider; the provider optionalValues blocks below
