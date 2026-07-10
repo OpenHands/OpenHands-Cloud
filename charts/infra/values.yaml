@@ -122,3 +122,57 @@ sandboxUpgradeCoordinator:
       memory: 32Mi
     limits:
       memory: 64Mi
+
+# Sysbox installer. When enabled, a privileged DaemonSet installs the Sysbox
+# container runtime on every node and registers the sysbox RuntimeClass,
+# giving pods with runtimeClassName: sysbox-runc VM-like (user-namespace)
+# isolation. Disabled by default; the Replicated "Sandbox Isolation" config
+# option turns it on.
+#
+# The Sysbox binaries and systemd units are baked into the image below (the
+# official nestybox/sysbox-deploy-k8s image), so the install needs no internet
+# access (fixes air-gap) and is not tied to Debian/Ubuntu: the binaries are
+# portable Go builds and k0s ships its own containerd, so any systemd host with
+# kernel >= 6.3 works. Kernel >= 6.3 is enforced by the openhands chart's Sysbox
+# preflight.
+sysbox:
+  enabled: false
+  # Sysbox CE version, used for the on-host idempotency/version check and for
+  # logging. Must match the Sysbox version encoded in image.tag below.
+  version: "0.7.0"
+  # Name of the RuntimeClass + handler. Must stay in sync with the containerd
+  # runtime name in files/install-sysbox.sh and the runtime-api RUNTIME_CLASS
+  # value (replicated/openhands.yaml).
+  runtimeClassName: sysbox-runc
+  image:
+    # Official nestybox image that ships the Sysbox binaries under
+    # /opt/sysbox/bin/generic and the systemd units under /opt/sysbox/systemd.
+    # Used ONLY by the init container to stage those artifacts onto the host: it
+    # is centos:7-based (util-linux 2.23.2), whose nsenter cannot enter PID 1's
+    # namespaces on recent kernels, so it must NOT run the installer itself. The
+    # tag encodes the Sysbox version as v<version>-0; keep it in sync with
+    # .version above.
+    repository: ghcr.io/nestybox/sysbox-deploy-k8s
+    tag: v0.7.0-0
+    pullPolicy: IfNotPresent
+  # Runner image for the installer container. Its only job is to provide a modern
+  # nsenter (util-linux >= 2.38) that can enter the host namespaces to run
+  # files/install-sysbox.sh; it is never installed on the host, so this stays
+  # distro-agnostic for the node. Split out from image above because the nestybox
+  # image's ancient nsenter fails on kernel 6.x (exits 1 before the script runs).
+  runnerImage:
+    repository: docker.io/library/debian
+    tag: bookworm-slim
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Run on every Linux node, tolerating all taints (incl. control-plane).
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 512Mi

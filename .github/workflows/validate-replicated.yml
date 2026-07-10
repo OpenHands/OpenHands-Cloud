@@ -26,8 +26,12 @@ jobs:
         uses: mikefarah/yq@v4
 
       - name: Install Replicated CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -s https://api.github.com/repos/replicatedhq/replicated/releases/latest \
+          set -o pipefail
+          curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            https://api.github.com/repos/replicatedhq/replicated/releases/latest \
             | grep "browser_download_url.*linux_amd64.tar.gz" \
             | cut -d : -f 2,3 \
             | tr -d \" \

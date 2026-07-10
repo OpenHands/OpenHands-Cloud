@@ -66,6 +66,21 @@ spec:
           type: text
           default: "runtime.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+        - name: additional_cors_origins
+          title: Additional Permitted CORS Origins
+          help_text: >-
+            Optional. Comma-separated list of extra origins allowed to make
+            cross-origin browser requests to OpenHands. Each origin must include
+            the scheme and host (e.g. https://example.com) and may include
+            a port (e.g. https://example.com:8443 or http://localhost:8000);
+            it must NOT include a path or a trailing slash. The application's own
+            origin is always permitted automatically.
+          type: text
+          default: ""
+          validation:
+            regex:
+              pattern: '^\s*(https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?(\s*,\s*https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?)*)?\s*$'
+              message: 'Must be blank or a comma-separated list of origins like https://example.com or http://localhost:8000, with no paths or trailing slashes.'
 
     - name: tls_configuration
       title: Certificate Configuration
@@ -915,6 +930,18 @@ spec:
       title: Sandbox Configuration
       description: OpenHands conversations run in isolated sandboxes. Configure sandbox resources and lifecycle settings here. Adjust these settings based on your expected workload and the size of your cluster.
       items:
+        - name: sandbox_isolation
+          title: Sandbox Isolation
+          help_text: |
+            The container runtime used to isolate each sandbox.
+            Sysbox (default) provides stronger isolation between sandboxes and enables Docker-in-Docker. It requires Linux kernel 6.3+ (e.g. Ubuntu 24.04).
+          type: select_one
+          default: "sysbox"
+          items:
+            - name: "sysbox"
+              title: "Sysbox (stronger isolation, default)"
+            - name: "runc"
+              title: "runc (standard)"
         - name: runtime_routing_mode
           title: Sandbox Routing Mode
           help_text: |
@@ -941,7 +968,7 @@ spec:
           title: Deletion Time (seconds)
           help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed.
           type: text
-          default: "5184000"
+          default: "864000"
           validation:
             regex:
               pattern: ^[1-9][0-9]*$
@@ -1013,9 +1040,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.29.0-python
+          help_text: Image tag, e.g. 1.34.0-python
           type: text
-          default: "1.29.0-python"
+          default: "1.34.0-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
@@ -1163,6 +1190,14 @@ spec:
       title: Advanced Options
       description: Optional components and advanced configuration settings
       items:
+        - name: openhands_resolver_label
+          title: OpenHands Resolver Label
+          help_text: >-
+            The OpenHands trigger label and @mention for supported issue and pull
+            request integrations. Defaults to "openhands". Set a custom value so
+            this instance only responds to that label and ignores the default.
+          type: text
+          default: "openhands"
         - name: litellm_forward_client_headers
           title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
           help_text: >-
