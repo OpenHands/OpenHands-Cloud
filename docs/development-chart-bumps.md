@@ -60,8 +60,8 @@ expected release identity is `openhands-release-bot[bot]` (GitHub user ID
 check cannot protect secrets from workflow code on an untrusted tag.
 
 The `bump-chart-to-development` receiver must already exist on the default
-branch of `OpenHands/saas-deploy`. GitHub accepts dispatches only for event types
-handled by a workflow on the target repository's default branch.
+branch of `OpenHands/saas-deploy`. Otherwise, GitHub can accept the event
+without starting a receiver run.
 
 ## Failure behavior
 
