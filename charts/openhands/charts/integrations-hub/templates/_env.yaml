@@ -134,12 +134,24 @@
   value: "datadog-agent.all-hands-system.svc.cluster.local"
 - name: DD_TRACE_AGENT_PORT
   value: "8126"
+- name: DD_DOGSTATSD_PORT
+  value: "8125"
 - name: DD_SERVICE
   value: {{ .Values.datadog.serviceName | quote }}
 - name: DD_ENV
   value: {{ .Values.datadog.env | quote }}
+- name: DD_VERSION
+  value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+- name: DD_LOGS_INJECTION
+  value: "true"
 - name: DD_TRACE_ENABLED
   value: "true"
+- name: DD_TRACE_SAMPLING_RULES
+  value: '[{"resource":"GET /api/health","sample_rate":0.0},{"resource":"GET /api/live","sample_rate":0.0},{"resource":"GET /api/ready","sample_rate":0.0}]'
+- name: LOG_JSON
+  value: "1"
+- name: LOG_JSON_LEVEL_KEY
+  value: "severity"
 {{- end }}
 {{- end }}
 

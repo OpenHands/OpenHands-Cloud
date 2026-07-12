@@ -132,35 +132,38 @@ spec:
         - containerPort: {{ .Values.service.port | default 8000 }}
         resources:
           {{- toYaml .Values.deployment.resources | nindent 12 }}
-        # Health endpoint lives at /api/health on the FastAPI app
-        # (backend/app/routers/health.py). The leading prefix matches
-        # `.Values.rootPath` -- i.e. /integrations-hub/api/health by
-        # default, plain /api/health when rootPath is unset -- because
+        # Probe endpoints live on the FastAPI app. The leading prefix matches
+        # `.Values.rootPath` -- i.e. /integrations-hub/api/live by
+        # default, plain /api/live when rootPath is unset -- because
         # the backend mounts all routes under INTHUB_ROOT_PATH. Keeping
         # the probe URL in sync with the Helm value prevents probes
         # from 404'ing whenever the chart's mount path changes.
-        # There is no separate /ready endpoint, so readiness reuses the
-        # same probe path.
-        {{- $healthPath := printf "%s/api/health" (.Values.rootPath | default "") }}
+        # Liveness stays independent of external services, while readiness
+        # checks database availability before the pod receives traffic.
+        {{- $livePath := printf "%s/api/live" (.Values.rootPath | default "") }}
+        {{- $readyPath := printf "%s/api/ready" (.Values.rootPath | default "") }}
         startupProbe:
           httpGet:
-            path: {{ $healthPath | quote }}
+            path: {{ $livePath | quote }}
             port: {{ .Values.service.port | default 8000 }}
           failureThreshold: {{ .Values.probes.startup.failureThreshold }}
           periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
         livenessProbe:
           httpGet:
-            path: {{ $healthPath | quote }}
+            path: {{ $livePath | quote }}
             port: {{ .Values.service.port | default 8000 }}
           initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
           periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
           failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
         readinessProbe:
           httpGet:
-            path: {{ $healthPath | quote }}
+            path: {{ $readyPath | quote }}
             port: {{ .Values.service.port | default 8000 }}
           initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
           periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
           failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
         env:
         {{- include "integrations-hub.env" . | nindent 8 }}
