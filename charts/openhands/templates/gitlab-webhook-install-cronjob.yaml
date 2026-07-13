@@ -2,9 +2,9 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ .Release.Name }}-install-hooks
+  name: {{ .Release.Name }}-install-gitlab-webhooks
   labels:
-    app: {{ .Release.Name }}-install-hooks
+    app: {{ .Release.Name }}-install-gitlab-webhooks
 spec:
   schedule: {{ .Values.gitlabWebhookInstallation.schedule | quote }}
   concurrencyPolicy: {{ .Values.gitlabWebhookInstallation.concurrencyPolicy }}
@@ -16,7 +16,7 @@ spec:
       template:
         metadata:
           labels:
-            app: {{ .Release.Name }}-install-hooks
+            app: {{ .Release.Name }}-install-gitlab-webhooks
         spec:
           {{- with .Values.securityContext }}
           securityContext:
@@ -33,7 +33,7 @@ spec:
             {{- include "openhands.caBundle.volume" . | nindent 12 }}
           {{- end }}
           containers:
-            - name: {{ .Release.Name }}-install-hooks
+            - name: {{ .Release.Name }}-install-gitlab-webhooks
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
               imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
               command: ["python", "-m", "sync.install_gitlab_webhooks"]
