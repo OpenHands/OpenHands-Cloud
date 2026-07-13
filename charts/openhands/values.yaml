@@ -1224,14 +1224,17 @@ integrations-hub:
     startup:
       failureThreshold: 30
       periodSeconds: 10
+      timeoutSeconds: 2
     liveness:
       initialDelaySeconds: 10
       periodSeconds: 30
       failureThreshold: 3
+      timeoutSeconds: 2
     readiness:
       initialDelaySeconds: 5
       periodSeconds: 10
       failureThreshold: 3
+      timeoutSeconds: 2
 
   # Service configuration
   service:
