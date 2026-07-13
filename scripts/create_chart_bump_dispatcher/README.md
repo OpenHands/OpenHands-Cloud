@@ -25,10 +25,10 @@ uv run scripts/create_chart_bump_dispatcher/create_chart_bump_dispatcher.py \
   --org OpenHands \
   --app-name staging-chart-bump-dispatcher
 
-# future dev
+# development
 uv run scripts/create_chart_bump_dispatcher/create_chart_bump_dispatcher.py \
   --org OpenHands \
-  --app-name saas-deploy-dev-chart-dispatcher-openhands
+  --app-name dev-chart-bump-dispatcher
 ```
 
 The private key is written under `scripts/create_chart_bump_dispatcher/keys/`
