@@ -1248,6 +1248,7 @@ integrations-hub:
   #     routing rule.
   #   - The FastAPI container's `INTHUB_ROOT_PATH` env var.
   #   - The SPA base path baked into the image at build time.
+  # Kubelet probes bypass ingress and use pod-local `/api/*` paths.
   rootPath: "/integrations-hub"
 
   # Bypass authentication for local development only -- never enable in

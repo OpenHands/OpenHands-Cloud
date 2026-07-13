@@ -55,10 +55,8 @@ service:
 # Path prefix the application is mounted under. Must match the SPA base
 # path baked into the image and the parent chart ingress path.
 #
-# Wired to the FastAPI container as `INTHUB_ROOT_PATH`, which causes
-# `backend/app/main.py::build_app` to mount every route -- including the
-# SPA static files and `/api/health` -- under this prefix. Container
-# probes below also honour the prefix automatically.
+# Wired to the FastAPI container as `INTHUB_ROOT_PATH` for external routing.
+# Kubelet probes still use pod-local `/api/*` paths because they bypass ingress.
 #
 # Set to an empty string to serve the app from the cluster root, usually
 # when using a dedicated hostname.

@@ -132,16 +132,13 @@ spec:
         - containerPort: {{ .Values.service.port | default 8000 }}
         resources:
           {{- toYaml .Values.deployment.resources | nindent 12 }}
-        # Probe endpoints live on the FastAPI app. The leading prefix matches
-        # `.Values.rootPath` -- i.e. /integrations-hub/api/live by
-        # default, plain /api/live when rootPath is unset -- because
-        # the backend mounts all routes under INTHUB_ROOT_PATH. Keeping
-        # the probe URL in sync with the Helm value prevents probes
-        # from 404'ing whenever the chart's mount path changes.
+        # Kubelet probes hit the pod directly, before any ingress path rewrite.
+        # The FastAPI app registers these health routes at pod-local /api/*
+        # paths even when INTHUB_ROOT_PATH is set for external routing.
         # Liveness stays independent of external services, while readiness
         # checks database availability before the pod receives traffic.
-        {{- $livePath := printf "%s/api/live" (.Values.rootPath | default "") }}
-        {{- $readyPath := printf "%s/api/ready" (.Values.rootPath | default "") }}
+        {{- $livePath := "/api/live" }}
+        {{- $readyPath := "/api/ready" }}
         startupProbe:
           httpGet:
             path: {{ $livePath | quote }}
