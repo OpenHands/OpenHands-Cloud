@@ -883,10 +883,6 @@ spec:
             # app shows an unavailable badge). If the textarea resolves empty,
             # fall back to the old hardcoded route.
             model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "vertex_ai/%s" $m) "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ end }}repl{{ if not $models }}repl{{ $models = list (dict "model_name" "gemini-2.5-flash" "litellm_params" (dict "model" "vertex_ai/gemini-2.5-flash" "vertex_project" "os.environ/VERTEXAI_PROJECT" "vertex_location" "os.environ/VERTEXAI_LOCATION")) }}repl{{ end }}repl{{ $models | mustToJson }}
-          vertexAI:
-            enabled: true
-            project: '{{repl ConfigOption "google_vertex_project_id"}}'
-            location: '{{repl ConfigOption "google_vertex_location"}}'
     # AWS Bedrock — static access keys. LiteLLM speaks Bedrock natively via the
     # AWS SDK; the AWS_* env vars are sourced from litellm-env-secrets and
     # referenced in model_list via os.environ/* so the keys never appear in

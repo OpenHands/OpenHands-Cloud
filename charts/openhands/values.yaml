@@ -822,9 +822,6 @@ runtime-api:
     auth:
       username: postgres
       existingSecret: postgres-password
-  externalDatabase:
-    enabled: false
-    existingSecret: postgres-password
   ingress:
     enabled: false
     # REQUIRED: Update to a hostname in a DNS domain you own
@@ -1127,10 +1124,6 @@ global:
   # absent from the warm env would make the pool unclaimable.
   agentServerEnv: {}
 
-vertexAI:
-  enabled: false
-  project: ""
-
 # Trust-manager Bundle that fans a CA bundle (public CAs + an optional
 # operator-supplied CA certificate) out as a ConfigMap into the release
 # namespace. Consumers (openhands deployments + outbound-HTTPS cronjobs,
@@ -1188,7 +1181,6 @@ crdCheck:
       memory: 64Mi
     limits:
       memory: 128Mi
-  location: ""
 
 # Integrations Hub - Agent context layer with managed connectors and MCP integrations
 integrations-hub:
@@ -1242,7 +1234,6 @@ integrations-hub:
 
   # Service configuration
   service:
-    baseUrl: ""
     # Port the FastAPI container listens on (matches the integrations-hub
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000
@@ -1305,7 +1296,6 @@ integrations-hub:
     name: "integrations_hub"
     secretName: "integrations-hub-db-secret"
     secretKey: "db-password"
-    existingSecret: false
     createDatabaseUser: false
     superuserSecretName: "postgres-password"
     superuserSecretKey: "password"

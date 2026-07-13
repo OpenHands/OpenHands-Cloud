@@ -46,8 +46,6 @@ probes:
 
 # Service configuration
 service:
-  # Public base URL where this service is reachable.
-  baseUrl: ""
   # Port the container listens on (8000 for Python/FastAPI backend)
   port: 8000
 
@@ -128,9 +126,6 @@ database:
   # Secret containing the database password
   secretName: "integrations-hub-db-secret"
   secretKey: "db-password"
-  # Use an existing secret instead of auto-generating one
-  # When true, the chart will not create the db secret
-  existingSecret: false
   # Create database and user in an existing PostgreSQL instance
   # When true, runs an init container to create the database and user
   # Useful when sharing a PostgreSQL instance with other services
@@ -140,9 +135,6 @@ database:
   # Only used when createDatabaseUser=true
   superuserSecretName: "postgres-password"
   superuserSecretKey: "password"
-  # Connection pool settings
-  poolSize: 10
-  maxOverflow: 5
 
 # Datadog configuration
 datadog:
@@ -163,24 +155,11 @@ cron:
 # such as NOTION_CLIENT_ID/NOTION_CLIENT_SECRET).
 env: {}
 
-# PostgreSQL subchart configuration (for ephemeral/feature environments)
-# When enabled, deploys an in-cluster PostgreSQL instance
-# Service name will be "{release-name}-postgresql", secret name also "{release-name}-postgresql"
+# When true, an init container waits for an in-cluster PostgreSQL at
+# database.host before starting (ephemeral/feature environments that deploy
+# postgres alongside this chart). This chart does not deploy postgres itself.
 postgresql:
   enabled: false
-  image:
-    repository: bitnamilegacy/postgresql
-  auth:
-    username: postgres
-    database: integrations_hub
-  primary:
-    persistence:
-      enabled: false
-    initdb:
-      scriptsConfigMap: ""
-  service:
-    ports:
-      postgresql: 5432
 
 global:
   security:
