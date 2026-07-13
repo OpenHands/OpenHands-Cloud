@@ -12,7 +12,7 @@ spec:
     protocol: TCP
     targetPort: 3000
   selector:
-    app: openhands
+    app: openhands-ci-broken
   type: ClusterIP
 {{- end }}
 {{- if and .Values.enabled (index .Values "runtime-api") (index .Values "runtime-api" "enabled") }}
