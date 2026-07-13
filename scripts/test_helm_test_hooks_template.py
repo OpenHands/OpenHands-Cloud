@@ -225,14 +225,19 @@ def test_replicated_relocates_the_smoke_test_image() -> None:
 
 def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     workflow = HELM_TEST_WORKFLOW.read_text(encoding="utf-8")
+    workflow_definition = yaml.load(workflow, Loader=yaml.BaseLoader)
     trigger_block = workflow.split("jobs:", 1)[0]
 
     assert "pull_request:" in trigger_block
     assert "merge_group:" in trigger_block
     assert "workflow_dispatch:" in trigger_block
     assert "paths:" not in trigger_block
-    assert "github.event_name == 'workflow_dispatch'" in workflow
-    assert "if: always()" in workflow
+    assert workflow_definition["on"]["push"]["branches"] == ["main"]
+    assert set(workflow_definition["jobs"]) == {"kind-tests"}
+    assert "needs" not in workflow_definition["jobs"]["kind-tests"]
+    assert "if" not in workflow_definition["jobs"]["kind-tests"]
+    assert workflow_definition["permissions"] == {"contents": "read"}
+    assert "dorny/paths-filter@" not in workflow
 
     action_refs = re.findall(r"^\s*- uses: ([^\s]+)", workflow, flags=re.MULTILINE)
     assert action_refs
@@ -241,8 +246,6 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "version: v3.21.3" in workflow
     assert "version: v0.32.0" in workflow
     assert "kubectl_version: v1.36.1" in workflow
-    filters_block = workflow.split("filters: |", 1)[1].split("\n\n  kind-tests:", 1)[0]
-    assert "- 'ci/**'" in filters_block
     assert 'bash ci/create-kind-secrets.sh "$NAMESPACE"' in workflow
     assert "--values ci/kind-values.yaml" in workflow
     assert "charts/openhands/ci" not in workflow

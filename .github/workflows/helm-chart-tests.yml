@@ -10,40 +10,14 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: helm-chart-tests-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  changes:
-    runs-on: ubuntu-24.04
-    outputs:
-      helm: ${{ steps.filter.outputs.helm }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
-        id: filter
-        with:
-          filters: |
-            helm:
-              - 'charts/**'
-              - 'ci/**'
-              - 'replicated/**'
-              - 'scripts/test_helm_test_hooks_template.py'
-              - '.github/workflows/helm-chart-tests.yml'
-              - '.github/workflows/pr-checks.yml'
-              - '.github/workflows/test-scripts.yml'
-
   kind-tests:
     name: KinD install and helm test
-    needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.helm == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -137,38 +111,3 @@ jobs:
           path: artifacts/
           if-no-files-found: warn
           retention-days: 7
-
-  required:
-    name: Required
-    if: always()
-    needs:
-      - changes
-      - kind-tests
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Evaluate Helm chart test result
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          HELM_CHANGED: ${{ needs.changes.outputs.helm }}
-          TEST_RESULT: ${{ needs.kind-tests.result }}
-        run: |
-          if [[ "$CHANGES_RESULT" != "success" ]]; then
-            exit 1
-          fi
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            [[ "$TEST_RESULT" == "success" ]]
-            exit
-          fi
-          case "$HELM_CHANGED" in
-            true)
-              [[ "$TEST_RESULT" == "success" ]]
-              ;;
-            false)
-              [[ "$TEST_RESULT" == "skipped" ]]
-              ;;
-            *)
-              echo "Unexpected change-detection output: $HELM_CHANGED"
-              exit 1
-              ;;
-          esac
