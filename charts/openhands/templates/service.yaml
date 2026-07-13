@@ -13,7 +13,7 @@ spec:
     targetPort: 3000
   selector:
     app: openhands
-  type: BrokenInstall
+  type: ClusterIP
 {{- end }}
 {{- if and .Values.enabled (index .Values "runtime-api") (index .Values "runtime-api" "enabled") }}
 ---
