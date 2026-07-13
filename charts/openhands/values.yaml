@@ -732,13 +732,18 @@ redis:
   master:
     persistence:
       enabled: false
+    # Matches the effective values the chart has always deployed: the previous
+    # top-level `resources` block was a no-op (the bitnami chart only reads
+    # master.resources), so the master ran with the "nano" resourcesPreset.
     resources:
       requests:
-        memory: 100Mi
         cpu: 100m
+        memory: 128Mi
+        ephemeral-storage: 50Mi
       limits:
-        memory: 512Mi
-        cpu: 100m
+        cpu: 150m
+        memory: 192Mi
+        ephemeral-storage: 2Gi
   replica:
     replicaCount: 0
 
