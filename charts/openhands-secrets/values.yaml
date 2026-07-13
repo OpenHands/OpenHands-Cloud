@@ -8,9 +8,7 @@ automation:
 config:
   # Security secrets
   admin_password: ""
-  postgres_host: ""
   postgres_username: "postgres"
-  postgres_database: "openhands"
   postgres_password: ""
   redis_password: ""
   jwt_secret: ""
@@ -32,9 +30,10 @@ config:
   openai_api_key: ""
   google_gemini_api_key: ""
   google_vertex_credentials: ""
+  google_vertex_project_id: ""
+  google_vertex_location: ""
   deepseek_api_key: ""
   mistral_api_key: ""
-  azure_auth_method: "api_key"
   azure_api_key: ""
   azure_tenant_id: ""
   azure_client_id: ""
@@ -64,8 +63,6 @@ config:
   bitbucket_data_center_bot_token: ""
 
   # Azure DevOps credentials (Microsoft Entra OAuth)
-  azure_devops_tenant_id: ""
-  azure_devops_organization: ""
   azure_devops_client_id: ""
   azure_devops_client_secret: ""
 
@@ -107,5 +104,4 @@ config:
   tls_private_key: ""
   tls_ca_certificate: ""
   tls_env: ""
-  auth_hostname: ""
  
