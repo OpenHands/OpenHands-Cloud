@@ -1,0 +1,10 @@
+date_utc=2026-07-13T10:49:02Z
+repo=OpenHands/OpenHands-Cloud
+openhands_cloud_main_sha=8ae4ebcaa7fb6ca3a9629efc10cf272a4c6b2c11
+openhands_cloud_pr_sha=a0337aff0ee68b95dfad22197e1b8b3b0f6982bf
+integrations_hub_main_sha=6dd48510d6c31e5e8d360a4c618d2bec33ebcc81
+docker=client=29.6.1 server=29.6.1
+helm=v3.15.4+gfa9efb0
+kubectl=Client Version: v1.30.3;Kustomize Version: v5.0.4-0.20230601165947-6ce0bf390ce3;
+kind=kind v0.23.0 go1.21.10 linux/amd64
+product_fix_sha=a1b2ea7503ec968ec91aff50ac62e783df4b1df6

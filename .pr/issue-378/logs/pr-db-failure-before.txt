@@ -1,0 +1,4 @@
+before_db_down
+ready=True restarts=0
+NAME       ENDPOINTS          AGE
+postgres   10.244.0.11:5432   69s

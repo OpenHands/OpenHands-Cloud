@@ -1,0 +1,191 @@
+---
+# Source: integrations-hub/templates/service-account.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: integrations-hub-sa
+  labels:
+    app: integrations-hub
+---
+# Source: integrations-hub/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: integrations-hub
+  labels:
+    app: integrations-hub
+spec:
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: integrations-hub
+---
+# Source: integrations-hub/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: integrations-hub
+  labels:
+    app: integrations-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: integrations-hub
+  template:
+    metadata:
+      labels:
+        app: integrations-hub
+    spec:
+      serviceAccountName: integrations-hub-sa
+      securityContext:
+        runAsGroup: 42420
+        runAsNonRoot: true
+        runAsUser: 42420
+      initContainers:
+      # Run database migrations before starting the main container
+      - name: migrate
+        image: 'localhost:5001/integrations-hub:evidence-6dd4851'
+        workingDir: /app/backend
+        command: ["alembic", "upgrade", "head"]
+        env:
+        - name: INTHUB_DB_HOST
+          value: postgres
+        - name: INTHUB_DB_PORT
+          value: "5432"
+        - name: INTHUB_DB_SSL_MODE
+          value: disable
+        - name: PGSSLMODE
+          value: disable
+        - name: INTHUB_DB_USER
+          value: integrations_hub_user
+        - name: INTHUB_DB_NAME
+          value: integrations_hub
+        - name: INTHUB_DB_PASS
+          valueFrom:
+            secretKeyRef:
+              key: db-password
+              name: integrations-hub-db-secret
+        - name: INTHUB_POSTGRES_URL
+          value: postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)
+        - name: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
+          value: keycloak_auth
+        - name: INTHUB_DISABLE_AUTH
+          value: "true"
+        - name: INTHUB_ROOT_PATH
+          value: /integrations-hub
+        - name: INTHUB_CREDENTIAL_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              key: encryption-key
+              name: integrations-hub-encryption-secret
+        - name: INTHUB_APP_ADMIN_EMAILS
+          value: chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev
+        - name: INTHUB_CRON_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: cron-secret
+              name: integrations-hub-cron-secret
+        - name: DD_AGENT_HOST
+          value: datadog-agent.all-hands-system.svc.cluster.local
+        - name: DD_TRACE_AGENT_PORT
+          value: "8126"
+        - name: DD_SERVICE
+          value: integrations-hub
+        - name: DD_ENV
+          value: evidence
+        - name: DD_TRACE_ENABLED
+          value: "true"
+      containers:
+      - name: integrations-hub
+        imagePullPolicy: Always
+        image: 'localhost:5001/integrations-hub:evidence-6dd4851'
+        ports:
+        - containerPort: 8000
+        resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+        # Health endpoint lives at /api/health on the FastAPI app
+        # (backend/app/routers/health.py). The leading prefix matches
+        # `.Values.rootPath` -- i.e. /integrations-hub/api/health by
+        # default, plain /api/health when rootPath is unset -- because
+        # the backend mounts all routes under INTHUB_ROOT_PATH. Keeping
+        # the probe URL in sync with the Helm value prevents probes
+        # from 404'ing whenever the chart's mount path changes.
+        # There is no separate /ready endpoint, so readiness reuses the
+        # same probe path.
+        startupProbe:
+          httpGet:
+            path: "/integrations-hub/api/health"
+            port: 8000
+          failureThreshold: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: "/integrations-hub/api/health"
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: "/integrations-hub/api/health"
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        env:
+        - name: INTHUB_DB_HOST
+          value: postgres
+        - name: INTHUB_DB_PORT
+          value: "5432"
+        - name: INTHUB_DB_SSL_MODE
+          value: disable
+        - name: PGSSLMODE
+          value: disable
+        - name: INTHUB_DB_USER
+          value: integrations_hub_user
+        - name: INTHUB_DB_NAME
+          value: integrations_hub
+        - name: INTHUB_DB_PASS
+          valueFrom:
+            secretKeyRef:
+              key: db-password
+              name: integrations-hub-db-secret
+        - name: INTHUB_POSTGRES_URL
+          value: postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)
+        - name: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
+          value: keycloak_auth
+        - name: INTHUB_DISABLE_AUTH
+          value: "true"
+        - name: INTHUB_ROOT_PATH
+          value: /integrations-hub
+        - name: INTHUB_CREDENTIAL_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              key: encryption-key
+              name: integrations-hub-encryption-secret
+        - name: INTHUB_APP_ADMIN_EMAILS
+          value: chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev
+        - name: INTHUB_CRON_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: cron-secret
+              name: integrations-hub-cron-secret
+        - name: DD_AGENT_HOST
+          value: datadog-agent.all-hands-system.svc.cluster.local
+        - name: DD_TRACE_AGENT_PORT
+          value: "8126"
+        - name: DD_SERVICE
+          value: integrations-hub
+        - name: DD_ENV
+          value: evidence
+        - name: DD_TRACE_ENABLED
+          value: "true"

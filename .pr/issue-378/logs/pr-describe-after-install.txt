@@ -1,0 +1,138 @@
+Name:             integrations-hub-566dbc9555-hsm42
+Namespace:        pr862-pr
+Priority:         0
+Service Account:  integrations-hub-sa
+Node:             pr862-control-plane/172.18.0.2
+Start Time:       Mon, 13 Jul 2026 10:59:15 +0000
+Labels:           app=integrations-hub
+                  pod-template-hash=566dbc9555
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.12
+IPs:
+  IP:           10.244.0.12
+Controlled By:  ReplicaSet/integrations-hub-566dbc9555
+Init Containers:
+  migrate:
+    Container ID:  containerd://5be331a828095b6f72a9d0e8dbca1b618bf0fb554e8179e89960b3f082eed7ca
+    Image:         localhost:5001/integrations-hub:evidence-6dd4851
+    Image ID:      localhost:5001/integrations-hub@sha256:d053b01f4271ac0a425c99fec4b4f815191feb93ff1cf12d7a4182844035c1bb
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      alembic
+      upgrade
+      head
+    State:          Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Mon, 13 Jul 2026 10:59:16 +0000
+      Finished:     Mon, 13 Jul 2026 10:59:17 +0000
+    Ready:          True
+    Restart Count:  0
+    Environment:
+      INTHUB_DB_HOST:                     postgres
+      INTHUB_DB_PORT:                     5432
+      INTHUB_DB_SSL_MODE:                 disable
+      PGSSLMODE:                          disable
+      INTHUB_DB_USER:                     integrations_hub_user
+      INTHUB_DB_NAME:                     integrations_hub
+      INTHUB_DB_PASS:                     <set to the key 'db-password' in secret 'integrations-hub-db-secret'>  Optional: false
+      INTHUB_POSTGRES_URL:                postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)
+      INTHUB_OPENHANDS_AUTH_COOKIE_NAME:  keycloak_auth
+      INTHUB_DISABLE_AUTH:                true
+      INTHUB_ROOT_PATH:                   /integrations-hub
+      INTHUB_CREDENTIAL_ENCRYPTION_KEY:   <set to the key 'encryption-key' in secret 'integrations-hub-encryption-secret'>  Optional: false
+      INTHUB_APP_ADMIN_EMAILS:            chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev
+      INTHUB_CRON_SECRET:                 <set to the key 'cron-secret' in secret 'integrations-hub-cron-secret'>  Optional: false
+      DD_AGENT_HOST:                      datadog-agent.all-hands-system.svc.cluster.local
+      DD_TRACE_AGENT_PORT:                8126
+      DD_DOGSTATSD_PORT:                  8125
+      DD_SERVICE:                         integrations-hub
+      DD_ENV:                             evidence
+      DD_VERSION:                         evidence-6dd4851
+      DD_LOGS_INJECTION:                  true
+      DD_TRACE_ENABLED:                   true
+      DD_TRACE_SAMPLING_RULES:            [{"resource":"GET /api/health","sample_rate":0.0},{"resource":"GET /api/live","sample_rate":0.0},{"resource":"GET /api/ready","sample_rate":0.0}]
+      LOG_JSON:                           1
+      LOG_JSON_LEVEL_KEY:                 severity
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-tcb6z (ro)
+Containers:
+  integrations-hub:
+    Container ID:   containerd://3017c2955762c9b205612e88dad6adf18e7cf4474774132ac83e671e169efa1a
+    Image:          localhost:5001/integrations-hub:evidence-6dd4851
+    Image ID:       localhost:5001/integrations-hub@sha256:d053b01f4271ac0a425c99fec4b4f815191feb93ff1cf12d7a4182844035c1bb
+    Port:           8000/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Mon, 13 Jul 2026 10:59:18 +0000
+    Ready:          True
+    Restart Count:  0
+    Limits:
+      cpu:     500m
+      memory:  512Mi
+    Requests:
+      cpu:      100m
+      memory:   256Mi
+    Liveness:   http-get http://:8000/api/live delay=10s timeout=2s period=30s #success=1 #failure=3
+    Readiness:  http-get http://:8000/api/ready delay=5s timeout=2s period=10s #success=1 #failure=3
+    Startup:    http-get http://:8000/api/live delay=0s timeout=2s period=10s #success=1 #failure=30
+    Environment:
+      INTHUB_DB_HOST:                     postgres
+      INTHUB_DB_PORT:                     5432
+      INTHUB_DB_SSL_MODE:                 disable
+      PGSSLMODE:                          disable
+      INTHUB_DB_USER:                     integrations_hub_user
+      INTHUB_DB_NAME:                     integrations_hub
+      INTHUB_DB_PASS:                     <set to the key 'db-password' in secret 'integrations-hub-db-secret'>  Optional: false
+      INTHUB_POSTGRES_URL:                postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)
+      INTHUB_OPENHANDS_AUTH_COOKIE_NAME:  keycloak_auth
+      INTHUB_DISABLE_AUTH:                true
+      INTHUB_ROOT_PATH:                   /integrations-hub
+      INTHUB_CREDENTIAL_ENCRYPTION_KEY:   <set to the key 'encryption-key' in secret 'integrations-hub-encryption-secret'>  Optional: false
+      INTHUB_APP_ADMIN_EMAILS:            chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev
+      INTHUB_CRON_SECRET:                 <set to the key 'cron-secret' in secret 'integrations-hub-cron-secret'>  Optional: false
+      DD_AGENT_HOST:                      datadog-agent.all-hands-system.svc.cluster.local
+      DD_TRACE_AGENT_PORT:                8126
+      DD_DOGSTATSD_PORT:                  8125
+      DD_SERVICE:                         integrations-hub
+      DD_ENV:                             evidence
+      DD_VERSION:                         evidence-6dd4851
+      DD_LOGS_INJECTION:                  true
+      DD_TRACE_ENABLED:                   true
+      DD_TRACE_SAMPLING_RULES:            [{"resource":"GET /api/health","sample_rate":0.0},{"resource":"GET /api/live","sample_rate":0.0},{"resource":"GET /api/ready","sample_rate":0.0}]
+      LOG_JSON:                           1
+      LOG_JSON_LEVEL_KEY:                 severity
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-tcb6z (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-tcb6z:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    ConfigMapOptional:       <nil>
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  42s                default-scheduler  Successfully assigned pr862-pr/integrations-hub-566dbc9555-hsm42 to pr862-control-plane
+  Normal   Pulled     41s                kubelet            Container image "localhost:5001/integrations-hub:evidence-6dd4851" already present on machine
+  Normal   Created    41s                kubelet            Created container migrate
+  Normal   Started    41s                kubelet            Started container migrate
+  Normal   Pulling    39s                kubelet            Pulling image "localhost:5001/integrations-hub:evidence-6dd4851"
+  Normal   Pulled     39s                kubelet            Successfully pulled image "localhost:5001/integrations-hub:evidence-6dd4851" in 50ms (50ms including waiting). Image size: 214300884 bytes.
+  Normal   Created    39s                kubelet            Created container integrations-hub
+  Normal   Started    39s                kubelet            Started container integrations-hub
+  Warning  Unhealthy  12s (x3 over 32s)  kubelet            Startup probe failed: Get "http://10.244.0.12:8000/api/live": dial tcp 10.244.0.12:8000: connect: connection refused

@@ -1,0 +1,64 @@
+{
+  "name": "integrations-hub",
+  "namespace": "pr862-main",
+  "image": "localhost:5001/integrations-hub:evidence-6dd4851",
+  "probes": {
+    "startup": {
+      "failureThreshold": 30,
+      "httpGet": {
+        "path": "/integrations-hub/api/health",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "periodSeconds": 10,
+      "successThreshold": 1,
+      "timeoutSeconds": 1
+    },
+    "liveness": {
+      "failureThreshold": 3,
+      "httpGet": {
+        "path": "/integrations-hub/api/health",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "initialDelaySeconds": 10,
+      "periodSeconds": 30,
+      "successThreshold": 1,
+      "timeoutSeconds": 1
+    },
+    "readiness": {
+      "failureThreshold": 3,
+      "httpGet": {
+        "path": "/integrations-hub/api/health",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "initialDelaySeconds": 5,
+      "periodSeconds": 10,
+      "successThreshold": 1,
+      "timeoutSeconds": 1
+    }
+  },
+  "datadogAndLogEnv": [
+    {
+      "name": "DD_AGENT_HOST",
+      "value": "datadog-agent.all-hands-system.svc.cluster.local"
+    },
+    {
+      "name": "DD_TRACE_AGENT_PORT",
+      "value": "8126"
+    },
+    {
+      "name": "DD_SERVICE",
+      "value": "integrations-hub"
+    },
+    {
+      "name": "DD_ENV",
+      "value": "evidence"
+    },
+    {
+      "name": "DD_TRACE_ENABLED",
+      "value": "true"
+    }
+  ]
+}

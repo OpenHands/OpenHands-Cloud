@@ -1,0 +1,4 @@
+attempt=1 pod_ready=False ready=503 {"detail":"Database is not ready."}
+attempt=2 pod_ready=False ready=200 {"status":"ready","backend":"fastapi"}
+attempt=3 pod_ready=False ready=200 {"status":"ready","backend":"fastapi"}
+attempt=4 pod_ready=True ready=200 {"status":"ready","backend":"fastapi"}

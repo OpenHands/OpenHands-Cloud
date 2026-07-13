@@ -1,0 +1,19 @@
+LAST SEEN   TYPE      REASON              OBJECT                                   MESSAGE
+112s        Normal    Scheduled           pod/postgres-648d5597d-pjb62             Successfully assigned pr862-main/postgres-648d5597d-pjb62 to pr862-control-plane
+112s        Normal    ScalingReplicaSet   deployment/postgres                      Scaled up replica set postgres-648d5597d to 1
+112s        Normal    SuccessfulCreate    replicaset/postgres-648d5597d            Created pod: postgres-648d5597d-pjb62
+112s        Normal    Created             pod/postgres-648d5597d-pjb62             Created container postgres
+112s        Normal    Pulled              pod/postgres-648d5597d-pjb62             Container image "postgres:17" already present on machine
+111s        Normal    Started             pod/postgres-648d5597d-pjb62             Started container postgres
+110s        Normal    Pulled              pod/integrations-hub-68db85d895-gvfmn    Container image "localhost:5001/integrations-hub:evidence-6dd4851" already present on machine
+110s        Normal    Created             pod/integrations-hub-68db85d895-gvfmn    Created container migrate
+110s        Normal    Scheduled           pod/integrations-hub-68db85d895-gvfmn    Successfully assigned pr862-main/integrations-hub-68db85d895-gvfmn to pr862-control-plane
+110s        Normal    SuccessfulCreate    replicaset/integrations-hub-68db85d895   Created pod: integrations-hub-68db85d895-gvfmn
+110s        Normal    ScalingReplicaSet   deployment/integrations-hub              Scaled up replica set integrations-hub-68db85d895 to 1
+109s        Normal    Started             pod/integrations-hub-68db85d895-gvfmn    Started container migrate
+108s        Normal    Pulling             pod/integrations-hub-68db85d895-gvfmn    Pulling image "localhost:5001/integrations-hub:evidence-6dd4851"
+108s        Normal    Created             pod/integrations-hub-68db85d895-gvfmn    Created container integrations-hub
+108s        Normal    Pulled              pod/integrations-hub-68db85d895-gvfmn    Successfully pulled image "localhost:5001/integrations-hub:evidence-6dd4851" in 44ms (44ms including waiting). Image size: 214300884 bytes.
+107s        Normal    Started             pod/integrations-hub-68db85d895-gvfmn    Started container integrations-hub
+80s         Warning   Unhealthy           pod/integrations-hub-68db85d895-gvfmn    Startup probe failed: Get "http://10.244.0.10:8000/integrations-hub/api/health": dial tcp 10.244.0.10:8000: connect: connection refused
+10s         Warning   Unhealthy           pod/integrations-hub-68db85d895-gvfmn    Startup probe failed: HTTP probe failed with statuscode: 404

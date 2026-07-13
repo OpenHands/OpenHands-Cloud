@@ -1,0 +1,394 @@
+{
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+        "annotations": {
+            "deployment.kubernetes.io/revision": "1",
+            "meta.helm.sh/release-name": "integrations-hub",
+            "meta.helm.sh/release-namespace": "pr862-pr"
+        },
+        "creationTimestamp": "2026-07-13T10:59:15Z",
+        "generation": 1,
+        "labels": {
+            "app": "integrations-hub",
+            "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "integrations-hub",
+        "namespace": "pr862-pr",
+        "resourceVersion": "1811",
+        "uid": "d9ccbad8-4d6d-4ad5-b701-19a206a7bdb4"
+    },
+    "spec": {
+        "progressDeadlineSeconds": 600,
+        "replicas": 1,
+        "revisionHistoryLimit": 10,
+        "selector": {
+            "matchLabels": {
+                "app": "integrations-hub"
+            }
+        },
+        "strategy": {
+            "rollingUpdate": {
+                "maxSurge": "25%",
+                "maxUnavailable": "25%"
+            },
+            "type": "RollingUpdate"
+        },
+        "template": {
+            "metadata": {
+                "creationTimestamp": null,
+                "labels": {
+                    "app": "integrations-hub"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "env": [
+                            {
+                                "name": "INTHUB_DB_HOST",
+                                "value": "postgres"
+                            },
+                            {
+                                "name": "INTHUB_DB_PORT",
+                                "value": "5432"
+                            },
+                            {
+                                "name": "INTHUB_DB_SSL_MODE",
+                                "value": "disable"
+                            },
+                            {
+                                "name": "PGSSLMODE",
+                                "value": "disable"
+                            },
+                            {
+                                "name": "INTHUB_DB_USER",
+                                "value": "integrations_hub_user"
+                            },
+                            {
+                                "name": "INTHUB_DB_NAME",
+                                "value": "integrations_hub"
+                            },
+                            {
+                                "name": "INTHUB_DB_PASS",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "db-password",
+                                        "name": "integrations-hub-db-secret"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "INTHUB_POSTGRES_URL",
+                                "value": "postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)"
+                            },
+                            {
+                                "name": "INTHUB_OPENHANDS_AUTH_COOKIE_NAME",
+                                "value": "keycloak_auth"
+                            },
+                            {
+                                "name": "INTHUB_DISABLE_AUTH",
+                                "value": "true"
+                            },
+                            {
+                                "name": "INTHUB_ROOT_PATH",
+                                "value": "/integrations-hub"
+                            },
+                            {
+                                "name": "INTHUB_CREDENTIAL_ENCRYPTION_KEY",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "encryption-key",
+                                        "name": "integrations-hub-encryption-secret"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "INTHUB_APP_ADMIN_EMAILS",
+                                "value": "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev"
+                            },
+                            {
+                                "name": "INTHUB_CRON_SECRET",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "cron-secret",
+                                        "name": "integrations-hub-cron-secret"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "DD_AGENT_HOST",
+                                "value": "datadog-agent.all-hands-system.svc.cluster.local"
+                            },
+                            {
+                                "name": "DD_TRACE_AGENT_PORT",
+                                "value": "8126"
+                            },
+                            {
+                                "name": "DD_DOGSTATSD_PORT",
+                                "value": "8125"
+                            },
+                            {
+                                "name": "DD_SERVICE",
+                                "value": "integrations-hub"
+                            },
+                            {
+                                "name": "DD_ENV",
+                                "value": "evidence"
+                            },
+                            {
+                                "name": "DD_VERSION",
+                                "value": "evidence-6dd4851"
+                            },
+                            {
+                                "name": "DD_LOGS_INJECTION",
+                                "value": "true"
+                            },
+                            {
+                                "name": "DD_TRACE_ENABLED",
+                                "value": "true"
+                            },
+                            {
+                                "name": "DD_TRACE_SAMPLING_RULES",
+                                "value": "[{\"resource\":\"GET /api/health\",\"sample_rate\":0.0},{\"resource\":\"GET /api/live\",\"sample_rate\":0.0},{\"resource\":\"GET /api/ready\",\"sample_rate\":0.0}]"
+                            },
+                            {
+                                "name": "LOG_JSON",
+                                "value": "1"
+                            },
+                            {
+                                "name": "LOG_JSON_LEVEL_KEY",
+                                "value": "severity"
+                            }
+                        ],
+                        "image": "localhost:5001/integrations-hub:evidence-6dd4851",
+                        "imagePullPolicy": "Always",
+                        "livenessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/api/live",
+                                "port": 8000,
+                                "scheme": "HTTP"
+                            },
+                            "initialDelaySeconds": 10,
+                            "periodSeconds": 30,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "name": "integrations-hub",
+                        "ports": [
+                            {
+                                "containerPort": 8000,
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "readinessProbe": {
+                            "failureThreshold": 3,
+                            "httpGet": {
+                                "path": "/api/ready",
+                                "port": 8000,
+                                "scheme": "HTTP"
+                            },
+                            "initialDelaySeconds": 5,
+                            "periodSeconds": 10,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "resources": {
+                            "limits": {
+                                "cpu": "500m",
+                                "memory": "512Mi"
+                            },
+                            "requests": {
+                                "cpu": "100m",
+                                "memory": "256Mi"
+                            }
+                        },
+                        "startupProbe": {
+                            "failureThreshold": 30,
+                            "httpGet": {
+                                "path": "/api/live",
+                                "port": 8000,
+                                "scheme": "HTTP"
+                            },
+                            "periodSeconds": 10,
+                            "successThreshold": 1,
+                            "timeoutSeconds": 2
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File"
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "initContainers": [
+                    {
+                        "command": [
+                            "alembic",
+                            "upgrade",
+                            "head"
+                        ],
+                        "env": [
+                            {
+                                "name": "INTHUB_DB_HOST",
+                                "value": "postgres"
+                            },
+                            {
+                                "name": "INTHUB_DB_PORT",
+                                "value": "5432"
+                            },
+                            {
+                                "name": "INTHUB_DB_SSL_MODE",
+                                "value": "disable"
+                            },
+                            {
+                                "name": "PGSSLMODE",
+                                "value": "disable"
+                            },
+                            {
+                                "name": "INTHUB_DB_USER",
+                                "value": "integrations_hub_user"
+                            },
+                            {
+                                "name": "INTHUB_DB_NAME",
+                                "value": "integrations_hub"
+                            },
+                            {
+                                "name": "INTHUB_DB_PASS",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "db-password",
+                                        "name": "integrations-hub-db-secret"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "INTHUB_POSTGRES_URL",
+                                "value": "postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)"
+                            },
+                            {
+                                "name": "INTHUB_OPENHANDS_AUTH_COOKIE_NAME",
+                                "value": "keycloak_auth"
+                            },
+                            {
+                                "name": "INTHUB_DISABLE_AUTH",
+                                "value": "true"
+                            },
+                            {
+                                "name": "INTHUB_ROOT_PATH",
+                                "value": "/integrations-hub"
+                            },
+                            {
+                                "name": "INTHUB_CREDENTIAL_ENCRYPTION_KEY",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "encryption-key",
+                                        "name": "integrations-hub-encryption-secret"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "INTHUB_APP_ADMIN_EMAILS",
+                                "value": "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev"
+                            },
+                            {
+                                "name": "INTHUB_CRON_SECRET",
+                                "valueFrom": {
+                                    "secretKeyRef": {
+                                        "key": "cron-secret",
+                                        "name": "integrations-hub-cron-secret"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "DD_AGENT_HOST",
+                                "value": "datadog-agent.all-hands-system.svc.cluster.local"
+                            },
+                            {
+                                "name": "DD_TRACE_AGENT_PORT",
+                                "value": "8126"
+                            },
+                            {
+                                "name": "DD_DOGSTATSD_PORT",
+                                "value": "8125"
+                            },
+                            {
+                                "name": "DD_SERVICE",
+                                "value": "integrations-hub"
+                            },
+                            {
+                                "name": "DD_ENV",
+                                "value": "evidence"
+                            },
+                            {
+                                "name": "DD_VERSION",
+                                "value": "evidence-6dd4851"
+                            },
+                            {
+                                "name": "DD_LOGS_INJECTION",
+                                "value": "true"
+                            },
+                            {
+                                "name": "DD_TRACE_ENABLED",
+                                "value": "true"
+                            },
+                            {
+                                "name": "DD_TRACE_SAMPLING_RULES",
+                                "value": "[{\"resource\":\"GET /api/health\",\"sample_rate\":0.0},{\"resource\":\"GET /api/live\",\"sample_rate\":0.0},{\"resource\":\"GET /api/ready\",\"sample_rate\":0.0}]"
+                            },
+                            {
+                                "name": "LOG_JSON",
+                                "value": "1"
+                            },
+                            {
+                                "name": "LOG_JSON_LEVEL_KEY",
+                                "value": "severity"
+                            }
+                        ],
+                        "image": "localhost:5001/integrations-hub:evidence-6dd4851",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "migrate",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "workingDir": "/app/backend"
+                    }
+                ],
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "runAsGroup": 42420,
+                    "runAsNonRoot": true,
+                    "runAsUser": 42420
+                },
+                "serviceAccount": "integrations-hub-sa",
+                "serviceAccountName": "integrations-hub-sa",
+                "terminationGracePeriodSeconds": 30
+            }
+        }
+    },
+    "status": {
+        "availableReplicas": 1,
+        "conditions": [
+            {
+                "lastTransitionTime": "2026-07-13T10:59:55Z",
+                "lastUpdateTime": "2026-07-13T10:59:55Z",
+                "message": "Deployment has minimum availability.",
+                "reason": "MinimumReplicasAvailable",
+                "status": "True",
+                "type": "Available"
+            },
+            {
+                "lastTransitionTime": "2026-07-13T10:59:15Z",
+                "lastUpdateTime": "2026-07-13T10:59:55Z",
+                "message": "ReplicaSet \"integrations-hub-566dbc9555\" has successfully progressed.",
+                "reason": "NewReplicaSetAvailable",
+                "status": "True",
+                "type": "Progressing"
+            }
+        ],
+        "observedGeneration": 1,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "updatedReplicas": 1
+    }
+}

@@ -1,0 +1,201 @@
+--- main deployment summary ---
+{
+  "name": "integrations-hub",
+  "namespace": "pr862-main",
+  "image": "localhost:5001/integrations-hub:evidence-6dd4851",
+  "probes": {
+    "startup": {
+      "failureThreshold": 30,
+      "httpGet": {
+        "path": "/integrations-hub/api/health",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "periodSeconds": 10,
+      "successThreshold": 1,
+      "timeoutSeconds": 1
+    },
+    "liveness": {
+      "failureThreshold": 3,
+      "httpGet": {
+        "path": "/integrations-hub/api/health",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "initialDelaySeconds": 10,
+      "periodSeconds": 30,
+      "successThreshold": 1,
+      "timeoutSeconds": 1
+    },
+    "readiness": {
+      "failureThreshold": 3,
+      "httpGet": {
+        "path": "/integrations-hub/api/health",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "initialDelaySeconds": 5,
+      "periodSeconds": 10,
+      "successThreshold": 1,
+      "timeoutSeconds": 1
+    }
+  },
+  "datadogAndLogEnv": [
+    {
+      "name": "DD_AGENT_HOST",
+      "value": "datadog-agent.all-hands-system.svc.cluster.local"
+    },
+    {
+      "name": "DD_TRACE_AGENT_PORT",
+      "value": "8126"
+    },
+    {
+      "name": "DD_SERVICE",
+      "value": "integrations-hub"
+    },
+    {
+      "name": "DD_ENV",
+      "value": "evidence"
+    },
+    {
+      "name": "DD_TRACE_ENABLED",
+      "value": "true"
+    }
+  ]
+}
+--- pr deployment summary ---
+{
+  "name": "integrations-hub",
+  "namespace": "pr862-pr",
+  "image": "localhost:5001/integrations-hub:evidence-6dd4851",
+  "probes": {
+    "startup": {
+      "failureThreshold": 30,
+      "httpGet": {
+        "path": "/api/live",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "periodSeconds": 10,
+      "successThreshold": 1,
+      "timeoutSeconds": 2
+    },
+    "liveness": {
+      "failureThreshold": 3,
+      "httpGet": {
+        "path": "/api/live",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "initialDelaySeconds": 10,
+      "periodSeconds": 30,
+      "successThreshold": 1,
+      "timeoutSeconds": 2
+    },
+    "readiness": {
+      "failureThreshold": 3,
+      "httpGet": {
+        "path": "/api/ready",
+        "port": 8000,
+        "scheme": "HTTP"
+      },
+      "initialDelaySeconds": 5,
+      "periodSeconds": 10,
+      "successThreshold": 1,
+      "timeoutSeconds": 2
+    }
+  },
+  "datadogAndLogEnv": [
+    {
+      "name": "DD_AGENT_HOST",
+      "value": "datadog-agent.all-hands-system.svc.cluster.local"
+    },
+    {
+      "name": "DD_TRACE_AGENT_PORT",
+      "value": "8126"
+    },
+    {
+      "name": "DD_DOGSTATSD_PORT",
+      "value": "8125"
+    },
+    {
+      "name": "DD_SERVICE",
+      "value": "integrations-hub"
+    },
+    {
+      "name": "DD_ENV",
+      "value": "evidence"
+    },
+    {
+      "name": "DD_VERSION",
+      "value": "evidence-6dd4851"
+    },
+    {
+      "name": "DD_LOGS_INJECTION",
+      "value": "true"
+    },
+    {
+      "name": "DD_TRACE_ENABLED",
+      "value": "true"
+    },
+    {
+      "name": "DD_TRACE_SAMPLING_RULES",
+      "value": "[{\"resource\":\"GET /api/health\",\"sample_rate\":0.0},{\"resource\":\"GET /api/live\",\"sample_rate\":0.0},{\"resource\":\"GET /api/ready\",\"sample_rate\":0.0}]"
+    },
+    {
+      "name": "LOG_JSON",
+      "value": "1"
+    },
+    {
+      "name": "LOG_JSON_LEVEL_KEY",
+      "value": "severity"
+    }
+  ]
+}
+--- main runtime env ---
+DD_AGENT_HOST=datadog-agent.all-hands-system.svc.cluster.local
+DD_ENV=evidence
+DD_SERVICE=integrations-hub
+DD_TRACE_AGENT_PORT=8126
+DD_TRACE_ENABLED=true
+--- pr runtime env ---
+DD_AGENT_HOST=datadog-agent.all-hands-system.svc.cluster.local
+DD_DOGSTATSD_PORT=8125
+DD_ENV=evidence
+DD_LOGS_INJECTION=true
+DD_SERVICE=integrations-hub
+DD_TRACE_AGENT_PORT=8126
+DD_TRACE_ENABLED=true
+DD_TRACE_SAMPLING_RULES=[{"resource":"GET /api/health","sample_rate":0.0},{"resource":"GET /api/live","sample_rate":0.0},{"resource":"GET /api/ready","sample_rate":0.0}]
+DD_VERSION=evidence-6dd4851
+LOG_JSON=1
+LOG_JSON_LEVEL_KEY=severity
+--- main endpoint statuses ---
+/api/health status=200 body={"status":"ok","backend":"fastapi"}
+/integrations-hub/api/health status=404 body=<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="
+/api/live status=200 body={"status":"ok","backend":"fastapi"}
+/integrations-hub/api/live status=404 body=<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="
+/api/ready status=200 body={"status":"ready","backend":"fastapi"}
+/integrations-hub/api/ready status=404 body=<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="
+--- pr endpoint statuses, db up ---
+/api/live status=200 body={"status":"ok","backend":"fastapi"}
+/api/ready status=200 body={"status":"ready","backend":"fastapi"}
+/integrations-hub/api/live status=404 body=<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="
+/integrations-hub/api/ready status=404 body=<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="
+--- pr db failure watch ---
+attempt=1 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=2 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=3 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=4 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=5 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=6 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=7 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=8 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=9 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=10 pod_ready=True restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+attempt=11 pod_ready=False restarts=0 live=200 {"status":"ok","backend":"fastapi"} ready=503 {"detail":"Database is not ready."}
+--- pr db restore watch ---
+attempt=1 pod_ready=False ready=503 {"detail":"Database is not ready."}
+attempt=2 pod_ready=False ready=200 {"status":"ready","backend":"fastapi"}
+attempt=3 pod_ready=False ready=200 {"status":"ready","backend":"fastapi"}
+attempt=4 pod_ready=True ready=200 {"status":"ready","backend":"fastapi"}

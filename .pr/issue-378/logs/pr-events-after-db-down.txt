@@ -1,0 +1,22 @@
+LAST SEEN   TYPE      REASON              OBJECT                                   MESSAGE
+95s         Normal    Scheduled           pod/postgres-648d5597d-pnv2p             Successfully assigned pr862-pr/postgres-648d5597d-pnv2p to pr862-control-plane
+95s         Normal    ScalingReplicaSet   deployment/postgres                      Scaled up replica set postgres-648d5597d to 1
+95s         Normal    SuccessfulCreate    replicaset/postgres-648d5597d            Created pod: postgres-648d5597d-pnv2p
+94s         Normal    Started             pod/postgres-648d5597d-pnv2p             Started container postgres
+94s         Normal    Created             pod/postgres-648d5597d-pnv2p             Created container postgres
+94s         Normal    Pulled              pod/postgres-648d5597d-pnv2p             Container image "postgres:17" already present on machine
+93s         Normal    SuccessfulCreate    replicaset/integrations-hub-566dbc9555   Created pod: integrations-hub-566dbc9555-hsm42
+93s         Normal    Scheduled           pod/integrations-hub-566dbc9555-hsm42    Successfully assigned pr862-pr/integrations-hub-566dbc9555-hsm42 to pr862-control-plane
+93s         Normal    ScalingReplicaSet   deployment/integrations-hub              Scaled up replica set integrations-hub-566dbc9555 to 1
+92s         Normal    Started             pod/integrations-hub-566dbc9555-hsm42    Started container migrate
+92s         Normal    Pulled              pod/integrations-hub-566dbc9555-hsm42    Container image "localhost:5001/integrations-hub:evidence-6dd4851" already present on machine
+92s         Normal    Created             pod/integrations-hub-566dbc9555-hsm42    Created container migrate
+90s         Normal    Pulled              pod/integrations-hub-566dbc9555-hsm42    Successfully pulled image "localhost:5001/integrations-hub:evidence-6dd4851" in 50ms (50ms including waiting). Image size: 214300884 bytes.
+90s         Normal    Started             pod/integrations-hub-566dbc9555-hsm42    Started container integrations-hub
+90s         Normal    Pulling             pod/integrations-hub-566dbc9555-hsm42    Pulling image "localhost:5001/integrations-hub:evidence-6dd4851"
+90s         Normal    Created             pod/integrations-hub-566dbc9555-hsm42    Created container integrations-hub
+63s         Warning   Unhealthy           pod/integrations-hub-566dbc9555-hsm42    Startup probe failed: Get "http://10.244.0.12:8000/api/live": dial tcp 10.244.0.12:8000: connect: connection refused
+26s         Normal    Killing             pod/postgres-648d5597d-pnv2p             Stopping container postgres
+26s         Normal    SuccessfulDelete    replicaset/postgres-648d5597d            Deleted pod: postgres-648d5597d-pnv2p
+26s         Normal    ScalingReplicaSet   deployment/postgres                      Scaled down replica set postgres-648d5597d to 0 from 1
+3s          Warning   Unhealthy           pod/integrations-hub-566dbc9555-hsm42    Readiness probe failed: HTTP probe failed with statuscode: 503
