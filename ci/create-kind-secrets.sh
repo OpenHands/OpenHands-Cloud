@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Create deterministic, non-sensitive secrets for the KinD test installation.
 set -euo pipefail
 
 namespace="${1:-openhands}"

@@ -1,3 +1,4 @@
+# KinD profile for the native Helm smoke-test workflow.
 enabled: true
 
 ingress:

@@ -33,6 +33,7 @@ jobs:
           filters: |
             helm:
               - 'charts/**'
+              - 'ci/**'
               - 'replicated/**'
               - 'scripts/test_helm_test_hooks_template.py'
               - '.github/workflows/helm-chart-tests.yml'
@@ -83,7 +84,7 @@ jobs:
       - name: Prepare namespace and dummy secrets
         run: |
           kubectl create namespace "$NAMESPACE"
-          bash charts/openhands/ci/create-kind-secrets.sh "$NAMESPACE"
+          bash ci/create-kind-secrets.sh "$NAMESPACE"
 
       - name: Install chart
         run: |
@@ -91,7 +92,7 @@ jobs:
           set -o pipefail
           helm install "$RELEASE" "$CHART" \
             --namespace "$NAMESPACE" \
-            --values charts/openhands/ci/kind-values.yaml \
+            --values ci/kind-values.yaml \
             --wait \
             --wait-for-jobs \
             --timeout 25m \

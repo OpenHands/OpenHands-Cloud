@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/pr-checks.yml'
       - 'charts/**'
+      - 'ci/**'
       - 'replicated/config.yaml'
       - 'replicated/openhands.yaml'
       - 'scripts/test_keycloak_realm_template.py'

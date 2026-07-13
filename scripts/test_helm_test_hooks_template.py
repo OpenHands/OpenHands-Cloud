@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +14,8 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
-KIND_VALUES = OPENHANDS_CHART / "ci" / "kind-values.yaml"
-KIND_SECRETS_SCRIPT = OPENHANDS_CHART / "ci" / "create-kind-secrets.sh"
+KIND_VALUES = REPO_ROOT / "ci" / "kind-values.yaml"
+KIND_SECRETS_SCRIPT = REPO_ROOT / "ci" / "create-kind-secrets.sh"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 HELM_TEST_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "helm-chart-tests.yml"
 PR_CHECKS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-checks.yml"
@@ -120,6 +119,17 @@ def test_smoke_test_supports_a_pinned_image_and_registry_secret() -> None:
     assert pod["spec"]["imagePullSecrets"] == [{"name": "registry-creds"}]
 
 
+def test_kind_ci_fixtures_live_at_repository_root() -> None:
+    root_ci = REPO_ROOT / "ci"
+    secret_bootstrap = root_ci / "create-kind-secrets.sh"
+
+    assert (root_ci / "kind-values.yaml").is_file()
+    assert secret_bootstrap.is_file()
+    assert os.access(secret_bootstrap, os.X_OK)
+    assert not (OPENHANDS_CHART / "ci" / "kind-values.yaml").exists()
+    assert not (OPENHANDS_CHART / "ci" / "create-kind-secrets.sh").exists()
+
+
 def test_kind_fixture_renders_the_same_smoke_test_and_lints() -> None:
     pods = parent_test_pods(render_chart(values_file=KIND_VALUES))
 
@@ -202,22 +212,6 @@ esac
         assert "--dry-run=client" in create_call
 
 
-def test_packaged_chart_excludes_ci_only_files(tmp_path: Path) -> None:
-    subprocess.run(
-        ["helm", "package", str(OPENHANDS_CHART), "--destination", str(tmp_path)],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    package = next(tmp_path.glob("openhands-*.tgz"))
-
-    with tarfile.open(package, "r:gz") as archive:
-        names = archive.getnames()
-
-    assert not any(name.startswith("openhands/ci/") for name in names)
-
-
 def test_replicated_relocates_the_smoke_test_image() -> None:
     values = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
 
@@ -247,6 +241,11 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "version: v3.21.3" in workflow
     assert "version: v0.32.0" in workflow
     assert "kubectl_version: v1.36.1" in workflow
+    filters_block = workflow.split("filters: |", 1)[1].split("\n\n  kind-tests:", 1)[0]
+    assert "- 'ci/**'" in filters_block
+    assert 'bash ci/create-kind-secrets.sh "$NAMESPACE"' in workflow
+    assert "--values ci/kind-values.yaml" in workflow
+    assert "charts/openhands/ci" not in workflow
     dependency_build_index = workflow.index('helm dependency build "$CHART"')
     for repository_command in (
         "helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm",
@@ -270,7 +269,9 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
 def test_fast_workflows_run_the_smoke_test_contract() -> None:
     pr_checks = PR_CHECKS_WORKFLOW.read_text(encoding="utf-8")
     script_tests = SCRIPT_TESTS_WORKFLOW.read_text(encoding="utf-8")
+    pr_trigger = pr_checks.split("jobs:", 1)[0]
 
+    assert "'ci/**'" in pr_trigger
     assert "scripts/test_helm_test_hooks_template.py" in pr_checks
     assert "pytest PyYAML==6.0.3" in pr_checks
     assert "--with PyYAML==6.0.3" in script_tests
