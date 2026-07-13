@@ -60,7 +60,11 @@ jobs:
           version: v3.21.3
 
       - name: Build chart dependencies
-        run: helm dependency build "$CHART"
+        run: |
+          helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm
+          helm repo add minio https://charts.min.io/
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build "$CHART"
 
       - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:

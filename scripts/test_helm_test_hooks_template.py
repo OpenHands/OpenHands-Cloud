@@ -247,6 +247,14 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "version: v3.21.3" in workflow
     assert "version: v0.32.0" in workflow
     assert "kubectl_version: v1.36.1" in workflow
+    dependency_build_index = workflow.index('helm dependency build "$CHART"')
+    for repository_command in (
+        "helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm",
+        "helm repo add minio https://charts.min.io/",
+        "helm repo add bitnami https://charts.bitnami.com/bitnami",
+    ):
+        assert repository_command in workflow
+        assert workflow.index(repository_command) < dependency_build_index
     assert "helm dependency build \"$CHART\"" in workflow
     assert "helm install \"$RELEASE\" \"$CHART\"" in workflow
     assert "helm test \"$RELEASE\"" in workflow
