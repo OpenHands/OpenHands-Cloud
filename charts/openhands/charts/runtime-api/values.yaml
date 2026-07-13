@@ -362,3 +362,7 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Env the app injects into every per-session runtime (LLM provider creds,
+  # proxy vars, CA paths). Mirrored into each warm-runtime entry's env so
+  # runtime-api's exact-env matching can claim warm pods.
+  agentServerEnv: {}
