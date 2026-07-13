@@ -10,6 +10,7 @@ on:
       - 'scripts/test_keycloak_realm_template.py'
       - 'scripts/test_openhands_secrets_template.py'
       - 'scripts/test_replicated_resolver_label.py'
+      - 'scripts/test_helm_test_hooks_template.py'
 
 jobs:
   test-keycloak-realm-template:
@@ -30,10 +31,11 @@ jobs:
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm dependency build charts/openhands
       - name: Install test dependencies
-        run: python3 -m pip install pytest
+        run: python3 -m pip install pytest PyYAML==6.0.3
       - name: Test chart template invariants
         run: >-
           python3 -m pytest
           scripts/test_keycloak_realm_template.py
           scripts/test_openhands_secrets_template.py
           scripts/test_replicated_resolver_label.py
+          scripts/test_helm_test_hooks_template.py

@@ -8,6 +8,22 @@ allowedUsers: null
 # them without the OpenHands app itself.
 enabled: true
 
+tests:
+  # Controls only native Helm test hooks owned by this parent chart.
+  enabled: true
+  image:
+    repository: busybox
+    tag: "1.36"
+    digest: ""
+    pullPolicy: IfNotPresent
+  activeDeadlineSeconds: 360
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+
 image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.

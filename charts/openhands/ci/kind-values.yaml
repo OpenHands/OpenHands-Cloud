@@ -1,0 +1,190 @@
+enabled: true
+
+ingress:
+  enabled: false
+  host: kind.openhands.local
+
+autoscaling:
+  enabled: false
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+uvicorn:
+  workers: 1
+
+integrationEvents:
+  deployment:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  uvicorn:
+    workers: 1
+
+mcpEvents:
+  deployment:
+    replicas: 1
+  uvicorn:
+    workers: 1
+
+env:
+  LITELLM_DEFAULT_MODEL: litellm_proxy/ci-dummy
+
+litellm:
+  url: http://openhands-litellm:4000
+
+filestore:
+  ephemeral: true
+
+sandbox:
+  apiHostname: http://openhands-runtime-api:5000
+
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: true
+  migrate: true
+
+postgresql:
+  enabled: true
+  auth:
+    database: openhands
+  primary:
+    networkPolicy:
+      enabled: false
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+redis:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  master:
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+minio:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  makeBucketJob:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+  makeUserJob:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+  makeServiceAccountJob:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+keycloak:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  resourcesPreset: none
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+litellm-helm:
+  enabled: true
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  proxy_config:
+    model_list:
+      - model_name: ci-dummy
+        litellm_params:
+          model: anthropic/claude-3-haiku-20240307
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+runtime-api:
+  enabled: true
+  replicaCount: 1
+  imagePullSecrets: []
+  autoscaling:
+    enabled: false
+  warmRuntimes:
+    enabled: false
+  kvm:
+    enabled: false
+  cleanup:
+    enabled: false
+  dbCleanup:
+    enabled: false
+  testKeysCleanup:
+    enabled: false
+  podStatusLogger:
+    enabled: false
+  databaseMigrations:
+    waitForDatabase: true
+    createDatabases: true
+    migrate: true
+  env:
+    STORAGE_CLASS: standard
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+maintenanceTasks:
+  enabled: false
+
+tests:
+  enabled: true
+  image:
+    repository: busybox
+    digest: sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+    pullPolicy: IfNotPresent

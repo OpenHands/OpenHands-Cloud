@@ -1,0 +1,50 @@
+{{- if and .Values.tests.enabled .Values.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ printf "%s-test-connection" .Release.Name | trunc 63 | trimSuffix "-" }}
+  labels:
+    app: openhands-tests
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: {{ .Values.tests.activeDeadlineSeconds }}
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: test-connection
+      {{- if .Values.tests.image.digest }}
+      image: {{ printf "%s@%s" .Values.tests.image.repository .Values.tests.image.digest | quote }}
+      {{- else }}
+      image: {{ printf "%s:%s" .Values.tests.image.repository .Values.tests.image.tag | quote }}
+      {{- end }}
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command: ["wget"]
+      args:
+        - -q
+        - -T
+        - "10"
+        - -O
+        - /dev/null
+        - http://openhands-service:3000/health
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        {{- toYaml .Values.tests.resources | nindent 8 }}
+{{- end }}

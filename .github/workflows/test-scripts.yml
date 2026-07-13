@@ -46,4 +46,5 @@ jobs:
           --with uvicorn
           --with httpx
           --with ruamel.yaml
+          --with PyYAML==6.0.3
           python -m pytest scripts -q

@@ -27,6 +27,10 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    tests:
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+
     env:
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
