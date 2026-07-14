@@ -15,6 +15,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 KIND_VALUES = REPO_ROOT / "ci" / "kind-values.yaml"
+KIND_PROFILE_VALUES = {
+    "ephemeral": REPO_ROOT / "ci" / "kind-profiles" / "ephemeral.yaml",
+    "persistent": REPO_ROOT / "ci" / "kind-profiles" / "persistent.yaml",
+}
 KIND_SECRETS_SCRIPT = REPO_ROOT / "ci" / "create-kind-secrets.sh"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 HELM_TEST_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "helm-chart-tests.yml"
@@ -26,10 +30,10 @@ def render_chart(
     *,
     release: str = "openhands",
     set_values: tuple[str, ...] = (),
-    values_file: Path | None = None,
+    values_files: tuple[Path, ...] = (),
 ) -> list[dict[str, Any]]:
     command = ["helm", "template", release, str(OPENHANDS_CHART)]
-    if values_file is not None:
+    for values_file in values_files:
         command.extend(["--values", str(values_file)])
     for value in set_values:
         command.extend(["--set", value])
@@ -58,6 +62,60 @@ def parent_test_pods(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         and document.get("metadata", {}).get("annotations", {}).get("helm.sh/hook")
         == "test"
     ]
+
+
+def rendered_resource(
+    documents: list[dict[str, Any]], kind: str, name: str
+) -> dict[str, Any]:
+    matches = [
+        document
+        for document in documents
+        if document.get("kind") == kind
+        and document.get("metadata", {}).get("name") == name
+    ]
+    assert len(matches) == 1, f"expected one {kind}/{name}, got {len(matches)}"
+    return matches[0]
+
+
+def persistent_storage_claims(
+    documents: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    claims = {
+        f"PersistentVolumeClaim/{document['metadata']['name']}": document
+        for document in documents
+        if document.get("kind") == "PersistentVolumeClaim"
+    }
+    for stateful_set in (
+        document
+        for document in documents
+        if document.get("kind") == "StatefulSet"
+    ):
+        for claim in stateful_set.get("spec", {}).get("volumeClaimTemplates", []):
+            claims[
+                f"StatefulSet/{stateful_set['metadata']['name']}/"
+                f"{claim['metadata']['name']}"
+            ] = claim
+    return claims
+
+
+def render_kind_profile(profile: str) -> list[dict[str, Any]]:
+    return render_chart(
+        release="openhands",
+        values_files=(KIND_VALUES, KIND_PROFILE_VALUES[profile]),
+    )
+
+
+def resource_identities(
+    documents: list[dict[str, Any]],
+) -> set[tuple[str, str, str]]:
+    return {
+        (
+            document.get("apiVersion", ""),
+            document.get("kind", ""),
+            document.get("metadata", {}).get("name", ""),
+        )
+        for document in documents
+    }
 
 
 def test_default_render_has_one_basic_app_health_smoke_test() -> None:
@@ -104,6 +162,16 @@ def test_smoke_test_respects_its_enable_gates(disabled_value: str) -> None:
     assert parent_test_pods(render_chart(set_values=(disabled_value,))) == []
 
 
+def test_disabling_helm_tests_removes_only_the_parent_test_hook() -> None:
+    enabled = resource_identities(render_chart())
+    disabled = resource_identities(
+        render_chart(set_values=("tests.enabled=false",))
+    )
+
+    assert enabled - disabled == {("v1", "Pod", "openhands-test-connection")}
+    assert disabled - enabled == set()
+
+
 def test_smoke_test_supports_a_pinned_image_and_registry_secret() -> None:
     digest = "sha256:" + "a" * 64
     pod = parent_test_pods(
@@ -124,18 +192,21 @@ def test_kind_ci_fixtures_live_at_repository_root() -> None:
     secret_bootstrap = root_ci / "create-kind-secrets.sh"
 
     assert (root_ci / "kind-values.yaml").is_file()
+    assert set(KIND_PROFILE_VALUES) == {"ephemeral", "persistent"}
+    assert all(path.is_file() for path in KIND_PROFILE_VALUES.values())
     assert secret_bootstrap.is_file()
     assert os.access(secret_bootstrap, os.X_OK)
     assert not (OPENHANDS_CHART / "ci" / "kind-values.yaml").exists()
     assert not (OPENHANDS_CHART / "ci" / "create-kind-secrets.sh").exists()
 
 
-def test_kind_fixture_renders_the_same_smoke_test_and_lints() -> None:
-    pods = parent_test_pods(render_chart(values_file=KIND_VALUES))
+@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
+def test_kind_profiles_render_the_smoke_hook_and_lint(profile: str) -> None:
+    profile_values = KIND_PROFILE_VALUES[profile]
+    documents = render_kind_profile(profile)
+    pods = parent_test_pods(documents)
 
-    assert [pod["metadata"]["name"] for pod in pods] == [
-        "openhands-test-connection"
-    ]
+    assert [pod["metadata"]["name"] for pod in pods] == ["openhands-test-connection"]
     assert pods[0]["spec"]["containers"][0]["image"] == (
         "busybox@sha256:"
         "73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
@@ -148,12 +219,109 @@ def test_kind_fixture_renders_the_same_smoke_test_and_lints() -> None:
             str(OPENHANDS_CHART),
             "--values",
             str(KIND_VALUES),
+            "--values",
+            str(profile_values),
         ],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
+def test_kind_profiles_connect_services_to_compatible_workloads(profile: str) -> None:
+    documents = render_kind_profile(profile)
+    workloads = [
+        document
+        for document in documents
+        if document.get("kind") in {"DaemonSet", "Deployment", "StatefulSet"}
+    ]
+
+    for service in (
+        document for document in documents if document.get("kind") == "Service"
+    ):
+        selector = service.get("spec", {}).get("selector")
+        if not selector:
+            continue
+
+        matching_workloads = [
+            workload
+            for workload in workloads
+            if selector.items()
+            <= workload.get("spec", {})
+            .get("template", {})
+            .get("metadata", {})
+            .get("labels", {})
+            .items()
+        ]
+        service_name = service["metadata"]["name"]
+        assert matching_workloads, f"Service/{service_name} selects no workload"
+
+        exposed_ports: set[str | int] = set()
+        for workload in matching_workloads:
+            for container in workload["spec"]["template"]["spec"].get(
+                "containers", []
+            ):
+                for port in container.get("ports", []):
+                    exposed_ports.add(port["containerPort"])
+                    if port.get("name"):
+                        exposed_ports.add(port["name"])
+
+        for port in service["spec"].get("ports", []):
+            target_port = port.get("targetPort", port["port"])
+            assert target_port in exposed_ports, (
+                f"Service/{service_name} targetPort {target_port!r} is not exposed "
+                "by a selected workload"
+            )
+
+
+@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
+def test_kind_profiles_render_the_openhands_runtime_contract(profile: str) -> None:
+    documents = render_kind_profile(profile)
+
+    deployment = rendered_resource(documents, "Deployment", "openhands")
+    service = rendered_resource(documents, "Service", "openhands-service")
+    pod_labels = deployment["spec"]["template"]["metadata"]["labels"]
+    assert service["spec"]["selector"].items() <= pod_labels.items()
+    service_port = next(
+        port for port in service["spec"]["ports"] if port["name"] == "openhands"
+    )
+    assert service_port["port"] == 3000
+    assert service_port["targetPort"] == 3000
+    assert service_port["protocol"] == "TCP"
+    app_container = next(
+        container
+        for container in deployment["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "openhands"
+    )
+    assert any(port["containerPort"] == 3000 for port in app_container["ports"])
+    assert app_container["startupProbe"]["httpGet"]["path"] == "/health"
+    assert app_container["startupProbe"]["httpGet"]["port"] == 3000
+    assert app_container["readinessProbe"]["httpGet"]["path"] == "/ready"
+    assert app_container["readinessProbe"]["httpGet"]["port"] == 3000
+
+
+@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
+def test_kind_profiles_render_expected_storage(profile: str) -> None:
+    documents = render_kind_profile(profile)
+
+    claims = persistent_storage_claims(documents)
+    if profile == "ephemeral":
+        assert claims == {}
+    else:
+        assert set(claims) == {
+            "PersistentVolumeClaim/openhands-minio",
+            "StatefulSet/openhands-postgresql/data",
+            "StatefulSet/openhands-redis-master/redis-data",
+        }
+        assert {
+            (
+                claim["spec"]["storageClassName"],
+                claim["spec"]["resources"]["requests"]["storage"],
+            )
+            for claim in claims.values()
+        } == {("standard", "1Gi")}
 
 
 def test_kind_secret_bootstrap_is_idempotent_and_complete(
@@ -234,8 +402,34 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "paths:" not in trigger_block
     assert workflow_definition["on"]["push"]["branches"] == ["main"]
     assert set(workflow_definition["jobs"]) == {"kind-tests"}
-    assert "needs" not in workflow_definition["jobs"]["kind-tests"]
-    assert "if" not in workflow_definition["jobs"]["kind-tests"]
+    kind_job = workflow_definition["jobs"]["kind-tests"]
+    assert "needs" not in kind_job
+    assert "if" not in kind_job
+    assert kind_job["name"] == "KinD install and helm test (${{ matrix.profile }})"
+    assert kind_job["strategy"] == {
+        "fail-fast": "false",
+        "max-parallel": "2",
+        "matrix": {
+            "include": [
+                {
+                    "profile": "ephemeral",
+                    "values": "ci/kind-profiles/ephemeral.yaml",
+                },
+                {
+                    "profile": "persistent",
+                    "values": "ci/kind-profiles/persistent.yaml",
+                },
+            ]
+        },
+    }
+    assert kind_job["env"] == {
+        "PROFILE": "${{ matrix.profile }}",
+        "PROFILE_VALUES": "${{ matrix.values }}",
+        "RELEASE": "openhands",
+        "NAMESPACE": "openhands",
+        "CHART": "charts/openhands",
+        "KIND_CLUSTER": "openhands-ci",
+    }
     assert workflow_definition["permissions"] == {"contents": "read"}
     assert "dorny/paths-filter@" not in workflow
 
@@ -248,6 +442,8 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "kubectl_version: v1.36.1" in workflow
     assert 'bash ci/create-kind-secrets.sh "$NAMESPACE"' in workflow
     assert "--values ci/kind-values.yaml" in workflow
+    assert '--values "$PROFILE_VALUES"' in workflow
+    assert "cluster_name: openhands-ci" in workflow
     assert "charts/openhands/ci" not in workflow
     dependency_build_index = workflow.index('helm dependency build "$CHART"')
     for repository_command in (
@@ -260,12 +456,31 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "helm dependency build \"$CHART\"" in workflow
     assert "helm install \"$RELEASE\" \"$CHART\"" in workflow
     assert "helm test \"$RELEASE\"" in workflow
+    assert "set -euo pipefail" in workflow
+    assert "for test_run in 1 2; do" in workflow
     assert '--filter "name=${RELEASE}-test-connection"' in workflow
     assert "--filter '!name=" not in workflow
     assert "--logs" in workflow
     assert "helm get hooks" in workflow
     assert "kind export logs" in workflow
     assert "actions/upload-artifact" in workflow
+    assert (
+        "name: helm-chart-test-diagnostics-${{ matrix.profile }}-attempt-"
+        "${{ github.run_attempt }}"
+    ) in workflow
+    assert "kubectl get storageclass standard" in workflow
+    assert "kubectl wait" in workflow
+    for pvc in (
+        "openhands-minio",
+        "data-openhands-postgresql-0",
+        "redis-data-openhands-redis-master-0",
+    ):
+        assert f'"{pvc}"' in workflow
+    assert '"pvc/$pvc"' in workflow
+    assert 'kubectl get pvc -n "$NAMESPACE" -o wide' in workflow
+    assert "kubectl get pv -o wide" in workflow
+    assert "kubectl get storageclass -o wide" in workflow
+    assert 'kubectl describe pvc -n "$NAMESPACE"' in workflow
     assert "if: failure()\n        run: |\n          mkdir -p artifacts" in workflow
 
 

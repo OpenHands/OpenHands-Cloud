@@ -17,10 +17,21 @@ concurrency:
 
 jobs:
   kind-tests:
-    name: KinD install and helm test
+    name: KinD install and helm test (${{ matrix.profile }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - profile: ephemeral
+            values: ci/kind-profiles/ephemeral.yaml
+          - profile: persistent
+            values: ci/kind-profiles/persistent.yaml
     env:
+      PROFILE: ${{ matrix.profile }}
+      PROFILE_VALUES: ${{ matrix.values }}
       RELEASE: openhands
       NAMESPACE: openhands
       CHART: charts/openhands
@@ -60,29 +71,53 @@ jobs:
           kubectl create namespace "$NAMESPACE"
           bash ci/create-kind-secrets.sh "$NAMESPACE"
 
+      - name: Verify persistent storage class
+        if: matrix.profile == 'persistent'
+        run: kubectl get storageclass standard
+
       - name: Install chart
         run: |
           mkdir -p artifacts
-          set -o pipefail
+          set -euo pipefail
           helm install "$RELEASE" "$CHART" \
             --namespace "$NAMESPACE" \
             --values ci/kind-values.yaml \
+            --values "$PROFILE_VALUES" \
             --wait \
             --wait-for-jobs \
             --timeout 25m \
             2>&1 | tee artifacts/helm-install.log
 
+      - name: Verify persistent volumes
+        if: matrix.profile == 'persistent'
+        run: |
+          set -euo pipefail
+          for pvc in \
+            "openhands-minio" \
+            "data-openhands-postgresql-0" \
+            "redis-data-openhands-redis-master-0"
+          do
+            kubectl wait \
+              --namespace "$NAMESPACE" \
+              --for=jsonpath='{.status.phase}'=Bound \
+              "pvc/$pvc" \
+              --timeout=5m
+          done
+
       # This first increment intentionally runs only the parent chart's basic
       # connection smoke test. Additional parent hooks can be added explicitly.
       - name: Run native Helm tests
         run: |
-          set -o pipefail
-          helm test "$RELEASE" \
-            --namespace "$NAMESPACE" \
-            --filter "name=${RELEASE}-test-connection" \
-            --logs \
-            --timeout 10m \
-            2>&1 | tee artifacts/helm-test.log
+          set -euo pipefail
+          for test_run in 1 2; do
+            echo "Helm test run ${test_run}/2 for profile ${PROFILE}"
+            helm test "$RELEASE" \
+              --namespace "$NAMESPACE" \
+              --filter "name=${RELEASE}-test-connection" \
+              --logs \
+              --timeout 10m \
+              2>&1 | tee -a artifacts/helm-test.log
+          done
 
       - name: Collect failure diagnostics
         if: failure()
@@ -91,8 +126,12 @@ jobs:
           helm status "$RELEASE" -n "$NAMESPACE" > artifacts/helm-status.txt 2>&1 || true
           helm get hooks "$RELEASE" -n "$NAMESPACE" > artifacts/helm-hooks.yaml 2>&1 || true
           kubectl get pods,deployments,statefulsets,jobs -n "$NAMESPACE" -o wide > artifacts/workloads.txt 2>&1 || true
+          kubectl get pvc -n "$NAMESPACE" -o wide > artifacts/pvcs.txt 2>&1 || true
+          kubectl get pv -o wide > artifacts/pvs.txt 2>&1 || true
+          kubectl get storageclass -o wide > artifacts/storageclasses.txt 2>&1 || true
           kubectl get events -n "$NAMESPACE" --sort-by=.lastTimestamp > artifacts/events.txt 2>&1 || true
           kubectl describe pods -n "$NAMESPACE" > artifacts/pod-descriptions.txt 2>&1 || true
+          kubectl describe pvc -n "$NAMESPACE" > artifacts/pvc-descriptions.txt 2>&1 || true
 
           while IFS= read -r pod; do
             name="${pod#pod/}"
@@ -107,7 +146,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: helm-chart-test-diagnostics
+          name: helm-chart-test-diagnostics-${{ matrix.profile }}-attempt-${{ github.run_attempt }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 7

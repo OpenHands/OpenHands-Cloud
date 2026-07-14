@@ -1,0 +1,14 @@
+# Baseline live profile: keep stateful dependencies on ephemeral storage.
+postgresql:
+  primary:
+    persistence:
+      enabled: false
+
+redis:
+  master:
+    persistence:
+      enabled: false
+
+minio:
+  persistence:
+    enabled: false

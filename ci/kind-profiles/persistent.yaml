@@ -1,0 +1,20 @@
+# Persistent live profile: exercise KinD's dynamic volume provisioning.
+postgresql:
+  primary:
+    persistence:
+      enabled: true
+      storageClass: standard
+      size: 1Gi
+
+redis:
+  master:
+    persistence:
+      enabled: true
+      storageClass: standard
+      size: 1Gi
+
+minio:
+  persistence:
+    enabled: true
+    storageClass: standard
+    size: 1Gi
