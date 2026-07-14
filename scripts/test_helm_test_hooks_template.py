@@ -19,11 +19,32 @@ KIND_PROFILE_VALUES = {
     "ephemeral": REPO_ROOT / "ci" / "kind-profiles" / "ephemeral.yaml",
     "persistent": REPO_ROOT / "ci" / "kind-profiles" / "persistent.yaml",
 }
+INVALID_VALUES_DIR = REPO_ROOT / "ci" / "invalid-values"
 KIND_SECRETS_SCRIPT = REPO_ROOT / "ci" / "create-kind-secrets.sh"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 HELM_TEST_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "helm-chart-tests.yml"
 PR_CHECKS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-checks.yml"
 SCRIPT_TESTS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "test-scripts.yml"
+
+
+def run_chart_render(
+    *,
+    release: str = "openhands",
+    set_values: tuple[str, ...] = (),
+    values_files: tuple[Path, ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    command = ["helm", "template", release, str(OPENHANDS_CHART)]
+    for values_file in values_files:
+        command.extend(["--values", str(values_file)])
+    for value in set_values:
+        command.extend(["--set", value])
+
+    return subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
 
 
 def render_chart(
@@ -32,19 +53,12 @@ def render_chart(
     set_values: tuple[str, ...] = (),
     values_files: tuple[Path, ...] = (),
 ) -> list[dict[str, Any]]:
-    command = ["helm", "template", release, str(OPENHANDS_CHART)]
-    for values_file in values_files:
-        command.extend(["--values", str(values_file)])
-    for value in set_values:
-        command.extend(["--set", value])
-
-    result = subprocess.run(
-        command,
-        check=True,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    result = run_chart_render(
+        release=release,
+        set_values=set_values,
+        values_files=values_files,
     )
+    result.check_returncode()
     return [
         document
         for document in yaml.safe_load_all(result.stdout)
@@ -194,10 +208,56 @@ def test_kind_ci_fixtures_live_at_repository_root() -> None:
     assert (root_ci / "kind-values.yaml").is_file()
     assert set(KIND_PROFILE_VALUES) == {"ephemeral", "persistent"}
     assert all(path.is_file() for path in KIND_PROFILE_VALUES.values())
+    assert INVALID_VALUES_DIR.is_dir()
     assert secret_bootstrap.is_file()
     assert os.access(secret_bootstrap, os.X_OK)
     assert not (OPENHANDS_CHART / "ci" / "kind-values.yaml").exists()
     assert not (OPENHANDS_CHART / "ci" / "create-kind-secrets.sh").exists()
+
+
+@pytest.mark.parametrize(
+    ("values_files", "expected_error_fragments"),
+    (
+        pytest.param(
+            (INVALID_VALUES_DIR / "postgresql-auth-type.yaml",),
+            ("enablePostgresUser", "boolean"),
+            id="postgresql-schema",
+        ),
+        pytest.param(
+            (
+                KIND_VALUES,
+                KIND_PROFILE_VALUES["persistent"],
+                INVALID_VALUES_DIR / "redis-persistence-type.yaml",
+            ),
+            ("redis", "persistence", "boolean"),
+            id="persistent-redis-schema",
+        ),
+        pytest.param(
+            (INVALID_VALUES_DIR / "sandbox-gateway-missing-hostname.yaml",),
+            (
+                "sandboxGateway.hostname is required when "
+                "sandboxGateway.enabled is true",
+            ),
+            id="sandbox-gateway-required",
+        ),
+        pytest.param(
+            (INVALID_VALUES_DIR / "laminar-aws-secrets-missing-name.yaml",),
+            ("AWS Secrets Manager", "secretName", "clusterName"),
+            id="laminar-fail",
+        ),
+    ),
+)
+def test_invalid_values_are_rejected_before_install(
+    values_files: tuple[Path, ...], expected_error_fragments: tuple[str, ...]
+) -> None:
+    result = run_chart_render(values_files=values_files)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0, (
+        f"expected Helm rendering to reject values files: {values_files}"
+    )
+    for fragment in expected_error_fragments:
+        assert fragment in output
 
 
 @pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
@@ -484,12 +544,34 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "if: failure()\n        run: |\n          mkdir -p artifacts" in workflow
 
 
-def test_fast_workflows_run_the_smoke_test_contract() -> None:
+def test_fast_workflows_keep_keycloak_and_helm_render_checks_separate() -> None:
     pr_checks = PR_CHECKS_WORKFLOW.read_text(encoding="utf-8")
     script_tests = SCRIPT_TESTS_WORKFLOW.read_text(encoding="utf-8")
     pr_trigger = pr_checks.split("jobs:", 1)[0]
+    workflow_definition = yaml.load(pr_checks, Loader=yaml.BaseLoader)
+    jobs = workflow_definition["jobs"]
+
+    keycloak_job = jobs["test-keycloak-realm-template"]
+    helm_render_job = jobs["test-openhands-helm-chart-render"]
+
+    def job_commands(job: dict[str, Any]) -> str:
+        return "\n".join(
+            step.get("run", "") for step in job["steps"] if "run" in step
+        )
+
+    keycloak_commands = job_commands(keycloak_job)
+    helm_render_commands = job_commands(helm_render_job)
 
     assert "'ci/**'" in pr_trigger
-    assert "scripts/test_helm_test_hooks_template.py" in pr_checks
-    assert "pytest PyYAML==6.0.3" in pr_checks
+    for test_file in (
+        "scripts/test_keycloak_realm_template.py",
+        "scripts/test_openhands_secrets_template.py",
+        "scripts/test_replicated_resolver_label.py",
+    ):
+        assert test_file in keycloak_commands
+    assert "scripts/test_helm_test_hooks_template.py" not in keycloak_commands
+    assert "scripts/test_helm_test_hooks_template.py" in helm_render_commands
+    for commands in (keycloak_commands, helm_render_commands):
+        assert "helm dependency build charts/openhands" in commands
+    assert "python3 -m pip install pytest PyYAML==6.0.3" in helm_render_commands
     assert "--with PyYAML==6.0.3" in script_tests
