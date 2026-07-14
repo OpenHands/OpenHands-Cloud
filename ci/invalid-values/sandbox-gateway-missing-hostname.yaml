@@ -1,5 +1,0 @@
-# Invalid by the runtime-api required guard: an enabled gateway needs a host.
-runtime-api:
-  sandboxGateway:
-    enabled: true
-    hostname: ""

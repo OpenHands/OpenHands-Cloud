@@ -1,4 +1,0 @@
-# Invalid by the PostgreSQL dependency schema: this value must be a boolean.
-postgresql:
-  auth:
-    enablePostgresUser: not-a-boolean

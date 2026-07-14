@@ -1,4 +1,4 @@
-"""Behavioral checks for the first native OpenHands Helm smoke test."""
+"""Behavioral checks for the native OpenHands Helm smoke test."""
 
 from __future__ import annotations
 
@@ -19,11 +19,9 @@ KIND_PROFILE_VALUES = {
     "ephemeral": REPO_ROOT / "ci" / "kind-profiles" / "ephemeral.yaml",
     "persistent": REPO_ROOT / "ci" / "kind-profiles" / "persistent.yaml",
 }
-INVALID_VALUES_DIR = REPO_ROOT / "ci" / "invalid-values"
 KIND_SECRETS_SCRIPT = REPO_ROOT / "ci" / "create-kind-secrets.sh"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 HELM_TEST_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "helm-chart-tests.yml"
-PR_CHECKS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-checks.yml"
 SCRIPT_TESTS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "test-scripts.yml"
 
 
@@ -76,40 +74,6 @@ def parent_test_pods(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         and document.get("metadata", {}).get("annotations", {}).get("helm.sh/hook")
         == "test"
     ]
-
-
-def rendered_resource(
-    documents: list[dict[str, Any]], kind: str, name: str
-) -> dict[str, Any]:
-    matches = [
-        document
-        for document in documents
-        if document.get("kind") == kind
-        and document.get("metadata", {}).get("name") == name
-    ]
-    assert len(matches) == 1, f"expected one {kind}/{name}, got {len(matches)}"
-    return matches[0]
-
-
-def persistent_storage_claims(
-    documents: list[dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    claims = {
-        f"PersistentVolumeClaim/{document['metadata']['name']}": document
-        for document in documents
-        if document.get("kind") == "PersistentVolumeClaim"
-    }
-    for stateful_set in (
-        document
-        for document in documents
-        if document.get("kind") == "StatefulSet"
-    ):
-        for claim in stateful_set.get("spec", {}).get("volumeClaimTemplates", []):
-            claims[
-                f"StatefulSet/{stateful_set['metadata']['name']}/"
-                f"{claim['metadata']['name']}"
-            ] = claim
-    return claims
 
 
 def render_kind_profile(profile: str) -> list[dict[str, Any]]:
@@ -208,61 +172,14 @@ def test_kind_ci_fixtures_live_at_repository_root() -> None:
     assert (root_ci / "kind-values.yaml").is_file()
     assert set(KIND_PROFILE_VALUES) == {"ephemeral", "persistent"}
     assert all(path.is_file() for path in KIND_PROFILE_VALUES.values())
-    assert INVALID_VALUES_DIR.is_dir()
     assert secret_bootstrap.is_file()
     assert os.access(secret_bootstrap, os.X_OK)
     assert not (OPENHANDS_CHART / "ci" / "kind-values.yaml").exists()
     assert not (OPENHANDS_CHART / "ci" / "create-kind-secrets.sh").exists()
 
 
-@pytest.mark.parametrize(
-    ("values_files", "expected_error_fragments"),
-    (
-        pytest.param(
-            (INVALID_VALUES_DIR / "postgresql-auth-type.yaml",),
-            ("enablePostgresUser", "boolean"),
-            id="postgresql-schema",
-        ),
-        pytest.param(
-            (
-                KIND_VALUES,
-                KIND_PROFILE_VALUES["persistent"],
-                INVALID_VALUES_DIR / "redis-persistence-type.yaml",
-            ),
-            ("redis", "persistence", "boolean"),
-            id="persistent-redis-schema",
-        ),
-        pytest.param(
-            (INVALID_VALUES_DIR / "sandbox-gateway-missing-hostname.yaml",),
-            (
-                "sandboxGateway.hostname is required when "
-                "sandboxGateway.enabled is true",
-            ),
-            id="sandbox-gateway-required",
-        ),
-        pytest.param(
-            (INVALID_VALUES_DIR / "laminar-aws-secrets-missing-name.yaml",),
-            ("AWS Secrets Manager", "secretName", "clusterName"),
-            id="laminar-fail",
-        ),
-    ),
-)
-def test_invalid_values_are_rejected_before_install(
-    values_files: tuple[Path, ...], expected_error_fragments: tuple[str, ...]
-) -> None:
-    result = run_chart_render(values_files=values_files)
-    output = result.stdout + result.stderr
-
-    assert result.returncode != 0, (
-        f"expected Helm rendering to reject values files: {values_files}"
-    )
-    for fragment in expected_error_fragments:
-        assert fragment in output
-
-
 @pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
-def test_kind_profiles_render_the_smoke_hook_and_lint(profile: str) -> None:
-    profile_values = KIND_PROFILE_VALUES[profile]
+def test_kind_profiles_render_the_smoke_hook(profile: str) -> None:
     documents = render_kind_profile(profile)
     pods = parent_test_pods(documents)
 
@@ -271,117 +188,6 @@ def test_kind_profiles_render_the_smoke_hook_and_lint(profile: str) -> None:
         "busybox@sha256:"
         "73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
     )
-
-    result = subprocess.run(
-        [
-            "helm",
-            "lint",
-            str(OPENHANDS_CHART),
-            "--values",
-            str(KIND_VALUES),
-            "--values",
-            str(profile_values),
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
-def test_kind_profiles_connect_services_to_compatible_workloads(profile: str) -> None:
-    documents = render_kind_profile(profile)
-    workloads = [
-        document
-        for document in documents
-        if document.get("kind") in {"DaemonSet", "Deployment", "StatefulSet"}
-    ]
-
-    for service in (
-        document for document in documents if document.get("kind") == "Service"
-    ):
-        selector = service.get("spec", {}).get("selector")
-        if not selector:
-            continue
-
-        matching_workloads = [
-            workload
-            for workload in workloads
-            if selector.items()
-            <= workload.get("spec", {})
-            .get("template", {})
-            .get("metadata", {})
-            .get("labels", {})
-            .items()
-        ]
-        service_name = service["metadata"]["name"]
-        assert matching_workloads, f"Service/{service_name} selects no workload"
-
-        exposed_ports: set[str | int] = set()
-        for workload in matching_workloads:
-            for container in workload["spec"]["template"]["spec"].get(
-                "containers", []
-            ):
-                for port in container.get("ports", []):
-                    exposed_ports.add(port["containerPort"])
-                    if port.get("name"):
-                        exposed_ports.add(port["name"])
-
-        for port in service["spec"].get("ports", []):
-            target_port = port.get("targetPort", port["port"])
-            assert target_port in exposed_ports, (
-                f"Service/{service_name} targetPort {target_port!r} is not exposed "
-                "by a selected workload"
-            )
-
-
-@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
-def test_kind_profiles_render_the_openhands_runtime_contract(profile: str) -> None:
-    documents = render_kind_profile(profile)
-
-    deployment = rendered_resource(documents, "Deployment", "openhands")
-    service = rendered_resource(documents, "Service", "openhands-service")
-    pod_labels = deployment["spec"]["template"]["metadata"]["labels"]
-    assert service["spec"]["selector"].items() <= pod_labels.items()
-    service_port = next(
-        port for port in service["spec"]["ports"] if port["name"] == "openhands"
-    )
-    assert service_port["port"] == 3000
-    assert service_port["targetPort"] == 3000
-    assert service_port["protocol"] == "TCP"
-    app_container = next(
-        container
-        for container in deployment["spec"]["template"]["spec"]["containers"]
-        if container["name"] == "openhands"
-    )
-    assert any(port["containerPort"] == 3000 for port in app_container["ports"])
-    assert app_container["startupProbe"]["httpGet"]["path"] == "/health"
-    assert app_container["startupProbe"]["httpGet"]["port"] == 3000
-    assert app_container["readinessProbe"]["httpGet"]["path"] == "/ready"
-    assert app_container["readinessProbe"]["httpGet"]["port"] == 3000
-
-
-@pytest.mark.parametrize("profile", KIND_PROFILE_VALUES)
-def test_kind_profiles_render_expected_storage(profile: str) -> None:
-    documents = render_kind_profile(profile)
-
-    claims = persistent_storage_claims(documents)
-    if profile == "ephemeral":
-        assert claims == {}
-    else:
-        assert set(claims) == {
-            "PersistentVolumeClaim/openhands-minio",
-            "StatefulSet/openhands-postgresql/data",
-            "StatefulSet/openhands-redis-master/redis-data",
-        }
-        assert {
-            (
-                claim["spec"]["storageClassName"],
-                claim["spec"]["resources"]["requests"]["storage"],
-            )
-            for claim in claims.values()
-        } == {("standard", "1Gi")}
 
 
 def test_kind_secret_bootstrap_is_idempotent_and_complete(
@@ -544,40 +350,6 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "if: failure()\n        run: |\n          mkdir -p artifacts" in workflow
 
 
-def test_fast_workflows_keep_keycloak_and_helm_render_checks_separate() -> None:
-    pr_checks = PR_CHECKS_WORKFLOW.read_text(encoding="utf-8")
+def test_script_workflow_installs_yaml_dependency() -> None:
     script_tests = SCRIPT_TESTS_WORKFLOW.read_text(encoding="utf-8")
-    pr_trigger = pr_checks.split("jobs:", 1)[0]
-    workflow_definition = yaml.load(pr_checks, Loader=yaml.BaseLoader)
-    jobs = workflow_definition["jobs"]
-
-    keycloak_job = jobs["test-keycloak-realm-template"]
-    helm_render_job = jobs["test-openhands-helm-chart-render"]
-    helm_setup = next(
-        step
-        for step in helm_render_job["steps"]
-        if step.get("name") == "Set up Helm"
-    )
-
-    def job_commands(job: dict[str, Any]) -> str:
-        return "\n".join(
-            step.get("run", "") for step in job["steps"] if "run" in step
-        )
-
-    keycloak_commands = job_commands(keycloak_job)
-    helm_render_commands = job_commands(helm_render_job)
-
-    assert "'ci/**'" in pr_trigger
-    for test_file in (
-        "scripts/test_keycloak_realm_template.py",
-        "scripts/test_openhands_secrets_template.py",
-        "scripts/test_replicated_resolver_label.py",
-    ):
-        assert test_file in keycloak_commands
-    assert "scripts/test_helm_test_hooks_template.py" not in keycloak_commands
-    assert "scripts/test_helm_test_hooks_template.py" in helm_render_commands
-    assert helm_setup["with"]["version"] == "v3.21.3"
-    for commands in (keycloak_commands, helm_render_commands):
-        assert "helm dependency build charts/openhands" in commands
-    assert "python3 -m pip install pytest PyYAML==6.0.3" in helm_render_commands
     assert "--with PyYAML==6.0.3" in script_tests

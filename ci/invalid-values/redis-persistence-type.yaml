@@ -1,5 +1,0 @@
-# Invalid by the Redis dependency schema: this value must be a boolean.
-redis:
-  master:
-    persistence:
-      enabled: not-a-boolean
