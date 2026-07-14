@@ -553,6 +553,11 @@ def test_fast_workflows_keep_keycloak_and_helm_render_checks_separate() -> None:
 
     keycloak_job = jobs["test-keycloak-realm-template"]
     helm_render_job = jobs["test-openhands-helm-chart-render"]
+    helm_setup = next(
+        step
+        for step in helm_render_job["steps"]
+        if step.get("name") == "Set up Helm"
+    )
 
     def job_commands(job: dict[str, Any]) -> str:
         return "\n".join(
@@ -571,6 +576,7 @@ def test_fast_workflows_keep_keycloak_and_helm_render_checks_separate() -> None:
         assert test_file in keycloak_commands
     assert "scripts/test_helm_test_hooks_template.py" not in keycloak_commands
     assert "scripts/test_helm_test_hooks_template.py" in helm_render_commands
+    assert helm_setup["with"]["version"] == "v3.21.3"
     for commands in (keycloak_commands, helm_render_commands):
         assert "helm dependency build charts/openhands" in commands
     assert "python3 -m pip install pytest PyYAML==6.0.3" in helm_render_commands
