@@ -1,16 +1,18 @@
 {{- /*
   Ingress entry for the agent-canvas frontend-only deployment.
 
-  Unlike the other openhands subchart ingresses (plugin-directory,
-  integrations-hub, automation, mcp) which mount additional paths under
-  the main `.Values.ingress.host`, agent-canvas is served on its own
-  dedicated host (e.g. `canvas.openhands.dev`) supplied via
-  `agent-canvas.ingress.host`. This keeps the UI separate from the main
-  OpenHands app while reusing the same in-cluster ingress controller and
-  cert-manager.
+  Agent Canvas is mounted under a subpath on the main OpenHands host. The
+  frontend bundle is built with the same basename and static-server receives
+  the same --base-path, so no dedicated Canvas hostname or TLS secret is
+  required.
 */}}
 {{- $agentCanvas := index .Values "agent-canvas" -}}
-{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled $agentCanvas.ingress.host }}
+{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled }}
+{{- $host := .Values.ingress.host -}}
+{{- if .Values.ingress.prefixWithBranch -}}
+{{- $host = printf "%s.%s" .Values.branchSanitized .Values.ingress.host -}}
+{{- end -}}
+{{- $path := default "/canvas" $agentCanvas.ingress.path -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -23,17 +25,17 @@ metadata:
     {{- end }}
 spec:
   ingressClassName: {{ default "traefik" .Values.ingress.class }}
-  {{- if $agentCanvas.ingress.tls.enabled }}
+  {{- if .Values.tls.enabled }}
   tls:
   - hosts:
-    - {{ $agentCanvas.ingress.host }}
-    secretName: {{ $agentCanvas.ingress.tls.secretName }}
+    - {{ $host }}
+    secretName: app-all-hands-{{ .Values.tls.env }}-tls
   {{- end }}
   rules:
-  - host: {{ $agentCanvas.ingress.host }}
+  - host: {{ $host }}
     http:
       paths:
-      - path: /
+      - path: {{ $path | quote }}
         pathType: Prefix
         backend:
           service:

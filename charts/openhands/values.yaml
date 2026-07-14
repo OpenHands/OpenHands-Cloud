@@ -1335,10 +1335,8 @@ integrations-hub:
 # ───────────────────────────────────────────────────────────────────────
 # Agent Canvas (subchart): frontend-only deployment
 # ───────────────────────────────────────────────────────────────────────
-# When enabled, the agent-canvas subchart deploys the static frontend
-# behind its own ingress (rendered by `templates/ingress-agent-canvas.yaml`
-# below). `ingress.host` here is read by that template; the subchart's
-# `ingress.enabled` is left off because the parent renders the Ingress.
+# When enabled, the agent-canvas subchart deploys the static frontend under
+# `/canvas` on the main OpenHands ingress host.
 agent-canvas:
   enabled: false
 
@@ -1348,8 +1346,7 @@ agent-canvas:
 
   ingress:
     enabled: false
-    # Hostname for the agent-canvas ingress, e.g. canvas.openhands.dev
-    host: ""
-    tls:
-      enabled: true
-      secretName: agent-canvas-tls
+    path: /canvas
+
+  staticServer:
+    basePath: /canvas

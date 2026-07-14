@@ -29,20 +29,17 @@ service:
   port: 8000
 
 # Ingress for the agent-canvas service. When deployed as a subchart of
-# `openhands`, the parent chart's `templates/ingress-agent-canvas.yaml`
-# renders the Ingress resource using these values.
+# `openhands`, the parent chart renders this path on the main OpenHands host.
 ingress:
   enabled: false
-  host: ""
-  tls:
-    enabled: true
-    secretName: agent-canvas-tls
+  path: /canvas
 
 # Static-server runtime flags. By default the deployment runs in
 # frontend-only / auth-required mode and rejects any path that would
 # normally proxy to a local backend (since this deployment has none).
 staticServer:
   authRequired: true
+  basePath: /canvas
   # When set, passes `--lock-to-cloud <url>` to static-server.mjs, which
   # injects window.__AGENT_CANVAS_LOCK_TO_CLOUD__ so the UI locks backend
   # setup to a single OpenHands Cloud host (e.g.
