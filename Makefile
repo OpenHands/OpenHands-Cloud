@@ -113,7 +113,7 @@ check-duplicate-chart-entries: $(RELEASE_CHART_PACKAGES)
 # Validate all built manifests and charts with the Replicated linter
 .PHONY: lint
 lint: clean $(RELEASE_FILES) check-duplicate-chart-entries
-	replicated release lint --yaml-dir $(BUILDDIR)
+	replicated release lint --app $(REPLICATED_APP) --yaml-dir $(BUILDDIR)
 
 # Refuse to release from main or to the Unstable channel unless explicitly
 # allowed via ALLOW_MAIN_RELEASE=1. CI passes this flag; humans should not.
