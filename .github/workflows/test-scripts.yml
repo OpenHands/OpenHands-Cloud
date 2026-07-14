@@ -26,7 +26,7 @@ jobs:
         with:
           # 'latest' falls back to helm v3.9.0 when the release lookup is
           # rate-limited, which is too old to render the replicated SDK chart.
-          version: 'v3.21.3'
+          version: 'v3.18.4'
 
       - name: Build OpenHands chart dependencies
         run: |
