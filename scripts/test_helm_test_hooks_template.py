@@ -98,6 +98,21 @@ def run_local_kind_runner(
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     fake_bin, command_log = write_fake_kind_toolchain(tmp_path)
     env = os.environ.copy()
+    for variable in (
+        "ALLOW_VERSION_SKEW",
+        "ARTIFACT_DIR",
+        "CHART",
+        "GITHUB_ACTIONS",
+        "HELM_TEST_RUNS",
+        "KIND_CLUSTER",
+        "KIND_NODE_IMAGE",
+        "KUBECONFIG",
+        "KUBECONFIG_PATH",
+        "NAMESPACE",
+        "RELEASE",
+        "RUNNER_TEMP",
+    ):
+        env.pop(variable, None)
     env.update(
         {
             "COMMAND_LOG": str(command_log),
