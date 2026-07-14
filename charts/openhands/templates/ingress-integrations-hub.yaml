@@ -10,6 +10,7 @@
 {{- $hub := index .Values "integrations-hub" -}}
 {{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
 {{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
+{{- $apiRootPath := $hub.apiRootPath | default "/api/integrations-hub" }}
 {{- $dedicated := and $hub.ingress.enabled $hub.ingress.host }}
 {{- $host := tpl .Values.ingress.host . }}
 {{- if $dedicated }}
@@ -46,6 +47,17 @@ spec:
   - host: {{ $host }}
     http:
       paths:
+      {{- if not $dedicated }}
+      # Keep the API rule before the SPA rule so ingress controllers always
+      # select the more-specific backend path deterministically.
+      - path: {{ $apiRootPath | quote }}
+        pathType: Prefix
+        backend:
+          service:
+            name: integrations-hub
+            port:
+              number: 80
+      {{- end }}
       - path: {{ $ingressPath | quote }}
         pathType: Prefix
         backend:

@@ -1,0 +1,28 @@
+suite: integrations hub deployment paths
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: configures public prefixes while keeping probes on internal API routes
+    set:
+      rootPath: /integrations-hub
+      apiRootPath: /api/integrations-hub
+      database.url: postgresql://example
+      credentialEncryption.secretName: encryption
+      cron.secretName: cron
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /api/live
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /api/ready
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: INTHUB_ROOT_PATH
+            value: /integrations-hub
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: INTHUB_API_ROOT_PATH
+            value: /api/integrations-hub

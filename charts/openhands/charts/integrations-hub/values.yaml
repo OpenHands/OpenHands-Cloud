@@ -52,17 +52,14 @@ service:
   # Port the container listens on (8000 for Python/FastAPI backend)
   port: 8000
 
-# Path prefix the application is mounted under. Must match the SPA base
-# path baked into the image and the parent chart ingress path.
-#
-# Wired to the FastAPI container as `INTHUB_ROOT_PATH`, which causes
-# `backend/app/main.py::build_app` to mount every route -- including the
-# SPA static files and `/api/health` -- under this prefix. Container
-# probes below also honour the prefix automatically.
-#
-# Set to an empty string to serve the app from the cluster root, usually
-# when using a dedicated hostname.
+# UI path prefix baked into the Kubernetes SPA image and used by FastAPI's
+# static-file mount.
 rootPath: "/integrations-hub"
+
+# Public API prefix routed by the parent chart. The backend translates it to
+# its existing internal /api routes, which remain available to pod probes and
+# legacy dedicated-host API clients.
+apiRootPath: "/api/integrations-hub"
 
 # Bypass authentication for local development only. When true the FastAPI
 # app rejects non-loopback requests and uses a synthetic dev@localhost
