@@ -351,7 +351,6 @@ spec:
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
       kvm:
         enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
-        resourceName: smarter-devices/kvm
         image: 
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/smarter-project/smarter-device-manager'
           # Do not override the image tag here. Pin to a stable version in the chart.

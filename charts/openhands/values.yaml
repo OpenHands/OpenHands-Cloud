@@ -1088,7 +1088,9 @@ automation:
   # Env vars passed directly to the container (overrides defaults)
   env: {}
   
-  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  # When true, an init container waits for an in-cluster PostgreSQL at
+  # database.host before starting. Disabled here because the service uses
+  # the parent chart's PostgreSQL (no postgres is deployed by this subchart).
   postgresql:
     enabled: false
 
@@ -1314,7 +1316,9 @@ integrations-hub:
   # Env vars passed directly to the container
   env: {}
 
-  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  # When true, an init container waits for an in-cluster PostgreSQL at
+  # database.host before starting. Disabled here because the service uses
+  # the parent chart's PostgreSQL (no postgres is deployed by this subchart).
   postgresql:
     enabled: false
 
