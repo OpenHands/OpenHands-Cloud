@@ -26,3 +26,4 @@ full instructions.
 - [Automated image-tag bumps](./docs/automated-image-tag-bumps.md)
 - [Automated development chart bumps](./docs/development-chart-bumps.md)
 - [Automated staging chart bumps](./docs/staging-chart-bumps.md)
+- [Local Helm chart testing with KinD](./ci/README.md)
