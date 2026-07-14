@@ -3,7 +3,8 @@
 
   By default the hub is mounted at integrations-hub.rootPath under the main
   OpenHands host. If integrations-hub.ingress.host is set, the same service is
-  served on that dedicated hostname instead, usually with rootPath="". Host
+  served on that dedicated hostname instead, usually with rootPath="". Setting
+  sameOrigin=true takes precedence over legacy dedicated-host values. Host
   values are rendered with tpl so environment-specific charts can choose their
   own naming scheme without this shared chart knowing about it.
 */}}
@@ -11,7 +12,8 @@
 {{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
 {{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
 {{- $apiRootPath := $hub.apiRootPath | default "/api/integrations-hub" }}
-{{- $dedicated := and $hub.ingress.enabled $hub.ingress.host }}
+{{- $sameOrigin := $hub.sameOrigin | default false }}
+{{- $dedicated := and (not $sameOrigin) $hub.ingress.enabled $hub.ingress.host }}
 {{- $host := tpl .Values.ingress.host . }}
 {{- if $dedicated }}
 {{- $host = tpl $hub.ingress.host . }}

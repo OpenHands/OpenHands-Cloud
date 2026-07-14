@@ -126,9 +126,13 @@
 - name: INTHUB_OAUTH_REDIRECT_PROXY_URL
   value: {{ .Values.openhands.redirectProxyUrl | quote }}
 {{- end }}
-{{- if .Values.openhands.authUrl }}
+{{- $authUrl := .Values.openhands.authUrl }}
+{{- if .Values.sameOrigin }}
+{{- $authUrl = $openhandsBaseUrl }}
+{{- end }}
+{{- if $authUrl }}
 - name: AUTH_URL
-  value: {{ .Values.openhands.authUrl | quote }}
+  value: {{ $authUrl | quote }}
 {{- end }}
 
 {{- if .Values.datadog.enabled }}

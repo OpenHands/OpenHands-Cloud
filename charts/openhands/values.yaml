@@ -1257,6 +1257,9 @@ integrations-hub:
   # Public API prefix routed to the same service. The application translates
   # this prefix to its internal /api routes; probes remain internal/unprefixed.
   apiRootPath: "/api/integrations-hub"
+  # Route both prefixes on the primary OpenHands hostname. This takes
+  # precedence over legacy dedicated ingress/authUrl values.
+  sameOrigin: false
 
   # Bypass authentication for local development only -- never enable in
   # staging/production. Exposed as INTHUB_DISABLE_AUTH.

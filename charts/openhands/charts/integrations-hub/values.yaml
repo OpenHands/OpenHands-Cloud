@@ -61,6 +61,11 @@ rootPath: "/integrations-hub"
 # legacy dedicated-host API clients.
 apiRootPath: "/api/integrations-hub"
 
+# Route the UI and API prefixes on the primary OpenHands hostname. When true,
+# a legacy dedicated ingress host is ignored and OAuth preview callbacks return
+# to openhands.baseUrl instead of openhands.authUrl.
+sameOrigin: false
+
 # Bypass authentication for local development only. When true the FastAPI
 # app rejects non-loopback requests and uses a synthetic dev@localhost
 # owner; never enable this in staging/production.

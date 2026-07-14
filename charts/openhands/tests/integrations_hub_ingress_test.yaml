@@ -9,7 +9,9 @@ tests:
       ingress.host: app.example.com
       tls.enabled: false
       integrations-hub.enabled: true
-      integrations-hub.ingress.enabled: false
+      integrations-hub.sameOrigin: true
+      integrations-hub.ingress.enabled: true
+      integrations-hub.ingress.host: integrations.example.com
     asserts:
       - hasDocuments:
           count: 1
