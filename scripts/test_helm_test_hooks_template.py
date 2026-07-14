@@ -20,9 +20,243 @@ KIND_PROFILE_VALUES = {
     "persistent": REPO_ROOT / "ci" / "kind-profiles" / "persistent.yaml",
 }
 KIND_SECRETS_SCRIPT = REPO_ROOT / "ci" / "create-kind-secrets.sh"
+LOCAL_KIND_RUNNER = REPO_ROOT / "ci" / "run-kind-helm-tests.sh"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 HELM_TEST_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "helm-chart-tests.yml"
 SCRIPT_TESTS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "test-scripts.yml"
+
+CI_KIND_NODE_IMAGE = (
+    "kindest/node:v1.36.1@sha256:"
+    "3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5"
+)
+
+
+def write_fake_kind_toolchain(tmp_path: Path) -> tuple[Path, Path]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    command_log = tmp_path / "commands.tsv"
+    fake_tool = fake_bin / "fake-tool"
+    fake_tool.write_text(
+        r'''#!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+
+name = Path(sys.argv[0]).name
+args = sys.argv[1:]
+with Path(os.environ["COMMAND_LOG"]).open("a", encoding="utf-8") as log:
+    log.write("\t".join([name, *args, f"KUBECONFIG={os.environ.get('KUBECONFIG', '')}"]) + "\n")
+
+if name == "docker":
+    if args == ["--version"]:
+        print("Docker version 29.0.0")
+    sys.exit(0)
+
+if name == "kind":
+    if args == ["version"]:
+        print("kind v0.32.0")
+    elif args == ["get", "clusters"]:
+        print(os.environ.get("FAKE_KIND_CLUSTERS", ""))
+    elif len(args) >= 2 and args[:2] in (["create", "cluster"], ["export", "kubeconfig"]):
+        if "--kubeconfig" in args:
+            kubeconfig = Path(args[args.index("--kubeconfig") + 1])
+            kubeconfig.parent.mkdir(parents=True, exist_ok=True)
+            kubeconfig.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
+    sys.exit(0)
+
+if name == "kubectl":
+    if args[:2] == ["version", "--client"]:
+        print("clientVersion:\n  gitVersion: v1.36.1")
+    elif "create" in args and ("namespace" in args or "secret" in args):
+        print("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: fake")
+    elif "apply" in args and "-f" in args and "-" in args:
+        sys.stdin.read()
+    sys.exit(0)
+
+if name == "helm":
+    if args == ["version", "--short"]:
+        print("v3.21.3+gfake")
+    if args and args[0] == os.environ.get("FAKE_FAIL_HELM_COMMAND"):
+        sys.exit(int(os.environ.get("FAKE_FAIL_CODE", "37")))
+    sys.exit(0)
+
+raise SystemExit(f"unexpected fake tool: {name}")
+''',
+        encoding="utf-8",
+    )
+    fake_tool.chmod(0o755)
+    for name in ("docker", "helm", "kind", "kubectl"):
+        (fake_bin / name).symlink_to(fake_tool)
+    return fake_bin, command_log
+
+
+def run_local_kind_runner(
+    tmp_path: Path,
+    *args: str,
+    existing_clusters: str = "",
+    fail_helm_command: str = "",
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    fake_bin, command_log = write_fake_kind_toolchain(tmp_path)
+    env = os.environ.copy()
+    env.update(
+        {
+            "COMMAND_LOG": str(command_log),
+            "FAKE_KIND_CLUSTERS": existing_clusters,
+            "FAKE_FAIL_HELM_COMMAND": fail_helm_command,
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(LOCAL_KIND_RUNNER), *args],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    calls = (
+        [line.split("\t") for line in command_log.read_text().splitlines()]
+        if command_log.exists()
+        else []
+    )
+    return result, calls
+
+
+def tool_calls(calls: list[list[str]], tool: str) -> list[list[str]]:
+    return [call[1:-1] for call in calls if call[0] == tool]
+
+
+def test_local_kind_runner_rejects_an_unknown_profile_before_side_effects(
+    tmp_path: Path,
+) -> None:
+    result, calls = run_local_kind_runner(tmp_path, "run", "unknown")
+
+    assert result.returncode == 2
+    assert "profile must be 'ephemeral' or 'persistent'" in result.stderr
+    assert calls == []
+
+
+def test_local_kind_runner_reproduces_the_ephemeral_ci_flow(tmp_path: Path) -> None:
+    result, calls = run_local_kind_runner(tmp_path, "run", "ephemeral")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    kind_calls = tool_calls(calls, "kind")
+    helm_calls = tool_calls(calls, "helm")
+    kubectl_calls = tool_calls(calls, "kubectl")
+    kubeconfig = (
+        REPO_ROOT
+        / "build"
+        / "kind-tests"
+        / "openhands-local-ephemeral"
+        / "kubeconfig"
+    )
+
+    assert [
+        "create",
+        "cluster",
+        "--name",
+        "openhands-local-ephemeral",
+        "--image",
+        CI_KIND_NODE_IMAGE,
+        "--wait",
+        "120s",
+        "--kubeconfig",
+        str(kubeconfig),
+    ] in kind_calls
+    assert [
+        "install",
+        "openhands",
+        str(OPENHANDS_CHART),
+        "--namespace",
+        "openhands",
+        "--values",
+        str(KIND_VALUES),
+        "--values",
+        str(KIND_PROFILE_VALUES["ephemeral"]),
+        "--wait",
+        "--wait-for-jobs",
+        "--timeout",
+        "25m",
+    ] in helm_calls
+    assert helm_calls.count(
+        [
+            "test",
+            "openhands",
+            "--namespace",
+            "openhands",
+            "--filter",
+            "name=openhands-test-connection",
+            "--logs",
+            "--timeout",
+            "10m",
+        ]
+    ) == 2
+    assert ["get", "storageclass", "standard"] not in kubectl_calls
+    assert not any(call[:2] == ["delete", "cluster"] for call in kind_calls)
+    assert all(
+        call[-1] == f"KUBECONFIG={kubeconfig}"
+        for call in calls
+        if call[0] in {"helm", "kubectl"}
+    )
+    assert f"export KUBECONFIG={kubeconfig}" in result.stdout
+
+
+def test_local_kind_runner_checks_persistent_storage(tmp_path: Path) -> None:
+    result, calls = run_local_kind_runner(tmp_path, "run", "persistent")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    kubectl_calls = tool_calls(calls, "kubectl")
+    assert ["get", "storageclass", "standard"] in kubectl_calls
+    for pvc in (
+        "openhands-minio",
+        "data-openhands-postgresql-0",
+        "redis-data-openhands-redis-master-0",
+    ):
+        assert [
+            "wait",
+            "--namespace",
+            "openhands",
+            "--for=jsonpath={.status.phase}=Bound",
+            f"pvc/{pvc}",
+            "--timeout=5m",
+        ] in kubectl_calls
+
+
+def test_local_kind_runner_can_rerun_only_the_native_test(tmp_path: Path) -> None:
+    cluster = "openhands-local-ephemeral"
+    result, calls = run_local_kind_runner(
+        tmp_path,
+        "test",
+        "ephemeral",
+        existing_clusters=cluster,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    kind_calls = tool_calls(calls, "kind")
+    helm_calls = tool_calls(calls, "helm")
+    assert not any(call[:2] == ["create", "cluster"] for call in kind_calls)
+    assert not any(call and call[0] == "install" for call in helm_calls)
+    assert sum(call and call[0] == "test" for call in helm_calls) == 2
+
+
+def test_local_kind_runner_preserves_a_failed_install_for_debugging(
+    tmp_path: Path,
+) -> None:
+    result, calls = run_local_kind_runner(
+        tmp_path,
+        "run",
+        "ephemeral",
+        fail_helm_command="install",
+    )
+
+    assert result.returncode == 37
+    helm_calls = tool_calls(calls, "helm")
+    kind_calls = tool_calls(calls, "kind")
+    assert not any(call and call[0] == "test" for call in helm_calls)
+    assert ["status", "openhands", "--namespace", "openhands"] in helm_calls
+    assert ["get", "hooks", "openhands", "--namespace", "openhands"] in helm_calls
+    assert any(call[:2] == ["export", "logs"] for call in kind_calls)
+    assert not any(call[:2] == ["delete", "cluster"] for call in kind_calls)
+    assert "Cluster preserved for debugging" in result.stderr
 
 
 def run_chart_render(
@@ -275,26 +509,15 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert kind_job["strategy"] == {
         "fail-fast": "false",
         "max-parallel": "2",
-        "matrix": {
-            "include": [
-                {
-                    "profile": "ephemeral",
-                    "values": "ci/kind-profiles/ephemeral.yaml",
-                },
-                {
-                    "profile": "persistent",
-                    "values": "ci/kind-profiles/persistent.yaml",
-                },
-            ]
-        },
+        "matrix": {"profile": ["ephemeral", "persistent"]},
     }
     assert kind_job["env"] == {
         "PROFILE": "${{ matrix.profile }}",
-        "PROFILE_VALUES": "${{ matrix.values }}",
         "RELEASE": "openhands",
         "NAMESPACE": "openhands",
         "CHART": "charts/openhands",
         "KIND_CLUSTER": "openhands-ci",
+        "ARTIFACT_DIR": "artifacts",
     }
     assert workflow_definition["permissions"] == {"contents": "read"}
     assert "dorny/paths-filter@" not in workflow
@@ -306,48 +529,17 @@ def test_kind_workflow_runs_only_the_smoke_test_and_reports_failures() -> None:
     assert "version: v3.21.3" in workflow
     assert "version: v0.32.0" in workflow
     assert "kubectl_version: v1.36.1" in workflow
-    assert 'bash ci/create-kind-secrets.sh "$NAMESPACE"' in workflow
-    assert "--values ci/kind-values.yaml" in workflow
-    assert '--values "$PROFILE_VALUES"' in workflow
     assert "cluster_name: openhands-ci" in workflow
     assert "charts/openhands/ci" not in workflow
-    dependency_build_index = workflow.index('helm dependency build "$CHART"')
-    for repository_command in (
-        "helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm",
-        "helm repo add minio https://charts.min.io/",
-        "helm repo add bitnami https://charts.bitnami.com/bitnami",
-    ):
-        assert repository_command in workflow
-        assert workflow.index(repository_command) < dependency_build_index
-    assert "helm dependency build \"$CHART\"" in workflow
-    assert "helm install \"$RELEASE\" \"$CHART\"" in workflow
-    assert "helm test \"$RELEASE\"" in workflow
-    assert "set -euo pipefail" in workflow
-    assert "for test_run in 1 2; do" in workflow
-    assert '--filter "name=${RELEASE}-test-connection"' in workflow
-    assert "--filter '!name=" not in workflow
-    assert "--logs" in workflow
-    assert "helm get hooks" in workflow
-    assert "kind export logs" in workflow
+    assert 'bash ci/run-kind-helm-tests.sh run "$PROFILE" --reuse-cluster' in workflow
+    assert 'helm install "$RELEASE" "$CHART"' not in workflow
+    assert 'helm test "$RELEASE"' not in workflow
     assert "actions/upload-artifact" in workflow
     assert (
         "name: helm-chart-test-diagnostics-${{ matrix.profile }}-attempt-"
         "${{ github.run_attempt }}"
     ) in workflow
-    assert "kubectl get storageclass standard" in workflow
-    assert "kubectl wait" in workflow
-    for pvc in (
-        "openhands-minio",
-        "data-openhands-postgresql-0",
-        "redis-data-openhands-redis-master-0",
-    ):
-        assert f'"{pvc}"' in workflow
-    assert '"pvc/$pvc"' in workflow
-    assert 'kubectl get pvc -n "$NAMESPACE" -o wide' in workflow
-    assert "kubectl get pv -o wide" in workflow
-    assert "kubectl get storageclass -o wide" in workflow
-    assert 'kubectl describe pvc -n "$NAMESPACE"' in workflow
-    assert "if: failure()\n        run: |\n          mkdir -p artifacts" in workflow
+    assert "path: artifacts/" in workflow
 
 
 def test_script_workflow_installs_yaml_dependency() -> None:
