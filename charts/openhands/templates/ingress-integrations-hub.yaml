@@ -17,6 +17,8 @@
 {{- $host := tpl .Values.ingress.host . }}
 {{- if $dedicated }}
 {{- $host = tpl $hub.ingress.host . }}
+{{- else if .Values.ingress.prefixWithBranch }}
+{{- $host = printf "%s.%s" .Values.branchSanitized $host }}
 {{- end }}
 {{- $ingressPath := $rootPath }}
 {{- if $dedicated }}

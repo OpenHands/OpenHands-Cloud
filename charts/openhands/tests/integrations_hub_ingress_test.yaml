@@ -7,6 +7,8 @@ tests:
       enabled: true
       ingress.enabled: true
       ingress.host: app.example.com
+      ingress.prefixWithBranch: true
+      branchSanitized: pr-252
       tls.enabled: false
       integrations-hub.enabled: true
       integrations-hub.sameOrigin: true
@@ -17,7 +19,7 @@ tests:
           count: 1
       - equal:
           path: spec.rules[0].host
-          value: app.example.com
+          value: pr-252.app.example.com
       - equal:
           path: spec.rules[0].http.paths[0].path
           value: /api/integrations-hub
