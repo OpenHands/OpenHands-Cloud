@@ -21,6 +21,10 @@ spec:
     metadata:
       labels:
         {{- include "runtime-api.selectorLabels" . | nindent 8 }}
+        {{- /* Distinguishes API pods from the kvm-device-plugin DaemonSet and
+        warm-runtimes CronJob pods that share the selectorLabels; lets the
+        Service selector be tightened to component=api in a later release. */}}
+        app.kubernetes.io/component: api
     spec:
       {{- with .Values.securityContext }}
       securityContext:

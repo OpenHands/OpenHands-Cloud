@@ -13,10 +13,10 @@ spec:
   jobTemplate:
     spec:
       activeDeadlineSeconds: {{ .Values.jobSettings.activeDeadlineSeconds }}
+      {{- /* No selectorLabels on the job pods: they would match the
+      runtime-api Service selector. Jobs track their pods by controller-uid,
+      so no pod labels are needed (the other cronjobs set none either). */}}
       template:
-        metadata:
-          labels:
-            {{- include "runtime-api.selectorLabels" . | nindent 12 }}
         spec:
           {{- with .Values.securityContext }}
           securityContext:
