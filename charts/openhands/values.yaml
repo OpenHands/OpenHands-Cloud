@@ -1100,12 +1100,14 @@ automation:
     enabled: false
 
 replicated:
-  enabled: false
-  # Database credentials below are rendered only into the support-bundle Secret
-  # (gated on replicated.enabled), following the same convention as the rest of
-  # replicated/openhands.yaml — the Replicated installer templates ConfigOption
-  # values into Secrets at install time. The troubleshoot v1beta2 redis/postgres
-  # collectors have no secretRef field, so auth must be inlined into the URI.
+  # Deploys the Replicated SDK subchart (license enforcement) and the
+  # troubleshoot preflight/support-bundle Secrets. The SDK's license is
+  # injected by the Replicated registry at chart-pull time, not set here.
+  enabled: true
+  # Database credentials below are rendered only into the support-bundle Secret;
+  # each collector also requires its password to be set. The troubleshoot
+  # v1beta2 redis/postgres collectors have no secretRef field, so auth must be
+  # inlined into the URI.
   redisPassword: ""
   postgresUsername: ""
   postgresPassword: ""
