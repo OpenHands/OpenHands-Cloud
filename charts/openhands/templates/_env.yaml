@@ -651,22 +651,30 @@
 {{- $defaults := include "openhands.env.defaults" . | fromYamlArray }}
 {{- /*
     Effective env-var overrides. Start from .Values.env, then fold the
-    structured .Values.agentServerEnv map into OH_AGENT_SERVER_ENV: the map is
+    structured agent-server env map into OH_AGENT_SERVER_ENV: the map is
     merged on top of any JSON string already present at
     .Values.env.OH_AGENT_SERVER_ENV and re-serialised to JSON. This lets callers
     (e.g. replicated/openhands.yaml) assemble OH_AGENT_SERVER_ENV from a
     recursively-merged map of individual keys instead of repeating a hand-written
-    JSON blob in every optionalValues block. When agentServerEnv is empty,
-    .Values.env passes through unchanged, so existing callers are unaffected.
+    JSON blob in every optionalValues block. The map lives at
+    .Values.global.agentServerEnv so the runtime-api subchart can mirror the
+    same keys into the warm-runtime env (exact-env matching); the legacy
+    .Values.agentServerEnv is still merged on top for compatibility. When both
+    are empty, .Values.env passes through unchanged.
    */}}
 {{- $envOverrides := .Values.env | default dict }}
-{{- if .Values.agentServerEnv }}
+{{- $agentServerEnv := dict }}
+{{- if .Values.global }}
+{{- $agentServerEnv = deepCopy ((get .Values.global "agentServerEnv") | default dict) }}
+{{- end }}
+{{- $agentServerEnv = mergeOverwrite $agentServerEnv (deepCopy (.Values.agentServerEnv | default dict)) }}
+{{- if $agentServerEnv }}
 {{- $envOverrides = deepCopy $envOverrides }}
 {{- $base := dict }}
 {{- with (get $envOverrides "OH_AGENT_SERVER_ENV") }}
 {{- $base = mustFromJson (. | toString) }}
 {{- end }}
-{{- $_ := set $envOverrides "OH_AGENT_SERVER_ENV" (mustToJson (mergeOverwrite $base (deepCopy .Values.agentServerEnv))) }}
+{{- $_ := set $envOverrides "OH_AGENT_SERVER_ENV" (mustToJson (mergeOverwrite $base $agentServerEnv)) }}
 {{- end }}
 {{- /* Build a lookup dict of override keys for O(1) membership checks */}}
 {{- $overrideKeys := dict }}

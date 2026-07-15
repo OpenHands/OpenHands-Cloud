@@ -87,14 +87,11 @@ env:
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
-# Structured source for the OH_AGENT_SERVER_ENV environment variable, which the
-# enterprise-server passes through to every agent-server (sandbox) runtime it
-# spawns. Rather than hand-writing that JSON blob, list the runtime's env vars
-# as a map here and the chart serialises it to JSON (see the "openhands.env"
-# helper). The map is merged on top of any OH_AGENT_SERVER_ENV string set
-# directly in .Values.env, so callers that layer values — e.g. KOTS
-# optionalValues with recursiveMerge — can add keys without repeating the whole
-# blob in every block. Empty by default, which emits no OH_AGENT_SERVER_ENV.
+# Legacy location for the agent-server (sandbox) runtime env map. Prefer
+# global.agentServerEnv, which the runtime-api subchart also mirrors into the
+# warm-runtime env so warm pods stay claimable (exact-env matching). Keys set
+# here still reach OH_AGENT_SERVER_ENV (merged on top of the global map) but
+# are NOT mirrored into the warm env.
 agentServerEnv: {}
 
 integrations:
@@ -1124,6 +1121,12 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Env the app injects into every per-session runtime (LLM provider creds,
+  # proxy vars, CA paths): serialised into OH_AGENT_SERVER_ENV on the app AND
+  # mirrored into each warm-runtime entry's env by the runtime-api subchart —
+  # runtime-api claims warm pods by exact env match, so a key present here but
+  # absent from the warm env would make the pool unclaimable.
+  agentServerEnv: {}
 
 vertexAI:
   enabled: false
