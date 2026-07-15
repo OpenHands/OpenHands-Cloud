@@ -976,9 +976,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.36.1-python
+          help_text: Image tag, e.g. 1.36.0-python
           type: text
-          default: "1.36.1-python"
+          default: "1.36.0-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
