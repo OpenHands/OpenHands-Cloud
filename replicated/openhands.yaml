@@ -1083,6 +1083,19 @@ spec:
           rabbitmq:
             persistence:
               storageClass: "openebs-hostpath"
+    # OEM User Creation Flow: register the privileged
+    # POST /api/organizations/provision-user endpoint so superadmins can
+    # provision users (and mint per-user API keys) into orgs they create.
+    # Gated behind an admin config toggle because it is only relevant to
+    # customers OEM-integrating OHE with their own user-management system.
+    # Off by default; when off the chart leaves userProvisioning.enabled at
+    # its own false default (the value is only ever set when truthy, since
+    # the chart treats any non-empty string as enabled).
+    - when: '{{repl ConfigOptionEquals "oem_user_creation_flow_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        userProvisioning:
+          enabled: true
     - when: '{{repl ConfigOptionEquals "plugin_directory_enabled" "1" }}'
       recursiveMerge: true
       values:
