@@ -1196,13 +1196,9 @@ spec:
         - name: oem_user_creation_flow_enabled
           title: Enable OEM User Creation Flow
           help_text: >-
-            Superadmins can create organizations and provision users into them,
-            receiving an API key for each provisioned user so they can act on that
-            user's behalf. This registers the privileged
-            POST /api/organizations/provision-user endpoint (sets
-            USER_PROVISIONING_ENABLED=true). This setting is typically only used by
-            customers who OEM OpenHands Enterprise and integrate it with their own
-            user management system. Leave disabled unless you need headless,
-            programmatic user onboarding.
+            Let superadmins create organizations and provision users into them,
+            obtaining an API key to act on each user's behalf. Typically only used
+            by customers who OEM OpenHands Enterprise and integrate it with their
+            own user management system.
           type: bool
           default: "0"
