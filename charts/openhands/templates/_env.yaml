@@ -329,18 +329,19 @@
       key: tavily-api-key
 {{- end }}
 {{- if .Values.ingress.enabled }}
+{{- $authHost := .Values.ingress.authHost }}
 {{- if .Values.ingress.prefixWithBranch }}
 - name: WEB_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
 - name: AUTH_WEB_HOST
-  value: {{ .Values.branchSanitized }}.auth.{{ .Values.ingress.host }}
+  value: {{ default (printf "%s.auth.%s" .Values.branchSanitized .Values.ingress.host) $authHost }}
 - name: MCP_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
 {{- else }}
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
 - name: AUTH_WEB_HOST
-  value: auth.{{ .Values.ingress.host }}
+  value: {{ default (printf "auth.%s" .Values.ingress.host) $authHost }}
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
 {{- end }}

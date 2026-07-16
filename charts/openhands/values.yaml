@@ -208,6 +208,8 @@ ingress:
   enabled: false
   # REQUIRED: Update to a hostname in a DNS domain you own
   # host: "app.example.com"
+  # Optional override when auth is served on a different hostname than auth.<host>.
+  authHost: ""
   class: traefik
   # Legacy annotations field - kept for backward compatibility
   annotations: {}
