@@ -1,0 +1,58 @@
+suite: root ingress redirects
+templates:
+  - ingress-root-redirects.yaml
+tests:
+  - it: renders Traefik middleware and ingress for redirect hosts
+    set:
+      enabled: true
+      ingress:
+        enabled: true
+        class: traefik
+        host: app.example.com
+        redirects:
+          - name: legacy-app
+            host: old.example.com
+            to: https://app.example.com${1}
+            permanent: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: Middleware
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: openhands-legacy-app-redirect
+        documentIndex: 0
+      - equal:
+          path: spec.redirectRegex.regex
+          value: ^https://old\.example\.com(.*)
+        documentIndex: 0
+      - equal:
+          path: spec.redirectRegex.replacement
+          value: https://app.example.com${1}
+        documentIndex: 0
+      - equal:
+          path: spec.redirectRegex.permanent
+          value: true
+        documentIndex: 0
+      - isKind:
+          of: Ingress
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: openhands-legacy-app-redirect
+        documentIndex: 1
+      - equal:
+          path: spec.rules[0].host
+          value: old.example.com
+        documentIndex: 1
+  - it: renders no redirect resources without redirects
+    set:
+      enabled: true
+      ingress:
+        enabled: true
+        host: app.example.com
+    asserts:
+      - hasDocuments:
+          count: 0

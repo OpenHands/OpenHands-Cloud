@@ -220,6 +220,15 @@ ingress:
       # Example: Add specific annotations for the root ingress
       # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
 
+  redirects: []
+    # Redirect legacy hostnames to the canonical root ingress host.
+    # Requires Traefik's Middleware CRD.
+    # - name: legacy-app-host
+    #   host: old-app.example.com
+    #   to: https://app.example.com${1}
+    #   permanent: true
+    #   annotations: {}
+
   integrations:
     annotations: {}
       # Example: Add specific annotations for integrations ingress
