@@ -22,7 +22,7 @@ kind create cluster --name "$cluster" --config "$script_dir/kind-config.yaml" --
 helm repo add traefik https://traefik.github.io/charts >/dev/null
 helm repo update traefik >/dev/null
 helm upgrade --install traefik traefik/traefik --namespace traefik --create-namespace \
-  --set service.type=NodePort \
+  --set service.spec.type=NodePort \
   --set ports.web.nodePort=30080 \
   --set ports.websecure.nodePort=30443 \
   --wait --timeout 10m
