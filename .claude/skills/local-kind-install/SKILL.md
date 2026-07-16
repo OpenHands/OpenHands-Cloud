@@ -8,6 +8,21 @@ description: Stand up a full OpenHands Enterprise Helm install (Replicated regis
 Everything lives in `local-kind/` — read `local-kind/README.md` first. Run the
 scripts rather than reimplementing their steps; they encode non-obvious fixes.
 
+## Ask the user before starting
+
+Never invent these inputs — ask the user for them (they are personal to their
+domain, accounts, and machine):
+
+- **Base domain** (e.g. `oh.example.com`) — a domain they control, with the
+  wildcard DNS records and certificate from the README's one-time setup. If
+  they haven't done that setup yet, walk them through it first.
+- **TLS certificate + key paths** covering that domain's hostnames.
+- **Replicated license** email and license ID.
+- **GitHub App credentials** (from `scripts/create_github_app` run with their
+  base domain) and the path to its private key.
+- **Anthropic API key** — have them place secrets in files or export env vars
+  themselves rather than pasting them into chat.
+
 ## Sequence
 
 1. `create-cluster.sh` — needs `BASE_DOMAIN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`.
