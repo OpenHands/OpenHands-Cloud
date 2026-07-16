@@ -2,9 +2,7 @@
 
 Scripts to stand up a full OpenHands Enterprise Helm install — Replicated
 registry pull, GitHub login, working agent conversations — on a local
-[KinD](https://kind.sigs.k8s.io/) cluster. Formalized from the KinD harness in
-[#874](https://github.com/OpenHands/OpenHands-Cloud/pull/874) plus the fixes
-found while validating the install docs end to end.
+[KinD](https://kind.sigs.k8s.io/) cluster.
 
 ## You need your own domain
 

@@ -1,5 +1,5 @@
-# Laptop-scale resource profile, adapted from the KinD harness in PR #874.
-# Keeps the full stack schedulable on a single-node KinD cluster (~16GB VM).
+# Laptop-scale resource profile: keeps the full stack schedulable on a
+# single-node KinD cluster (~16GB VM).
 enabled: true
 
 autoscaling:
