@@ -74,6 +74,12 @@
         "create": { "type": "boolean" },
         "name": { "type": "string" }
       }
+    },
+    "uvicorn": {
+      "type": "object",
+      "properties": {
+        "workers": { "type": "integer", "minimum": 1 }
+      }
     }
   }
 }
