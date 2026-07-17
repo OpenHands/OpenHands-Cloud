@@ -1,0 +1,38 @@
+{{- if not .Values.enabled }}
+The OpenHands application was not deployed by this release (enabled=false); only
+the enabled subcharts were installed.
+{{- else }}
+OpenHands "{{ .Release.Name }}" has been deployed to namespace "{{ .Release.Namespace }}".
+
+{{- $host := .Values.ingress.host }}
+{{- if .Values.ingress.prefixWithBranch }}
+{{- $host = printf "%s.%s" .Values.branchSanitized .Values.ingress.host }}
+{{- end }}
+{{- $scheme := ternary "https" "http" .Values.tls.enabled }}
+{{- if and .Values.ingress.enabled $host }}
+
+Access the app at:
+
+    {{ $scheme }}://{{ $host }}
+{{- else if .Values.ingress.enabled }}
+
+Ingress is enabled but `ingress.host` is not set. Set it to a hostname you own
+so the app is reachable, e.g.:
+
+    helm upgrade {{ .Release.Name }} ... --set ingress.host=app.example.com
+{{- else }}
+
+Ingress is disabled. Reach the app with a port-forward:
+
+    kubectl port-forward -n {{ .Release.Namespace }} svc/openhands-service 3000:3000
+
+then open http://localhost:3000
+{{- end }}
+
+Next steps:
+
+    # watch the rollout
+    kubectl get pods -n {{ .Release.Namespace }}
+
+Docs: https://docs.all-hands.dev
+{{- end }}
