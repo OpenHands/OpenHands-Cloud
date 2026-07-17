@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "OpenHands chart values",
-  "description": "Type/shape validation for the values operators set. Objects are left open (additionalProperties allowed) so subchart sections and Replicated overrides pass; cross-field rules (e.g. host required when ingress enabled) live in template fail guards, not here.",
+  "description": "Validates the type and shape of the values operators set. Only the listed keys are checked; all other keys pass through.",
   "type": "object",
   "required": ["image"],
   "properties": {
@@ -73,12 +73,6 @@
       "properties": {
         "create": { "type": "boolean" },
         "name": { "type": "string" }
-      }
-    },
-    "uvicorn": {
-      "type": "object",
-      "properties": {
-        "workers": { "type": "integer", "minimum": 1 }
       }
     }
   }
