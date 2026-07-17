@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "OpenHands chart values",
+  "description": "Type/shape validation for the values operators set. Objects are left open (additionalProperties allowed) so subchart sections and Replicated overrides pass; cross-field rules (e.g. host required when ingress enabled) live in template fail guards, not here.",
+  "type": "object",
+  "required": ["image"],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "targetMemoryUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "securityContext": {
+      "type": "object",
+      "properties": {
+        "runAsUser": { "type": "integer", "minimum": 0 },
+        "runAsGroup": { "type": "integer", "minimum": 0 },
+        "fsGroup": { "type": "integer", "minimum": 0 },
+        "runAsNonRoot": { "type": "boolean" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "class": { "type": "string" }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "properties": {
+        "apiHostname": { "type": "string" }
+      }
+    },
+    "litellm": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "teamId": { "type": "string" }
+      }
+    },
+    "databaseMigrations": {
+      "type": "object",
+      "properties": {
+        "waitForDatabase": { "type": "boolean" },
+        "createDatabases": { "type": "boolean" },
+        "migrate": { "type": "boolean" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      }
+    },
+    "uvicorn": {
+      "type": "object",
+      "properties": {
+        "workers": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
