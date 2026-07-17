@@ -11,8 +11,9 @@ into the in-app "Manage Backends" workflow — users supply their own
 agent-server URL and API key from the browser.
 
 It is intended to be deployed as a subchart of the umbrella `openhands`
-chart so the parent chart mounts the frontend under `/canvas` on the main
-OpenHands ingress host (see `templates/ingress-agent-canvas.yaml`).
+chart so the parent chart mounts the frontend under `/canvas` on the host
+configured in `agent-canvas.ingress.host` (see
+`templates/ingress-agent-canvas.yaml`).
 
 ## Usage as a subchart
 
@@ -23,7 +24,11 @@ agent-canvas:
     tag: sha-2ad6f84
   ingress:
     enabled: true
+    host: app.example.com
     path: /canvas
+    tls:
+      enabled: true
+      secretName: app-example-com-tls
   staticServer:
     basePath: /canvas
 ```
@@ -43,5 +48,9 @@ agent-canvas:
     basePath: /canvas
   ingress:
     enabled: true
+    host: app.all-hands.dev
     path: /canvas
+    tls:
+      enabled: true
+      secretName: app-all-hands-dev-tls
 ```

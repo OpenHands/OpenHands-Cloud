@@ -28,11 +28,17 @@ deployment:
 service:
   port: 8000
 
-# Ingress for the agent-canvas service. When deployed as a subchart of
-# `openhands`, the parent chart renders this path on the main OpenHands host.
+# Ingress for the agent-canvas service. The umbrella `openhands` chart renders
+# this path on the host supplied here when this chart is used as a subchart.
 ingress:
   enabled: false
+  host: ""
+  className: traefik
+  annotations: {}
   path: /canvas
+  tls:
+    enabled: false
+    secretName: ""
 
 # Static-server runtime flags. By default the deployment runs in
 # frontend-only / auth-required mode and rejects any path that would

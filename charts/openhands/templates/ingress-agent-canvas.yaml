@@ -1,35 +1,32 @@
 {{- /*
   Ingress entry for the agent-canvas frontend-only deployment.
 
-  Agent Canvas is mounted under a subpath on the main OpenHands host. The
-  frontend bundle is built with the same basename and static-server receives
-  the same --base-path, so no dedicated Canvas hostname or TLS secret is
-  required.
+  Agent Canvas is mounted under a configurable subpath on a consumer-provided
+  host. The frontend bundle is built with the same basename and static-server
+  receives the same --base-path.
 */}}
 {{- $agentCanvas := index .Values "agent-canvas" -}}
 {{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled }}
-{{- $host := .Values.ingress.host -}}
-{{- if .Values.ingress.prefixWithBranch -}}
-{{- $host = printf "%s.%s" .Values.branchSanitized .Values.ingress.host -}}
-{{- end -}}
-{{- $path := default "/canvas" $agentCanvas.ingress.path -}}
+{{- $ingress := $agentCanvas.ingress -}}
+{{- $host := required "agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true" $ingress.host -}}
+{{- $path := default "/canvas" $ingress.path -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-agent-canvas-ingress
+  {{- with $ingress.annotations }}
   annotations:
-    {{- if .Values.ingress.root.annotations }}
-    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
-    {{- else }}
-    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
-    {{- end }}
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
 spec:
-  ingressClassName: {{ default "traefik" .Values.ingress.class }}
-  {{- if .Values.tls.enabled }}
+  ingressClassName: {{ default "traefik" $ingress.className }}
+  {{- with $ingress.tls }}
+  {{- if .enabled }}
   tls:
   - hosts:
     - {{ $host }}
-    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+    secretName: {{ required "agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true" .secretName }}
+  {{- end }}
   {{- end }}
   rules:
   - host: {{ $host }}

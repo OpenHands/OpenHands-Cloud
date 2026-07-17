@@ -1336,7 +1336,7 @@ integrations-hub:
 # Agent Canvas (subchart): frontend-only deployment
 # ───────────────────────────────────────────────────────────────────────
 # When enabled, the agent-canvas subchart deploys the static frontend under
-# `/canvas` on the main OpenHands ingress host.
+# `/canvas` on the configured Agent Canvas ingress host.
 agent-canvas:
   enabled: false
 
@@ -1346,7 +1346,13 @@ agent-canvas:
 
   ingress:
     enabled: false
+    host: ""
+    className: traefik
+    annotations: {}
     path: /canvas
+    tls:
+      enabled: false
+      secretName: ""
 
   staticServer:
     basePath: /canvas
