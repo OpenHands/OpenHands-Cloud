@@ -11,10 +11,9 @@ into the in-app "Manage Backends" workflow — users supply their own
 agent-server URL and API key from the browser.
 
 It is intended to be deployed as a subchart of the umbrella `openhands`
-chart so the parent chart provides the `Ingress`, hostname, and TLS
-secret for the frontend (see
-`templates/ingress-agent-canvas.yaml`). The `host` and `ingress.enabled`
-flags on this chart are placeholders for stand-alone use.
+chart so the parent chart mounts the frontend under `/canvas` on the host
+configured in `agent-canvas.ingress.host` (see
+`templates/ingress-agent-canvas.yaml`).
 
 ## Usage as a subchart
 
@@ -25,25 +24,33 @@ agent-canvas:
     tag: sha-2ad6f84
   ingress:
     enabled: true
-    host: canvas.openhands.dev
+    host: app.example.com
+    path: /canvas
     tls:
       enabled: true
-      secretName: agent-canvas-tls
+      secretName: app-example-com-tls
+  staticServer:
+    basePath: /canvas
 ```
 
 ### Locking the UI to a single OpenHands Cloud host
 
 Set `staticServer.lockToCloud` to pass `--lock-to-cloud <url>` to
 `static-server.mjs`. The UI then locks backend setup to a single
-OpenHands Cloud host (skipping the "Manage Backends" flow), e.g. for a
-dedicated `canvas.<env>.all-hands.dev` deployment:
+OpenHands Cloud host (skipping the "Manage Backends" flow), e.g. for the
+hosted `/canvas` deployment:
 
 ```yaml
 agent-canvas:
   enabled: true
   staticServer:
     lockToCloud: https://app.all-hands.dev
+    basePath: /canvas
   ingress:
     enabled: true
-    host: canvas.staging.all-hands.dev
+    host: app.all-hands.dev
+    path: /canvas
+    tls:
+      enabled: true
+      secretName: app-all-hands-dev-tls
 ```
