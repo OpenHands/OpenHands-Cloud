@@ -1257,24 +1257,13 @@ integrations-hub:
   # Public API prefix routed to the same service. The application translates
   # this prefix to its internal /api routes; probes remain internal/unprefixed.
   apiRootPath: "/api/integrations-hub"
-  # Route both prefixes on the primary OpenHands hostname. This takes
-  # precedence over legacy dedicated ingress/authUrl values.
-  sameOrigin: false
-
   # Bypass authentication for local development only -- never enable in
   # staging/production. Exposed as INTHUB_DISABLE_AUTH.
   disableAuth: false
 
   ingress:
     enabled: false
-    # Optional dedicated hostname, e.g. integrations.openhands.dev. When unset,
-    # the parent ingress mounts rootPath under the main OpenHands host.
-    host: ""
-    tls:
-      enabled: true
-      secretName: integrations-hub-tls
-
-  # OpenHands identity provider used to validate session cookies / API keys.
+  # OpenHands identity provider used to validate session cookies.
   openhands:
     # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
     # ingress host when left empty -- see charts/openhands/charts/integrations-hub/templates/_env.yaml).
@@ -1284,9 +1273,6 @@ integrations-hub:
     # Stable-origin URL used as the OAuth callback proxy for preview
     # deployments. Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL.
     redirectProxyUrl: ""
-    # Optional callback target for preview deployments paired with
-    # redirectProxyUrl. Backend env var: AUTH_URL.
-    authUrl: ""
 
   # Credential encryption key configuration.
   # Backend env var: INTHUB_CREDENTIAL_ENCRYPTION_KEY.

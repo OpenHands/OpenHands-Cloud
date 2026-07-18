@@ -11,9 +11,6 @@ tests:
       branchSanitized: pr-252
       tls.enabled: false
       integrations-hub.enabled: true
-      integrations-hub.sameOrigin: true
-      integrations-hub.ingress.enabled: true
-      integrations-hub.ingress.host: integrations.example.com
     asserts:
       - hasDocuments:
           count: 1
@@ -32,27 +29,3 @@ tests:
       - equal:
           path: spec.rules[0].http.paths[1].backend.service.name
           value: integrations-hub
-
-  - it: keeps the dedicated hostname compatibility route at root
-    set:
-      enabled: true
-      ingress.enabled: true
-      ingress.host: app.example.com
-      tls.enabled: false
-      integrations-hub.enabled: true
-      integrations-hub.rootPath: ""
-      integrations-hub.ingress.enabled: true
-      integrations-hub.ingress.host: integrations.example.com
-      integrations-hub.ingress.tls.enabled: false
-    asserts:
-      - hasDocuments:
-          count: 1
-      - equal:
-          path: spec.rules[0].host
-          value: integrations.example.com
-      - lengthEqual:
-          path: spec.rules[0].http.paths
-          count: 1
-      - equal:
-          path: spec.rules[0].http.paths[0].path
-          value: /

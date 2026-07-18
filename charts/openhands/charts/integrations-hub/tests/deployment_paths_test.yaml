@@ -6,9 +6,7 @@ tests:
     set:
       rootPath: /integrations-hub
       apiRootPath: /api/integrations-hub
-      sameOrigin: true
       openhands.baseUrl: https://pr-252.staging.all-hands.dev
-      openhands.authUrl: https://integrations-pr-252.staging.all-hands.dev
       openhands.redirectProxyUrl: https://staging.all-hands.dev
       database.url: postgresql://example
       credentialEncryption.secretName: encryption

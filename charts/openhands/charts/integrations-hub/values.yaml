@@ -46,8 +46,7 @@ probes:
 
 # Service configuration
 service:
-  # Public base URL where this service is reachable
-  # Example: https://integrations.example.com or https://domain/integrations
+  # Public base URL where this service is reachable.
   baseUrl: ""
   # Port the container listens on (8000 for Python/FastAPI backend)
   port: 8000
@@ -57,14 +56,8 @@ service:
 rootPath: "/integrations-hub"
 
 # Public API prefix routed by the parent chart. The backend translates it to
-# its existing internal /api routes, which remain available to pod probes and
-# legacy dedicated-host API clients.
+# its existing internal /api routes, which remain available to pod probes.
 apiRootPath: "/api/integrations-hub"
-
-# Route the UI and API prefixes on the primary OpenHands hostname. When true,
-# a legacy dedicated ingress host is ignored and OAuth preview callbacks return
-# to openhands.baseUrl instead of openhands.authUrl.
-sameOrigin: false
 
 # Bypass authentication for local development only. When true the FastAPI
 # app rejects non-loopback requests and uses a synthetic dev@localhost
@@ -73,7 +66,7 @@ sameOrigin: false
 disableAuth: false
 
 # OpenHands identity provider configuration. The backend validates session
-# cookies / API keys against GET <baseUrl>/api/v1/users/me.
+# cookies against GET <baseUrl>/api/v1/users/me.
 openhands:
   # Base URL of the OpenHands instance. Falls back to the global ingress
   # host when left empty (see templates/_env.yaml).
@@ -87,11 +80,6 @@ openhands:
   # request host directly.
   # Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL
   redirectProxyUrl: ""
-  # Optional callback target for preview deployments; used when
-  # redirectProxyUrl is set and oauth_flow.py needs to forward back to
-  # the originating deployment.
-  # Backend env var: AUTH_URL
-  authUrl: ""
 
 # Credential encryption key for stored provider credentials.
 # Generate with: openssl rand -base64 32

@@ -1,28 +1,17 @@
 {{- /*
   Ingress entry for the integrations-hub service.
 
-  By default the hub is mounted at integrations-hub.rootPath under the main
-  OpenHands host. If integrations-hub.ingress.host is set, the same service is
-  served on that dedicated hostname instead, usually with rootPath="". Setting
-  sameOrigin=true takes precedence over legacy dedicated-host values. Host
-  values are rendered with tpl so environment-specific charts can choose their
-  own naming scheme without this shared chart knowing about it.
+  Integrations Hub follows the same deployment pattern as Agent Canvas and
+  Automations: Kubernetes owns fixed path routing on the primary OpenHands
+  host, and the main app only provides shared auth/navigation glue.
 */}}
 {{- $hub := index .Values "integrations-hub" -}}
 {{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
 {{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
 {{- $apiRootPath := $hub.apiRootPath | default "/api/integrations-hub" }}
-{{- $sameOrigin := $hub.sameOrigin | default false }}
-{{- $dedicated := and (not $sameOrigin) $hub.ingress.enabled $hub.ingress.host }}
 {{- $host := tpl .Values.ingress.host . }}
-{{- if $dedicated }}
-{{- $host = tpl $hub.ingress.host . }}
-{{- else if .Values.ingress.prefixWithBranch }}
+{{- if .Values.ingress.prefixWithBranch }}
 {{- $host = printf "%s.%s" .Values.branchSanitized $host }}
-{{- end }}
-{{- $ingressPath := $rootPath }}
-{{- if $dedicated }}
-{{- $ingressPath = "/" }}
 {{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -36,12 +25,7 @@ metadata:
     {{- end }}
 spec:
   ingressClassName: {{ default "traefik" .Values.ingress.class }}
-  {{- if and $dedicated $hub.ingress.tls.enabled }}
-  tls:
-  - hosts:
-    - {{ $host }}
-    secretName: {{ $hub.ingress.tls.secretName }}
-  {{- else if .Values.tls.enabled }}
+  {{- if .Values.tls.enabled }}
   tls:
   - hosts:
     - {{ $host }}
@@ -51,9 +35,6 @@ spec:
   - host: {{ $host }}
     http:
       paths:
-      {{- if not $dedicated }}
-      # Keep the API rule before the SPA rule so ingress controllers always
-      # select the more-specific backend path deterministically.
       - path: {{ $apiRootPath | quote }}
         pathType: Prefix
         backend:
@@ -61,8 +42,7 @@ spec:
             name: integrations-hub
             port:
               number: 80
-      {{- end }}
-      - path: {{ $ingressPath | quote }}
+      - path: {{ $rootPath | quote }}
         pathType: Prefix
         backend:
           service:

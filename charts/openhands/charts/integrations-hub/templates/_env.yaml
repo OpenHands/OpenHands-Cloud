@@ -53,7 +53,7 @@
   value: "postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)"
 {{- end }}
 
-# OpenHands identity provider used to validate session cookies / API keys.
+# OpenHands identity provider used to validate session cookies.
 {{- $openhandsBaseUrl := .Values.openhands.baseUrl }}
 {{- if and (not $openhandsBaseUrl) .Values.global }}
 {{- if .Values.global.ingress }}
@@ -126,13 +126,9 @@
 - name: INTHUB_OAUTH_REDIRECT_PROXY_URL
   value: {{ .Values.openhands.redirectProxyUrl | quote }}
 {{- end }}
-{{- $authUrl := .Values.openhands.authUrl }}
-{{- if .Values.sameOrigin }}
-{{- $authUrl = $openhandsBaseUrl }}
-{{- end }}
-{{- if $authUrl }}
+{{- if $openhandsBaseUrl }}
 - name: AUTH_URL
-  value: {{ $authUrl | quote }}
+  value: {{ $openhandsBaseUrl | quote }}
 {{- end }}
 
 {{- if .Values.datadog.enabled }}
