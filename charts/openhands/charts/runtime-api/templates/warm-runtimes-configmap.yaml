@@ -15,6 +15,16 @@
 {{- end }}
 {{- /* Default image for any entry that omits one: the global agent-server image. */ -}}
 {{- $agentServerImage := printf "%s:%s" .Values.global.agentServerImage.repository .Values.global.agentServerImage.tag }}
+{{- /*
+  The app injects global.agentServerEnv (LLM provider creds, proxy vars, CA
+  paths) into every per-session runtime request, and runtime-api claims warm
+  pods only on an exact env match — so those keys must be in the warm env too,
+  or the pool is never claimable and every conversation cold-starts.
+*/ -}}
+{{- $globalAgentEnv := dict }}
+{{- if .Values.global }}
+{{- $globalAgentEnv = (get .Values.global "agentServerEnv") | default dict }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -36,7 +46,7 @@ data:
           "count": {{ $config.count }},
           {{- end }}
           "command": {{ $config.command | toJson }},
-          "environment": {{ $config.environment | toJson }}
+          "environment": {{ mergeOverwrite (deepCopy ($config.environment | default dict)) (deepCopy $globalAgentEnv) | toJson }}
           {{- with $config.run_as_user }},
           "run_as_user": {{ $config.run_as_user }}
           {{- end }}

@@ -95,7 +95,7 @@ jobs:
         if: steps.check.outputs.should_publish == 'true'
         uses: azure/setup-helm@v3
         with:
-          version: 'latest'
+          version: 'v3.18.4'
 
       - name: Compute preview version
         if: steps.check.outputs.should_publish == 'true'
@@ -186,7 +186,7 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
-          version: 'latest'
+          version: 'v3.18.4'
 
       - name: Lint ${{ matrix.chart.name }} chart
         env:

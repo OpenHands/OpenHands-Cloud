@@ -21,6 +21,18 @@ spec:
       # global.agentServerImage.
       agentServerImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+      # Runtime (agent-server sandbox) env vars. The chart serialises this map
+      # into OH_AGENT_SERVER_ENV and mirrors it into every warm-runtime entry's
+      # env (runtime-api claims warm pods by exact env match, so a key here
+      # that is absent from the warm env would make the pool unclaimable).
+      # CA-bundle defaults live here once; the provider optionalValues blocks
+      # below recursively-merge their creds on top.
+      agentServerEnv:
+        SSL_CERT_FILE: /etc/openhands/ca-bundle/ca-bundle.crt
+        REQUESTS_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
+        GIT_SSL_CAINFO: /etc/openhands/ca-bundle/ca-bundle.crt
+        CURL_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
+        NODE_EXTRA_CA_CERTS: /etc/openhands/ca-bundle/ca-bundle.crt
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
@@ -51,8 +63,8 @@ spec:
       # unconditionally (not gated on analytics_enabled) so the Keycloak realm
       # redirect URIs stay on the analytics domain either way.
       LAMINAR_WEB_HOST: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
-      # OH_AGENT_SERVER_ENV is assembled by the chart from spec.values.agentServerEnv
-      # (see the map below), not hand-written here.
+      # OH_AGENT_SERVER_ENV is assembled by the chart from
+      # spec.values.global.agentServerEnv, not hand-written here.
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
       OPENHANDS_DEFAULT_ORG_AUTO_ADD_USERS: 'repl{{ ConfigOptionEquals "default_openhands_org_auto_add_users" "1" }}'
       # Hiding personal workspaces needs both forms: the structured flag drives
@@ -73,18 +85,6 @@ spec:
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
-
-    # Runtime (agent-server sandbox) env vars. The chart serialises this map into
-    # OH_AGENT_SERVER_ENV (see the openhands.env helper). These CA-bundle
-    # defaults apply to every provider; the provider optionalValues blocks below
-    # recursively-merge their own keys on top, so the bundle vars live here once
-    # instead of being repeated in each block.
-    agentServerEnv:
-      SSL_CERT_FILE: /etc/openhands/ca-bundle/ca-bundle.crt
-      REQUESTS_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
-      GIT_SSL_CAINFO: /etc/openhands/ca-bundle/ca-bundle.crt
-      CURL_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
-      NODE_EXTRA_CA_CERTS: /etc/openhands/ca-bundle/ca-bundle.crt
 
     ingress:
       enabled: true
@@ -727,14 +727,15 @@ spec:
           HTTPS_PROXY: '{{repl ConfigOption "https_proxy"}}'
           NO_PROXY: '{{repl $computedNoProxy}}'
           SSL_VERIFY: '{{repl if ConfigOptionEquals "ssl_verify" "1"}}True{{repl else}}False{{repl end}}'
-        # Runtime proxy vars, recursively-merged onto the base agentServerEnv
+        # Runtime proxy vars, recursively-merged onto the base global.agentServerEnv
         # (CA-bundle) map, so only the proxy-specific keys need to appear here.
-        agentServerEnv:
-          HTTP_PROXY: '{{repl ConfigOption "http_proxy"}}'
-          HTTPS_PROXY: '{{repl ConfigOption "https_proxy"}}'
-          NO_PROXY: '{{repl $computedNoProxy}}'
-          SSL_VERIFY: '{{repl ConfigOptionEquals "ssl_verify" "1" | ternary "True" "False"}}'
-          GIT_SSL_NO_VERIFY: '{{repl ConfigOptionEquals "ssl_verify" "1" | ternary "False" "True"}}'
+        global:
+          agentServerEnv:
+            HTTP_PROXY: '{{repl ConfigOption "http_proxy"}}'
+            HTTPS_PROXY: '{{repl ConfigOption "https_proxy"}}'
+            NO_PROXY: '{{repl $computedNoProxy}}'
+            SSL_VERIFY: '{{repl ConfigOptionEquals "ssl_verify" "1" | ternary "True" "False"}}'
+            GIT_SSL_NO_VERIFY: '{{repl ConfigOptionEquals "ssl_verify" "1" | ternary "False" "True"}}'
         keycloak:
           extraEnvVars:
             # Existing KC env vars (must be repeated because recursiveMerge replaces arrays)
@@ -771,12 +772,13 @@ spec:
           # textarea's first line from the legacy azure_deployment_name value,
           # so this stays byte-identical to today's azure-<deployment> default.
           LITELLM_DEFAULT_MODEL: 'litellm_proxy/azure-repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "azure_deployments" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
-        # Azure runtime creds, recursively-merged onto the base agentServerEnv
+        # Azure runtime creds, recursively-merged onto the base global.agentServerEnv
         # (CA-bundle) map.
-        agentServerEnv:
-          AZURE_API_KEY: '{{repl ConfigOption "azure_api_key"}}'
-          AZURE_API_BASE: '{{repl ConfigOption "azure_endpoint"}}'
-          AZURE_API_VERSION: '{{repl ConfigOption "azure_api_version"}}'
+        global:
+          agentServerEnv:
+            AZURE_API_KEY: '{{repl ConfigOption "azure_api_key"}}'
+            AZURE_API_BASE: '{{repl ConfigOption "azure_endpoint"}}'
+            AZURE_API_VERSION: '{{repl ConfigOption "azure_api_version"}}'
         litellm-helm:
           proxy_config:
             # One azure-<name> -> azure/<name> entry per non-empty line of the
@@ -819,10 +821,11 @@ spec:
           # user/org settings keep working.
           LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = splitList "/" $m | last }}repl{{ end }}repl{{ end }}repl{{ $first }}'
         # Custom-endpoint runtime creds, recursively-merged onto the base
-        # agentServerEnv (CA-bundle) map.
-        agentServerEnv:
-          CUSTOM_API_KEY: '{{repl ConfigOption "custom_api_key"}}'
-          CUSTOM_API_BASE: '{{repl ConfigOption "custom_base_url"}}'
+        # global.agentServerEnv (CA-bundle) map.
+        global:
+          agentServerEnv:
+            CUSTOM_API_KEY: '{{repl ConfigOption "custom_api_key"}}'
+            CUSTOM_API_BASE: '{{repl ConfigOption "custom_base_url"}}'
         litellm-helm:
           proxy_config:
             # One entry per non-empty line of the "Custom LLM Models" KOTS
@@ -849,16 +852,17 @@ spec:
           # falling back to gemini-2.5-flash — today's hardcoded default and
           # the textarea's prefilled line — if it resolves empty.
           LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "vertex_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "gemini-2.5-flash" }}'
-        # Vertex runtime creds, recursively-merged onto the base agentServerEnv
+        # Vertex runtime creds, recursively-merged onto the base global.agentServerEnv
         # (CA-bundle) map. ConfigOptionData returns the decoded (possibly
         # multi-line) service-account JSON; `default "{}" | mustFromJson |
         # mustToJson` minifies it to a single-line JSON string so it stays a
         # valid YAML scalar, and the chart then JSON-encodes that string as the
         # env value — matching the previous `... | toJson` handling.
-        agentServerEnv:
-          VERTEXAI_CREDENTIALS: '{{repl ConfigOptionData "google_vertex_credentials" | default "{}" | mustFromJson | mustToJson }}'
-          VERTEXAI_PROJECT: '{{repl ConfigOption "google_vertex_project_id"}}'
-          VERTEXAI_LOCATION: '{{repl ConfigOption "google_vertex_location"}}'
+        global:
+          agentServerEnv:
+            VERTEXAI_CREDENTIALS: '{{repl ConfigOptionData "google_vertex_credentials" | default "{}" | mustFromJson | mustToJson }}'
+            VERTEXAI_PROJECT: '{{repl ConfigOption "google_vertex_project_id"}}'
+            VERTEXAI_LOCATION: '{{repl ConfigOption "google_vertex_location"}}'
         litellm-helm:
           # volumes / volumeMounts are arrays — recursiveMerge replaces them,
           # so the ca-bundle entry from spec.values.litellm-helm above must
@@ -913,12 +917,13 @@ spec:
           # alias in the model_list below, so existing user/org settings keep
           # working.
           LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
-        # Bedrock runtime creds, recursively-merged onto the base agentServerEnv
+        # Bedrock runtime creds, recursively-merged onto the base global.agentServerEnv
         # (CA-bundle) map.
-        agentServerEnv:
-          AWS_ACCESS_KEY_ID: '{{repl ConfigOption "aws_access_key_id"}}'
-          AWS_SECRET_ACCESS_KEY: '{{repl ConfigOption "aws_secret_access_key"}}'
-          AWS_REGION_NAME: '{{repl ConfigOption "aws_region_name"}}'
+        global:
+          agentServerEnv:
+            AWS_ACCESS_KEY_ID: '{{repl ConfigOption "aws_access_key_id"}}'
+            AWS_SECRET_ACCESS_KEY: '{{repl ConfigOption "aws_secret_access_key"}}'
+            AWS_REGION_NAME: '{{repl ConfigOption "aws_region_name"}}'
         litellm-helm:
           proxy_config:
             # One <id> -> bedrock/<id> entry per non-empty line of the
@@ -1078,6 +1083,19 @@ spec:
           rabbitmq:
             persistence:
               storageClass: "openebs-hostpath"
+    # OEM User Creation Flow: register the privileged
+    # POST /api/organizations/provision-user endpoint so superadmins can
+    # provision users (and mint per-user API keys) into orgs they create.
+    # Gated behind an admin config toggle because it is only relevant to
+    # customers OEM-integrating OHE with their own user-management system.
+    # Off by default; when off the chart leaves userProvisioning.enabled at
+    # its own false default (the value is only ever set when truthy, since
+    # the chart treats any non-empty string as enabled).
+    - when: '{{repl ConfigOptionEquals "oem_user_creation_flow_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        userProvisioning:
+          enabled: true
     - when: '{{repl ConfigOptionEquals "plugin_directory_enabled" "1" }}'
       recursiveMerge: true
       values:

@@ -1193,3 +1193,12 @@ spec:
             regex:
               pattern: '^[1-9][0-9]*$'
               message: Must be a positive number of seconds
+        - name: oem_user_creation_flow_enabled
+          title: Enable OEM User Creation Flow
+          help_text: >-
+            Let superadmins create organizations and provision users into them,
+            obtaining an API key to act on each user's behalf. Typically only used
+            by customers who OEM OpenHands Enterprise and integrate it with their
+            own user management system.
+          type: bool
+          default: "0"
