@@ -1,0 +1,8 @@
+{{/*
+Render-time configuration guards. Emits no resources; each block fails the
+render with a clear message when values are invalid or conflicting, so the
+mistake is caught at install/upgrade instead of producing a broken object.
+*/}}
+{{- if and .Values.ingress.enabled (not .Values.ingress.host) -}}
+{{- fail "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false." -}}
+{{- end -}}
