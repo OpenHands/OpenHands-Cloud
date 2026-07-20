@@ -811,6 +811,7 @@ runtime-api:
     MEMORY_REQUEST: "3072Mi"
     MEMORY_LIMIT: "3072Mi"
     CPU_REQUEST: "500m"
+    # Default; KOTS overrides via the sandbox_ephemeral_storage_size ConfigOption.
     EPHEMERAL_STORAGE_SIZE: "10Gi"
 
 jira:

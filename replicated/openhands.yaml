@@ -336,6 +336,7 @@ spec:
         SET_HOST_USERS: "true"
         RUNTIME_DISABLE_SSL: "false"
         PERSISTENT_STORAGE_SIZE: 'repl{{ ConfigOption "sandbox_storage_size" }}'
+        EPHEMERAL_STORAGE_SIZE: 'repl{{ ConfigOption "sandbox_ephemeral_storage_size" }}'
         MEMORY_REQUEST: 'repl{{ ConfigOption "sandbox_memory_request" }}'
         MEMORY_LIMIT: 'repl{{ ConfigOption "sandbox_memory_limit" }}'
         CPU_REQUEST: 'repl{{ ConfigOption "sandbox_cpu_request" }}'

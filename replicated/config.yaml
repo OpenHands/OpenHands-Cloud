@@ -930,6 +930,15 @@ spec:
             regex:
               pattern: ^[1-9][0-9]*Mi$
               message: Must be a size in Mi (e.g., 10240Mi)
+        - name: sandbox_ephemeral_storage_size
+          title: Ephemeral Storage Size
+          help_text: Ephemeral storage reserved per sandbox. This is a scheduling reservation, so it caps how many sandboxes fit on a node.
+          type: text
+          default: "10Gi"
+          validation:
+            regex:
+              pattern: ^[1-9][0-9]*(Mi|Gi)$
+              message: Must be a size in Mi or Gi (e.g., 10Gi)
         - name: sandbox_memory_request
           title: Memory Request
           help_text: The minimum amount of memory to reserve for each sandbox.
