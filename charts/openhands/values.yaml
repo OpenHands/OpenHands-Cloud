@@ -819,6 +819,9 @@ runtime-api:
     CPU_REQUEST: "500m"
     # Default; KOTS overrides via the sandbox_ephemeral_storage_size ConfigOption.
     EPHEMERAL_STORAGE_SIZE: "10Gi"
+    # OHE clusters are fixed-size (no autoscaler), so an unschedulable sandbox
+    # never schedules — reap it instead of letting it pile up until dead_seconds.
+    RUNTIME_PENDING_REAP_ENABLED: "true"
 
 jira:
   enabled: false
