@@ -2,30 +2,83 @@ suite: integrations hub ingress
 templates:
   - ingress-integrations-hub.yaml
 tests:
-  - it: routes UI and API prefixes on the primary OpenHands host
+  - it: routes UI and API separately so root OAuth cannot rewrite API errors
     set:
       enabled: true
       ingress.enabled: true
       ingress.host: app.example.com
       ingress.prefixWithBranch: true
+      ingress.root.annotations:
+        traefik.ingress.kubernetes.io/router.middlewares: oauth-errors,oauth-auth
       branchSanitized: pr-252
       tls.enabled: false
       integrations-hub.enabled: true
     asserts:
       - hasDocuments:
-          count: 1
+          count: 2
       - equal:
           path: spec.rules[0].host
           value: pr-252.app.example.com
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-api-ingress
       - equal:
           path: spec.rules[0].http.paths[0].path
           value: /api/integrations-hub
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-api-ingress
       - equal:
           path: spec.rules[0].http.paths[0].backend.service.name
           value: integrations-hub
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-api-ingress
+      - notExists:
+          path: metadata.annotations
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-api-ingress
       - equal:
-          path: spec.rules[0].http.paths[1].path
+          path: spec.rules[0].host
+          value: pr-252.app.example.com
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-ingress
+      - equal:
+          path: spec.rules[0].http.paths[0].path
           value: /integrations-hub
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-ingress
       - equal:
-          path: spec.rules[0].http.paths[1].backend.service.name
+          path: spec.rules[0].http.paths[0].backend.service.name
           value: integrations-hub
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-ingress
+      - equal:
+          path: metadata.annotations
+          value:
+            traefik.ingress.kubernetes.io/router.middlewares: oauth-errors,oauth-auth
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-ingress
+
+  - it: supports API-specific non-OAuth annotations
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      ingress.integrationsHubApi.annotations:
+        nginx.ingress.kubernetes.io/proxy-body-size: 10m
+      tls.enabled: false
+      integrations-hub.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            nginx.ingress.kubernetes.io/proxy-body-size: 10m
+        documentSelector:
+          path: metadata.name
+          value: openhands-integrations-hub-api-ingress

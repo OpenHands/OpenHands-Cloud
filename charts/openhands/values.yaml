@@ -220,6 +220,12 @@ ingress:
       # Example: Add specific annotations for the root ingress
       # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
 
+  # Integrations Hub API routes authenticate API keys and session cookies in
+  # the application. Keep these annotations separate from root/browser OAuth
+  # middleware so API 401/403 JSON responses reach callers unchanged.
+  integrationsHubApi:
+    annotations: {}
+
   integrations:
     annotations: {}
       # Example: Add specific annotations for integrations ingress

@@ -1,9 +1,11 @@
 {{- /*
   Ingress entry for the integrations-hub service.
 
-  Integrations Hub follows the same deployment pattern as Agent Canvas and
-  Automations: Kubernetes owns fixed path routing on the primary OpenHands
-  host, and the main app only provides shared auth/navigation glue.
+  The browser UI inherits the root ingress annotations so installations can
+  protect it with an OAuth proxy. The API uses a separate Ingress because the
+  Integrations Hub authenticates API keys and session cookies itself. In
+  particular, an OAuth error middleware must not replace the API's intentional
+  401/403 JSON responses (including case-by-case approval requests).
 */}}
 {{- $hub := index .Values "integrations-hub" -}}
 {{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
@@ -13,6 +15,34 @@
 {{- if .Values.ingress.prefixWithBranch }}
 {{- $host = printf "%s.%s" .Values.branchSanitized $host }}
 {{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openhands-integrations-hub-api-ingress
+  {{- with .Values.ingress.integrationsHubApi.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ default "traefik" .Values.ingress.class }}
+  {{- if .Values.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $host }}
+    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+  {{- end }}
+  rules:
+  - host: {{ $host }}
+    http:
+      paths:
+      - path: {{ $apiRootPath | quote }}
+        pathType: Prefix
+        backend:
+          service:
+            name: integrations-hub
+            port:
+              number: 80
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -35,13 +65,6 @@ spec:
   - host: {{ $host }}
     http:
       paths:
-      - path: {{ $apiRootPath | quote }}
-        pathType: Prefix
-        backend:
-          service:
-            name: integrations-hub
-            port:
-              number: 80
       - path: {{ $rootPath | quote }}
         pathType: Prefix
         backend:
