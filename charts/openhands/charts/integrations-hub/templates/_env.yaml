@@ -17,6 +17,7 @@
     INTHUB_CREDENTIAL_ENCRYPTION_KEY
     INTHUB_STATIC_DIR                set in the Dockerfile to /app/out
     INTHUB_ROOT_PATH                 sub-path mount from .Values.rootPath
+    INTHUB_API_ROOT_PATH             public API prefix from .Values.apiRootPath
 
   In addition, backend/app/oauth_flow.py reads:
     INTHUB_OAUTH_REDIRECT_PROXY_URL  stable origin for OAuth callback proxy
@@ -52,7 +53,7 @@
   value: "postgresql://$(INTHUB_DB_USER):$(INTHUB_DB_PASS)@$(INTHUB_DB_HOST):$(INTHUB_DB_PORT)/$(INTHUB_DB_NAME)?sslmode=$(INTHUB_DB_SSL_MODE)"
 {{- end }}
 
-# OpenHands identity provider used to validate session cookies / API keys.
+# OpenHands identity provider used to validate session cookies.
 {{- $openhandsBaseUrl := .Values.openhands.baseUrl }}
 {{- if and (not $openhandsBaseUrl) .Values.global }}
 {{- if .Values.global.ingress }}
@@ -81,6 +82,8 @@
 # empty rootPath override mounts the service at cluster root.
 - name: INTHUB_ROOT_PATH
   value: {{ .Values.rootPath | default "" | quote }}
+- name: INTHUB_API_ROOT_PATH
+  value: {{ .Values.apiRootPath | default "" | quote }}
 
 # Credential encryption key (required: signs/encrypts stored OAuth tokens
 # and other provider secrets at rest).
@@ -123,9 +126,9 @@
 - name: INTHUB_OAUTH_REDIRECT_PROXY_URL
   value: {{ .Values.openhands.redirectProxyUrl | quote }}
 {{- end }}
-{{- if .Values.openhands.authUrl }}
+{{- if $openhandsBaseUrl }}
 - name: AUTH_URL
-  value: {{ .Values.openhands.authUrl | quote }}
+  value: {{ $openhandsBaseUrl | quote }}
 {{- end }}
 
 {{- if .Values.datadog.enabled }}

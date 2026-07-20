@@ -1,0 +1,31 @@
+suite: integrations hub ingress
+templates:
+  - ingress-integrations-hub.yaml
+tests:
+  - it: routes UI and API prefixes on the primary OpenHands host
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      ingress.prefixWithBranch: true
+      branchSanitized: pr-252
+      tls.enabled: false
+      integrations-hub.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.rules[0].host
+          value: pr-252.app.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /api/integrations-hub
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: integrations-hub
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /integrations-hub
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.name
+          value: integrations-hub
