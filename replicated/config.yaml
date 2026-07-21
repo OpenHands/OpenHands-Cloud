@@ -930,6 +930,15 @@ spec:
             regex:
               pattern: ^[1-9][0-9]*Mi$
               message: Must be a size in Mi (e.g., 10240Mi)
+        - name: sandbox_ephemeral_storage_size
+          title: Ephemeral Storage Size
+          help_text: Ephemeral storage reserved per sandbox. This is a scheduling reservation, so it caps how many sandboxes fit on a node.
+          type: text
+          default: "10Gi"
+          validation:
+            regex:
+              pattern: ^[1-9][0-9]*(Mi|Gi)$
+              message: Must be a size in Mi or Gi (e.g., 10Gi)
         - name: sandbox_memory_request
           title: Memory Request
           help_text: The minimum amount of memory to reserve for each sandbox.
@@ -1193,3 +1202,12 @@ spec:
             regex:
               pattern: '^[1-9][0-9]*$'
               message: Must be a positive number of seconds
+        - name: oem_user_creation_flow_enabled
+          title: Enable OEM User Creation Flow
+          help_text: >-
+            Let superadmins create organizations and provision users into them,
+            obtaining an API key to act on each user's behalf. Typically only used
+            by customers who OEM OpenHands Enterprise and integrate it with their
+            own user management system.
+          type: bool
+          default: "0"
