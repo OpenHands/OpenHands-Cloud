@@ -1,0 +1,29 @@
+suite: openhands values schema validation
+templates:
+  - service.yaml
+tests:
+  - it: rejects a non-integer uvicorn.workers
+    set:
+      uvicorn.workers: "four"
+    asserts:
+      - failedTemplate:
+          errorPattern: "uvicorn/workers.*want integer"
+  - it: rejects autoscaling.minReplicas below the minimum
+    set:
+      autoscaling.minReplicas: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "autoscaling/minReplicas"
+  - it: rejects a non-boolean ingress.enabled
+    set:
+      ingress.enabled: "yes"
+    asserts:
+      - failedTemplate:
+          errorPattern: "ingress/enabled.*want boolean"
+  - it: accepts valid values
+    set:
+      uvicorn.workers: 4
+      autoscaling.minReplicas: 2
+      ingress.enabled: true
+    asserts:
+      - notFailedTemplate: {}
