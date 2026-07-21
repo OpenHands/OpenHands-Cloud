@@ -819,6 +819,11 @@ runtime-api:
     CPU_REQUEST: "500m"
     # Default; KOTS overrides via the sandbox_ephemeral_storage_size ConfigOption.
     EPHEMERAL_STORAGE_SIZE: "10Gi"
+    # Off here so it never reaches SaaS (this umbrella chart is shared, and SaaS
+    # is autoscaled where an unschedulable pod is what triggers a node). The
+    # Replicated installer turns it on in replicated/openhands.yaml, since OHE
+    # clusters are fixed-size.
+    RUNTIME_PENDING_REAP_ENABLED: "false"
 
 jira:
   enabled: false
