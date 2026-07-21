@@ -27,6 +27,13 @@ serviceAccount:
 runtimeInSameCluster: false
 defaultAPIKeySecretName: default-api-key
 
+# Namespace runtime-api creates sandbox pods (and their Service, Ingress, PVC)
+# in, surfaced to the pod as K8S_NAMESPACE. This is NOT where runtime-api
+# itself runs. Empty defaults to the release namespace. Point it at a dedicated
+# namespace to isolate untrusted sandbox workloads from the control plane.
+# Ignored if env.K8S_NAMESPACE is set.
+sandbox_namespace: ""
+
 # Mount a trust-manager / user-supplied CA bundle into the runtime-api pod and
 # point the Python TLS stack (httpx + requests) at it. Required when the
 # runtime ingress serves a cert signed by a CA that isn't in the OS trust
