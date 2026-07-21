@@ -30,3 +30,18 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: skips the ingress guard when the release is disabled
+    set:
+      enabled: false
+      ingress.enabled: true
+      ingress.host: ""
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips the postgres guard when the release is disabled
+    set:
+      enabled: false
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
