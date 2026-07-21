@@ -1,0 +1,140 @@
+# Laptop-scale resource profile: keeps the full stack schedulable on a
+# single-node KinD cluster (~16GB VM).
+enabled: true
+
+autoscaling:
+  enabled: false
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+uvicorn:
+  workers: 1
+
+integrationEvents:
+  deployment:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  uvicorn:
+    workers: 1
+
+mcpEvents:
+  deployment:
+    replicas: 1
+  uvicorn:
+    workers: 1
+
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: true
+  migrate: true
+
+postgresql:
+  enabled: true
+  auth:
+    database: openhands
+  primary:
+    networkPolicy:
+      enabled: false
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+redis:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  master:
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+minio:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+keycloak:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  resourcesPreset: none
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+litellm-helm:
+  enabled: true
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+runtime-api:
+  enabled: true
+  replicaCount: 1
+  imagePullSecrets: []
+  autoscaling:
+    enabled: false
+  warmRuntimes:
+    enabled: false
+  kvm:
+    enabled: false
+  cleanup:
+    enabled: false
+  dbCleanup:
+    enabled: false
+  testKeysCleanup:
+    enabled: false
+  podStatusLogger:
+    enabled: false
+  databaseMigrations:
+    waitForDatabase: true
+    createDatabases: true
+    migrate: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+maintenanceTasks:
+  enabled: false
