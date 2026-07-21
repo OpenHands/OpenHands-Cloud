@@ -735,6 +735,11 @@ runtime-api:
   enabled: true
   replicaCount: 1
   runtimeInSameCluster: true
+  # Namespace runtime-api creates sandbox pods in (surfaced as K8S_NAMESPACE).
+  # NOT where runtime-api itself runs. Empty defaults to the release namespace;
+  # set a dedicated namespace to isolate untrusted sandbox workloads from the
+  # control plane.
+  sandbox_namespace: ""
   imagePullSecrets: []
   securityContext:
     runAsUser: 1000
@@ -809,7 +814,6 @@ runtime-api:
     PGSSLMODE: "prefer"
     DB_USER: postgres
     DB_NAME: runtime_api_db
-    K8S_NAMESPACE: "openhands"
     RUNTIME_CLASS: ""
     # REQUIRED: Update to match the host set in the ingress section above
     # RUNTIME_BASE_URL: "runtime.example.com"

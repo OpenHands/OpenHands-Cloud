@@ -280,7 +280,11 @@
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
-  value: http://{{ .Release.Name }}-litellm:4000
+  # FQDN (not the bare Service name) so it resolves from any namespace. This URL
+  # is persisted into each user's LLM profile at first use, so it must be
+  # resolvable from sandboxes that run in a separate namespace. No-op for
+  # same-namespace installs.
+  value: http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}.svc.cluster.local:4000
 {{- else }}
 - name: LITE_LLM_API_URL
   value: {{ .Values.litellm.url }}
