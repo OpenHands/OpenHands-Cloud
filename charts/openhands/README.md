@@ -454,29 +454,31 @@ To use an external PostgreSQL database instead of deploying one with the chart:
 
 ### Bring Your Own S3-Compatible Storage
 
-To use an external S3-compatible storage instead of MinIO:
+To use an external S3 (or S3-compatible) store instead of the bundled MinIO,
+disable the ephemeral filestore and configure the connection:
 
-1. Disable the ephemeral filestore:
+```yaml
+filestore:
+  ephemeral: false          # stops deploying the in-cluster MinIO
+  type: s3
+  bucket: your-bucket-name
+  region: your-s3-region
+  # endpoint: https://your-s3-endpoint   # only for S3-compatible stores (MinIO/R2/…); omit for AWS S3
+  # secure: false                        # only for a plain-HTTP endpoint
+  existingSecret: s3-credentials         # omit to use IRSA / Pod Identity instead
+```
 
-   ```yaml
-   filestore:
-     ephemeral: false
-   ```
+Create the credentials secret (keys match the AWS SDK env var names):
 
-2. Configure the S3 connection:
+```bash
+kubectl create secret generic s3-credentials -n openhands \
+  --from-literal=AWS_ACCESS_KEY_ID=<your-access-key-id> \
+  --from-literal=AWS_SECRET_ACCESS_KEY=<your-secret-access-key>
+```
 
-   ```yaml
-   filestore:
-     ephemeral: false
-     bucket: your-bucket-name
-     endpoint: https://your-s3-endpoint
-     region: your-s3-region
-     existingSecret: s3-credentials
-   # Make sure the secret exists with the correct credentials
-   # kubectl create secret generic s3-credentials \
-   #   --from-literal=access-key=<your-access-key> \
-   #   --from-literal=secret-key=<your-secret-key>
-   ```
+For AWS S3 on EKS you can skip the secret entirely and use a pod-level AWS
+identity: omit `existingSecret` and grant the app ServiceAccount an IAM role
+(via IRSA or EKS Pod Identity) with access to the bucket. Keep `region` set.
 
 ### Bring Your Own Redis
 
