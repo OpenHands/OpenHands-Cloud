@@ -80,6 +80,21 @@
       "properties": {
         "workers": { "type": "integer", "minimum": 1 }
       }
+    },
+    "filestore": {
+      "type": "object",
+      "properties": {
+        "ephemeral": { "type": "boolean" },
+        "bucket": { "type": "string" },
+        "type": { "type": "string" },
+        "provider": { "type": "string" },
+        "region": { "type": "string" },
+        "endpoint": { "type": "string" },
+        "secure": { "type": "boolean" },
+        "existingSecret": { "type": "string" },
+        "accessKeyIdKey": { "type": "string" },
+        "secretAccessKeyKey": { "type": "string" }
+      }
     }
   }
 }

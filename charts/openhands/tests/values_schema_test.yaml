@@ -20,10 +20,36 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "ingress/enabled.*want boolean"
+  - it: rejects a non-boolean filestore.secure
+    set:
+      filestore.secure: "yes"
+    asserts:
+      - failedTemplate:
+          errorPattern: "filestore/secure.*want boolean"
+  - it: rejects a non-boolean filestore.ephemeral
+    set:
+      filestore.ephemeral: "nope"
+    asserts:
+      - failedTemplate:
+          errorPattern: "filestore/ephemeral.*want boolean"
+  - it: rejects a non-string filestore.region
+    set:
+      filestore.region: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "filestore/region.*want string"
   - it: accepts valid values
     set:
       uvicorn.workers: 4
       autoscaling.minReplicas: 2
       ingress.enabled: true
+      filestore.type: s3
+      filestore.bucket: prod-sessions
+      filestore.region: us-west-2
+      filestore.endpoint: https://minio.example.com
+      filestore.secure: false
+      filestore.existingSecret: s3-creds
+      filestore.accessKeyIdKey: access-key
+      filestore.secretAccessKeyKey: secret-key
     asserts:
       - notFailedTemplate: {}

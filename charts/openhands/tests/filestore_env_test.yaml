@@ -1,0 +1,186 @@
+suite: filestore env wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: wires external S3 credentials from an existing secret (real AWS)
+    set:
+      enabled: true
+      filestore.type: s3
+      filestore.bucket: prod-sessions
+      filestore.region: us-west-2
+      filestore.existingSecret: s3-creds
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: s3
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_BUCKET
+            value: prod-sessions
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_REGION
+            value: us-west-2
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_SECURE
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: AWS_ACCESS_KEY_ID
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: AWS_SECRET_ACCESS_KEY
+      # No endpoint for real AWS so boto3 targets the regional endpoint.
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="AWS_S3_ENDPOINT")]
+
+  - it: reads credentials from overridden secret keys
+    set:
+      enabled: true
+      filestore.type: s3
+      filestore.bucket: prod-sessions
+      filestore.region: us-east-1
+      filestore.existingSecret: s3-creds
+      filestore.accessKeyIdKey: access-key
+      filestore.secretAccessKeyKey: secret-key
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: access-key
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: secret-key
+
+  - it: uses ambient identity and a custom endpoint when no secret is set
+    set:
+      enabled: true
+      filestore.type: s3
+      filestore.bucket: bk
+      filestore.endpoint: https://minio.example.com
+      filestore.secure: false
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: s3
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: https://minio.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_SECURE
+            value: "false"
+      # Keyless: the app relies on IRSA / Pod Identity / instance profile, so no
+      # AWS credential env is emitted.
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="AWS_ACCESS_KEY_ID")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="AWS_SECRET_ACCESS_KEY")]
+
+  - it: auto-engages the external S3 path from a marker field without type=s3
+    set:
+      enabled: true
+      filestore.bucket: bk
+      filestore.region: eu-central-1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: s3
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_REGION
+            value: eu-central-1
+
+  - it: leaves the ephemeral MinIO wiring unchanged
+    set:
+      enabled: true
+      filestore.ephemeral: true
+      filestore.bucket: openhands-sessions
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: s3
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_SECURE
+            value: "false"
+
+  - it: passes a non-S3 store type straight through to FILE_STORE
+    set:
+      enabled: true
+      filestore.type: google_cloud
+      filestore.bucket: bk
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: google_cloud
+      # The external-S3 branch stays dormant, so none of its AWS_S3_* env leaks.
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="AWS_S3_BUCKET")]
