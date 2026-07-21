@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: cloud-1.46.2
+  tag: cloud-1.47.1
 
 autoscaling:
   enabled: false
@@ -98,8 +98,34 @@ integrations:
   resolverLabel: "openhands"
 
 filestore:
+  # ephemeral: true deploys the bundled in-cluster MinIO (a conditional
+  # dependency) and points the app at it — handy for POC/feature envs. NOTE the
+  # bundled MinIO runs WITHOUT persistence, so its data is lost when the pod is
+  # rescheduled. For anything durable set ephemeral: false and use an external
+  # store (S3 or GCS) below.
   ephemeral: false
+  # Bucket name (S3/GCS) or MinIO bucket for conversation/session file storage.
   bucket: openhands-sessions
+  # Store backend when ephemeral: false. "s3" (AWS S3 or any S3-compatible store)
+  # or "google_cloud" / "gcs" (GCS via Workload Identity). Empty keeps the legacy
+  # behavior (FILE_STORE set to this raw value). The external-S3 path below also
+  # auto-engages if any of region/endpoint/existingSecret is set.
+  type: ""
+  # --- External S3 (used when type: s3, or any field below is set) ---
+  # AWS region of the bucket. Required for real AWS S3 (boto3 needs it to sign).
+  region: ""
+  # Custom endpoint for S3-compatible stores (MinIO/R2/GCS-interop/…). Leave
+  # empty for real AWS S3 so boto3 uses the regional endpoint.
+  endpoint: ""
+  # Use TLS. Defaults to true when unset; set false only for a plain-HTTP
+  # S3-compatible endpoint.
+  secure: true
+  # Name of an existing Secret holding AWS credentials. Omit to use the pod's
+  # ambient AWS identity (IRSA / Pod Identity / instance profile) with no keys.
+  existingSecret: ""
+  # Keys within existingSecret (defaults match the AWS SDK env var names).
+  accessKeyIdKey: AWS_ACCESS_KEY_ID
+  secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
 
 # Workspace archiving (app-server, explicit-delete path): before a still-running
 # sandbox is deleted, copy its workspace to object storage so the agent's work
@@ -735,6 +761,11 @@ runtime-api:
   enabled: true
   replicaCount: 1
   runtimeInSameCluster: true
+  # Namespace runtime-api creates sandbox pods in (surfaced as K8S_NAMESPACE).
+  # NOT where runtime-api itself runs. Empty defaults to the release namespace;
+  # set a dedicated namespace to isolate untrusted sandbox workloads from the
+  # control plane.
+  sandbox_namespace: ""
   imagePullSecrets: []
   securityContext:
     runAsUser: 1000
@@ -809,7 +840,6 @@ runtime-api:
     PGSSLMODE: "prefer"
     DB_USER: postgres
     DB_NAME: runtime_api_db
-    K8S_NAMESPACE: "openhands"
     RUNTIME_CLASS: ""
     # REQUIRED: Update to match the host set in the ingress section above
     # RUNTIME_BASE_URL: "runtime.example.com"
@@ -819,6 +849,11 @@ runtime-api:
     CPU_REQUEST: "500m"
     # Default; KOTS overrides via the sandbox_ephemeral_storage_size ConfigOption.
     EPHEMERAL_STORAGE_SIZE: "10Gi"
+    # Off here so it never reaches SaaS (this umbrella chart is shared, and SaaS
+    # is autoscaled where an unschedulable pod is what triggers a node). The
+    # Replicated installer turns it on in replicated/openhands.yaml, since OHE
+    # clusters are fixed-size.
+    RUNTIME_PENDING_REAP_ENABLED: "false"
 
 jira:
   enabled: false

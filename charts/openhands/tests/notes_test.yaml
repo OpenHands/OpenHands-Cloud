@@ -1,0 +1,27 @@
+suite: openhands post-install notes
+templates:
+  - NOTES.txt
+tests:
+  - it: shows the access URL when ingress has a host
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+    asserts:
+      - matchRegexRaw:
+          pattern: "http://app.example.com"
+  - it: shows port-forward instructions when ingress is disabled
+    set:
+      enabled: true
+      ingress.enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "kubectl port-forward"
+      - matchRegexRaw:
+          pattern: "svc/openhands-service 3000:3000"
+  - it: reports the app was not deployed when disabled
+    set:
+      enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "was not deployed by this release"

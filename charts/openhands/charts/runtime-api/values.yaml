@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.5.2
+  tag: 0.5.3
   pullPolicy: Always
 
 nameOverride: ""
@@ -26,6 +26,13 @@ serviceAccount:
 
 runtimeInSameCluster: false
 defaultAPIKeySecretName: default-api-key
+
+# Namespace runtime-api creates sandbox pods (and their Service, Ingress, PVC)
+# in, surfaced to the pod as K8S_NAMESPACE. This is NOT where runtime-api
+# itself runs. Empty defaults to the release namespace. Point it at a dedicated
+# namespace to isolate untrusted sandbox workloads from the control plane.
+# Ignored if env.K8S_NAMESPACE is set.
+sandbox_namespace: ""
 
 # Mount a trust-manager / user-supplied CA bundle into the runtime-api pod and
 # point the Python TLS stack (httpx + requests) at it. Required when the

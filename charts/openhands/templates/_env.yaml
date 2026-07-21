@@ -60,6 +60,42 @@
   value: {{ .Values.filestore.bucket }}
 - name: AWS_S3_SECURE
   value: 'false'
+{{- else if or (eq (.Values.filestore.type | default "") "s3") .Values.filestore.existingSecret .Values.filestore.region .Values.filestore.endpoint }}
+# External S3 (or S3-compatible) object store — the durable alternative to the
+# bundled MinIO. Engaged by filestore.type=s3 or any external marker
+# (existingSecret / region / endpoint). The app's S3FileStore uses boto3, so
+# credentials come from filestore.existingSecret when set, otherwise from the
+# pod's ambient AWS identity (IRSA / Pod Identity / instance profile). Unlike the
+# ephemeral branch, AWS_S3_ENDPOINT is left unset for real AWS so boto3 targets
+# the regional endpoint instead of being pinned to MinIO.
+- name: FILE_STORE
+  value: s3
+- name: AWS_S3_BUCKET
+  value: {{ .Values.filestore.bucket | quote }}
+{{- if .Values.filestore.region }}
+- name: AWS_REGION
+  value: {{ .Values.filestore.region | quote }}
+{{- end }}
+{{- if .Values.filestore.endpoint }}
+- name: AWS_S3_ENDPOINT
+  value: {{ .Values.filestore.endpoint | quote }}
+{{- end }}
+{{- $secure := .Values.filestore.secure }}
+{{- if kindIs "invalid" $secure }}{{- $secure = true }}{{- end }}
+- name: AWS_S3_SECURE
+  value: {{ $secure | quote }}
+{{- if .Values.filestore.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- end }}
 {{- else }}
 - name: FILE_STORE
   value: {{ .Values.filestore.type }}
@@ -280,7 +316,11 @@
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
-  value: http://{{ .Release.Name }}-litellm:4000
+  # FQDN (not the bare Service name) so it resolves from any namespace. This URL
+  # is persisted into each user's LLM profile at first use, so it must be
+  # resolvable from sandboxes that run in a separate namespace. No-op for
+  # same-namespace installs.
+  value: http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}.svc.cluster.local:4000
 {{- else }}
 - name: LITE_LLM_API_URL
   value: {{ .Values.litellm.url }}
