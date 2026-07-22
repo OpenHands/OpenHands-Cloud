@@ -102,7 +102,7 @@ auth:
 # Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted)
 admin:
   # Comma-separated list of admin email addresses.
-  emails: "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev"
+  emails: "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev,lila.garcia@openhands.dev"
 
 # PostgreSQL database configuration
 # The backend expects a single URL via INTHUB_POSTGRES_URL. The chart

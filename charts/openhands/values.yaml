@@ -1290,7 +1290,7 @@ integrations-hub:
   # Admin allowlist for /api/admin/* routes.
   # Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted).
   admin:
-    emails: "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev,lila.garcia@openhands.dev"
+    emails: ""
 
   # PostgreSQL database configuration. The backend reads a single
   # connection URL via INTHUB_POSTGRES_URL; the chart builds it from the
