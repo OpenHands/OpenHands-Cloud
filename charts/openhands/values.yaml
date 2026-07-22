@@ -1290,7 +1290,7 @@ integrations-hub:
   # Admin allowlist for /api/admin/* routes.
   # Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted).
   admin:
-    emails: ""
+    emails: "chuck@openhands.dev,chuck@all-hands.dev,graham@openhands.dev,graham@all-hands.dev,lila.garcia@openhands.dev"
 
   # PostgreSQL database configuration. The backend reads a single
   # connection URL via INTHUB_POSTGRES_URL; the chart builds it from the
@@ -1321,8 +1321,14 @@ integrations-hub:
     secretName: "integrations-hub-cron-secret"
     secretKey: "cron-secret"
 
-  # Env vars passed directly to the container
-  env: {}
+  # Env vars passed directly to the container.
+  # FORWARDED_ALLOW_IPS lets uvicorn trust the ingress' X-Forwarded-* headers
+  # so request.url.scheme resolves to https behind Traefik (TLS terminates at
+  # the ingress). Without this, uvicorn defaults to trusting only 127.0.0.1,
+  # the internal hop is seen as http, and OAuth redirect_uri values are built
+  # with an http scheme -- causing provider redirect_uri mismatches.
+  env:
+    FORWARDED_ALLOW_IPS: "*"
 
   # PostgreSQL subchart - disabled when using parent's PostgreSQL
   postgresql:
