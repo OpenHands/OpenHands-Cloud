@@ -9,8 +9,11 @@
 
 image:
   repository: ghcr.io/openhands/agent-canvas
-  # Tag is supplied at deploy time via the OpenHands deploy workflow.
-  tag: ""
+  # Default tag so the chart is deployable on its own (helm/replicated
+  # installs). The OpenHands Cloud deploy workflow overrides this at deploy
+  # time. agent-canvas only publishes sha-/pr- tags, so this tracks a known
+  # good main build rather than a semver release.
+  tag: "sha-ef3b28a"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

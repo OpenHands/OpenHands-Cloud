@@ -1114,6 +1114,31 @@ spec:
               repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/plugin-directory-server'
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
+    - when: '{{repl ConfigOptionEquals "agent_canvas_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        # Agent Canvas: frontend-only UI mounted at /canvas on the primary
+        # application host, alongside the root app ingress (Traefik routes the
+        # longer /canvas prefix here and / to the app). lockToCloud points the
+        # UI at this same instance's OpenHands backend so the in-app "Manage
+        # Backends" flow is skipped.
+        agent-canvas:
+          enabled: true
+          image:
+            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-canvas'
+          imagePullSecrets:
+            - name: '{{repl ImagePullSecretName }}'
+          ingress:
+            enabled: true
+            host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
+            className: traefik
+            path: /canvas
+            tls:
+              enabled: true
+              secretName: openhands-tls
+          staticServer:
+            basePath: /canvas
+            lockToCloud: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "app_hostname"}}{{repl end}}'
 
   builder:
     keycloak:
@@ -1129,4 +1154,6 @@ spec:
     runtime-api:
       enabled: true
     automation:
+      enabled: true
+    agent-canvas:
       enabled: true
