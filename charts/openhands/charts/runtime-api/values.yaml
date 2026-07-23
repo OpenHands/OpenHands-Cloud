@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.6.0
+  tag: 0.7.0
   pullPolicy: Always
 
 nameOverride: ""
@@ -112,14 +112,12 @@ jobSettings:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 2
 
-nodeSelector: {}
-
 securityContext: {}
 
 # KVM device plugin (OSS SANDBOX_KVM_ENABLED parity). When enabled, runs a
 # smarter-device-manager DaemonSet that advertises /dev/kvm as an extended
-# resource (kvm.resourceName) so sandbox pods can use hardware-accelerated QEMU
-# WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
+# resource (smarter-devices/kvm) so sandbox pods can use hardware-accelerated
+# QEMU WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
 # nested-virt-capable VM). The plugin DaemonSet itself runs privileged, like
 # other device plugins; the sandbox pods do not.
 kvm:
@@ -128,7 +126,6 @@ kvm:
     repository: ghcr.io/smarter-project/smarter-device-manager
     tag: v1.20.11
     pullPolicy: IfNotPresent
-  resourceName: smarter-devices/kvm
   maxDevices: 20
   # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
   # perms still block the non-root sandbox UID from opening it. An init container
@@ -149,30 +146,16 @@ kvm:
   nodeSelector: {}
   tolerations: []
 
-tolerations: []
-
-affinity: {}
-
 postgresql:
   enabled: false
-  image:
-    repository: bitnamilegacy/postgresql
-  isFeatureDeploy: false
   primary:
-    persistence:
-      enabled: false
     service:
       ports:
         postgresql: 5432
   auth:
     username: postgres
-    password: "" # This should be set externally for security reasons
     existingSecret: postgres-password
     database: runtime_api_db
-
-externalDatabase:
-  enabled: false
-  existingSecret: postgres-password
 
 # External database configuration (used when postgresql.enabled=false)
 database:
@@ -186,17 +169,6 @@ database:
   maxOverflow:
     api: 10 # Max overflow for API deployment (default)
     cronjobs: 5 # Max overflow for cronjobs (default)
-
-helm-release-pruner:
-  enabled: false
-  job:
-    schedule: "0 */4 * * *"
-    dryRun: False
-  pruneProfiles:
-    - olderThan: "1 days ago"
-      helmReleaseFilter: "^runtime-api-.*$"
-      namespaceFilter: "^runtime-api-.*$"
-      maxReleasesToKeep: 10
 
 certificate:
   enabled: false
