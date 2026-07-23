@@ -128,7 +128,8 @@ filestore:
 # 2. Subchart of openhands: Set minio.enabled=false and configure minio.external
 #    to use the parent chart's minio instance
 minio:
-  # Deploy minio as a subchart (for standalone deployments)
+  # When true, point the app at the release's minio service
+  # (http://<release>-minio:9000) using the first svcaccts credentials below.
   # Set to false when deployed as subchart of openhands (uses parent's minio)
   enabled: false
 
@@ -139,28 +140,11 @@ minio:
     accessKey: "default"
     secretKey: "notasecret"
 
-  # Minio subchart configuration (used when enabled=true)
-  # These values are passed to the minio subchart
-  replicas: 1
-  mode: standalone
-  persistence:
-    enabled: false
-  buckets:
-    - name: automation-data
-      policy: none
-      purge: true
+  # Credentials used when enabled=true (only the first entry is read)
   svcaccts:
     - accessKey: "automationkey"
       secretKey: "automationsecret"
       user: root
-  rootUser: "root"
-  resources:
-    requests:
-      memory: 256Mi
-      cpu: 50m
-    limits:
-      memory: 512Mi
-      cpu: 100m
 
 # Service key from K8s secret (for staging/production)
 # Used by OpenHands SaaS to authenticate requests to the automation service
@@ -181,24 +165,11 @@ datadog:
 # Env vars passed directly to the container
 env: {}
 
-# PostgreSQL subchart configuration (for ephemeral/feature environments)
-# When enabled, deploys an in-cluster PostgreSQL instance
-# Service name will be "{release-name}-postgresql", secret name also "{release-name}-postgresql"
+# When true, an init container waits for an in-cluster PostgreSQL at
+# database.host before starting (ephemeral/feature environments that deploy
+# postgres alongside this chart). This chart does not deploy postgres itself.
 postgresql:
   enabled: false
-  image:
-    repository: bitnamilegacy/postgresql
-  auth:
-    username: postgres
-    database: automations
-  primary:
-    persistence:
-      enabled: false
-    initdb:
-      scriptsConfigMap: ""
-  service:
-    ports:
-      postgresql: 5432
 
 global:
   security:

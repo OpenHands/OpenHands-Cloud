@@ -822,9 +822,6 @@ runtime-api:
     auth:
       username: postgres
       existingSecret: postgres-password
-  externalDatabase:
-    enabled: false
-    existingSecret: postgres-password
   ingress:
     enabled: false
     # REQUIRED: Update to a hostname in a DNS domain you own
@@ -1091,7 +1088,9 @@ automation:
   # Env vars passed directly to the container (overrides defaults)
   env: {}
   
-  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  # When true, an init container waits for an in-cluster PostgreSQL at
+  # database.host before starting. Disabled here because the service uses
+  # the parent chart's PostgreSQL (no postgres is deployed by this subchart).
   postgresql:
     enabled: false
 
@@ -1126,10 +1125,6 @@ global:
   # runtime-api claims warm pods by exact env match, so a key present here but
   # absent from the warm env would make the pool unclaimable.
   agentServerEnv: {}
-
-vertexAI:
-  enabled: false
-  project: ""
 
 # Trust-manager Bundle that fans a CA bundle (public CAs + an optional
 # operator-supplied CA certificate) out as a ConfigMap into the release
@@ -1188,7 +1183,6 @@ crdCheck:
       memory: 64Mi
     limits:
       memory: 128Mi
-  location: ""
 
 # Integrations Hub - Agent context layer with managed connectors and MCP integrations
 integrations-hub:
@@ -1242,7 +1236,6 @@ integrations-hub:
 
   # Service configuration
   service:
-    baseUrl: ""
     # Port the FastAPI container listens on (matches the integrations-hub
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000
@@ -1305,7 +1298,6 @@ integrations-hub:
     name: "integrations_hub"
     secretName: "integrations-hub-db-secret"
     secretKey: "db-password"
-    existingSecret: false
     createDatabaseUser: false
     superuserSecretName: "postgres-password"
     superuserSecretKey: "password"
@@ -1324,7 +1316,9 @@ integrations-hub:
   # Env vars passed directly to the container
   env: {}
 
-  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  # When true, an init container waits for an in-cluster PostgreSQL at
+  # database.host before starting. Disabled here because the service uses
+  # the parent chart's PostgreSQL (no postgres is deployed by this subchart).
   postgresql:
     enabled: false
 
