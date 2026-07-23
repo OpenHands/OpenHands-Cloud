@@ -1151,7 +1151,7 @@ spec:
           title: Enable Agent Canvas
           help_text: Deploy the Agent Canvas UI, served at /canvas on your application hostname. The UI is locked to this instance's OpenHands backend.
           type: bool
-          default: "1"
+          default: "0"
 
     - name: advanced_options
       title: Advanced Options
