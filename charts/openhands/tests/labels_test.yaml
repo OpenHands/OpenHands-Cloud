@@ -1,18 +1,18 @@
 suite: recommended labels
-# deployment.yaml can't be rendered in isolation by helm-unittest: it
-# unconditionally `include`s litellm-config-script.yaml for a checksum annotation,
-# and cross-template includes of sibling resources don't resolve here. The main
-# server Deployment shares the openhands.labels / selectorLabels helpers with
-# mcp-events-deployment.yaml, which renders standalone, so it stands in for the
-# Deployment label assertions. The server component is covered via the Service.
+# deployment.yaml checksums litellm-config-script.yaml into a pod annotation via a
+# cross-template include, so that template is listed here to make the include
+# resolvable. Each test sets `template:` to scope its assertions to one template.
 templates:
-  - mcp-events-deployment.yaml
+  - deployment.yaml
+  - litellm-config-script.yaml
   - service.yaml
 tests:
-  - it: a main-chart Deployment carries the recommended labels and keeps its app selector
-    template: mcp-events-deployment.yaml
+  - it: the openhands Deployment carries the recommended labels and keeps its app selector
+    template: deployment.yaml
     set:
       enabled: true
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
     asserts:
       - hasDocuments:
           count: 1
@@ -30,7 +30,7 @@ tests:
           value: openhands
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]
-          value: mcp
+          value: server
       - matchRegex:
           path: metadata.labels["helm.sh/chart"]
           pattern: ^openhands-
@@ -42,15 +42,15 @@ tests:
           value: openhands
       - equal:
           path: spec.template.metadata.labels["app.kubernetes.io/component"]
-          value: mcp
+          value: server
       - equal:
           path: spec.template.metadata.labels.app
-          value: openhands-mcp
+          value: openhands
       # The selector is intentionally left on the legacy app label: spec.selector is
       # immutable, so changing it would break in-place upgrades.
       - equal:
           path: spec.selector.matchLabels.app
-          value: openhands-mcp
+          value: openhands
       - notExists:
           path: spec.selector.matchLabels["app.kubernetes.io/name"]
 
