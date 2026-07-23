@@ -5,6 +5,7 @@ metadata:
   name: openhands-hpa
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

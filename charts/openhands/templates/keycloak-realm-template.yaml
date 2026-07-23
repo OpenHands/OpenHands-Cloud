@@ -3,6 +3,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: keycloak-realm-template
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
 data:
   allhands-realm-github-provider.json.tmpl: |-
 {{ .Files.Get "files/allhands-realm-github-provider.json.tmpl" | indent 4 }}

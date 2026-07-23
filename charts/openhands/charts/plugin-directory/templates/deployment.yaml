@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: plugin-directory
   labels:
+    {{- include "plugin-directory.labels" . | nindent 4 }}
     app: plugin-directory
 spec:
   replicas: {{ .Values.deployment.replicas }}
@@ -12,6 +13,7 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "plugin-directory.selectorLabels" . | nindent 8 }}
         app: plugin-directory
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}

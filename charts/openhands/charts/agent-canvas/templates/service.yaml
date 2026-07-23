@@ -3,6 +3,7 @@ kind: Service
 metadata:
   name: agent-canvas
   labels:
+    {{- include "agent-canvas.labels" . | nindent 4 }}
     app: agent-canvas
 spec:
   type: ClusterIP

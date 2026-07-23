@@ -19,6 +19,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-integrations-hub-api-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
   {{- with .Values.ingress.integrationsHubApi.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -47,6 +49,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-integrations-hub-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
   annotations:
     {{- if .Values.ingress.root.annotations }}
     {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}

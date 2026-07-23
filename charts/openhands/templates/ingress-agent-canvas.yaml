@@ -14,6 +14,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-agent-canvas-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
   {{- with $ingress.annotations }}
   annotations:
     {{- . | toYaml | nindent 4 }}
