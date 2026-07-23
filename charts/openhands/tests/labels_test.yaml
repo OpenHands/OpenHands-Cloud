@@ -1,0 +1,83 @@
+suite: recommended labels
+# deployment.yaml can't be rendered in isolation by helm-unittest: it
+# unconditionally `include`s litellm-config-script.yaml for a checksum annotation,
+# and cross-template includes of sibling resources don't resolve here. The main
+# server Deployment shares the openhands.labels / selectorLabels helpers with
+# mcp-events-deployment.yaml, which renders standalone, so it stands in for the
+# Deployment label assertions. The server component is covered via the Service.
+templates:
+  - mcp-events-deployment.yaml
+  - service.yaml
+tests:
+  - it: a main-chart Deployment carries the recommended labels and keeps its app selector
+    template: mcp-events-deployment.yaml
+    set:
+      enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: openhands
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: mcp
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^openhands-
+      - isNotEmpty:
+          path: metadata.labels["app.kubernetes.io/version"]
+      # Pod template carries the recommended labels alongside the retained app label.
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: openhands
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: mcp
+      - equal:
+          path: spec.template.metadata.labels.app
+          value: openhands-mcp
+      # The selector is intentionally left on the legacy app label: spec.selector is
+      # immutable, so changing it would break in-place upgrades.
+      - equal:
+          path: spec.selector.matchLabels.app
+          value: openhands-mcp
+      - notExists:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+
+  - it: the openhands Service carries the recommended labels and keeps its app selector
+    template: service.yaml
+    set:
+      enabled: true
+      postgresql.enabled: false
+      runtime-api.enabled: false
+      litellm-helm.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: openhands
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: server
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - equal:
+          path: metadata.labels.app
+          value: openhands
+      - equal:
+          path: spec.selector.app
+          value: openhands
+      - notExists:
+          path: spec.selector["app.kubernetes.io/name"]
