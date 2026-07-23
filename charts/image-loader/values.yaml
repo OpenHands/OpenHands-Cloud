@@ -4,8 +4,6 @@ image:
   tag: 1.36.0-python
   pullPolicy: Always
 
-runtimeClass: sysbox-runc
-
 resources:
   requests:
     cpu: 100m
