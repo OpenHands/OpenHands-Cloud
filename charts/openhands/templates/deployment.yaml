@@ -4,6 +4,8 @@ kind: Deployment
 metadata:
   name: openhands
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
     app: openhands
 spec:
   replicas: {{ .Values.deployment.replicas }}
@@ -13,6 +15,8 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
         app: openhands
       annotations:
         {{- if (include "openhands.keycloakProvisionRealm" .) }}

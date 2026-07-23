@@ -4,6 +4,8 @@ kind: Deployment
 metadata:
   name: automation-events
   labels:
+    {{- include "automation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: events
     app: automation-events
 spec:
   replicas: {{ .Values.events.deployment.replicas }}
@@ -13,6 +15,8 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "automation.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: events
         app: automation-events
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}

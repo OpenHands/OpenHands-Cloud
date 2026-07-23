@@ -4,6 +4,7 @@ kind: Deployment
 metadata:
   name: agent-canvas
   labels:
+    {{- include "agent-canvas.labels" . | nindent 4 }}
     app: agent-canvas
 spec:
   replicas: {{ .Values.deployment.replicas }}
@@ -13,6 +14,7 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "agent-canvas.selectorLabels" . | nindent 8 }}
         app: agent-canvas
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}

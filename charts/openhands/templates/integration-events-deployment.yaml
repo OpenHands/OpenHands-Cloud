@@ -4,6 +4,8 @@ kind: Deployment
 metadata:
   name: openhands-integrations
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: integrations
     app: openhands-integrations
 spec:
   replicas: {{ .Values.integrationEvents.deployment.replicas | default 2 }}
@@ -13,6 +15,8 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: integrations
         app: openhands-integrations
       annotations:
         {{- if .Values.allowedUsers }}

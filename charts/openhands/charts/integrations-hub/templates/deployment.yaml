@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: integrations-hub
   labels:
+    {{- include "integrations-hub.labels" . | nindent 4 }}
     app: integrations-hub
 spec:
   replicas: {{ .Values.deployment.replicas }}
@@ -12,6 +13,7 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "integrations-hub.selectorLabels" . | nindent 8 }}
         app: integrations-hub
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
