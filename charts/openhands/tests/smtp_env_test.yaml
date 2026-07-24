@@ -1,0 +1,128 @@
+suite: smtp env wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: wires SMTP env vars from an existing secret when enabled
+    set:
+      enabled: true
+      smtp.enabled: true
+      smtp.host: smtp.example.com
+      smtp.port: "587"
+      smtp.fromEmail: "OpenHands Team <no-reply@openhands.dev>"
+      smtp.useSsl: false
+      smtp.useTls: true
+      smtp.auth.existingSecret: smtp-credentials
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_HOST
+            value: smtp.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_PORT
+            value: "587"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_FROM_EMAIL
+            value: "OpenHands Team <no-reply@openhands.dev>"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_USE_SSL
+            value: "false"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_USE_TLS
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: smtp-credentials
+                key: smtp-username
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: smtp-credentials
+                key: smtp-password
+
+  - it: reads credentials from an overridden existing secret
+    set:
+      enabled: true
+      smtp.enabled: true
+      smtp.host: smtp.example.com
+      smtp.auth.existingSecret: custom-smtp-secret
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: custom-smtp-secret
+                key: smtp-username
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: custom-smtp-secret
+                key: smtp-password
+
+  - it: falls back to SSL and defaults useTls when unset
+    set:
+      enabled: true
+      smtp.enabled: true
+      smtp.host: smtp.example.com
+      smtp.useSsl: true
+      smtp.useTls: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_USE_SSL
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SMTP_USE_TLS
+            value: "true"
+
+  - it: omits SMTP env vars when disabled
+    set:
+      enabled: true
+      smtp.enabled: false
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="SMTP_HOST")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="SMTP_USERNAME")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="SMTP_PASSWORD")]

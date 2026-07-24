@@ -1,0 +1,83 @@
+suite: openhands budget maintenance cronjob
+templates:
+  - budget-maintenance-cronjob.yaml
+tests:
+  - it: renders a CronJob running the budget maintenance command
+    set:
+      enabled: true
+      budgetMaintenance.enabled: true
+      budgetMaintenance.schedule: "*/15 * * * *"
+      budgetMaintenance.concurrencyPolicy: Forbid
+      budgetMaintenance.failedJobsHistoryLimit: 3
+      budgetMaintenance.successfulJobsHistoryLimit: 3
+      budgetMaintenance.backoffLimit: 3
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: CronJob
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-budget-maintenance
+      - equal:
+          path: spec.schedule
+          value: "*/15 * * * *"
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 3
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 3
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: Never
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].name
+          value: budget-maintenance
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "python -m enterprise\\.run_budget_maintenance"
+
+  - it: sizes the job container from budgetMaintenance.resources
+    set:
+      enabled: true
+      budgetMaintenance.enabled: true
+      budgetMaintenance.resources:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "256Mi"
+          cpu: "100m"
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].resources
+          value:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "100m"
+
+  - it: renders no resources when budgetMaintenance is disabled
+    set:
+      enabled: true
+      budgetMaintenance.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no resources when the release is disabled
+    set:
+      enabled: false
+      budgetMaintenance.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
