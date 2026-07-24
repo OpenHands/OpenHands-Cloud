@@ -434,14 +434,14 @@ spec:
         namespace: ingress-nginx
         limits:
           maxAge: 336h
-    {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
+    {{- if and .Values.postgresql.enabled .Values.replicated.enabled .Values.replicated.postgresPassword }}
     - postgresql:
         collectorName: postgresql
         uri: postgresql://{{ .Values.replicated.postgresUsername | urlquery }}:{{ .Values.replicated.postgresPassword | urlquery }}@{{ .Release.Name }}-postgresql.{{ .Release.Namespace }}.svc.cluster.local:5432/{{ .Values.replicated.postgresDatabase }}?sslmode=disable
         tls:
           disabled: true
     {{- end }}
-    {{- if and .Values.redis.enabled .Values.replicated.enabled }}
+    {{- if and .Values.redis.enabled .Values.replicated.enabled .Values.replicated.redisPassword }}
     - redis:
         collectorName: redis
         uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ .Release.Name }}-redis-master.{{ .Release.Namespace }}.svc.cluster.local:6379
@@ -573,7 +573,7 @@ spec:
           - fail:
               when: "!= Healthy"
               message: "Pod {{`{{ .Namespace }}/{{ .Name }}`}} is not Healthy: {{`{{ .Status.Reason }}`}}"
-    {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
+    {{- if and .Values.postgresql.enabled .Values.replicated.enabled .Values.replicated.postgresPassword }}
     - postgresql:
         checkName: "PostgreSQL Database Health"
         collectorName: postgresql
@@ -591,7 +591,7 @@ spec:
               when: "connected == true"
               message: "PostgreSQL database is healthy"
     {{- end }}
-    {{- if and .Values.redis.enabled .Values.replicated.enabled }}
+    {{- if and .Values.redis.enabled .Values.replicated.enabled .Values.replicated.redisPassword }}
     - redis:
         checkName: "Redis Cache Health"
         collectorName: redis

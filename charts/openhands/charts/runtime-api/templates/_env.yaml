@@ -12,6 +12,13 @@
 - name: PGSSLMODE
   value: {{ $dbSslMode | quote }}
 {{- end }}
+{{- if not (hasKey .Values.env "K8S_NAMESPACE") }}
+# Namespace runtime-api creates sandboxes in (not where runtime-api itself
+# runs). Defaults to the release namespace (sandbox_namespace empty); set
+# sandbox_namespace to create sandboxes in a dedicated one.
+- name: K8S_NAMESPACE
+  value: {{ .Values.sandbox_namespace | default .Release.Namespace | quote }}
+{{- end }}
 - name: RUNTIME_IDLE_SECONDS
   value: {{ .Values.cleanup.idle_seconds | default 1200 | quote }}
 - name: RUNTIME_DEAD_SECONDS

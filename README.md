@@ -20,3 +20,9 @@ opened in the [core OpenHands repository](github.com/All-Hands-AI/OpenHands).
 
 See [charts/openhands/README.md](./charts/openhands/README.md) for
 full instructions.
+
+# Automation
+
+- [Automated image-tag bumps](./docs/automated-image-tag-bumps.md)
+- [Automated development chart bumps](./docs/development-chart-bumps.md)
+- [Automated staging chart bumps](./docs/staging-chart-bumps.md)

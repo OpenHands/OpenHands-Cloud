@@ -1,0 +1,52 @@
+# Environment-specific values, rendered by install.sh via envsubst.
+# Mirrors the minimal usable install documented at
+# docs.openhands.dev/enterprise/k8s-install/installation.
+ingress:
+  enabled: true
+  host: app.${BASE_DOMAIN}
+  class: traefik
+
+tls:
+  enabled: false # TLS terminates at traefik's default certificate (create-cluster.sh)
+
+github:
+  enabled: true
+
+keycloak:
+  ingress:
+    enabled: true
+    hostname: auth.app.${BASE_DOMAIN}
+    tls: false
+
+sandbox:
+  # In-cluster service URL: on a local cluster the external runtime-api
+  # hostname resolves to 127.0.0.1, which pods cannot use to reach each other.
+  apiHostname: http://openhands-runtime-api:5000
+
+env:
+  RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.${BASE_DOMAIN}"
+  LITELLM_DEFAULT_MODEL: litellm_proxy/${LLM_MODEL}
+
+runtime-api:
+  ingress:
+    enabled: true
+    host: runtime-api.${BASE_DOMAIN}
+    tls: false
+  env:
+    RUNTIME_BASE_URL: runtime.${BASE_DOMAIN}
+    RUNTIME_DISABLE_SSL: "false"
+    STORAGE_CLASS: standard
+
+filestore:
+  ephemeral: true
+minio:
+  persistence:
+    enabled: true
+
+litellm-helm:
+  proxy_config:
+    model_list:
+      - model_name: ${LLM_MODEL}
+        litellm_params:
+          model: anthropic/${LLM_MODEL}
+          api_key: os.environ/ANTHROPIC_API_KEY

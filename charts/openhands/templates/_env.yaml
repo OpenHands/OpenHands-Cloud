@@ -60,6 +60,42 @@
   value: {{ .Values.filestore.bucket }}
 - name: AWS_S3_SECURE
   value: 'false'
+{{- else if or (eq (.Values.filestore.type | default "") "s3") .Values.filestore.existingSecret .Values.filestore.region .Values.filestore.endpoint }}
+# External S3 (or S3-compatible) object store — the durable alternative to the
+# bundled MinIO. Engaged by filestore.type=s3 or any external marker
+# (existingSecret / region / endpoint). The app's S3FileStore uses boto3, so
+# credentials come from filestore.existingSecret when set, otherwise from the
+# pod's ambient AWS identity (IRSA / Pod Identity / instance profile). Unlike the
+# ephemeral branch, AWS_S3_ENDPOINT is left unset for real AWS so boto3 targets
+# the regional endpoint instead of being pinned to MinIO.
+- name: FILE_STORE
+  value: s3
+- name: AWS_S3_BUCKET
+  value: {{ .Values.filestore.bucket | quote }}
+{{- if .Values.filestore.region }}
+- name: AWS_REGION
+  value: {{ .Values.filestore.region | quote }}
+{{- end }}
+{{- if .Values.filestore.endpoint }}
+- name: AWS_S3_ENDPOINT
+  value: {{ .Values.filestore.endpoint | quote }}
+{{- end }}
+{{- $secure := .Values.filestore.secure }}
+{{- if kindIs "invalid" $secure }}{{- $secure = true }}{{- end }}
+- name: AWS_S3_SECURE
+  value: {{ $secure | quote }}
+{{- if .Values.filestore.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- end }}
 {{- else }}
 - name: FILE_STORE
   value: {{ .Values.filestore.type }}
@@ -280,7 +316,11 @@
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
-  value: http://{{ .Release.Name }}-litellm:4000
+  # FQDN (not the bare Service name) so it resolves from any namespace. This URL
+  # is persisted into each user's LLM profile at first use, so it must be
+  # resolvable from sandboxes that run in a separate namespace. No-op for
+  # same-namespace installs.
+  value: http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}.svc.cluster.local:4000
 {{- else }}
 - name: LITE_LLM_API_URL
   value: {{ .Values.litellm.url }}
@@ -673,22 +713,30 @@
 {{- $defaults := include "openhands.env.defaults" . | fromYamlArray }}
 {{- /*
     Effective env-var overrides. Start from .Values.env, then fold the
-    structured .Values.agentServerEnv map into OH_AGENT_SERVER_ENV: the map is
+    structured agent-server env map into OH_AGENT_SERVER_ENV: the map is
     merged on top of any JSON string already present at
     .Values.env.OH_AGENT_SERVER_ENV and re-serialised to JSON. This lets callers
     (e.g. replicated/openhands.yaml) assemble OH_AGENT_SERVER_ENV from a
     recursively-merged map of individual keys instead of repeating a hand-written
-    JSON blob in every optionalValues block. When agentServerEnv is empty,
-    .Values.env passes through unchanged, so existing callers are unaffected.
+    JSON blob in every optionalValues block. The map lives at
+    .Values.global.agentServerEnv so the runtime-api subchart can mirror the
+    same keys into the warm-runtime env (exact-env matching); the legacy
+    .Values.agentServerEnv is still merged on top for compatibility. When both
+    are empty, .Values.env passes through unchanged.
    */}}
 {{- $envOverrides := .Values.env | default dict }}
-{{- if .Values.agentServerEnv }}
+{{- $agentServerEnv := dict }}
+{{- if .Values.global }}
+{{- $agentServerEnv = deepCopy ((get .Values.global "agentServerEnv") | default dict) }}
+{{- end }}
+{{- $agentServerEnv = mergeOverwrite $agentServerEnv (deepCopy (.Values.agentServerEnv | default dict)) }}
+{{- if $agentServerEnv }}
 {{- $envOverrides = deepCopy $envOverrides }}
 {{- $base := dict }}
 {{- with (get $envOverrides "OH_AGENT_SERVER_ENV") }}
 {{- $base = mustFromJson (. | toString) }}
 {{- end }}
-{{- $_ := set $envOverrides "OH_AGENT_SERVER_ENV" (mustToJson (mergeOverwrite $base (deepCopy .Values.agentServerEnv))) }}
+{{- $_ := set $envOverrides "OH_AGENT_SERVER_ENV" (mustToJson (mergeOverwrite $base $agentServerEnv)) }}
 {{- end }}
 {{- /* Build a lookup dict of override keys for O(1) membership checks */}}
 {{- $overrideKeys := dict }}

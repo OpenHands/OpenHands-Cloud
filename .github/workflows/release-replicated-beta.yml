@@ -62,7 +62,7 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
-          version: 'latest'
+          version: 'v3.18.4'
 
       - name: Install Replicated CLI
         run: |
@@ -81,6 +81,7 @@ jobs:
         env:
           REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
           REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           # shell: bash runs with -o pipefail, so a failing `make` fails the step
           # even though its output is piped to tee.
@@ -100,10 +101,29 @@ jobs:
           echo "sequence=${SEQUENCE}" >> "$GITHUB_OUTPUT"
           echo "Replicated Beta release sequence: ${SEQUENCE}"
 
+          # Create immediate replicated release URL visible from workflow run
+          APP_SLUG=openhands
+          URL="https://vendor.replicated.com/apps/${APP_SLUG}/releases/${SEQUENCE}/overview"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          # ::notice:: puts a banner with the link at the top of the run.
+          echo "::notice title=Replicated Beta release ${SEQUENCE}::${URL}"
+          # Step summary renders markdown on the run's summary page.
+          {
+            echo "### Replicated Beta release published"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Channel | Beta |"
+            echo "| Release tag | \`${RELEASE_TAG}\` |"
+            echo "| Sequence | ${SEQUENCE} |"
+            echo "| Vendor portal | [Release ${SEQUENCE} overview](${URL}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Tag the commit with the Beta release sequence
         env:
           SEQUENCE: ${{ steps.release.outputs.sequence }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
         run: |
           TAG="Replicated/Beta/${SEQUENCE}"
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
@@ -112,6 +132,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${TAG}" -m "Replicated Beta release ${SEQUENCE} for ${RELEASE_TAG}"
+          git tag -a "${TAG}" \
+            -m "Replicated Beta release ${SEQUENCE} for ${RELEASE_TAG}" \
+            -m "${RELEASE_URL}"
           git push origin "${TAG}"
           echo "Tagged ${GITHUB_SHA} as ${TAG}"

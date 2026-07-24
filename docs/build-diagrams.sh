@@ -14,3 +14,4 @@ which mmdc || (echo "mmdc command not found, install via: npm install -g @mermai
 
 mmdc -i assets/github-oauth-flow.mmd -o assets/github-oauth-flow.png
 mmdc -i assets/bitbucket-dc-oauth-flow.mmd -o assets/bitbucket-dc-oauth-flow.png
+mmdc -i assets/automations-auth-flow.mmd -o assets/automations-auth-flow.png

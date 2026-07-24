@@ -25,6 +25,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      component: ${{ steps.parse.outputs.component }}
+      version: ${{ steps.parse.outputs.version }}
+      source-sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Parse component and version from tag
         id: parse
@@ -43,15 +47,22 @@ jobs:
           echo "Publishing ${COMPONENT} ${VERSION} from charts/${COMPONENT}"
 
       - name: Checkout (at the release tag)
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.ref_name }}
+          # Bind publication to the immutable commit from the push event. The
+          # tag name could otherwise resolve to a commit moved after this run began.
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@5119fcb9089d432beecbf79bb2c7915207344b78 # v3
         with:
-          version: 'latest'
+          version: 'v3.18.4'
 
       - name: Lowercase registry owner
         id: owner
@@ -60,7 +71,7 @@ jobs:
           echo "repo_owner=${REPO_OWNER}" >> "$GITHUB_OUTPUT"
 
       - name: Publish ${{ steps.parse.outputs.component }} chart to GHCR
-        uses: appany/helm-oci-chart-releaser@v0.4.2
+        uses: appany/helm-oci-chart-releaser@dd0551c15abe174eb57824ecde62e976091094da # v0.4.2
         with:
           name: ${{ steps.parse.outputs.component }}
           repository: helm-charts
@@ -70,3 +81,84 @@ jobs:
           registry_password: ${{ secrets.GITHUB_TOKEN }}
           update_dependencies: 'true'
           tag: ${{ steps.parse.outputs.version }}
+
+  dispatch-staging-chart-bump:
+    name: Dispatch staging chart bump
+    needs: publish
+    if: ${{ needs.publish.outputs.component == 'openhands' }}
+    runs-on: ubuntu-24.04
+    environment: staging-chart-bump-dispatcher
+    permissions:
+      contents: read
+    steps:
+      - name: Mint saas-deploy dispatcher token
+        id: dispatcher-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.STAGING_CHART_BUMP_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.STAGING_CHART_BUMP_DISPATCHER_APP_PRIVATE_KEY }}
+          owner: OpenHands
+          repositories: saas-deploy
+          permission-contents: write
+
+      - name: Dispatch bump-chart-to-staging
+        env:
+          GH_TOKEN: ${{ steps.dispatcher-token.outputs.token }}
+          COMPONENT: ${{ needs.publish.outputs.component }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source-sha }}
+        run: |
+          gh api \
+            --method POST \
+            /repos/OpenHands/saas-deploy/dispatches \
+            -f event_type=bump-chart-to-staging \
+            -f "client_payload[chart]=${COMPONENT}" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[environment]=staging" \
+            -f "client_payload[source-repo]=${SOURCE_REPO}" \
+            -f "client_payload[source-sha]=${SOURCE_SHA}"
+
+  dispatch-development-chart-bump:
+    name: Dispatch development chart bump
+    needs: publish
+    if: >-
+      ${{
+        needs.publish.result == 'success' &&
+        needs.publish.outputs.component == 'openhands' &&
+        github.actor_id == '290150379'
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: dev-chart-bump-dispatcher
+    permissions:
+      contents: read
+    steps:
+      - name: Mint saas-deploy development dispatcher token
+        id: dispatcher-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.CHART_BUMP_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.CHART_BUMP_DISPATCHER_APP_PRIVATE_KEY }}
+          owner: OpenHands
+          repositories: saas-deploy
+          permission-contents: write
+
+      - name: Dispatch bump-chart-to-development
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.dispatcher-token.outputs.token }}
+          COMPONENT: ${{ needs.publish.outputs.component }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source-sha }}
+        run: |
+          gh api \
+            --method POST \
+            /repos/OpenHands/saas-deploy/dispatches \
+            -f event_type=bump-chart-to-development \
+            -f "client_payload[chart]=${COMPONENT}" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[environment]=development" \
+            -f "client_payload[source-repo]=${SOURCE_REPO}" \
+            -f "client_payload[source-sha]=${SOURCE_SHA}"

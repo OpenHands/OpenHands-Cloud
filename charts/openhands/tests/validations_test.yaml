@@ -1,0 +1,47 @@
+suite: openhands render-time validation guards
+templates:
+  - validations.yaml
+tests:
+  - it: fails when ingress is enabled without a host
+    set:
+      ingress.enabled: true
+      ingress.host: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false."
+  - it: fails when postgresql is disabled without an external database
+    set:
+      postgresql.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database."
+  - it: renders no resources when ingress has a host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when postgresql is disabled with an external database
+    set:
+      postgresql.enabled: false
+      externalDatabase.host: db.example.com
+      externalDatabase.username: openhands
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips the ingress guard when the release is disabled
+    set:
+      enabled: false
+      ingress.enabled: true
+      ingress.host: ""
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips the postgres guard when the release is disabled
+    set:
+      enabled: false
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -1,39 +1,38 @@
 {{- /*
   Ingress entry for the agent-canvas frontend-only deployment.
 
-  Unlike the other openhands subchart ingresses (plugin-directory,
-  integrations-hub, automation, mcp) which mount additional paths under
-  the main `.Values.ingress.host`, agent-canvas is served on its own
-  dedicated host (e.g. `canvas.openhands.dev`) supplied via
-  `agent-canvas.ingress.host`. This keeps the UI separate from the main
-  OpenHands app while reusing the same in-cluster ingress controller and
-  cert-manager.
+  Agent Canvas is mounted under a configurable subpath on a consumer-provided
+  host. The frontend bundle is built with the same basename and static-server
+  receives the same --base-path.
 */}}
 {{- $agentCanvas := index .Values "agent-canvas" -}}
-{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled $agentCanvas.ingress.host }}
+{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled }}
+{{- $ingress := $agentCanvas.ingress -}}
+{{- $host := required "agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true" $ingress.host -}}
+{{- $path := default "/canvas" $ingress.path -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-agent-canvas-ingress
+  {{- with $ingress.annotations }}
   annotations:
-    {{- if .Values.ingress.root.annotations }}
-    {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
-    {{- else }}
-    {{ .Values.ingress.annotations | toYaml | nindent 4 }}
-    {{- end }}
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
 spec:
-  ingressClassName: {{ default "traefik" .Values.ingress.class }}
-  {{- if $agentCanvas.ingress.tls.enabled }}
+  ingressClassName: {{ default "traefik" $ingress.className }}
+  {{- with $ingress.tls }}
+  {{- if .enabled }}
   tls:
   - hosts:
-    - {{ $agentCanvas.ingress.host }}
-    secretName: {{ $agentCanvas.ingress.tls.secretName }}
+    - {{ $host }}
+    secretName: {{ required "agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true" .secretName }}
+  {{- end }}
   {{- end }}
   rules:
-  - host: {{ $agentCanvas.ingress.host }}
+  - host: {{ $host }}
     http:
       paths:
-      - path: /
+      - path: {{ $path | quote }}
         pathType: Prefix
         backend:
           service:

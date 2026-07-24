@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/**'
-      - '.github/workflows/test-update-openhands-charts.yml'
+      - '.github/workflows/publish-release-charts.yml'
+      - '.github/workflows/test-scripts.yml'
 
 jobs:
   test-scripts:
@@ -23,7 +24,9 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
-          version: 'latest'
+          # 'latest' falls back to helm v3.9.0 when the release lookup is
+          # rate-limited, which is too old to render the replicated SDK chart.
+          version: 'v3.18.4'
 
       - name: Build OpenHands chart dependencies
         run: |

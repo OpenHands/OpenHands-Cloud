@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.4.0
+  tag: 0.7.0
   pullPolicy: Always
 
 nameOverride: ""
@@ -26,6 +26,13 @@ serviceAccount:
 
 runtimeInSameCluster: false
 defaultAPIKeySecretName: default-api-key
+
+# Namespace runtime-api creates sandbox pods (and their Service, Ingress, PVC)
+# in, surfaced to the pod as K8S_NAMESPACE. This is NOT where runtime-api
+# itself runs. Empty defaults to the release namespace. Point it at a dedicated
+# namespace to isolate untrusted sandbox workloads from the control plane.
+# Ignored if env.K8S_NAMESPACE is set.
+sandbox_namespace: ""
 
 # Mount a trust-manager / user-supplied CA bundle into the runtime-api pod and
 # point the Python TLS stack (httpx + requests) at it. Required when the
@@ -105,14 +112,12 @@ jobSettings:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 2
 
-nodeSelector: {}
-
 securityContext: {}
 
 # KVM device plugin (OSS SANDBOX_KVM_ENABLED parity). When enabled, runs a
 # smarter-device-manager DaemonSet that advertises /dev/kvm as an extended
-# resource (kvm.resourceName) so sandbox pods can use hardware-accelerated QEMU
-# WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
+# resource (smarter-devices/kvm) so sandbox pods can use hardware-accelerated
+# QEMU WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
 # nested-virt-capable VM). The plugin DaemonSet itself runs privileged, like
 # other device plugins; the sandbox pods do not.
 kvm:
@@ -121,7 +126,6 @@ kvm:
     repository: ghcr.io/smarter-project/smarter-device-manager
     tag: v1.20.11
     pullPolicy: IfNotPresent
-  resourceName: smarter-devices/kvm
   maxDevices: 20
   # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
   # perms still block the non-root sandbox UID from opening it. An init container
@@ -142,30 +146,16 @@ kvm:
   nodeSelector: {}
   tolerations: []
 
-tolerations: []
-
-affinity: {}
-
 postgresql:
   enabled: false
-  image:
-    repository: bitnamilegacy/postgresql
-  isFeatureDeploy: false
   primary:
-    persistence:
-      enabled: false
     service:
       ports:
         postgresql: 5432
   auth:
     username: postgres
-    password: "" # This should be set externally for security reasons
     existingSecret: postgres-password
     database: runtime_api_db
-
-externalDatabase:
-  enabled: false
-  existingSecret: postgres-password
 
 # External database configuration (used when postgresql.enabled=false)
 database:
@@ -179,17 +169,6 @@ database:
   maxOverflow:
     api: 10 # Max overflow for API deployment (default)
     cronjobs: 5 # Max overflow for cronjobs (default)
-
-helm-release-pruner:
-  enabled: false
-  job:
-    schedule: "0 */4 * * *"
-    dryRun: False
-  pruneProfiles:
-    - olderThan: "1 days ago"
-      helmReleaseFilter: "^runtime-api-.*$"
-      namespaceFilter: "^runtime-api-.*$"
-      maxReleasesToKeep: 10
 
 certificate:
   enabled: false
@@ -357,8 +336,12 @@ global:
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.34.0-python
+    tag: 1.36.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
+  # Env the app injects into every per-session runtime (LLM provider creds,
+  # proxy vars, CA paths). Mirrored into each warm-runtime entry's env so
+  # runtime-api's exact-env matching can claim warm pods.
+  agentServerEnv: {}

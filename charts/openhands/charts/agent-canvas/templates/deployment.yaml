@@ -41,6 +41,8 @@ spec:
             - "::"
             - --dir
             - /opt/agent-canvas/frontend
+            - --base-path
+            - {{ .Values.staticServer.basePath | quote }}
             {{- if .Values.staticServer.authRequired }}
             - --auth-required
             {{- end }}

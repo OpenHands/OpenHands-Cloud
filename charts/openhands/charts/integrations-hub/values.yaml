@@ -32,34 +32,30 @@ probes:
   startup:
     failureThreshold: 30
     periodSeconds: 10
+    timeoutSeconds: 2
   liveness:
     initialDelaySeconds: 10
     periodSeconds: 30
     failureThreshold: 3
+    timeoutSeconds: 2
   readiness:
     initialDelaySeconds: 5
     periodSeconds: 10
     failureThreshold: 3
+    timeoutSeconds: 2
 
 # Service configuration
 service:
-  # Public base URL where this service is reachable
-  # Example: https://integrations.example.com or https://domain/integrations
-  baseUrl: ""
   # Port the container listens on (8000 for Python/FastAPI backend)
   port: 8000
 
-# Path prefix the application is mounted under. Must match the SPA base
-# path baked into the image and the parent chart ingress path.
-#
-# Wired to the FastAPI container as `INTHUB_ROOT_PATH`, which causes
-# `backend/app/main.py::build_app` to mount every route -- including the
-# SPA static files and `/api/health` -- under this prefix. Container
-# probes below also honour the prefix automatically.
-#
-# Set to an empty string to serve the app from the cluster root, usually
-# when using a dedicated hostname.
+# UI path prefix baked into the Kubernetes SPA image and used by FastAPI's
+# static-file mount.
 rootPath: "/integrations-hub"
+
+# Public API prefix routed by the parent chart. The backend translates it to
+# its existing internal /api routes, which remain available to pod probes.
+apiRootPath: "/api/integrations-hub"
 
 # Bypass authentication for local development only. When true the FastAPI
 # app rejects non-loopback requests and uses a synthetic dev@localhost
@@ -68,7 +64,7 @@ rootPath: "/integrations-hub"
 disableAuth: false
 
 # OpenHands identity provider configuration. The backend validates session
-# cookies / API keys against GET <baseUrl>/api/v1/users/me.
+# cookies against GET <baseUrl>/api/v1/users/me.
 openhands:
   # Base URL of the OpenHands instance. Falls back to the global ingress
   # host when left empty (see templates/_env.yaml).
@@ -82,11 +78,6 @@ openhands:
   # request host directly.
   # Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL
   redirectProxyUrl: ""
-  # Optional callback target for preview deployments; used when
-  # redirectProxyUrl is set and oauth_flow.py needs to forward back to
-  # the originating deployment.
-  # Backend env var: AUTH_URL
-  authUrl: ""
 
 # Credential encryption key for stored provider credentials.
 # Generate with: openssl rand -base64 32
@@ -135,9 +126,6 @@ database:
   # Secret containing the database password
   secretName: "integrations-hub-db-secret"
   secretKey: "db-password"
-  # Use an existing secret instead of auto-generating one
-  # When true, the chart will not create the db secret
-  existingSecret: false
   # Create database and user in an existing PostgreSQL instance
   # When true, runs an init container to create the database and user
   # Useful when sharing a PostgreSQL instance with other services
@@ -147,9 +135,6 @@ database:
   # Only used when createDatabaseUser=true
   superuserSecretName: "postgres-password"
   superuserSecretKey: "password"
-  # Connection pool settings
-  poolSize: 10
-  maxOverflow: 5
 
 # Datadog configuration
 datadog:
@@ -170,24 +155,11 @@ cron:
 # such as NOTION_CLIENT_ID/NOTION_CLIENT_SECRET).
 env: {}
 
-# PostgreSQL subchart configuration (for ephemeral/feature environments)
-# When enabled, deploys an in-cluster PostgreSQL instance
-# Service name will be "{release-name}-postgresql", secret name also "{release-name}-postgresql"
+# When true, an init container waits for an in-cluster PostgreSQL at
+# database.host before starting (ephemeral/feature environments that deploy
+# postgres alongside this chart). This chart does not deploy postgres itself.
 postgresql:
   enabled: false
-  image:
-    repository: bitnamilegacy/postgresql
-  auth:
-    username: postgres
-    database: integrations_hub
-  primary:
-    persistence:
-      enabled: false
-    initdb:
-      scriptsConfigMap: ""
-  service:
-    ports:
-      postgresql: 5432
 
 global:
   security:

@@ -1,0 +1,14 @@
+{{/*
+Render-time configuration guards. Emits no resources; each block fails the
+render with a clear message when values are invalid or conflicting, so the
+mistake is caught at install/upgrade instead of producing a broken object.
+Each guard is scoped to .Values.enabled: when the enterprise-server is not
+deployed (enabled=false), the ingress and database env these guards check
+are never rendered, so a server-less release must not trip them.
+*/}}
+{{- if and .Values.enabled .Values.ingress.enabled (not .Values.ingress.host) -}}
+{{- fail "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false." -}}
+{{- end -}}
+{{- if and .Values.enabled (not .Values.postgresql.enabled) (or (not .Values.externalDatabase.host) (not .Values.externalDatabase.username)) -}}
+{{- fail "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database." -}}
+{{- end -}}
