@@ -3,6 +3,7 @@ kind: Service
 metadata:
   name: integrations-hub
   labels:
+    {{- include "integrations-hub.labels" . | nindent 4 }}
     app: integrations-hub
 spec:
   ports:

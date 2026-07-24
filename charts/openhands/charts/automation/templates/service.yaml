@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: automation
   labels:
+    {{- include "automation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
     app: automation
 spec:
   ports:

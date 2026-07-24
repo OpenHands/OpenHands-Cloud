@@ -3,6 +3,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: user-waitlist
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
 data:
   user-waitlist.txt: |
     {{- range .Values.allowedUsers }}
