@@ -46,6 +46,9 @@ probes:
 
 # Service configuration
 service:
+  # Externally visible Integrations Hub site URL, including rootPath.
+  # Rendered as INTHUB_PUBLIC_BASE_URL for OAuth callback construction.
+  baseUrl: ""
   # Port the container listens on (8000 for Python/FastAPI backend)
   port: 8000
 
@@ -75,7 +78,7 @@ openhands:
   authCookieName: "keycloak_auth"
   # Stable-origin URL used as the OAuth callback proxy for preview
   # deployments. Leave empty to register callbacks against the
-  # request host directly.
+  # configured service.baseUrl origin directly.
   # Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL
   redirectProxyUrl: ""
 

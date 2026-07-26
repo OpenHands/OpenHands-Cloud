@@ -18,10 +18,10 @@
     INTHUB_STATIC_DIR                set in the Dockerfile to /app/out
     INTHUB_ROOT_PATH                 sub-path mount from .Values.rootPath
     INTHUB_API_ROOT_PATH             public API prefix from .Values.apiRootPath
+    INTHUB_PUBLIC_BASE_URL           externally visible Hub site URL
 
   In addition, backend/app/oauth_flow.py reads:
     INTHUB_OAUTH_REDIRECT_PROXY_URL  stable origin for OAuth callback proxy
-    AUTH_URL                         preview-deployment callback target
 */}}
 {{- define "integrations-hub.env.defaults" }}
 # Database connection -- backend reads INTHUB_POSTGRES_URL first; we build
@@ -84,6 +84,10 @@
   value: {{ .Values.rootPath | default "" | quote }}
 - name: INTHUB_API_ROOT_PATH
   value: {{ .Values.apiRootPath | default "" | quote }}
+{{- if .Values.service.baseUrl }}
+- name: INTHUB_PUBLIC_BASE_URL
+  value: {{ tpl .Values.service.baseUrl . | quote }}
+{{- end }}
 
 # Credential encryption key (required: signs/encrypts stored OAuth tokens
 # and other provider secrets at rest).
@@ -125,10 +129,6 @@
 {{- if .Values.openhands.redirectProxyUrl }}
 - name: INTHUB_OAUTH_REDIRECT_PROXY_URL
   value: {{ .Values.openhands.redirectProxyUrl | quote }}
-{{- end }}
-{{- if $openhandsBaseUrl }}
-- name: AUTH_URL
-  value: {{ $openhandsBaseUrl | quote }}
 {{- end }}
 
 {{- if .Values.datadog.enabled }}
