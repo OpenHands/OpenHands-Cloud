@@ -10,9 +10,7 @@ enabled: true
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  # You must use a stable, semver tag. Do not use sha-based tags.
-  # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: cloud-1.44.0
+  tag: sha-c448f72ec27c8fa23a4617c81f40d96a7341c675
 
 autoscaling:
   enabled: false
@@ -843,6 +841,8 @@ runtime-api:
     MEMORY_LIMIT: "3072Mi"
     CPU_REQUEST: "500m"
     EPHEMERAL_STORAGE_SIZE: "10Gi"
+    # OHE overrides this for fixed-size clusters.
+    RUNTIME_PENDING_REAP_ENABLED: "false"
 
 jira:
   enabled: false
