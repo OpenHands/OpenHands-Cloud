@@ -42,7 +42,7 @@ spec:
               args:
                 - |
                   echo "Running budget maintenance..."
-                  python -m enterprise.run_budget_maintenance
+                  python -m run_budget_maintenance
               {{- if .Values.caBundle.enabled }}
               volumeMounts:
                 {{- include "openhands.caBundle.volumeMount" . | nindent 16 }}

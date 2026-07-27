@@ -42,7 +42,7 @@ tests:
           value: budget-maintenance
       - matchRegex:
           path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
-          pattern: "python -m enterprise\\.run_budget_maintenance"
+          pattern: "python -m run_budget_maintenance"
 
   - it: sizes the job container from budgetMaintenance.resources
     set:
