@@ -1133,6 +1133,7 @@ spec:
               secretName: openhands-tls
           staticServer:
             basePath: /canvas
+            authRequired: false
             lockToCloud: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "app_hostname"}}{{repl end}}'
 
   builder:
