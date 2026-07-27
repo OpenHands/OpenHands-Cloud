@@ -739,8 +739,9 @@ valkey:
   replica:
     enabled: false
   readinessProbe:
-    # Chart default is false. The rendered probe is an unauthenticated
-    # `valkey-cli ping`, same command liveness and startup already run.
+    # Chart default is false. The exec probe runs an unauthenticated
+    # `valkey-cli ping`, which exits 0 even on NOAUTH, so it gates on port
+    # reachability only and cannot flap under ACL auth.
     enabled: true
   resources:
     requests:
