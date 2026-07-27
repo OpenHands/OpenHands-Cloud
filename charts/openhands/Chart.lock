@@ -14,12 +14,12 @@ dependencies:
 - name: postgresql
   repository: https://charts.bitnami.com/bitnami
   version: 15.5.38
-- name: redis
-  repository: oci://registry-1.docker.io/bitnamicharts
-  version: 20.3.0
 - name: replicated
   repository: oci://registry.replicated.com/library
   version: 1.9.0
+- name: valkey
+  repository: https://valkey.io/valkey-helm/
+  version: 0.11.0
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
@@ -38,5 +38,5 @@ dependencies:
 - name: agent-canvas
   repository: ""
   version: '*'
-digest: sha256:40485c9d50eaec81c717aaf76c1bbbe08dfeb5a288cd606a6bda929416c6ec91
-generated: "2026-06-25T15:27:15.536667-04:00"
+digest: sha256:9c095747c5489b406539dbefd3f4e53ffcd19e8c62f1cbfffb6389f82674fc06
+generated: "2026-07-27T13:36:08.432201-05:00"

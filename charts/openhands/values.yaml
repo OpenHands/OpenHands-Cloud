@@ -2,7 +2,7 @@ allowedUsers: null
 
 # When false, the OpenHands chart's own templates (deployment, services,
 # ingresses, cronjobs, etc.) are skipped. Subcharts (litellm-helm, runtime-api,
-# postgresql, redis, minio, keycloak, automation, plugin-directory,
+# postgresql, valkey, minio, keycloak, automation, plugin-directory,
 # integrations-hub, laminar, replicated) still respect their individual
 # `enabled` flags, so this umbrella chart can be used to deploy any subset of
 # them without the OpenHands app itself.
@@ -721,29 +721,36 @@ externalDatabase:
   sslMode: "prefer"
   existingSecret: postgres-password
 
-redis:
+valkey:
   enabled: true
   image:
-    repository: bitnamilegacy/redis
-  architecture: standalone
+    repository: valkey/valkey
   auth:
     enabled: true
-    existingSecret: "redis"
-  master:
-    persistence:
-      enabled: false
-    # Pinned copy of the bitnami "nano" resourcesPreset.
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-        ephemeral-storage: 50Mi
-      limits:
-        cpu: 150m
-        memory: 192Mi
-        ephemeral-storage: 2Gi
+    # Secret name is retained from the Bitnami chart so existing installs keep
+    # their credential across the upgrade.
+    usersExistingSecret: "redis"
+    aclUsers:
+      default:
+        permissions: "~* &* +@all"
+        passwordKey: "redis-password"
+  dataStorage:
+    enabled: false
   replica:
-    replicaCount: 0
+    enabled: false
+  readinessProbe:
+    # Chart default is false. The rendered probe is an unauthenticated
+    # `valkey-cli ping`, same command liveness and startup already run.
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 150m
+      memory: 192Mi
+      ephemeral-storage: 2Gi
 
 maintenanceTasks:
   enabled: true

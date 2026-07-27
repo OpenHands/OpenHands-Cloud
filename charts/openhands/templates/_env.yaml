@@ -177,16 +177,16 @@
 - name: GITHUB_USERS_SHEET_ID
   value: {{ .Values.allowedUsersSheet }}
 {{- end }}
-{{- if .Values.redis.enabled }}
+{{- if .Values.valkey.enabled }}
 - name: REDIS_HOST
-  value: {{ .Release.Name }}-redis-master
+  value: {{ .Release.Name }}-valkey
 - name: REDIS_PORT
   value: "6379"
 - name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.redis.auth.existingSecret }}
-      key: redis-password
+      name: {{ .Values.valkey.auth.usersExistingSecret }}
+      key: {{ .Values.valkey.auth.aclUsers.default.passwordKey }}
 {{- end }}
 - name: KEYCLOAK_SERVER_URL
   value: {{ .Values.keycloak.url }}

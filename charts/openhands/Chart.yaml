@@ -24,14 +24,14 @@ dependencies:
     version: 15.x.x
     repository: https://charts.bitnami.com/bitnami
     condition: postgresql.enabled
-  - name: redis
-    version: 20.3.0
-    repository: oci://registry-1.docker.io/bitnamicharts
-    condition: redis.enabled
   - name: replicated
     repository: oci://registry.replicated.com/library
     version: 1.9.0
     condition: replicated.enabled
+  - name: valkey
+    version: 0.11.0
+    repository: https://valkey.io/valkey-helm/
+    condition: valkey.enabled
   - name: crd-check
     repository: oci://ghcr.io/openhands/helm-charts
     version: 0.1.0

@@ -69,9 +69,9 @@ spec:
     - '{{repl if ConfigOptionEquals "postgres_type" "embedded_postgres"}}openhands/statefulset/openhands-postgresql{{repl end}}'
     - '{{repl if ConfigOptionEquals "postgres_type" "embedded_postgres"}}openhands/service/openhands-postgresql{{repl end}}'
 
-    # redis
-    - openhands/statefulset/openhands-redis-master
-    - openhands/service/openhands-redis-master
+    # valkey
+    - openhands/deployment/openhands-valkey
+    - openhands/service/openhands-valkey
 
     # lite-llm
     - openhands/deployment/openhands-litellm
