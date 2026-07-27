@@ -4,11 +4,12 @@ metadata:
   name: openhands
 spec:
   title: OpenHands
+  allowRollback: true
   icon: https://raw.githubusercontent.com/All-Hands-AI/OpenHands/main/frontend/public/apple-touch-icon.png
   releaseNotes: |
-    ## OpenHands v0.47.0
+    ## OpenHands 0.13.4 capacity hotfix
 
-    OpenHands is an AI-driven autonomous software engineer that can help you build, debug, and deploy applications.
+    Improves fixed-size cluster recovery when sandboxes cannot be scheduled and surfaces a clear reason when a sandbox cannot start.
 
   additionalNamespaces:
     - openhands

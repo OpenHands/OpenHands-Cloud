@@ -317,6 +317,8 @@ spec:
         RUNTIME_CLASS: ""
         RUNTIME_DISABLE_SSL: "false"
         PERSISTENT_STORAGE_SIZE: 'repl{{ ConfigOption "sandbox_storage_size" }}'
+        # Fixed-size OHE clusters cannot rely on an autoscaler to clear this state.
+        RUNTIME_PENDING_REAP_ENABLED: "true"
         MEMORY_REQUEST: 'repl{{ ConfigOption "sandbox_memory_request" }}'
         MEMORY_LIMIT: 'repl{{ ConfigOption "sandbox_memory_limit" }}'
         CPU_REQUEST: 'repl{{ ConfigOption "sandbox_cpu_request" }}'
