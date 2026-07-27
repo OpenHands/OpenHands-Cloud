@@ -60,6 +60,19 @@ def test_realm_template_is_valid_json() -> None:
     json.loads(REALM_TEMPLATE.read_text(encoding="utf-8"))
 
 
+def test_realm_template_allows_auth_flow_email_verification_redirect() -> None:
+    realm = json.loads(REALM_TEMPLATE.read_text(encoding="utf-8"))
+    client = next(
+        client
+        for client in realm["clients"]
+        if client["clientId"] == "$KEYCLOAK_CLIENT_ID"
+    )
+
+    assert (
+        "https://$WEB_HOST/login?email_verified=true" in client["redirectUris"]
+    )
+
+
 def test_pkce_enabled_identity_providers_set_pkce_method() -> None:
     realm = json.loads(REALM_TEMPLATE.read_text(encoding="utf-8"))
     assert_pkce_enabled_providers_set_method(realm)
