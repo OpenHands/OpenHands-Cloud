@@ -25,3 +25,19 @@ tests:
     asserts:
       - matchRegexRaw:
           pattern: "was not deployed by this release"
+  - it: warns when values still set the removed redis key
+    set:
+      enabled: true
+      redis.master.resources.requests.cpu: 500m
+    asserts:
+      - matchRegexRaw:
+          pattern: "WARNING: your values still set .redis:."
+      - matchRegexRaw:
+          pattern: "redis.master.resources            -> valkey.resources"
+  - it: stays quiet when values do not set redis
+    set:
+      enabled: true
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "WARNING: your values still set"
+

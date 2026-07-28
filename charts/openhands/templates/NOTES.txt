@@ -36,3 +36,22 @@ Next steps:
 
 Docs: https://docs.all-hands.dev
 {{- end }}
+{{- if .Values.redis }}
+
+WARNING: your values still set `redis:`, which this chart no longer reads.
+
+    The cache is now the Valkey subchart, configured under `valkey:`. Helm
+    accepts the unused `redis:` block silently, so the cache is currently
+    running on chart defaults and any sizing you set under `redis:` is NOT
+    being applied.
+
+    Translate the keys you set, then remove the `redis:` block:
+
+        redis.enabled                     -> valkey.enabled
+        redis.master.resources            -> valkey.resources
+        redis.master.persistence.enabled  -> valkey.dataStorage.enabled
+        redis.replica.replicaCount: 0     -> valkey.replica.enabled: false
+        redis.auth.existingSecret         -> valkey.auth.usersExistingSecret
+
+    The `redis` Secret itself is unchanged; keep it as it is.
+{{- end }}
