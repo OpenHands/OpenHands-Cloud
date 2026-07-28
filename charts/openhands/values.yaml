@@ -100,9 +100,12 @@ integrations:
 filestore:
   # ephemeral: true deploys the bundled in-cluster MinIO (a conditional
   # dependency) and points the app at it — handy for POC/feature envs. NOTE the
-  # bundled MinIO runs WITHOUT persistence, so its data is lost when the pod is
-  # rescheduled. For anything durable set ephemeral: false and use an external
-  # store (S3 or GCS) below.
+  # name is misleading: the bundled MinIO is only non-persistent with THIS
+  # chart's minio.persistence.enabled: false default, and Replicated installs
+  # override it to true (replicated/openhands.yaml), so those hold durable
+  # customer data in a PVC. Treat the bundled store as persistent unless you
+  # have checked minio.persistence for the install in front of you. For a
+  # managed store set ephemeral: false and use an external store (S3 or GCS).
   ephemeral: false
   # Bucket name (S3/GCS) or MinIO bucket for conversation/session file storage.
   bucket: openhands-sessions
@@ -677,7 +680,13 @@ minio:
   buckets:
     - name: openhands-sessions
       policy: none
-      purge: true
+      # MUST stay false. The minio chart runs its bucket job as a
+      # post-install,post-upgrade hook, and purge: true makes that job
+      # "mc rm -r --force" the bucket before recreating it — so every ordinary
+      # upgrade of a persistent install (Replicated sets persistence.enabled:
+      # true) would wipe every conversation and session file. A render-time
+      # guard in templates/validations.yaml rejects true for bundled installs.
+      purge: false
   svcaccts:
     # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
     # (separate subchart), so it carries its own matching default in
