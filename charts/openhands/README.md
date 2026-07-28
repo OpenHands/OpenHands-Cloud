@@ -480,28 +480,33 @@ For AWS S3 on EKS you can skip the secret entirely and use a pod-level AWS
 identity: omit `existingSecret` and grant the app ServiceAccount an IAM role
 (via IRSA or EKS Pod Identity) with access to the bucket. Keep `region` set.
 
-### Bring Your Own Redis
+### Bring Your Own Cache
 
-To use an external Redis instance:
+The chart deploys [Valkey](https://valkey.io) as its cache. Valkey speaks the Redis protocol, so
+any Redis-compatible server works as an external replacement.
 
-1. Disable the included Redis:
+This applies to Helm installs only. Replicated Embedded Cluster always uses the bundled cache and
+has no configuration option to disable it.
+
+1. Disable the bundled cache:
 
    ```yaml
-   redis:
+   valkey:
      enabled: false
    ```
 
-2. Configure the external Redis connection:
+2. Point the application at your own server:
 
    ```yaml
-   externalRedis:
-     host: your-redis-host
-     port: 6379
-     existingSecret: redis
-   # Make sure the secret exists with the correct credentials
-   # kubectl create secret generic redis \
-   #   --from-literal=redis-password=<your-redis-password>
+   env:
+     REDIS_HOST: your-cache-host
+     REDIS_PORT: "6379"
+     REDIS_PASSWORD: your-cache-password
    ```
+
+The environment variable names keep the `REDIS_` prefix because that is what the application
+reads. Note that `REDIS_PASSWORD` is supplied as a literal value, so it is stored in your values
+file rather than read from a Secret.
 
 ### Storage Class Configuration
 
@@ -586,6 +591,51 @@ To upgrade the chart:
 ```bash
 helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 ```
+
+### Migrating from Redis to Valkey
+
+The bundled cache changed from Bitnami Redis to the official Valkey chart. **No action is needed
+unless your values file configures the cache.**
+
+The `redis` Secret is unchanged. Keep it exactly as it is, including the `redis-password` key.
+Valkey authenticates with the same credential, so nothing needs to be created, rotated, or
+re-derived, in either direction.
+
+If your values file has a `redis:` block, rename it and translate the keys before upgrading. A
+leftover `redis:` block is **ignored without any warning**, and the cache silently falls back to
+the chart defaults, so an untranslated upgrade will appear to succeed while running on different
+settings than you intended.
+
+| Before | After |
+|---|---|
+| `redis.enabled` | `valkey.enabled` |
+| `redis.master.resources` | `valkey.resources` |
+| `redis.master.persistence.enabled` | `valkey.dataStorage.enabled` |
+| `redis.replica.replicaCount: 0` | `valkey.replica.enabled: false` |
+| `redis.auth.existingSecret: redis` | `valkey.auth.usersExistingSecret: redis` |
+| `redis.architecture: standalone` | no equivalent, covered by `valkey.replica.enabled: false` |
+
+For example, a values file pinning cache resources becomes:
+
+```yaml
+valkey:
+  enabled: true
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+```
+
+The upgrade discards whatever is in the cache. Nothing there is authoritative, but expect
+in-flight sign-in flows to need restarting, rate-limit counters to reset, and the identity and
+organization caches to repopulate from the database and your identity provider.
+
+To go back, run `helm rollback openhands -n openhands`. It restores the previous release from
+stored manifests, so it needs no registry access. On Replicated Embedded Cluster, deploy the
+previous version from the Admin Console instead.
 
 ## Uninstallation
 

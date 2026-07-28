@@ -1,0 +1,107 @@
+suite: valkey cache wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+  # troubleshoot/secrets.yaml renders the bundle specs by including helpers
+  # defined across these files, so they must be compiled alongside it.
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: points the cache env at the valkey service
+    set:
+      enabled: true
+      valkey.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_HOST
+            value: openhands-valkey
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PORT
+            value: "6379"
+
+  # The secret name is retained from the Bitnami chart on purpose so existing
+  # installs keep their credential across the upgrade. If this assertion is
+  # changed, every existing deployment has to create a new secret before
+  # upgrading and retain the old one in order to revert.
+  - it: reads the password from the retained redis secret
+    set:
+      enabled: true
+      valkey.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: redis
+                key: redis-password
+
+  - it: drops the cache env when the embedded cache is disabled
+    set:
+      enabled: true
+      valkey.enabled: false
+    asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_HOST
+            value: openhands-valkey
+
+  # Valkey renders a Deployment, not a StatefulSet. A statefulsetStatus
+  # analyzer left pointing at the old workload reports permanently unready.
+  - it: analyses the cache as a Deployment in the support bundle
+    set:
+      enabled: true
+      valkey.enabled: true
+      replicated.enabled: true
+      replicated.redisPassword: test-password
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "deploymentStatus:\n\\s+name: openhands-valkey"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "app.kubernetes.io/name=valkey"
+      # Collector type stays `redis`: Valkey speaks RESP and `default` is the
+      # ACL user the app authenticates as.
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "redis://default:test-password@openhands-valkey"
+
+  # Catches the whole class of missed rename: any template still naming the
+  # Bitnami workload. Laminar ships its own separate cache and is unaffected.
+  - it: leaves no reference to the removed bitnami workload
+    set:
+      enabled: true
+      valkey.enabled: true
+      replicated.enabled: true
+      replicated.redisPassword: test-password
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "openhands-redis-master"
