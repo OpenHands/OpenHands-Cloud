@@ -207,6 +207,8 @@ bitbucketDataCenter:
   enabled: false
   host: ""
   botUsername: ""
+  # Shared deadline for both requests made by the BBDC OIDC userinfo proxy.
+  userinfoTimeoutSeconds: 10
 
 azureDevOps:
   enabled: false
@@ -423,6 +425,10 @@ keycloak:
   # provider (e.g. Bitbucket Data Center) to log in again.
   ssoSessionIdleTimeout: 259200
   ssoSessionMaxLifespan: 604800
+  # OpenHands-to-Keycloak timeout (seconds) and Keycloak identity-provider
+  # socket timeout (milliseconds). Keep both above the BBDC userinfo deadline.
+  requestTimeoutSeconds: 15
+  idpHttpSocketTimeoutMillis: "15000"
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
@@ -464,6 +470,8 @@ keycloak:
       value: "xforwarded"
     - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
       value: "true"
+    - name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS
+      value: '{{ .Values.idpHttpSocketTimeoutMillis | default "15000" }}'
     # Bitnami Keycloak renders extraEnvVars with common.tplvalues.render, so
     # this is evaluated in the Keycloak subchart context at render time.
     - name: KC_DB_URL_PROPERTIES

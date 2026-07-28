@@ -586,6 +586,36 @@ spec:
           type: text
           when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
           required: true
+        - name: bitbucket_data_center_userinfo_timeout_seconds
+          title: Bitbucket Data Center User Info Timeout (seconds)
+          help_text: >-
+            Total time allowed for both Bitbucket Data Center user lookup
+            requests during sign-in. Increase this for large or
+            directory-backed Bitbucket installations. Keep the Authentication
+            HTTP Timeout larger than this value.
+          type: text
+          default: "10"
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*$'
+              message: Must be a positive number of seconds
+        - name: authentication_http_timeout_seconds
+          title: Authentication HTTP Timeout (seconds)
+          help_text: >-
+            Time allowed for Keycloak identity-provider requests and OpenHands
+            requests to Keycloak. Keep this larger than the Bitbucket Data
+            Center User Info Timeout; for example, use 35 when the user info
+            timeout is 30.
+          type: text
+          default: "15"
+          when: 'repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}'
+          required: true
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*$'
+              message: Must be a positive number of seconds
 
     - name: azure_devops_authentication
       title: Azure DevOps Authentication
