@@ -12,3 +12,11 @@ are never rendered, so a server-less release must not trip them.
 {{- if and .Values.enabled (not .Values.postgresql.enabled) (or (not .Values.externalDatabase.host) (not .Values.externalDatabase.username)) -}}
 {{- fail "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database." -}}
 {{- end -}}
+{{/*
+Not scoped to .Values.enabled: the cache subchart installs independently of the
+enterprise-server, so a server-less release with stale cache values is still
+misconfigured.
+*/}}
+{{- if .Values.redis -}}
+{{- fail "values set `redis:`, which this chart no longer reads. The cache is the valkey subchart, configured under `valkey:`, and an unused `redis:` block is silently ignored, so any sizing set under it is NOT applied. Translate the keys you set, then delete the `redis:` block: redis.enabled -> valkey.enabled; redis.master.resources -> valkey.resources; redis.master.persistence.enabled -> valkey.dataStorage.enabled; redis.replica.replicaCount: 0 -> valkey.replica.enabled: false; redis.auth.existingSecret -> valkey.auth.usersExistingSecret. The `redis` Secret itself is unchanged; keep it as it is." -}}
+{{- end -}}
