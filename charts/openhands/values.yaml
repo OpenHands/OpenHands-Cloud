@@ -209,6 +209,8 @@ bitbucketDataCenter:
   botUsername: ""
   # Shared deadline for both requests made by the BBDC OIDC userinfo proxy.
   userinfoTimeoutSeconds: 10
+  # Covers DNS resolution, TCP connection, and TLS negotiation.
+  connectTimeoutSeconds: 5
 
 azureDevOps:
   enabled: false

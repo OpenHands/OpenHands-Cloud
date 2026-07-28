@@ -222,6 +222,8 @@ def test_auth_http_timeouts_render_to_openhands_and_keycloak() -> None:
             "--set",
             "bitbucketDataCenter.userinfoTimeoutSeconds=30",
             "--set",
+            "bitbucketDataCenter.connectTimeoutSeconds=8",
+            "--set",
             "keycloak.enabled=true",
             "--set",
             "keycloak.requestTimeoutSeconds=35",
@@ -235,6 +237,10 @@ def test_auth_http_timeouts_render_to_openhands_and_keycloak() -> None:
 
     assert re.search(
         r"name: BITBUCKET_DC_USERINFO_TIMEOUT\s+value: [\"']30[\"']",
+        result.stdout,
+    )
+    assert re.search(
+        r"name: BITBUCKET_DC_CONNECT_TIMEOUT\s+value: [\"']8[\"']",
         result.stdout,
     )
     assert re.search(
@@ -253,8 +259,12 @@ def test_replicated_auth_timeout_options_are_wired_to_chart_values() -> None:
     values = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
 
     assert "name: bitbucket_data_center_userinfo_timeout_seconds" in config
+    assert "name: bitbucket_data_center_connect_timeout_seconds" in config
     assert "name: authentication_http_timeout_seconds" in config
     assert (
         'ConfigOption "bitbucket_data_center_userinfo_timeout_seconds"' in values
+    )
+    assert (
+        'ConfigOption "bitbucket_data_center_connect_timeout_seconds"' in values
     )
     assert 'ConfigOption "authentication_http_timeout_seconds"' in values

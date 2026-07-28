@@ -279,6 +279,8 @@
   value: {{ .Values.bitbucketDataCenter.host }}
 - name: BITBUCKET_DC_USERINFO_TIMEOUT
   value: {{ .Values.bitbucketDataCenter.userinfoTimeoutSeconds | quote }}
+- name: BITBUCKET_DC_CONNECT_TIMEOUT
+  value: {{ .Values.bitbucketDataCenter.connectTimeoutSeconds | quote }}
 - name: BITBUCKET_DATA_CENTER_BOT_USERNAME
   value: {{ .Values.bitbucketDataCenter.botUsername | quote }}
 - name: BITBUCKET_DATA_CENTER_CLIENT_ID

@@ -447,6 +447,7 @@ spec:
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
       botUsername: 'repl{{ ConfigOption "bitbucket_data_center_bot_username" }}'
       userinfoTimeoutSeconds: 'repl{{ ConfigOption "bitbucket_data_center_userinfo_timeout_seconds" }}'
+      connectTimeoutSeconds: 'repl{{ ConfigOption "bitbucket_data_center_connect_timeout_seconds" }}'
     azureDevOps:
       enabled: repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}
       tenantId: 'repl{{ ConfigOption "azure_devops_tenant_id" }}'
