@@ -790,6 +790,58 @@ spec:
           when: 'repl{{ ConfigOptionEquals "slack_enabled" "1" }}'
           required: true
 
+
+    - name: smtp_configuration
+      title: SMTP Email Delivery
+      description: Configure SMTP for OpenHands email notifications
+      items:
+        - name: smtp_enabled
+          title: Enable SMTP
+          help_text: Enable SMTP email delivery for budget alerts and admin notifications
+          type: bool
+          default: "0"
+        - name: smtp_host
+          title: SMTP Host
+          help_text: Hostname of the SMTP server
+          type: text
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+          required: true
+        - name: smtp_port
+          title: SMTP Port
+          help_text: Port for the SMTP server
+          type: text
+          default: "587"
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+          required: true
+        - name: smtp_from_email
+          title: SMTP From Email
+          help_text: Sender address for outgoing SMTP email
+          type: text
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+          required: true
+        - name: smtp_use_ssl
+          title: Use SMTP SSL
+          help_text: Use SMTPS (SSL) instead of STARTTLS
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+        - name: smtp_use_tls
+          title: Use SMTP STARTTLS
+          help_text: Enable STARTTLS after connecting
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+        - name: smtp_username
+          title: SMTP Username
+          help_text: Username for SMTP authentication
+          type: text
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+        - name: smtp_password
+          title: SMTP Password
+          help_text: Password for SMTP authentication
+          type: password
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+
     - name: database_configuration
       title: Database Configuration
       description: Configure PostgreSQL database settings

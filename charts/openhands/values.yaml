@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: cloud-1.47.1
+  tag: 1.48.0
 
 autoscaling:
   enabled: false
@@ -365,6 +365,17 @@ tavily:
   enabled: false
   auth:
     existingSecret: tavily-api-key
+
+
+smtp:
+  enabled: false
+  host: ""
+  port: "587"
+  fromEmail: ""
+  useSsl: false
+  useTls: true
+  auth:
+    existingSecret: smtp-credentials
 
 tls:
   enabled: false
@@ -756,6 +767,21 @@ valkey:
 maintenanceTasks:
   enabled: true
   schedule: "0 6 * * *" # Run daily at 1AM Eastern Time (6AM UTC)
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+budgetMaintenance:
+  enabled: true
+  schedule: "*/15 * * * *" # Run every 15 minutes
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
   successfulJobsHistoryLimit: 3
