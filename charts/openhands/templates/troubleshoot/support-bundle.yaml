@@ -442,7 +442,7 @@ spec:
           disabled: true
     {{- end }}
     {{- if and .Values.valkey.enabled .Values.replicated.enabled .Values.replicated.redisPassword }}
-    # Collector type stays `redis`: Valkey speaks RESP, and `default` is the ACL user.
+    # Collector type is `redis`: Valkey speaks RESP and `default` is the ACL user.
     - redis:
         collectorName: redis
         uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ .Release.Name }}-valkey.{{ .Release.Namespace }}.svc.cluster.local:6379

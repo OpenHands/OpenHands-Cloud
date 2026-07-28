@@ -594,8 +594,7 @@ helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 
 ### Migrating from Redis to Valkey
 
-The bundled cache changed from Bitnami Redis to the official Valkey chart. **No action is needed
-unless your values file configures the cache.**
+**No action is needed unless your values file configures the cache.**
 
 The `redis` Secret is unchanged. Keep it exactly as it is, including the `redis-password` key.
 Valkey authenticates with the same credential, so nothing needs to be created, rotated, or

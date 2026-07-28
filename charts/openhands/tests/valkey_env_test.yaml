@@ -33,10 +33,10 @@ tests:
             name: REDIS_PORT
             value: "6379"
 
-  # The secret name is retained from the Bitnami chart on purpose so existing
-  # installs keep their credential across the upgrade. If this assertion is
-  # changed, every existing deployment has to create a new secret before
-  # upgrading and retain the old one in order to revert.
+  # The `redis` secret name is deliberate: existing installs keep their
+  # credential across the upgrade. If this assertion changes, every existing
+  # deployment has to create a new secret before upgrading and retain the old
+  # one in order to revert.
   - it: reads the password from the retained redis secret
     set:
       enabled: true
@@ -91,9 +91,10 @@ tests:
           path: stringData.support-bundle-spec
           pattern: "redis://default:test-password@openhands-valkey"
 
-  # Catches the whole class of missed rename: any template still naming the
-  # Bitnami workload. Laminar ships its own separate cache and is unaffected.
-  - it: leaves no reference to the removed bitnami workload
+  # Catches the whole class of missed rename: any template still naming
+  # `openhands-redis-master`. Laminar ships its own separate cache and is
+  # unaffected.
+  - it: leaves no reference to openhands-redis-master
     set:
       enabled: true
       valkey.enabled: true

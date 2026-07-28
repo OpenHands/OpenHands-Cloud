@@ -738,8 +738,7 @@ valkey:
     repository: valkey/valkey
   auth:
     enabled: true
-    # Secret name is retained from the Bitnami chart so existing installs keep
-    # their credential across the upgrade.
+    # Deliberate: existing installs keep their credential across the upgrade.
     usersExistingSecret: "redis"
     aclUsers:
       default:
