@@ -45,3 +45,24 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: fails when values still set the removed redis key
+    set:
+      redis.master.resources.requests.cpu: 500m
+    asserts:
+      - failedTemplate:
+          errorMessage: "values set `redis:`, which this chart no longer reads. The cache is the valkey subchart, configured under `valkey:`, and an unused `redis:` block is silently ignored, so any sizing set under it is NOT applied. Translate the keys you set, then delete the `redis:` block: redis.enabled -> valkey.enabled; redis.master.resources -> valkey.resources; redis.master.persistence.enabled -> valkey.dataStorage.enabled; redis.replica.replicaCount: 0 -> valkey.replica.enabled: false; redis.auth.existingSecret -> valkey.auth.usersExistingSecret. The `redis` Secret itself is unchanged; keep it as it is."
+  - it: fails on a stale redis block even when the server is not deployed
+    set:
+      enabled: false
+      redis.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "values set `redis:`, which this chart no longer reads. The cache is the valkey subchart, configured under `valkey:`, and an unused `redis:` block is silently ignored, so any sizing set under it is NOT applied. Translate the keys you set, then delete the `redis:` block: redis.enabled -> valkey.enabled; redis.master.resources -> valkey.resources; redis.master.persistence.enabled -> valkey.dataStorage.enabled; redis.replica.replicaCount: 0 -> valkey.replica.enabled: false; redis.auth.existingSecret -> valkey.auth.usersExistingSecret. The `redis` Secret itself is unchanged; keep it as it is."
+  - it: renders when values use the valkey key instead
+    set:
+      valkey.enabled: true
+      valkey.resources.requests.cpu: 500m
+    asserts:
+      - hasDocuments:
+          count: 0
+
