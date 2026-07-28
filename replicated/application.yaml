@@ -31,6 +31,9 @@ spec:
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/deployment/automation{{repl end}}'
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/service/automation{{repl end}}'
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/ingress/openhands-automation-ingress{{repl end}}'
+    - '{{repl if ConfigOptionEquals "agent_canvas_enabled" "1" }}openhands/deployment/agent-canvas{{repl end}}'
+    - '{{repl if ConfigOptionEquals "agent_canvas_enabled" "1" }}openhands/service/agent-canvas{{repl end}}'
+    - '{{repl if ConfigOptionEquals "agent_canvas_enabled" "1" }}openhands/ingress/openhands-agent-canvas-ingress{{repl end}}'
 
     # keycloak
     - openhands/statefulset/keycloak

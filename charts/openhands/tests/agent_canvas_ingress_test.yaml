@@ -1,0 +1,79 @@
+suite: agent canvas ingress
+templates:
+  - ingress-agent-canvas.yaml
+tests:
+  - it: does not render when agent-canvas is disabled
+    set:
+      agent-canvas.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: does not render when only the ingress is disabled
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: routes /canvas on the configured host to the agent-canvas service
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: true
+      agent-canvas.ingress.host: app.example.com
+      agent-canvas.ingress.tls.enabled: true
+      agent-canvas.ingress.tls.secretName: openhands-tls
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: metadata.name
+          value: openhands-agent-canvas-ingress
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
+      - equal:
+          path: spec.rules[0].host
+          value: app.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /canvas
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: agent-canvas
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 8000
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: app.example.com
+      - equal:
+          path: spec.tls[0].secretName
+          value: openhands-tls
+
+  - it: omits the TLS block when TLS is disabled
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: true
+      agent-canvas.ingress.host: app.example.com
+      agent-canvas.ingress.tls.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.tls
+
+  - it: fails when the ingress host is not provided
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: true
+      agent-canvas.ingress.host: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true

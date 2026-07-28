@@ -9,8 +9,11 @@
 
 image:
   repository: ghcr.io/openhands/agent-canvas
-  # Tag is supplied at deploy time via the OpenHands deploy workflow.
-  tag: ""
+  # Pinned to a semver release tag (agent-canvas publishes release-tagged
+  # images via Release Please). Environments that want a specific build can
+  # override this, but the default should track a published release so the
+  # chart ships a known-good version out of the box.
+  tag: "1.5.2"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
