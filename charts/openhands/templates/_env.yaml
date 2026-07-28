@@ -277,10 +277,6 @@
 {{- if .Values.bitbucketDataCenter.enabled }}
 - name: BITBUCKET_DATA_CENTER_HOST
   value: {{ .Values.bitbucketDataCenter.host }}
-- name: BITBUCKET_DC_USERINFO_TIMEOUT
-  value: {{ .Values.bitbucketDataCenter.userinfoTimeoutSeconds | quote }}
-- name: BITBUCKET_DC_CONNECT_TIMEOUT
-  value: {{ .Values.bitbucketDataCenter.connectTimeoutSeconds | quote }}
 - name: BITBUCKET_DATA_CENTER_BOT_USERNAME
   value: {{ .Values.bitbucketDataCenter.botUsername | quote }}
 - name: BITBUCKET_DATA_CENTER_CLIENT_ID
@@ -300,8 +296,6 @@
       key: bot-token
       optional: true
 {{- end }}
-- name: KEYCLOAK_REQUEST_TIMEOUT
-  value: {{ .Values.keycloak.requestTimeoutSeconds | quote }}
 {{- if .Values.azureDevOps.enabled }}
 - name: AZURE_DEVOPS_TENANT_ID
   value: {{ .Values.azureDevOps.tenantId | quote }}

@@ -207,10 +207,6 @@ bitbucketDataCenter:
   enabled: false
   host: ""
   botUsername: ""
-  # Shared deadline for both requests made by the BBDC OIDC userinfo proxy.
-  userinfoTimeoutSeconds: 10
-  # Covers DNS resolution, TCP connection, and TLS negotiation.
-  connectTimeoutSeconds: 5
 
 azureDevOps:
   enabled: false
@@ -427,9 +423,7 @@ keycloak:
   # provider (e.g. Bitbucket Data Center) to log in again.
   ssoSessionIdleTimeout: 259200
   ssoSessionMaxLifespan: 604800
-  # OpenHands-to-Keycloak timeout (seconds) and Keycloak identity-provider
-  # socket timeout (milliseconds). Keep both above the BBDC userinfo deadline.
-  requestTimeoutSeconds: 15
+  # Allow self-hosted identity providers to survive brief network stalls.
   idpHttpSocketTimeoutMillis: "15000"
   url: "http://keycloak"
   fullnameOverride: keycloak

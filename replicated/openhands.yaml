@@ -109,8 +109,6 @@ spec:
     keycloak:
       enabled: true
       url: 'http://keycloak'
-      requestTimeoutSeconds: 'repl{{ ConfigOption "authentication_http_timeout_seconds" }}'
-      idpHttpSocketTimeoutMillis: 'repl{{ ConfigOption "authentication_http_timeout_seconds" }}000'
       ssoSessionIdleTimeout: 'repl{{ ConfigOption "keycloak_sso_session_idle_timeout" }}'
       ssoSessionMaxLifespan: 'repl{{ ConfigOption "keycloak_sso_session_max_lifespan" }}'
       resourcesPreset: none
@@ -446,8 +444,6 @@ spec:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
       botUsername: 'repl{{ ConfigOption "bitbucket_data_center_bot_username" }}'
-      userinfoTimeoutSeconds: 'repl{{ ConfigOption "bitbucket_data_center_userinfo_timeout_seconds" }}'
-      connectTimeoutSeconds: 'repl{{ ConfigOption "bitbucket_data_center_connect_timeout_seconds" }}'
     azureDevOps:
       enabled: repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}
       tenantId: 'repl{{ ConfigOption "azure_devops_tenant_id" }}'

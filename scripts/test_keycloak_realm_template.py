@@ -21,8 +21,6 @@ KEYCLOAK_CONFIG_SCRIPT = (
     REPO_ROOT / "charts" / "openhands" / "templates" / "keycloak-config-script.yaml"
 )
 OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
-REPLICATED_CONFIG = REPO_ROOT / "replicated" / "config.yaml"
-REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 
 
 def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
@@ -203,8 +201,7 @@ def test_keycloak_config_script_includes_laminar_web_host_in_envsubst() -> None:
     )
 
 
-def test_auth_http_timeouts_render_to_openhands_and_keycloak() -> None:
-    """Keep the inner BBDC deadline below Keycloak's broker deadline."""
+def test_keycloak_identity_provider_socket_timeout() -> None:
     import subprocess
 
     result = subprocess.run(
@@ -216,19 +213,7 @@ def test_auth_http_timeouts_render_to_openhands_and_keycloak() -> None:
             "--set",
             "enabled=true",
             "--set",
-            "bitbucketDataCenter.enabled=true",
-            "--set",
-            "bitbucketDataCenter.host=bitbucket.test",
-            "--set",
-            "bitbucketDataCenter.userinfoTimeoutSeconds=30",
-            "--set",
-            "bitbucketDataCenter.connectTimeoutSeconds=8",
-            "--set",
             "keycloak.enabled=true",
-            "--set",
-            "keycloak.requestTimeoutSeconds=35",
-            "--set",
-            "keycloak.idpHttpSocketTimeoutMillis=35000",
         ],
         capture_output=True,
         text=True,
@@ -236,35 +221,7 @@ def test_auth_http_timeouts_render_to_openhands_and_keycloak() -> None:
     )
 
     assert re.search(
-        r"name: BITBUCKET_DC_USERINFO_TIMEOUT\s+value: [\"']30[\"']",
-        result.stdout,
-    )
-    assert re.search(
-        r"name: BITBUCKET_DC_CONNECT_TIMEOUT\s+value: [\"']8[\"']",
-        result.stdout,
-    )
-    assert re.search(
-        r"name: KEYCLOAK_REQUEST_TIMEOUT\s+value: [\"']35[\"']",
-        result.stdout,
-    )
-    assert re.search(
         r"name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS"
-        r"\s+value: [\"']35000[\"']",
+        r"\s+value: [\"']15000[\"']",
         result.stdout,
     )
-
-
-def test_replicated_auth_timeout_options_are_wired_to_chart_values() -> None:
-    config = REPLICATED_CONFIG.read_text(encoding="utf-8")
-    values = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
-
-    assert "name: bitbucket_data_center_userinfo_timeout_seconds" in config
-    assert "name: bitbucket_data_center_connect_timeout_seconds" in config
-    assert "name: authentication_http_timeout_seconds" in config
-    assert (
-        'ConfigOption "bitbucket_data_center_userinfo_timeout_seconds"' in values
-    )
-    assert (
-        'ConfigOption "bitbucket_data_center_connect_timeout_seconds"' in values
-    )
-    assert 'ConfigOption "authentication_http_timeout_seconds"' in values
