@@ -485,9 +485,6 @@ identity: omit `existingSecret` and grant the app ServiceAccount an IAM role
 The chart deploys [Valkey](https://valkey.io) as its cache. Valkey speaks the Redis protocol, so
 any Redis-compatible server works as an external replacement.
 
-This applies to Helm installs only. Replicated Embedded Cluster always uses the bundled cache and
-has no configuration option to disable it.
-
 1. Disable the bundled cache:
 
    ```yaml
