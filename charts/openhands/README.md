@@ -634,8 +634,7 @@ in-flight sign-in flows to need restarting, rate-limit counters to reset, and th
 organization caches to repopulate from the database and your identity provider.
 
 To go back, run `helm rollback openhands -n openhands`. It restores the previous release from
-stored manifests, so it needs no registry access. On Replicated Embedded Cluster, deploy the
-previous version from the Admin Console instead.
+stored manifests, so it needs no registry access.
 
 ## Uninstallation
 
