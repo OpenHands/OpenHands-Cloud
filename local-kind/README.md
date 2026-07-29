@@ -21,17 +21,18 @@ Pick a base, e.g. `oh.example.com`, and create these DNS records:
 | Record (A) | Value |
 |---|---|
 | `*.oh.example.com` | `127.0.0.1` |
-| `*.app.oh.example.com` | `127.0.0.1` |
-| `*.runtime.oh.example.com` | `127.0.0.1` |
 
-Issue one certificate covering all three wildcards via DNS-01, e.g. with
+Every hostname sits one label under the base domain (`app.`, `auth.`,
+`runtime-api.`, and each sandbox at `{id}-runtimes.`), so that single wildcard
+covers the whole install.
+
+Issue one certificate for that wildcard via DNS-01, e.g. with
 [acme.sh](https://github.com/acmesh-official/acme.sh) and your DNS provider's
 API:
 
 ```bash
 acme.sh --issue --server letsencrypt --dns dns_<provider> \
-  -d 'oh.example.com' -d '*.oh.example.com' \
-  -d '*.app.oh.example.com' -d '*.runtime.oh.example.com'
+  -d 'oh.example.com' -d '*.oh.example.com'
 ```
 
 Create a GitHub App for login (its callbacks embed the base domain):

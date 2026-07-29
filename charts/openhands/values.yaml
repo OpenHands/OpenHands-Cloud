@@ -83,7 +83,11 @@ securityContext:
 env:
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
-  RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
+  # How the app addresses a sandbox. Must agree with the runtime-api's
+  # RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR pair, which is what names each
+  # sandbox ingress. The dash separator keeps sandboxes one label under the base
+  # domain so a single wildcard certificate covers them.
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtimes.example.com"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
@@ -436,7 +440,7 @@ keycloak:
   ingress:
     enabled: false
     # REQUIRED: Update to a hostname in a DNS domain you own
-    # hostname: auth.app.example.com
+    # hostname: auth.example.com
     servicePort: 80
     tls: true
     annotations: {}
@@ -904,8 +908,15 @@ runtime-api:
     DB_USER: postgres
     DB_NAME: runtime_api_db
     RUNTIME_CLASS: ""
-    # REQUIRED: Update to match the host set in the ingress section above
-    # RUNTIME_BASE_URL: "runtime.example.com"
+    # REQUIRED: the base each sandbox hostname is built from, as
+    # {id}{RUNTIME_URL_SEPARATOR}{RUNTIME_BASE_URL}. Must agree with the app's
+    # env.RUNTIME_URL_PATTERN above.
+    # RUNTIME_BASE_URL: "runtimes.example.com"
+    # Joins the sandbox id to the base. "-" (the flat layout) keeps sandboxes one
+    # label under the base domain, so a single wildcard certificate covers them;
+    # "." nests them under RUNTIME_BASE_URL and needs *.RUNTIME_BASE_URL instead.
+    # The runtime-api defaults to "." when this is unset.
+    RUNTIME_URL_SEPARATOR: "-"
     RUNTIME_DISABLE_SSL: "true"
     MEMORY_REQUEST: "3072Mi"
     MEMORY_LIMIT: "3072Mi"

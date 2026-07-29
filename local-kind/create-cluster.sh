@@ -2,9 +2,9 @@
 # Create the local KinD cluster with ingress, TLS, and in-cluster DNS wired up.
 #
 # Required env:
-#   BASE_DOMAIN    e.g. oh.example.com — DNS for app.$BASE_DOMAIN,
-#                  auth.app.$BASE_DOMAIN, runtime-api.$BASE_DOMAIN and
-#                  *.runtime.$BASE_DOMAIN must resolve to 127.0.0.1
+#   BASE_DOMAIN    e.g. oh.example.com — every hostname is one label under it
+#                  (app., auth., runtime-api., and {id}-runtimes. per sandbox),
+#                  so *.$BASE_DOMAIN must resolve to 127.0.0.1
 #   TLS_CERT_FILE  full-chain certificate covering all hostnames above
 #   TLS_KEY_FILE   matching private key
 set -euo pipefail
@@ -13,7 +13,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cluster="${KIND_CLUSTER:-openhands-local-kind}"
 
 : "${BASE_DOMAIN:?set BASE_DOMAIN (e.g. oh.example.com)}"
-: "${TLS_CERT_FILE:?set TLS_CERT_FILE (full chain covering *.$BASE_DOMAIN, *.app.$BASE_DOMAIN, *.runtime.$BASE_DOMAIN)}"
+: "${TLS_CERT_FILE:?set TLS_CERT_FILE (full chain covering *.$BASE_DOMAIN)}"
 : "${TLS_KEY_FILE:?set TLS_KEY_FILE}"
 
 kind create cluster --name "$cluster" --config "$script_dir/kind-config.yaml" --wait 120s

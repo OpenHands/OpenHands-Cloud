@@ -47,11 +47,18 @@ The kubeconfig is the default context after `kind create cluster`.
   `scripts/create_github_app` register the `/realms/allhands/...` callback.
   Realm provisioning re-runs on every app-pod restart and re-templates
   redirect URIs from `WEB_HOST`; manual `kcadm` edits do not survive restarts.
-- **Hostname layout is `app.<base>` / `auth.app.<base>`** — assumed by the
-  GitHub App script and derived by the chart (`auth.<ingress.host>`).
+- **Hostname layout is flat**: `app.<base>`, `auth.<base>`,
+  `runtime-api.<base>`, and each sandbox at `{id}-runtimes.<base>`, so one
+  `*.<base>` cert and DNS record cover everything. `AUTH_WEB_HOST` follows
+  `keycloak.ingress.hostname` when it is set, and only falls back to
+  `auth.<ingress.host>` when it is not. The GitHub App script takes
+  `--dns-layout` (default `flat`) to build a matching OAuth callback, which
+  must agree with the installer's Hostname Configuration Mode.
 - **`RUNTIME_DISABLE_SSL` defaults to `"true"` in the chart**; the template
-  sets it `"false"` so sandbox URLs are https. `RUNTIME_BASE_URL` must match
-  `RUNTIME_URL_PATTERN`.
+  sets it `"false"` so sandbox URLs are https. `RUNTIME_BASE_URL` and
+  `RUNTIME_URL_SEPARATOR` must together match `RUNTIME_URL_PATTERN` — the
+  runtime-api names each sandbox ingress `{id}{separator}{base}`, and the app
+  addresses it via the pattern.
 - **Memory**: ~16 GB Docker VM; each conversation spawns a 3 Gi sandbox that
   is never reaped. `Insufficient memory` → delete stale
   `runtime-<id>` deployments in the `openhands` namespace.
@@ -62,7 +69,7 @@ The kubeconfig is the default context after `kind create cluster`.
 
 - `https://app.$BASE_DOMAIN` serves the login page (200, trusted cert).
 - Login with the GitHub App completes.
-- A conversation gets a `runtime-*` pod, its ingress under
-  `*.runtime.$BASE_DOMAIN`, and an agent reply.
+- A conversation gets a `runtime-*` pod, its ingress at
+  `<id>-runtimes.$BASE_DOMAIN`, and an agent reply.
 - Troubleshoot: `support-bundle --load-cluster-specs -n openhands` collects,
   `support-bundle upload <archive>` sends it to the Vendor Portal.

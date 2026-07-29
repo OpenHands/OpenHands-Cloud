@@ -20,7 +20,11 @@ resource "acme_certificate" "cert" {
   account_key_pem = acme_registration.reg[0].account_key_pem
   common_name     = var.base_domain
 
-  subject_alternative_names = [
+  # The wildcard layout collapses to a single SAN: every service hostname and
+  # every {id}-runtimes sandbox sits one label under base_domain.
+  subject_alternative_names = var.hostname_mode == "wildcard" ? [
+    "*.${var.base_domain}",
+    ] : [
     "app.${var.base_domain}",
     "analytics.app.${var.base_domain}",
     "auth.app.${var.base_domain}",

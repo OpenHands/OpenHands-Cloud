@@ -34,7 +34,7 @@ keycloak:
   enabled: true
   ingress:
     enabled: false
-    hostname: "auth.app.example.com"
+    hostname: "auth.example.com"
     annotations: {}
     # Value should match your Issuer/ClusterIssuer and uncomment if you're using cert-manager for certificates
     # cert-manager.io/cluster-issuer: letsencrypt
@@ -105,7 +105,11 @@ runtime-api:
     # Value should match your Issuer/ClusterIssuer and uncomment if you're using cert-manager for certificates
     # cert-manager.io/cluster-issuer: letsencrypt
   env:
-    RUNTIME_BASE_URL: "runtime.example.com"
+    RUNTIME_BASE_URL: "runtimes.example.com"
+    # Dash keeps each sandbox one label under the base domain
+    # ({id}-runtimes.example.com), so one *.example.com wildcard covers them.
+    # Use "." to nest sandboxes under RUNTIME_BASE_URL instead.
+    RUNTIME_URL_SEPARATOR: "-"
     # Set to storage class you want to use.
     STORAGE_CLASS: "gp2"
 

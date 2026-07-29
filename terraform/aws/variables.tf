@@ -93,6 +93,30 @@ variable "base_domain" {
   type        = string
 }
 
+variable "hostname_mode" {
+  description = <<-EOT
+    Which hostname layout to provision DNS records and a certificate for.
+    Mirrors the installer's Hostname Configuration Mode setting: "wildcard" is
+    the mode shown there as Simple, and "legacy" the one shown as Legacy.
+    "wildcard" keeps every hostname one label below base_domain, so a single
+    *.base_domain record and wildcard certificate serve the whole install.
+    "legacy" is the original layout, which puts Keycloak at auth.app.<base>,
+    analytics at analytics.app.<base>, and sandboxes under *.runtime.<base>.
+    New installs default to wildcard; set this to legacy only to match an
+    install whose Hostname Configuration Mode is Legacy.
+    The installer's third mode, Manual, has no equivalent here -- Terraform
+    cannot know hostnames you enter by hand. For that, omit route53_zone_id and
+    set provision_cert = false, then supply your own records and certificate.
+  EOT
+  type        = string
+  default     = "wildcard"
+
+  validation {
+    condition     = contains(["wildcard", "legacy"], var.hostname_mode)
+    error_message = "hostname_mode must be either \"wildcard\" or \"legacy\"."
+  }
+}
+
 variable "dns_ttl" {
   description = "TTL in seconds for DNS A records"
   type        = number
