@@ -503,6 +503,31 @@ To use an external Redis instance:
    #   --from-literal=redis-password=<your-redis-password>
    ```
 
+### Disabling the Authentication Rate Limiter
+
+The enterprise server applies a Redis-backed per-user rate limiter on the
+authentication path. By default the chart sets
+`RATE_LIMIT_AUTH_WINDOWS` to `"10/second; 100/minute"`, matching the
+server's own default. For local development or staging where hitting Redis
+on every auth call is undesirable, set the variable to an empty string to
+opt out entirely:
+
+```yaml
+env:
+  RATE_LIMIT_AUTH_WINDOWS: ""
+```
+
+You can also supply a custom `limits`-style window string (multiple windows
+separated by `;`) to keep the limiter but tune it:
+
+```yaml
+env:
+  RATE_LIMIT_AUTH_WINDOWS: "5/minute; 50/hour"
+```
+
+Note that an empty value disables the limiter cleanly; non-empty malformed
+values still raise on startup so misconfigurations fail loudly.
+
 ### Storage Class Configuration
 
 By default, the chart expects a storage class named `standard-rwo`. If you're using EKS, which typically has a `gp2` storage class, you can configure the chart to use it instead:

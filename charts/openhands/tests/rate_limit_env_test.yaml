@@ -1,0 +1,43 @@
+suite: authentication rate limiter env wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: emits the default RATE_LIMIT_AUTH_WINDOWS value matching the enterprise server
+    set:
+      enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RATE_LIMIT_AUTH_WINDOWS
+            value: "10/second; 100/minute"
+
+  - it: lets operators disable the Redis auth rate limiter with an empty value
+    set:
+      enabled: true
+      env:
+        RATE_LIMIT_AUTH_WINDOWS: ""
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RATE_LIMIT_AUTH_WINDOWS
+            value: ""
+
+  - it: accepts a custom limits-style window string
+    set:
+      enabled: true
+      env:
+        RATE_LIMIT_AUTH_WINDOWS: "5/minute; 50/hour"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RATE_LIMIT_AUTH_WINDOWS
+            value: "5/minute; 50/hour"

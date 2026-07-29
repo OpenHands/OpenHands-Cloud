@@ -84,6 +84,11 @@ env:
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
+  # Redis-backed authentication rate limiter (limits-style window string; multiple
+  # windows separated by ';'). Set to "" to disable — useful for local dev or
+  # staging where hitting Redis on every auth call is undesirable. Matches the
+  # enterprise server's own default when unset.
+  RATE_LIMIT_AUTH_WINDOWS: "10/second; 100/minute"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
