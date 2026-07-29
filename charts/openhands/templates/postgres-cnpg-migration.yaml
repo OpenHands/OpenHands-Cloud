@@ -1,0 +1,652 @@
+{{- /*
+One-time migration of the in-cluster database from the Bitnami postgresql
+subchart to a CloudNativePG cluster.
+
+Shape: a pre-upgrade orchestrator Job (kubectl) that drives a transient copy Pod
+(postgres client). The copy runs in its own Pod rather than in the Job because
+the orchestrator has to keep control across the whole sequence: it freezes
+writes before the copy and must unfreeze them if anything fails, which it cannot
+do from a container that has already exited.
+
+Sequence, all of it idempotent and guarded by a marker ConfigMap:
+
+  1. (-3) RBAC + ConfigMap carrying the Cluster manifest, the copy Pod manifest
+     and the copy script.
+  2. (-2) Orchestrator Job: apply the Cluster (which this Job owns while a
+     migration is pending — see postgres-cnpg.yaml); stop there if already
+     migrated or if there is no Bitnami server; otherwise wait for the Cluster,
+     record replica counts, scale writers to zero and suspend CronJobs, run the
+     copy Pod, verify, and write the marker.
+
+Writers are deliberately left scaled to zero on success. Helm's own apply
+restores them, and it is that apply which repoints them at the new server —
+bringing them back here would reconnect them to the old one and strand every
+write they made in between.
+
+Pre-upgrade only: a fresh install has nothing to copy, and pre-upgrade hooks do
+not run on `helm install`. Weights sit after the CRD check (-5) so a missing
+operator is reported by that hook instead of failing here.
+*/ -}}
+{{- if and .Values.cnpg.enabled .Values.cnpg.migration.enabled }}
+{{- $rel := .Release.Name }}
+{{- $ns := .Release.Namespace }}
+{{- $m := .Values.cnpg.migration }}
+{{- $cluster := include "openhands.cnpg.clusterName" . }}
+{{- $sts := printf "%s-postgresql" $rel }}
+{{- $srcHost := $m.sourceHost | default $sts }}
+{{- $name := printf "%s-postgres-cnpg-migration" $rel }}
+{{- $copyPod := printf "%s-copy" $name }}
+{{- $marker := "postgres-cnpg-migrated" }}
+{{- $state := "postgres-cnpg-migration-state" }}
+{{- /*
+Workloads that write to the shared database, named as this chart renders them.
+Everything else in the namespace (redis, minio, the Replicated SDK, agent-canvas,
+Laminar and its own database) is left running.
+*/ -}}
+{{- $writers := list }}
+{{- if .Values.enabled }}
+{{- $writers = concat $writers (list "deployment/openhands" "deployment/openhands-integrations" "deployment/openhands-mcp") }}
+{{- end }}
+{{- if .Values.keycloak.enabled }}
+{{- $writers = append $writers "statefulset/keycloak" }}
+{{- end }}
+{{- if (index .Values "litellm-helm").enabled }}
+{{- $writers = append $writers (printf "deployment/%s-litellm" $rel) }}
+{{- end }}
+{{- if (index .Values "runtime-api").enabled }}
+{{- $writers = append $writers (printf "deployment/%s-runtime-api" $rel) }}
+{{- end }}
+{{- if .Values.automation.enabled }}
+{{- $writers = append $writers "deployment/automation" }}
+{{- end }}
+{{- if (index .Values "plugin-directory").enabled }}
+{{- $writers = append $writers "deployment/plugin-directory" }}
+{{- end }}
+{{- if (index .Values "integrations-hub").enabled }}
+{{- $writers = append $writers "deployment/integrations-hub" }}
+{{- end }}
+{{- $writers = concat $writers $m.extraWriters }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migration
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation
+{{- with $m.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migration
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "create", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "statefulsets/scale"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migration
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migration
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  # The Cluster, identical to what templates/postgres-cnpg.yaml renders once the
+  # migration is switched off, so that Helm can adopt this object then.
+  cluster.yaml: |
+    {{- include "openhands.cnpg.cluster" . | nindent 4 }}
+  copy-pod.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: {{ $copyPod }}
+      namespace: {{ $ns }}
+      labels:
+        {{- include "openhands.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres-migration-copy
+    spec:
+      restartPolicy: Never
+      activeDeadlineSeconds: {{ $m.timeouts.copy }}
+      {{- with $m.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: copy
+          image: "{{ $m.images.postgres.repository | default .Values.cnpg.image.repository }}:{{ $m.images.postgres.tag | default .Values.cnpg.image.tag }}"
+          imagePullPolicy: {{ $m.images.postgres.pullPolicy | default "IfNotPresent" }}
+          command: ["bash", "/scripts/copy.sh"]
+          env:
+            - name: SRC_HOST
+              value: {{ $srcHost | quote }}
+            - name: SRC_PORT
+              value: "5432"
+            - name: SRC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $m.sourceSecret.name }}
+                  key: {{ $m.sourceSecret.usernameKey }}
+            - name: SRC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $m.sourceSecret.name }}
+                  key: {{ $m.sourceSecret.passwordKey }}
+            - name: DST_HOST
+              value: {{ printf "%s-rw" $cluster | quote }}
+            - name: DST_PORT
+              value: "5432"
+            # The superuser Secret CloudNativePG manages the target with. Read
+            # separately from the source credentials so the two are allowed to
+            # differ.
+            - name: DST_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cnpg.superuserSecret.name }}
+                  key: username
+            - name: DST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cnpg.superuserSecret.name }}
+                  key: password
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ $name }}
+            defaultMode: 0555
+            items:
+              - key: copy.sh
+                path: copy.sh
+  # Runs in the copy Pod. Copies database by database and verifies each one.
+  copy.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    log() { echo "[copy] $*"; }
+    SQ="psql -h $SRC_HOST -p $SRC_PORT -U $SRC_USER -v ON_ERROR_STOP=1 -tAq"
+    DQ="psql -h $DST_HOST -p $DST_PORT -U $DST_USER -v ON_ERROR_STOP=1 -tAq"
+    src() { PGPASSWORD="$SRC_PASSWORD" $SQ "$@"; }
+    dst() { PGPASSWORD="$DST_PASSWORD" $DQ "$@"; }
+
+    log "waiting for both servers to accept connections"
+    for _ in $(seq 1 60); do
+      if PGPASSWORD="$SRC_PASSWORD" pg_isready -h "$SRC_HOST" -p "$SRC_PORT" -U "$SRC_USER" >/dev/null 2>&1 \
+        && PGPASSWORD="$DST_PASSWORD" pg_isready -h "$DST_HOST" -p "$DST_PORT" -U "$DST_USER" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+    PGPASSWORD="$SRC_PASSWORD" pg_isready -h "$SRC_HOST" -p "$SRC_PORT" -U "$SRC_USER" >/dev/null
+    PGPASSWORD="$DST_PASSWORD" pg_isready -h "$DST_HOST" -p "$DST_PORT" -U "$DST_USER" >/dev/null
+    log "source $(src -d postgres -c 'SHOW server_version') -> target $(dst -d postgres -c 'SHOW server_version')"
+
+    # Only the postgres superuser is expected to exist: OpenHands services all
+    # connect as it and own every object. Anything else would be silently left
+    # behind, so stop instead of copying a subset.
+    EXTRA_ROLES=$(src -d postgres -c "SELECT coalesce(string_agg(rolname,','),'') FROM pg_roles WHERE rolname <> '$SRC_USER' AND rolname NOT LIKE 'pg\_%'")
+    if [ -n "$EXTRA_ROLES" ]; then
+      log "ERROR: the source has roles this migration does not carry: $EXTRA_ROLES"
+      log "       migrate them by hand, then re-run."
+      exit 1
+    fi
+    log "role check passed: only '$SRC_USER' exists"
+
+    # Every database the source will let us connect to, discovered rather than
+    # listed, so databases an operator created by hand come across too. The
+    # postgres database is included: it is a normal database that may hold user
+    # objects. Only the template databases are skipped.
+    DBS=$(src -d postgres -c "SELECT datname||'|'||pg_encoding_to_char(encoding)||'|'||datcollate||'|'||datctype FROM pg_database WHERE datallowconn AND datname NOT IN ('template0','template1') ORDER BY 1")
+    if [ -z "$(printf '%s\n' "$DBS" | grep -v '^postgres|' || true)" ]; then
+      log "ERROR: the source has no databases besides 'postgres'; refusing to declare success"
+      exit 1
+    fi
+
+    # Template databases are not copied, so say so rather than dropping them
+    # silently. A customised template1 only affects databases created later.
+    T1_TABLES=$(src -d template1 -c "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')")
+    if [ "$T1_TABLES" != "0" ]; then
+      log "WARNING: the source's template1 holds $T1_TABLES user table(s), which are NOT copied."
+    fi
+
+    for entry in $DBS; do
+      IFS='|' read -r db enc coll ctype <<< "$entry"
+      log "--- $db (encoding=$enc collate=$coll) ---"
+      PG_DUMP_ARGS=""
+      if [ "$db" = "postgres" ]; then
+        # The target's postgres database is created by initdb and is the
+        # maintenance database CloudNativePG's own instance manager connects to,
+        # so it can be neither dropped nor recreated. Copy into it as it stands,
+        # with --clean so that a re-run replaces exactly the objects an earlier
+        # attempt brought over.
+        DST_ENC=$(dst -d postgres -c "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='postgres'")
+        if [ "$DST_ENC" != "$enc" ]; then
+          log "ERROR: the source's postgres database is $enc but the target's is $DST_ENC, and"
+          log "       an in-place copy cannot convert between encodings. Set"
+          log "       cnpg.initdb.encoding to $enc and let the cluster bootstrap again."
+          exit 1
+        fi
+        DST_COLL=$(dst -d postgres -c "SELECT datcollate FROM pg_database WHERE datname='postgres'")
+        if [ "$DST_COLL" != "$coll" ]; then
+          log "WARNING: the postgres database's collation differs (source $coll, target"
+          log "         $DST_COLL). Set cnpg.initdb.localeCollate to match if text ordering matters."
+        fi
+        PG_DUMP_ARGS="--clean --if-exists"
+      else
+        # Before cutover the target holds nothing but a copy, so a partial or
+        # complete earlier attempt is always safe to discard.
+        if [ -n "$(dst -d postgres -c "SELECT 1 FROM pg_database WHERE datname='$db'")" ]; then
+          log "discarding an earlier attempt's copy"
+          dst -d postgres -c "DROP DATABASE \"$db\" WITH (FORCE)" >/dev/null
+        fi
+        # TEMPLATE template0 so the source's locale can be applied verbatim.
+        dst -d postgres -c "CREATE DATABASE \"$db\" WITH TEMPLATE template0 ENCODING '$enc' LC_COLLATE '$coll' LC_CTYPE '$ctype'" >/dev/null
+      fi
+      START=$(date +%s)
+      PGPASSWORD="$SRC_PASSWORD" pg_dump -h "$SRC_HOST" -p "$SRC_PORT" -U "$SRC_USER" -d "$db" $PG_DUMP_ARGS \
+        | PGPASSWORD="$DST_PASSWORD" psql -h "$DST_HOST" -p "$DST_PORT" -U "$DST_USER" -d "$db" \
+            -v ON_ERROR_STOP=1 -q -o /dev/null
+      log "copied in $(( $(date +%s) - START ))s"
+      # The public schema must survive: --clean can drop it, and a database
+      # without it breaks anything that relies on the default search_path.
+      if [ -z "$(dst -d "$db" -c "SELECT 1 FROM pg_namespace WHERE nspname='public'")" ]; then
+        log "ERROR: the public schema is missing from '$db' after the copy."
+        exit 1
+      fi
+    done
+
+    # Verify table counts and every table's row count, per database.
+    FAIL=0
+    for entry in $DBS; do
+      IFS='|' read -r db _ _ _ <<< "$entry"
+      GEN="SELECT coalesce(string_agg(format('SELECT %L AS t, count(*) AS n FROM %I.%I', schemaname||'.'||tablename, schemaname, tablename), ' UNION ALL '),'SELECT NULL,NULL') FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')"
+      Q=$(src -d "$db" -c "$GEN")
+      SRC_TABLES=$(src -d "$db" -c "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')")
+      DST_TABLES=$(dst -d "$db" -c "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')")
+      SRC_FP=$(src -d "$db" -c "$Q ORDER BY 1" | md5sum | cut -d' ' -f1)
+      DST_FP=$(dst -d "$db" -c "$Q ORDER BY 1" | md5sum | cut -d' ' -f1)
+      SRC_ROWS=$(src -d "$db" -c "$Q" | awk -F'|' '{s+=$2} END {print s+0}')
+      if [ "$SRC_FP" = "$DST_FP" ] && [ "$SRC_TABLES" = "$DST_TABLES" ]; then
+        log "verified $db: tables=$SRC_TABLES rows=$SRC_ROWS"
+      else
+        DST_ROWS=$(dst -d "$db" -c "$Q" | awk -F'|' '{s+=$2} END {print s+0}')
+        log "MISMATCH $db: tables src=$SRC_TABLES dst=$DST_TABLES rows src=$SRC_ROWS dst=$DST_ROWS"
+        FAIL=1
+      fi
+    done
+    if [ "$FAIL" != "0" ]; then
+      log "ERROR: verification failed; the source database is untouched"
+      exit 1
+    fi
+    log "COPY VERIFIED"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migration
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-2"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ $m.backoffLimit }}
+  activeDeadlineSeconds: {{ $m.timeouts.total }}
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres-migration
+    spec:
+      serviceAccountName: {{ $name }}
+      restartPolicy: Never
+      {{- with $m.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: "{{ $m.images.kubectl.repository }}:{{ $m.images.kubectl.tag }}"
+          imagePullPolicy: {{ $m.images.kubectl.pullPolicy | default "IfNotPresent" }}
+          env:
+            # kubectl writes its discovery cache under $HOME; give it a writable one.
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - name: manifests
+              mountPath: /migration
+            - name: tmp
+              mountPath: /tmp
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              NS='{{ $ns }}'
+              STS='{{ $sts }}'
+              CLUSTER='{{ $cluster }}'
+              COPY_POD='{{ $copyPod }}'
+              MARKER='{{ $marker }}'
+              STATE='{{ $state }}'
+              WRITERS='{{ join " " $writers }}'
+              CRONJOB_PREFIX='{{ $rel }}-'
+              CLUSTER_TIMEOUT={{ $m.timeouts.clusterReady }}
+              SETTLE={{ $m.timeouts.settle }}
+              DRAIN_TIMEOUT={{ $m.timeouts.drain }}
+              COPY_TIMEOUT={{ $m.timeouts.copy }}
+              K="kubectl -n $NS"
+
+              log() { echo "[migrate] $*"; }
+
+              # ---- Cluster ----
+              # This Job owns the Cluster while a migration is pending, so apply
+              # it on every run, ahead of the guards below: that is what keeps
+              # changes to the cnpg values reaching the cluster on later
+              # upgrades. `apply` patches an existing Cluster; it never replaces
+              # it, so the data is untouched.
+              # metadata.generation across the apply tells us whether the
+              # operator has any reconciling left to do. Unchanged means the
+              # apply was a no-op and whatever the Cluster reports is current;
+              # changed (or newly created) means a reconcile is pending and its
+              # status still describes the old state. CloudNativePG publishes no
+              # observedGeneration to wait on, so section 1 uses this.
+              GEN_BEFORE=$($K get cluster "$CLUSTER" -o jsonpath='{.metadata.generation}' 2>/dev/null || echo "")
+              log "applying cluster '$CLUSTER'"
+              $K apply -f /migration/cluster.yaml
+              GEN_AFTER=$($K get cluster "$CLUSTER" -o jsonpath='{.metadata.generation}' 2>/dev/null || echo "")
+
+              # ---- Guards ----
+              if $K get configmap "$MARKER" >/dev/null 2>&1; then
+                log "marker '$MARKER' present; already migrated. Nothing else to do."
+                exit 0
+              fi
+              if ! $K get statefulset "$STS" >/dev/null 2>&1; then
+                log "no Bitnami StatefulSet '$STS'; nothing to migrate."
+                exit 0
+              fi
+              log "found '$STS'. Migrating to CloudNativePG cluster '$CLUSTER'."
+
+              # Restore whatever we scaled down, so a failure leaves the
+              # application running against the untouched source database.
+              SUCCESS=0
+              restore() {
+                if [ "$SUCCESS" = "1" ]; then
+                  log "writers left scaled to zero on purpose; the upgrade's apply brings them back on the new server."
+                  return
+                fi
+                log "restoring writers after a failed migration"
+                RECORDED=$($K get configmap "$STATE" -o jsonpath='{.data.replicas}' 2>/dev/null || echo "")
+                for line in $RECORDED; do
+                  W=$(echo "$line" | cut -d= -f1)
+                  N=$(echo "$line" | cut -d= -f2)
+                  log "  scaling $W back to $N"
+                  $K scale "$W" --replicas="$N" >/dev/null 2>&1 || true
+                done
+                for cj in $($K get cronjobs -o name 2>/dev/null | sed 's|.*/||'); do
+                  case "$cj" in
+                    "$CRONJOB_PREFIX"*) $K patch cronjob "$cj" -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 || true ;;
+                  esac
+                done
+                log "restore done; the application is back on '$STS'."
+              }
+              trap restore EXIT
+
+              # ---- 1. Target cluster ----
+              # Wait for the operator to have settled on the spec applied above,
+              # rather than for something to be merely serving. A readiness
+              # signal that is not specific to the server the copy will actually
+              # write to is how the Bitnami PVC migration streamed a restore
+              # into a temporary init server that was then stopped.
+              #
+              # Measured against a real cluster, an operand-image change reports
+              # this one second after the apply:
+              #
+              #   phase                readyInstances   spec.imageName == status.image
+              #   healthy (stale)      1                yes
+              #
+              # Every field says healthy while the operator is about to delete
+              # the primary pod and build a new one, so no single snapshot can be
+              # trusted. status.image in particular is written eagerly and never
+              # lags, so it does not indicate a pending roll. Two things guard
+              # against that snapshot:
+              #
+              #   1. If the apply changed the spec, give the operator SETTLE
+              #      seconds before believing anything. It moved phase off
+              #      healthy in about a second, so this is a wide margin.
+              #   2. Require the healthy reading to hold across consecutive
+              #      polls, so a slow operator cannot be missed in the gap.
+              #
+              # Held together, then, all of:
+              #   phase is the terminal healthy phase
+              #   readyInstances has caught up with spec.instances
+              #   currentPrimary == targetPrimary, so no switchover is running
+              #   status.image == spec.imageName, which catches a roll that
+              #     started and stalled rather than one that has yet to start
+              # Both sides of every comparison come from the live object, so this
+              # asks whether the operator agrees with its own spec rather than
+              # trusting a value rendered into this script.
+              if [ "$GEN_BEFORE" != "$GEN_AFTER" ]; then
+                log "the apply changed the cluster spec (generation '$GEN_BEFORE' -> '$GEN_AFTER');"
+                log "  waiting ${SETTLE}s for the operator to act on it before reading its health"
+                sleep "$SETTLE"
+              fi
+              HEALTHY='Cluster in healthy state'
+              STABLE_POLLS=3
+              SETTLED=0
+              C_PHASE='' C_READY='' C_WANT='' C_CUR='' C_TGT='' C_SPECIMG='' C_STATIMG=''
+              log "waiting for '$CLUSTER' to settle (timeout ${CLUSTER_TIMEOUT}s)"
+              DEADLINE=$(( $(date +%s) + CLUSTER_TIMEOUT ))
+              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                SNAP=$($K get cluster "$CLUSTER" -o jsonpath='{.status.phase}|{.status.readyInstances}|{.spec.instances}|{.status.currentPrimary}|{.status.targetPrimary}|{.spec.imageName}|{.status.image}' 2>/dev/null || echo "")
+                C_PHASE=$(printf '%s' "$SNAP" | cut -d'|' -f1)
+                C_READY=$(printf '%s' "$SNAP" | cut -d'|' -f2)
+                C_WANT=$(printf '%s' "$SNAP" | cut -d'|' -f3)
+                C_CUR=$(printf '%s' "$SNAP" | cut -d'|' -f4)
+                C_TGT=$(printf '%s' "$SNAP" | cut -d'|' -f5)
+                C_SPECIMG=$(printf '%s' "$SNAP" | cut -d'|' -f6)
+                C_STATIMG=$(printf '%s' "$SNAP" | cut -d'|' -f7)
+                if [ "$C_PHASE" = "$HEALTHY" ] && [ -n "$C_READY" ] && [ "$C_READY" = "$C_WANT" ] \
+                   && [ -n "$C_CUR" ] && [ "$C_CUR" = "$C_TGT" ] \
+                   && [ -n "$C_STATIMG" ] && [ "$C_SPECIMG" = "$C_STATIMG" ]; then
+                  SETTLED=$(( SETTLED + 1 ))
+                  [ "$SETTLED" -ge "$STABLE_POLLS" ] && break
+                else
+                  SETTLED=0
+                fi
+                sleep 5
+              done
+              if [ "$SETTLED" -lt "$STABLE_POLLS" ]; then
+                log "ERROR: cluster '$CLUSTER' did not settle within ${CLUSTER_TIMEOUT}s."
+                log "  phase='$C_PHASE' (want '$HEALTHY')"
+                log "  readyInstances='$C_READY' spec.instances='$C_WANT'"
+                log "  currentPrimary='$C_CUR' targetPrimary='$C_TGT'"
+                log "  spec.imageName='$C_SPECIMG' status.image='$C_STATIMG'"
+                exit 1
+              fi
+              PRIMARY="$C_CUR"
+              log "cluster settled: primary '$PRIMARY' running '$C_STATIMG'"
+
+              # ---- 2. Freeze writes ----
+              # Record the replica counts once: a retry of this Job must not
+              # capture the zeros a previous attempt left behind.
+              if $K get configmap "$STATE" >/dev/null 2>&1; then
+                log "reusing recorded replica counts from an earlier attempt"
+              else
+                : > /tmp/replicas
+                for w in $WRITERS; do
+                  CUR=$($K get "$w" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "")
+                  [ -z "$CUR" ] && { log "  $w not present; skipping"; continue; }
+                  echo "$w=$CUR" >> /tmp/replicas
+                done
+                $K create configmap "$STATE" --from-file=replicas=/tmp/replicas >/dev/null
+                log "recorded replica counts:"
+                sed 's/^/    /' /tmp/replicas
+              fi
+
+              log "scaling writers to zero"
+              for line in $($K get configmap "$STATE" -o jsonpath='{.data.replicas}'); do
+                W=$(echo "$line" | cut -d= -f1)
+                $K scale "$W" --replicas=0 >/dev/null 2>&1 || log "  could not scale $W"
+              done
+
+              log "suspending CronJobs named '${CRONJOB_PREFIX}*'"
+              for cj in $($K get cronjobs -o name 2>/dev/null | sed 's|.*/||'); do
+                case "$cj" in
+                  "$CRONJOB_PREFIX"*) $K patch cronjob "$cj" -p '{"spec":{"suspend":true}}' >/dev/null 2>&1 || true ;;
+                esac
+              done
+
+              log "waiting for writer pods to exit (timeout ${DRAIN_TIMEOUT}s)"
+              DEADLINE=$(( $(date +%s) + DRAIN_TIMEOUT ))
+              REMAINING=-1
+              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                REMAINING=0
+                for line in $($K get configmap "$STATE" -o jsonpath='{.data.replicas}'); do
+                  W=$(echo "$line" | cut -d= -f1)
+                  N=$($K get "$W" -o jsonpath='{.status.replicas}' 2>/dev/null || echo "")
+                  [ -n "$N" ] && [ "$N" != "0" ] && REMAINING=$(( REMAINING + N ))
+                done
+                [ "$REMAINING" = "0" ] && break
+                sleep 5
+              done
+              # Confirm the drain instead of announcing it: the loop above also
+              # ends on timeout, and a source still taking writes yields a target
+              # that cannot be verified against it. Failing here scales the
+              # writers back up and leaves everything on the old server.
+              if [ "$REMAINING" != "0" ]; then
+                log "ERROR: writers did not stop within ${DRAIN_TIMEOUT}s ($REMAINING pod(s) still running)."
+                log "       Copying from a source that is still being written to would not be consistent."
+                exit 1
+              fi
+              log "writers are down"
+
+              # ---- 3. Copy ----
+              # Stamp the server the copy is about to write to. If it turns out
+              # to have been replaced or restarted underneath the copy, that is
+              # worth naming in this log: diagnosing exactly that on the PVC
+              # migration took a customer support bundle.
+              PRIMARY_STAMP=$($K get pod "$PRIMARY" -o jsonpath='{.metadata.uid}/{.status.containerStatuses[?(@.name=="postgres")].restartCount}' 2>/dev/null || echo "")
+              $K delete pod "$COPY_POD" --ignore-not-found --wait=true >/dev/null 2>&1 || true
+              log "starting copy pod '$COPY_POD'"
+              $K apply -f /migration/copy-pod.yaml
+              DEADLINE=$(( $(date +%s) + COPY_TIMEOUT ))
+              PHASE=""
+              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                PHASE=$($K get pod "$COPY_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+                { [ "$PHASE" = "Succeeded" ] || [ "$PHASE" = "Failed" ]; } && break
+                sleep 5
+              done
+              log "----- copy log -----"
+              $K logs "$COPY_POD" 2>/dev/null || true
+              log "--------------------"
+              if [ "$PHASE" != "Succeeded" ]; then
+                log "ERROR: copy did not succeed (phase='$PHASE'). The source database is untouched."
+                exit 1
+              fi
+
+              # The copy re-read every table's row count from both servers after
+              # writing, so a restart here does not by itself mean the data is
+              # wrong, and blocking the upgrade over it would be worse than
+              # saying so. Report it and carry on.
+              PRIMARY_STAMP_NOW=$($K get pod "$PRIMARY" -o jsonpath='{.metadata.uid}/{.status.containerStatuses[?(@.name=="postgres")].restartCount}' 2>/dev/null || echo "")
+              if [ "$PRIMARY_STAMP_NOW" != "$PRIMARY_STAMP" ]; then
+                log "WARNING: the primary '$PRIMARY' restarted or was replaced while the copy ran"
+                log "         (was '$PRIMARY_STAMP', now '$PRIMARY_STAMP_NOW'). The copy verified"
+                log "         every table afterwards and matched, so the data is consistent, but"
+                log "         find out what restarted it before relying on this cluster."
+              fi
+
+              # ---- 4. Record success ----
+              $K create configmap "$MARKER" \
+                --from-literal=cluster="$CLUSTER" \
+                --from-literal=source="$STS" \
+                --from-literal=note="database copied from the Bitnami server to CloudNativePG" >/dev/null
+              $K delete pod "$COPY_POD" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+              SUCCESS=1
+              log "migration complete. The upgrade will now point every service at '$CLUSTER'."
+              log "The Bitnami PersistentVolumeClaim is retained: re-enabling postgresql restores the pre-migration data."
+      volumes:
+        - name: manifests
+          configMap:
+            name: {{ $name }}
+            items:
+              - key: cluster.yaml
+                path: cluster.yaml
+              - key: copy-pod.yaml
+                path: copy-pod.yaml
+        - name: tmp
+          emptyDir: {}
+{{- end }}

@@ -13,6 +13,14 @@ spec:
     {{- end }}
   analyzers:
     {{- include "troubleshoot.analyzers.shared" . | nindent 4 }}
+    {{- /*
+    No analyzer for the CloudNativePG CRD. These preflights only ever run under
+    KOTS, which runs them before it deploys any release, so the CRD is legitimately
+    absent on a fresh install and the check would fail for something the operator
+    cannot act on. The ordering is enforced where it belongs instead: the
+    crd-check hook waits for clusters.postgresql.cnpg.io at weight -5, by which
+    point the infra-cnpg release has installed the operator.
+    */ -}}
     {{- if $sysbox.selected }}
     {{- include "troubleshoot.analyzers.sysbox" . | nindent 4 }}
     {{- end }}

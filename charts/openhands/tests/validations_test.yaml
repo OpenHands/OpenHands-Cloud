@@ -9,12 +9,26 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false."
-  - it: fails when postgresql is disabled without an external database
+  - it: fails when no postgres backend is configured
     set:
       postgresql.enabled: false
     asserts:
       - failedTemplate:
-          errorMessage: "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database."
+          errorMessage: "No PostgreSQL backend is configured. Set externalDatabase.host and externalDatabase.username, or enable an in-cluster backend with postgresql.enabled=true (Bitnami) or cnpg.enabled=true (CloudNativePG)."
+  - it: accepts cnpg as the backend with no bitnami and no external database
+    set:
+      postgresql.enabled: false
+      cnpg.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: fails when cnpg superuser access is on without a superuser secret
+    set:
+      cnpg.enabled: true
+      cnpg.superuserSecret.name: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "cnpg.enableSuperuserAccess is true but cnpg.superuserSecret.name is empty. Point it at a kubernetes.io/basic-auth Secret holding the postgres password, or CloudNativePG will generate one the application cannot read."
   - it: renders no resources when ingress has a host
     set:
       ingress.enabled: true

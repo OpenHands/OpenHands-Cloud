@@ -1,0 +1,19 @@
+{{- /*
+Who creates the Cluster depends on whether an upgrade is migrating data into it.
+
+Helm snapshots the live state of the release's resources before hooks run, so an
+object that first appears during a pre-upgrade hook is one Helm then refuses to
+apply ("original object Cluster ... not found"), failing the upgrade after the
+hook has already frozen writes. So on a migrating upgrade this template renders
+nothing and the hook's Job owns the Cluster; Helm adopts it on the next upgrade
+that leaves the migration off, which works because by then the object predates
+the upgrade.
+
+A fresh install renders it here regardless: the migration hook is pre-upgrade
+only, so on an install there is nothing else to create it.
+*/ -}}
+{{- if .Values.cnpg.enabled }}
+{{- if or .Release.IsInstall (not .Values.cnpg.migration.enabled) }}
+{{- include "openhands.cnpg.cluster" . }}
+{{- end }}
+{{- end }}

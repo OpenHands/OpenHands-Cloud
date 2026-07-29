@@ -1,0 +1,188 @@
+suite: cnpg cluster
+templates:
+  - postgres-cnpg.yaml
+tests:
+  - it: renders a single-instance cluster with our superuser secret
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Cluster
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-pg
+      - equal:
+          path: spec.instances
+          value: 1
+      - equal:
+          path: spec.enableSuperuserAccess
+          value: true
+      - equal:
+          path: spec.superuserSecret.name
+          value: postgres-superuser
+      - equal:
+          path: spec.bootstrap.initdb.localeCollate
+          value: en_US.UTF-8
+      - equal:
+          path: spec.bootstrap.initdb.localeCType
+          value: en_US.UTF-8
+      # Bootstrap is always a plain initdb: data movement belongs to the
+      # migration hook, so a fresh and a migrated cluster have the same spec.
+      - notExists:
+          path: spec.bootstrap.initdb.import
+      - notExists:
+          path: spec.externalClusters
+
+  - it: never creates a PodDisruptionBudget, which would block node drains
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - equal:
+          path: spec.enablePDB
+          value: false
+
+  - it: pins an operand image carrying the en_US.UTF-8 locale
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      # A "minimal" variant ships only C/C.UTF-8/POSIX, which makes the restore
+      # of an en_US.UTF-8 database fail.
+      - matchRegex:
+          path: spec.imageName
+          pattern: "^ghcr\\.io/cloudnative-pg/postgresql:[0-9.]+-standard-.+$"
+
+  - it: carries the helm ownership metadata a hook-created cluster needs
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      # All three are required for Helm to adopt a Cluster the migration hook
+      # created imperatively; missing any one fails the upgrade.
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.annotations["meta.helm.sh/release-name"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.annotations["meta.helm.sh/release-namespace"]
+          value: NAMESPACE
+
+  - it: is never deleted by helm
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      # CloudNativePG garbage-collects the PVCs of a deleted Cluster, so any
+      # path that stops rendering this object must not delete it.
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  - it: is not rendered by an upgrade that is migrating data into it
+    release:
+      upgrade: true
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    asserts:
+      # The migration Job owns it during that upgrade: Helm refuses to apply an
+      # object that first appeared during a hook.
+      - hasDocuments:
+          count: 0
+
+  - it: is rendered on a fresh install even with the migration enabled
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    asserts:
+      # The migration hook is pre-upgrade only, so nothing else would create it.
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Cluster
+
+  - it: is rendered again once an upgrade leaves the migration off
+    release:
+      upgrade: true
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Cluster
+
+  - it: honours storage, image and resource overrides
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+      cnpg.clusterName: custom-pg
+      cnpg.instances: 3
+      cnpg.image.repository: registry.example.com/proxy/postgresql
+      cnpg.image.tag: 17.10-standard-bookworm
+      cnpg.storage.size: 100Gi
+      cnpg.storage.storageClass: fast
+      cnpg.imagePullSecrets:
+        - name: pull-secret
+      cnpg.parameters:
+        max_connections: "200"
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-pg
+      - equal:
+          path: spec.instances
+          value: 3
+      - equal:
+          path: spec.imageName
+          value: registry.example.com/proxy/postgresql:17.10-standard-bookworm
+      - equal:
+          path: spec.storage.size
+          value: 100Gi
+      - equal:
+          path: spec.storage.storageClass
+          value: fast
+      - contains:
+          path: spec.imagePullSecrets
+          content:
+            name: pull-secret
+      - equal:
+          path: spec.postgresql.parameters.max_connections
+          value: "200"
+
+  - it: omits storageClass so the cluster default applies
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - notExists:
+          path: spec.storage.storageClass
+
+  - it: adds a WAL volume only when asked
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+      cnpg.walStorage.enabled: true
+      cnpg.walStorage.size: 20Gi
+    asserts:
+      - equal:
+          path: spec.walStorage.size
+          value: 20Gi

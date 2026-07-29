@@ -8,7 +8,9 @@ spec:
   releaseName: openhands
   namespace: openhands
   weight: 10
-  helmUpgradeFlags: ["--wait", "--timeout", "600s", "--force-conflicts"]
+  # 1800s, not 600s: hooks, apply and --wait share one budget, and the
+  # embedded-postgres migration hook runs inside it (freeze, copy, verify).
+  helmUpgradeFlags: ["--wait", "--timeout", "1800s", "--force-conflicts"]
   values:
     global:
       imageRegistry: 'images.r9.all-hands.dev'
@@ -513,21 +515,48 @@ spec:
         plugin-directory:
           databaseMigrations:
             createDatabases: true
+        # Embedded PostgreSQL runs under the CloudNativePG operator, installed by
+        # the infra-cnpg release at weight 7. The Bitnami subchart is off: an
+        # install that has one keeps it, and its data, until the pre-upgrade
+        # migration below has copied everything across and verified it.
         postgresql:
-          enabled: true
+          enabled: false
+          # Read for the user and database names even with the subchart off, so
+          # cnpg inherits whatever the install already used.
           auth:
             username: '{{repl ConfigOption "postgres_username"}}'
-            password: '{{repl ConfigOption "postgres_password" | Base64Encode }}'
-            postgresPassword: '{{repl ConfigOption "postgres_password" | Base64Encode }}'
             database: '{{repl ConfigOption "postgres_database"}}'
-          # Persistence MUST be nested under primary — the Bitnami chart ignores a
-          # top-level postgresql.persistence, which is why embedded postgres ran on
-          # an emptyDir (data lost on any pod reschedule).
-          primary:
-            persistence:
-              enabled: true
-              storageClass: openebs-hostpath
-              size: 50Gi
+        cnpg:
+          enabled: true
+          image:
+            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/cloudnative-pg/postgresql'
+          imagePullSecrets:
+            - name: '{{repl ImagePullSecretName }}'
+          storage:
+            storageClass: openebs-hostpath
+            size: 50Gi
+          migration:
+            # A no-op once the marker ConfigMap exists, and on installs that
+            # never had a Bitnami server, so it is safe to leave on.
+            enabled: true
+            images:
+              kubectl:
+                repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
+            imagePullSecrets:
+              - name: '{{repl ImagePullSecretName }}'
+        # Wait for the CloudNativePG CRD as well, since the Cluster this release
+        # renders needs it. Listed in full because Helm replaces arrays rather
+        # than merging them.
+        crdCheck:
+          crds:
+            - certificates.cert-manager.io
+            - issuers.cert-manager.io
+            - clusterissuers.cert-manager.io
+            - bundles.trust.cert-manager.io
+            - ingressroutes.traefik.io
+            - middlewares.traefik.io
+            - tlsstores.traefik.io
+            - clusters.postgresql.cnpg.io
     - when: '{{repl ConfigOptionEquals "postgres_type" "external_postgres" }}'
       recursiveMerge: true
       values:
@@ -680,6 +709,15 @@ spec:
         postgresql:
           image:
             repository: '{{repl LocalRegistryNamespace }}/postgresql'
+        cnpg:
+          # CloudNativePG reads this from a Cluster resource, which KOTS does not
+          # rewrite, so the local-registry path is set here explicitly.
+          image:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/postgresql'
+          migration:
+            images:
+              kubectl:
+                repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/k8s'
         redis:
           image:
             repository: '{{repl LocalRegistryNamespace }}/redis'
@@ -1167,3 +1205,11 @@ spec:
       enabled: true
     agent-canvas:
       enabled: true
+    # Renders the migration hook at build time so its orchestrator image is
+    # discovered for air-gapped bundles. The operand image the Cluster uses is
+    # not discoverable this way and is listed in the Application's
+    # additionalImages instead.
+    cnpg:
+      enabled: true
+      migration:
+        enabled: true

@@ -36,26 +36,39 @@ spec:
     app.kubernetes.io/name: runtime-api
     app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-{{- if and .Values.enabled .Values.postgresql.enabled }}
+{{- $pgBackend := include "openhands.postgres.backend" . }}
+{{- if or (and .Values.enabled (eq $pgBackend "bitnami")) (eq $pgBackend "cnpg") }}
 ---
+# Stable alias for whichever in-cluster PostgreSQL backend is active, so
+# consumers configured with this hostname need no change when the backend
+# changes. targetPort is numeric because the two backends name the container
+# port differently (Bitnami tcp-postgresql, CloudNativePG postgresql).
 apiVersion: v1
 kind: Service
 metadata:
-  name: oh-main-postgresql
+  name: {{ include "openhands.postgres.aliasService" . }}
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
 spec:
   type: ClusterIP
   sessionAffinity: None
   ports:
     - name: tcp-postgresql
       port: 5432
-      targetPort: tcp-postgresql
+      targetPort: 5432
       nodePort: null
   selector:
+    {{- if eq $pgBackend "cnpg" }}
+    # Same selector CloudNativePG's own <cluster>-rw Service uses, so the alias
+    # follows a failover to a new primary.
+    cnpg.io/cluster: {{ include "openhands.cnpg.clusterName" . }}
+    cnpg.io/instanceRole: primary
+    {{- else }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/component: primary
+    {{- end }}
 {{- end }}
 {{- if and .Values.enabled (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 ---

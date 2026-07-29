@@ -1,0 +1,18 @@
+{{- if .Values.cnpg.enabled }}
+# Superuser credentials for the CloudNativePG cluster. Same password as
+# postgres-password, in the kubernetes.io/basic-auth form the operator requires.
+# It cannot be the same Secret: a Secret's type is immutable, so retyping the
+# existing Opaque postgres-password would fail on every install that has one.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-superuser
+  namespace: {{ .Release.Namespace }}
+  labels:
+    # Lets the operator pick up a password change without a restart.
+    cnpg.io/reload: "true"
+type: kubernetes.io/basic-auth
+data:
+  username: {{ .Values.config.postgres_username | b64enc | quote }}
+  password: {{ .Values.config.postgres_password | b64enc | quote }}
+{{- end }}

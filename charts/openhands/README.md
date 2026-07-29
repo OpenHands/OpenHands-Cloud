@@ -452,6 +452,99 @@ To use an external PostgreSQL database instead of deploying one with the chart:
        DB_NAME: runtime_api_db
    ```
 
+### In-Cluster PostgreSQL with CloudNativePG
+
+As an alternative to the bundled Bitnami server, the chart can run PostgreSQL through the
+[CloudNativePG](https://cloudnative-pg.io/) operator. Bitnami remains the default; nothing changes
+until you opt in.
+
+The operator is cluster-scoped and is not installed by this chart. Install it first, into any
+namespace:
+
+```bash
+helm repo add cnpg https://cloudnative-pg.github.io/charts
+helm install cnpg cnpg/cloudnative-pg --namespace cnpg-system --create-namespace
+```
+
+CloudNativePG needs the postgres superuser password in a `kubernetes.io/basic-auth` Secret, holding
+the same password as the `postgres-password` Secret the application reads. Secret types are
+immutable in Kubernetes, so this has to be a second Secret rather than a change to the existing one:
+
+```bash
+kubectl create secret generic postgres-superuser -n openhands \
+  --type=kubernetes.io/basic-auth \
+  --from-literal=username=postgres \
+  --from-literal=password="$POSTGRES_PASSWORD"
+```
+
+Then enable it:
+
+```yaml
+cnpg:
+  enabled: true
+  storage:
+    size: 50Gi
+    # storageClass: fast
+```
+
+Consumers reach whichever in-cluster backend is active through the `oh-main-postgresql` Service, so
+no other values change. On a greenfield install, also set `databaseMigrations.createDatabases: true`
+so the services create their databases on the new, empty server.
+
+#### Migrating an existing Bitnami install
+
+The chart carries a one-shot migration that copies your data over and cuts every service across in a
+single upgrade. It freezes writes while it runs: workloads scale to zero, the databases are copied,
+and Helm brings them back pointed at the new server.
+
+Every database on the old server is copied, discovered at run time rather than from a fixed list, so
+databases you created yourself come across as well. That includes the `postgres` database, which is
+copied into the new server's own `postgres` database. Only `template0` and `template1` are skipped;
+if `template1` holds user tables, the migration says so in its log.
+
+Roles are not copied. OpenHands connects as the `postgres` superuser and owns every object it
+creates, so if the old server has any other role the migration stops before touching anything and
+names them — create them on the new server, or migrate them by hand, then re-run.
+
+1. Install the operator and create the `postgres-superuser` Secret as above.
+
+2. Run the migration. Leave `postgresql.enabled` alone — the old server must stay up for the copy,
+   and keeping it deployed is what makes step 4 optional rather than urgent:
+
+   ```bash
+   helm upgrade openhands ... \
+     --set cnpg.enabled=true \
+     --set cnpg.migration.enabled=true \
+     --timeout 30m
+   ```
+
+   The migration refuses to run, leaving everything on the old server, if it cannot verify the copy
+   table by table. It is safe to re-run: a previous attempt's data is discarded and recopied.
+
+3. Verify the application works. Your data now lives in the CloudNativePG cluster, and the Bitnami
+   server is still deployed but idle.
+
+4. When you are satisfied, retire the old server and hand the cluster to Helm:
+
+   ```bash
+   helm upgrade openhands ... \
+     --set cnpg.enabled=true \
+     --set postgresql.enabled=false \
+     --set cnpg.migration.enabled=false
+   ```
+
+   Dropping `cnpg.migration.enabled` puts the Cluster back under Helm's management, which restarts
+   the database pod once. Leaving it enabled is also fine: it is a no-op after the first run.
+
+   The old server's PersistentVolumeClaim (`data-<release>-postgresql-0`) is left behind on purpose.
+   Until you delete it, re-enabling `postgresql` restores the pre-migration data. Delete it once you
+   no longer want that fallback.
+
+The CloudNativePG Cluster is annotated `helm.sh/resource-policy: keep`, so Helm never deletes it —
+deleting a Cluster would take its PersistentVolumeClaims, and the data, with it. `helm uninstall`
+therefore leaves the database standing; remove it with `kubectl delete cluster <release>-pg` when you
+really mean to.
+
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,

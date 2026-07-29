@@ -5,8 +5,11 @@ dependencies:
 - name: trust-manager
   repository: oci://quay.io/jetstack/charts
   version: 0.22.1
+- name: cloudnative-pg
+  repository: https://cloudnative-pg.github.io/charts
+  version: 0.29.0
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
-digest: sha256:ee6c9e0ba7c097cc59f0dc12409169a11831b548283b77ec7f8f90a94869ebf5
-generated: "2026-05-27T10:31:04.277099-04:00"
+digest: sha256:3df62bd62b3170115674a665631839d8cb9538270171cd15efbbfbfbe3e1e443
+generated: "2026-07-28T12:32:59.090739-04:00"

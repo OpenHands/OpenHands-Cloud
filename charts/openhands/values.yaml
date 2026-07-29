@@ -759,6 +759,162 @@ postgresql:
     # podAnnotations:
     #   karpenter.sh/do-not-evict: "true"
 
+# In-cluster PostgreSQL managed by the CloudNativePG operator, as an
+# alternative to the Bitnami postgresql subchart above.
+#
+# The operator is cluster-scoped and is NOT installed by this chart. Install it
+# first (charts/infra, or the upstream cloudnative-pg chart) — with the CRDs
+# absent, rendering a Cluster fails with an unknown-kind error.
+#
+# Off by default: Bitnami remains the bundled default so existing installs are
+# unaffected. Enabling this takes precedence over postgresql.enabled, so during
+# a migration both can be on — the old server stays deployed for rollback while
+# consumers are already reading and writing the new one.
+cnpg:
+  enabled: false
+  # Cluster name; defaults to <release>-pg. Determines the names of the
+  # Services the operator creates (<name>-rw, -ro, -r).
+  clusterName: ""
+  # Namespace the operator runs in. Used only to collect its logs into support
+  # bundles.
+  operatorNamespace: cnpg-system
+  instances: 1
+  image:
+    repository: ghcr.io/cloudnative-pg/postgresql
+    # The variant matters. Operand images must carry the locale of the
+    # databases being restored into them — en_US.UTF-8 for every database an
+    # OpenHands install creates — and the "minimal" images ship only C,
+    # C.UTF-8 and POSIX, which makes CREATE DATABASE fail. "standard" also
+    # keeps the base OS current, unlike the bare version tags.
+    tag: 17.10-standard-trixie
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Superuser (postgres) access, required because every OpenHands service
+  # connects as the superuser and creates its own database on startup.
+  enableSuperuserAccess: true
+  superuserSecret:
+    # Must be type kubernetes.io/basic-auth with username and password keys,
+    # and must hold the same password as credentials.existingSecret below.
+    # Secret types are immutable in Kubernetes, so this cannot be the existing
+    # Opaque postgres-password Secret; it is a second Secret with the same
+    # value. openhands-secrets renders it; create it by hand otherwise:
+    #
+    #   kubectl create secret generic postgres-superuser -n openhands \
+    #     --type=kubernetes.io/basic-auth \
+    #     --from-literal=username=postgres \
+    #     --from-literal=password="$POSTGRES_PASSWORD"
+    name: postgres-superuser
+  # Secret the application reads its database password from. Unchanged from the
+  # Bitnami path; both backends use the same credentials.
+  credentials:
+    existingSecret: postgres-password
+  # Application database user and name. Empty means inherit whatever the
+  # Bitnami values use, so enabling CNPG carries the existing names over.
+  username: ""
+  database: ""
+  # No PodDisruptionBudget: with a single instance there is no availability to
+  # protect, and the PDB blocks node drains, stalling Kubernetes upgrades.
+  enablePDB: false
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: restart
+  initdb:
+    encoding: UTF8
+    # Match the locale of the databases an existing Bitnami install created, so
+    # a migrated cluster's template1 and postgres databases agree with the
+    # restored ones.
+    localeCollate: en_US.UTF-8
+    localeCType: en_US.UTF-8
+  storage:
+    size: 50Gi
+    storageClass: ""
+  # Separate volume for WAL. Off by default; PGDATA holds WAL, matching the
+  # Bitnami layout.
+  walStorage:
+    enabled: false
+    size: 10Gi
+    storageClass: ""
+  # Mirrors the Bitnami primary's resources.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # postgresql.conf overrides. Empty: CloudNativePG's defaults already match
+  # what the Bitnami server runs (shared_buffers 128MB, max_connections 100).
+  parameters: {}
+  affinity: {}
+  nodeSelector: {}
+  tolerations: []
+
+  # One-time copy of the data from the Bitnami postgresql subchart into the
+  # CloudNativePG cluster, run as a pre-upgrade hook. Enable it for the single
+  # upgrade that performs the migration; it is a no-op afterwards (a marker
+  # ConfigMap records that it ran) and on installs that never had a Bitnami
+  # server.
+  #
+  # Writes are frozen while it runs: the workloads that write to the database
+  # scale to zero, the databases are copied and verified, and the upgrade's own
+  # apply brings them back pointed at the new server. If any step fails, the
+  # workloads are scaled back up against the untouched source and the upgrade
+  # fails.
+  #
+  # Allow more time than the default Helm timeout: hooks, apply and --wait all
+  # share one budget (helm upgrade --timeout 30m).
+  migration:
+    enabled: false
+    images:
+      # Orchestrator image, which needs a shell as well as kubectl. Not
+      # rancher/kubectl: it ships no shell, so `sh -c` cannot start.
+      kubectl:
+        repository: docker.io/alpine/k8s
+        tag: "1.30.0"
+        pullPolicy: IfNotPresent
+      # PostgreSQL client for the copy. Defaults to the operand image above,
+      # which matters: the client must be no older than either server, and
+      # pg_dump refuses to dump a server newer than itself.
+      postgres:
+        repository: ""
+        tag: ""
+        pullPolicy: IfNotPresent
+    # Source server. Defaults to the Bitnami Service, <release>-postgresql.
+    # Deliberately not the oh-main-postgresql alias: that alias points at the
+    # new cluster by the time this runs, so reading it could copy the target
+    # onto itself.
+    sourceHost: ""
+    sourceSecret:
+      name: postgres-password
+      usernameKey: username
+      passwordKey: password
+    # Workloads to scale down beyond the ones this chart deploys, as
+    # "deployment/name" or "statefulset/name".
+    extraWriters: []
+    timeouts:
+      # Seconds to wait for the new cluster to report a ready instance.
+      clusterReady: 600
+      # Seconds to give the operator to react before the migration trusts what
+      # the Cluster reports, used only when applying the Cluster changed its
+      # spec. CloudNativePG leaves phase on the previous value until it picks the
+      # change up (measured at about a second), so health read immediately after
+      # an apply can describe the instance that is about to be replaced.
+      settle: 15
+      # Seconds to wait for writer pods to exit after scaling to zero.
+      drain: 300
+      # Seconds allowed for the copy itself.
+      copy: 1800
+      # Ceiling for the whole Job. Keep below the helm --timeout so the failure
+      # is this Job's, with its logs, rather than Helm's.
+      total: 2700
+    backoffLimit: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    imagePullSecrets: []
+
 externalDatabase:
   enabled: false
   port: "5432"

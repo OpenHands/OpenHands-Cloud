@@ -1,0 +1,203 @@
+suite: postgres backend selection
+templates:
+  # The DB_* env vars come from an include in _env.yaml, so the assertions have
+  # to target the templates that render it.
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+  - service.yaml
+  - postgres-cnpg.yaml
+tests:
+  - it: points the app at the bitnami server by default
+    template: deployment.yaml
+    set:
+      image.tag: test
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: RELEASE-NAME-postgresql
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_SSL_MODE
+            value: prefer
+
+  - it: renders no CNPG Cluster by default
+    template: postgres-cnpg.yaml
+    set:
+      image.tag: test
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: points the app at the alias service when cnpg is enabled
+    template: deployment.yaml
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: oh-main-postgresql
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_PORT
+            value: "5432"
+
+  - it: inherits the bitnami user and database name when cnpg does not override them
+    template: deployment.yaml
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.auth.username: pgadmin
+      postgresql.auth.database: ohdb
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_USER
+            value: pgadmin
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_NAME
+            value: ohdb
+
+  - it: prefers explicit cnpg user and database over the bitnami values
+    template: deployment.yaml
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.auth.username: pgadmin
+      postgresql.auth.database: ohdb
+      cnpg.username: cnpgadmin
+      cnpg.database: cnpgdb
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_USER
+            value: cnpgadmin
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_NAME
+            value: cnpgdb
+
+  - it: reads the app password from the cnpg credentials secret
+    template: deployment.yaml
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.credentials.existingSecret: custom-pg-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_PASS
+            valueFrom:
+              secretKeyRef:
+                name: custom-pg-secret
+                key: password
+
+  - it: points the app at the external server when neither in-cluster backend is on
+    template: deployment.yaml
+    set:
+      image.tag: test
+      postgresql.enabled: false
+      externalDatabase.enabled: true
+      externalDatabase.host: rds.example.com
+      externalDatabase.username: pgadmin
+      externalDatabase.database: ohdb
+      externalDatabase.sslMode: require
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: rds.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_SSL_MODE
+            value: require
+
+  - it: cnpg takes precedence over bitnami so a migration cuts consumers over
+    template: deployment.yaml
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: oh-main-postgresql
+
+  - it: aliases the bitnami primary by default
+    template: service.yaml
+    documentSelector:
+      path: metadata.name
+      value: oh-main-postgresql
+    set:
+      image.tag: test
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/name: postgresql
+            app.kubernetes.io/component: primary
+      - contains:
+          path: spec.ports
+          content:
+            name: tcp-postgresql
+            port: 5432
+            targetPort: 5432
+            nodePort: null
+
+  - it: aliases the cnpg primary when cnpg is enabled
+    template: service.yaml
+    documentSelector:
+      path: metadata.name
+      value: oh-main-postgresql
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            cnpg.io/cluster: RELEASE-NAME-pg
+            cnpg.io/instanceRole: primary
+      # Numeric: the two backends name this container port differently.
+      - contains:
+          path: spec.ports
+          content:
+            name: tcp-postgresql
+            port: 5432
+            targetPort: 5432
+            nodePort: null
+
+  - it: renders the alias for cnpg even when the app server is not deployed
+    template: service.yaml
+    set:
+      image.tag: test
+      enabled: false
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: oh-main-postgresql

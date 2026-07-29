@@ -9,8 +9,11 @@ are never rendered, so a server-less release must not trip them.
 {{- if and .Values.enabled .Values.ingress.enabled (not .Values.ingress.host) -}}
 {{- fail "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false." -}}
 {{- end -}}
-{{- if and .Values.enabled (not .Values.postgresql.enabled) (or (not .Values.externalDatabase.host) (not .Values.externalDatabase.username)) -}}
-{{- fail "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database." -}}
+{{- if and .Values.enabled (eq (include "openhands.postgres.backend" .) "external") (or (not .Values.externalDatabase.host) (not .Values.externalDatabase.username)) -}}
+{{- fail "No PostgreSQL backend is configured. Set externalDatabase.host and externalDatabase.username, or enable an in-cluster backend with postgresql.enabled=true (Bitnami) or cnpg.enabled=true (CloudNativePG)." -}}
+{{- end -}}
+{{- if and .Values.cnpg.enabled .Values.cnpg.enableSuperuserAccess (not .Values.cnpg.superuserSecret.name) -}}
+{{- fail "cnpg.enableSuperuserAccess is true but cnpg.superuserSecret.name is empty. Point it at a kubernetes.io/basic-auth Secret holding the postgres password, or CloudNativePG will generate one the application cannot read." -}}
 {{- end -}}
 {{/*
 Data-loss guard for the bundled MinIO. Its chart runs the bucket job on
