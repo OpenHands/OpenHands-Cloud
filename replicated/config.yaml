@@ -72,46 +72,48 @@ spec:
           # rather than naming each derived mode.
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           required: true
+        # No defaults: an example.com placeholder is never a usable hostname, and
+        # as a `default:` it would be silently accepted as if it were entered.
+        # Every one is required -- the install serves all of these, so there is no
+        # configuration where leaving one blank is valid. `required` is not
+        # enforced while an item is hidden by `when:`, so the derived layouts are
+        # unaffected by this.
         - name: app_hostname
           title: Application Hostname
           help_text: The hostname where OpenHands will be accessible
           type: text
-          default: "app.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: analytics_hostname
           title: Analytics Hostname
           help_text: The hostname for the Analytics service
           type: text
-          default: "analytics.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: auth_hostname
           title: Authentication Hostname
           help_text: The hostname for Keycloak authentication service
           type: text
-          default: "auth.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: llm_proxy_hostname
           title: LLM Proxy Hostname
           help_text: The hostname for the LiteLLM proxy service
           type: text
-          default: "llm-proxy.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: runtime_api_hostname
           title: Runtime API Hostname
           help_text: The hostname for the Runtime API service
           type: text
-          default: "runtime-api.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+          required: true
         - name: runtime_base_hostname
           title: Runtime Base Hostname
           help_text: The base hostname for runtime containers
           type: text
-          default: "runtimes.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+          required: true
 
         # Computed hostnames. Every HelmChart CR reads these instead of
         # re-deriving prefixes, so the DNS layout is defined once, here.
