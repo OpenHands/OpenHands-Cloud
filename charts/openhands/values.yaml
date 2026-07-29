@@ -614,7 +614,7 @@ litellm-helm:
   # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
   # format BerriAI uses for 1.84.x+ stable images).
   image:
-    tag: "1.84.1"
+    tag: "1.93.0"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
