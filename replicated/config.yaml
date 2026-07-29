@@ -205,46 +205,53 @@ spec:
         # between is hidden, so they appear directly under Base Domain.
         #
         # Declared after the computed items on purpose: these read them, and
-        # resolving a `default:` that points at a later item is not something we
-        # rely on. `default:` and not `value:` so editing base_domain or the mode
-        # re-renders them.
+        # resolving a template that points at a later item is not something we
+        # rely on.
+        #
+        # `value:` and not `default:`, because only `value:` populates the input
+        # box -- a `default:` on a readonly field leaves the box empty and prints
+        # the text underneath it. The cost is that `value:` is stored on first
+        # render and then never re-evaluated, so each is guarded on base_domain
+        # being set: while it is empty the guard renders nothing, and an empty
+        # stored value is not treated as user input, so the item keeps
+        # re-rendering until there is a real hostname to pin.
         - name: derived_app_hostname
           title: Application Hostname
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          default: '{{repl ConfigOption "computed_app_hostname" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_app_hostname" }}{{repl end }}'
         - name: derived_analytics_hostname
           title: Analytics Hostname
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          default: '{{repl ConfigOption "computed_analytics_hostname" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_analytics_hostname" }}{{repl end }}'
         - name: derived_auth_hostname
           title: Authentication Hostname
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          default: '{{repl ConfigOption "computed_auth_hostname" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}'
         - name: derived_llm_proxy_hostname
           title: LLM Proxy Hostname
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          default: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_llm_proxy_hostname" }}{{repl end }}'
         - name: derived_runtime_api_hostname
           title: Runtime API Hostname
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          default: '{{repl ConfigOption "computed_runtime_api_hostname" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_runtime_api_hostname" }}{{repl end }}'
         - name: derived_sandbox_hostname
           title: Sandbox Hostnames
           help_text: Each sandbox is served on its own hostname in this form.
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          default: '{id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}{{repl end }}'
         - name: additional_cors_origins
           title: Additional Permitted CORS Origins
           help_text: >-
