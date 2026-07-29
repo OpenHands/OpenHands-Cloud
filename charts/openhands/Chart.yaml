@@ -32,6 +32,10 @@ dependencies:
     repository: oci://registry.replicated.com/library
     version: 1.9.0
     condition: replicated.enabled
+  - name: rustfs
+    version: 0.10.0
+    repository: https://charts.rustfs.com/
+    condition: rustfs.enabled
   - name: crd-check
     repository: oci://ghcr.io/openhands/helm-charts
     version: 0.1.0

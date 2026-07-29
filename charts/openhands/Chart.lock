@@ -20,6 +20,9 @@ dependencies:
 - name: replicated
   repository: oci://registry.replicated.com/library
   version: 1.9.0
+- name: rustfs
+  repository: https://charts.rustfs.com/
+  version: 0.10.0
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
@@ -38,5 +41,5 @@ dependencies:
 - name: agent-canvas
   repository: ""
   version: '*'
-digest: sha256:40485c9d50eaec81c717aaf76c1bbbe08dfeb5a288cd606a6bda929416c6ec91
-generated: "2026-06-25T15:27:15.536667-04:00"
+digest: sha256:693867877f59079af43583137beeb95dc6298f7b1c5a72d8e429a7ab954770e1
+generated: "2026-07-28T22:40:10.320867-05:00"
