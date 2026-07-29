@@ -112,24 +112,6 @@ spec:
           type: text
           default: "runtimes.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
-        - name: runtime_hostname_style
-          title: Sandbox Hostname Style
-          # Shows both options against the runtime base hostname entered above,
-          # rather than describing the layouts abstractly. Reads that item and
-          # not its own value: help_text cannot reference the item it belongs to.
-          # The certificate item states the SAN each choice requires.
-          help_text: |
-            How each sandbox ID joins the runtime base hostname.
-            • **Flat** — `{id}-{{repl ConfigOption "runtime_base_hostname" }}`
-            • **Nested** — `{id}.{{repl ConfigOption "runtime_base_hostname" }}`
-          type: select_one
-          default: "flat"
-          when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
-          items:
-            - name: "flat"
-              title: "Flat - join with a dash"
-            - name: "nested"
-              title: "Nested - join with a dot"
 
         # Computed hostnames. Every HelmChart CR reads these instead of
         # re-deriving prefixes, so the DNS layout is defined once, here.
@@ -182,11 +164,17 @@ spec:
         # Consumed as the runtime-api's RUNTIME_URL_SEPARATOR. A dash keeps
         # sandboxes one label deep; the runtime-api treats "/" as a switch into
         # path routing, so only "-" and "." are valid here.
+        #
+        # Only the Simple layout uses a dash, because there we choose the base
+        # (`runtimes.<base_domain>`) and can guarantee the sandboxes still land
+        # under the single `*.<base_domain>` wildcard. Legacy and Manual nest
+        # with a dot: in Manual the base is whatever was entered, so each sandbox
+        # is a child of it.
         - name: computed_runtime_hostname_separator
           title: Computed Sandbox Hostname Separator
           type: text
           hidden: true
-          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl if ConfigOptionEquals "runtime_hostname_style" "flat" }}-{{repl else }}.{{repl end }}{{repl else if ConfigOptionEquals "hostname_mode" "wildcard" }}-{{repl else }}.{{repl end }}'
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "wildcard" }}-{{repl else }}.{{repl end }}'
         # The one wildcard SAN a certificate must carry literally for sandboxes.
         # A "-" separator makes each sandbox a sibling of the runtime base rather
         # than a child, so the covering wildcard sits one label above it:
