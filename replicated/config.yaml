@@ -215,43 +215,51 @@ spec:
         # being set: while it is empty the guard renders nothing, and an empty
         # stored value is not treated as user input, so the item keeps
         # re-rendering until there is a real hostname to pin.
+        # Titles and help_text are copied verbatim from the editable items above
+        # so a field reads the same in every mode, and switching modes only
+        # changes whether it accepts input.
         - name: derived_app_hostname
           title: Application Hostname
+          help_text: The hostname where OpenHands will be accessible
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_app_hostname" }}{{repl end }}'
         - name: derived_analytics_hostname
           title: Analytics Hostname
+          help_text: The hostname for the Analytics service
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_analytics_hostname" }}{{repl end }}'
         - name: derived_auth_hostname
           title: Authentication Hostname
+          help_text: The hostname for Keycloak authentication service
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}'
         - name: derived_llm_proxy_hostname
           title: LLM Proxy Hostname
+          help_text: The hostname for the LiteLLM proxy service
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_llm_proxy_hostname" }}{{repl end }}'
         - name: derived_runtime_api_hostname
           title: Runtime API Hostname
+          help_text: The hostname for the Runtime API service
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_runtime_api_hostname" }}{{repl end }}'
-        - name: derived_sandbox_hostname
-          title: Sandbox Hostnames
-          help_text: Each sandbox is served on its own hostname in this form.
+        - name: derived_runtime_base_hostname
+          title: Runtime Base Hostname
+          help_text: The base hostname for runtime containers
           type: text
           readonly: true
           when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
-          value: '{{repl if ConfigOption "base_domain" }}{id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}{{repl end }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_runtime_base_hostname" }}{{repl end }}'
         - name: additional_cors_origins
           title: Additional Permitted CORS Origins
           help_text: >-
