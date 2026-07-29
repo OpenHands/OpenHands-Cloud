@@ -4,6 +4,8 @@ kind: CronJob
 metadata:
   name: {{ .Release.Name }}-proactive-convo-clean
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proactive-convo-clean
     app: {{ .Release.Name }}-proactive-convo-clean
 spec:
   schedule: {{ .Values.proactiveConvoClean.schedule | quote }}
@@ -16,6 +18,8 @@ spec:
       template:
         metadata:
           labels:
+            {{- include "openhands.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: proactive-convo-clean
             app: {{ .Release.Name }}-proactive-convo-clean
         spec:
           {{- with .Values.securityContext }}

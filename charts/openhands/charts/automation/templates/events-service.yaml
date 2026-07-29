@@ -4,6 +4,8 @@ kind: Service
 metadata:
   name: automation-events
   labels:
+    {{- include "automation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: events
     app: automation-events
 spec:
   ports:

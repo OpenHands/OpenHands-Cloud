@@ -4,6 +4,8 @@ kind: Service
 metadata:
   name: openhands-integrations-service
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: integrations
     app: openhands-integrations
 spec:
   ports:

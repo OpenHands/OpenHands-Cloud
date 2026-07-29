@@ -61,8 +61,8 @@ metadata:
   name: {{ $name }}
   namespace: {{ $ns }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sandbox-upgrade-coordinator
-    app.kubernetes.io/instance: {{ .Release.Name }}
 {{- with $c.imagePullSecrets }}
 imagePullSecrets:
   {{- toYaml . | nindent 2 }}
@@ -79,8 +79,8 @@ kind: ClusterRole
 metadata:
   name: {{ $name }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sandbox-upgrade-coordinator
-    app.kubernetes.io/instance: {{ .Release.Name }}
 rules:
   - apiGroups: ["embeddedcluster.replicated.com"]
     resources: ["installations"]
@@ -94,8 +94,8 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ $name }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sandbox-upgrade-coordinator
-    app.kubernetes.io/instance: {{ .Release.Name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -111,8 +111,8 @@ metadata:
   name: {{ $name }}
   namespace: {{ $ns }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sandbox-upgrade-coordinator
-    app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   coordinator.sh: |
     #!/bin/sh
@@ -224,8 +224,8 @@ metadata:
   name: {{ $name }}
   namespace: {{ $ns }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sandbox-upgrade-coordinator
-    app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   selector:
     matchLabels:

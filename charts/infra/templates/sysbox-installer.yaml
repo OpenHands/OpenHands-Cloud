@@ -7,8 +7,8 @@ kind: RuntimeClass
 metadata:
   name: {{ .Values.sysbox.runtimeClassName }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sysbox-installer
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
 handler: {{ .Values.sysbox.runtimeClassName }}
 ---
 # Privileged DaemonSet that installs Sysbox onto every node and wires up the
@@ -26,8 +26,8 @@ metadata:
   name: sysbox-installer
   namespace: {{ .Release.Namespace }}
   labels:
+    {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sysbox-installer
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
   selector:
     matchLabels:

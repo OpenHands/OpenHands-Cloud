@@ -17,8 +17,13 @@ jobs:
           version: 'v3.18.4'
       - name: Install helm-unittest
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.1.1
+      # Subchart suites are only picked up by the parent run when the subchart is
+      # enabled by default, so every chart with tests is listed explicitly.
       - name: Run chart unit tests
         run: |
           helm unittest charts/openhands
           helm unittest charts/openhands/charts/integrations-hub
+          helm unittest charts/openhands/charts/runtime-api
           helm unittest charts/openhands-secrets
+          helm unittest charts/image-loader
+          helm unittest charts/infra

@@ -3,6 +3,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-automation-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
   annotations:
     {{- if .Values.ingress.root.annotations }}
     {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}

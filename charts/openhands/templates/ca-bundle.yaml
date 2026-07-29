@@ -4,6 +4,8 @@ apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
   name: {{ .Values.caBundle.name }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
 spec:
   sources:
     - useDefaultCAs: {{ .Values.caBundle.includeDefaultCAs }}

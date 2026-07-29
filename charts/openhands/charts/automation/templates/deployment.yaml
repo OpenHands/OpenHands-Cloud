@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: automation
   labels:
+    {{- include "automation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
     app: automation
 spec:
   replicas: {{ .Values.deployment.replicas }}
@@ -12,6 +14,8 @@ spec:
   template:
     metadata:
       labels:
+        {{- include "automation.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
         app: automation
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}

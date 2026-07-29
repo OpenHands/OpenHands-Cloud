@@ -4,6 +4,8 @@ kind: CronJob
 metadata:
   name: {{ .Release.Name }}-resend-sync
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: resend-sync
     app: {{ .Release.Name }}-resend-sync
 spec:
   schedule: {{ .Values.resendSync.schedule | quote }}
@@ -16,6 +18,8 @@ spec:
       template:
         metadata:
           labels:
+            {{- include "openhands.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: resend-sync
             app: {{ .Release.Name }}-resend-sync
         spec:
           {{- with .Values.securityContext }}
