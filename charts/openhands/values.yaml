@@ -1299,6 +1299,9 @@ integrations-hub:
 
   # Service configuration
   service:
+    # Externally visible Integrations Hub site URL, including rootPath.
+    # Rendered as INTHUB_PUBLIC_BASE_URL for OAuth callback construction.
+    baseUrl: ""
     # Port the FastAPI container listens on (matches the integrations-hub
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000
