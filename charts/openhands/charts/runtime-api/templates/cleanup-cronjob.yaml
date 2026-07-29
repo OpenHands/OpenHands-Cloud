@@ -4,6 +4,8 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: {{ include "runtime-api.fullname" . }}-cleanup
+  labels:
+    {{- include "runtime-api.labels" . | nindent 4 }}
 spec:
   schedule: {{ .Values.cleanup.schedule | quote }}
   concurrencyPolicy: Forbid
