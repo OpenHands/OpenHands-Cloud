@@ -1,0 +1,45 @@
+{{- if and .Values.enabled .Values.replicated.enabled }}
+{{- /*
+Grants the Replicated SDK service account permission to create pods/exec.
+
+The support bundle specs shipped with this chart (and the SDK's built-in spec)
+rely on `exec` collectors -- e.g. the SDK's `replicated-app-info` and
+`replicated-license-info` collectors exec into the SDK pod to fetch application
+and license data. Without `pods/exec` `create`, these collectors fail silently
+and the resulting bundle is missing app-info/license data (the Vendor Portal
+warns "No app-info file found" / "No license file found").
+
+See https://docs.replicated.com/vendor/support-bundle-generating#troubleshoot
+
+The SDK subchart's own Role only grants get/list/watch, so this supplementary
+Role adds the missing verb. It is namespace-scoped because every exec target
+(the SDK pod and the app pods) lives in the release namespace.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-support-bundle-exec
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: troubleshoot
+rules:
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-support-bundle-exec
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: troubleshoot
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-support-bundle-exec
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.replicated.serviceAccountName | default "replicated" }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
