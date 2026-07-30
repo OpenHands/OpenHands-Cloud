@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/**'
+      - '.github/workflows/enterprise-replicated-preview.yml'
       - '.github/workflows/publish-release-charts.yml'
       - '.github/workflows/test-scripts.yml'
 
