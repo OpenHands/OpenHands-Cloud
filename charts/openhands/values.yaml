@@ -129,6 +129,12 @@ filestore:
   # Keys within existingSecret (defaults match the AWS SDK env var names).
   accessKeyIdKey: AWS_ACCESS_KEY_ID
   secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  # Copy existing objects from the bundled MinIO into RustFS during the upgrade
+  # that switches backends. Requires both backends deployed. Never runs on a
+  # fresh install. Copies are additive and idempotent, so the pass repeats
+  # harmlessly on later upgrades until minio.enabled is set to false.
+  migration:
+    enabled: false
 
 # Workspace archiving (app-server, explicit-delete path): before a still-running
 # sandbox is deleted, copy its workspace to object storage so the agent's work
@@ -677,6 +683,12 @@ litellm-helm:
       allowed_fails: 3
 
 minio:
+  # Declared here so the object-store migration Job can reuse this image, which
+  # carries `mc`. Keep in step with the pinned minio subchart's own default.
+  image:
+    repository: quay.io/minio/minio
+    tag: RELEASE.2023-05-18T00-05-36Z
+    pullPolicy: IfNotPresent
   replicas: 1
   mode: standalone
   persistence:
@@ -714,6 +726,20 @@ minio:
 #               endpoint: "http://<release>-rustfs-svc:9000", existingSecret: <s3 keys>}
 rustfs:
   enabled: false
+  image:
+    rustfs:
+      repository: rustfs/rustfs
+      # The subchart treats an empty tag as "use my appVersion", but the bucket
+      # Job needs a concrete one. Bump this together with the rustfs chart pin in
+      # Chart.yaml.
+      tag: "1.0.0-beta.10"
+      pullPolicy: IfNotPresent
+  # Must match minio.svcaccts[0] so a migration moves only the endpoint and never
+  # rotates what the app holds. Validation rejects a mismatch.
+  secret:
+    rustfs:
+      access_key: "default"
+      secret_key: "notasecret"
   replicaCount: 1
   mode:
     standalone:

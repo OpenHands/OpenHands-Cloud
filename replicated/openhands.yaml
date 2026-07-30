@@ -417,6 +417,23 @@ spec:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
     filestore:
       ephemeral: true
+      # Copy the existing objects into RustFS on the upgrade that switches
+      # backends. MinIO stays deployed below so its PVC remains the rollback
+      # point; set minio.enabled: false once the migration has been confirmed.
+      migration:
+        enabled: true
+    rustfs:
+      enabled: true
+      image:
+        rustfs:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/rustfs/rustfs'
+        # RustFS runs a busybox init container even in standalone mode.
+        initImage:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
+      storageclass:
+        dataStorageSize: 100Gi
     minio:
       persistence:
         enabled: true
@@ -686,6 +703,12 @@ spec:
         minio:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
+        rustfs:
+          image:
+            rustfs:
+              repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/rustfs'
+            initImage:
+              repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/busybox'
         litellm-helm:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/litellm-database'

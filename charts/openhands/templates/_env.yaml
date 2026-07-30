@@ -51,11 +51,13 @@
 - name: FILE_STORE
   value: s3
 - name: AWS_ACCESS_KEY_ID
-  value: {{ (index .Values.minio.svcaccts 0).accessKey }}
+  value: {{ include "openhands.objectStore.accessKey" . }}
 - name: AWS_SECRET_ACCESS_KEY
-  value: {{ (index .Values.minio.svcaccts 0).secretKey }}
+  value: {{ include "openhands.objectStore.secretKey" . }}
+# Bundled store endpoint. Resolves to RustFS when it is enabled, otherwise
+# MinIO — see templates/_objectstore.tpl.
 - name: AWS_S3_ENDPOINT
-  value: {{ printf "http://%s-minio:9000" $.Release.Name }}
+  value: {{ include "openhands.objectStore.endpoint" . }}
 - name: AWS_S3_BUCKET
   value: {{ .Values.filestore.bucket }}
 - name: AWS_S3_SECURE

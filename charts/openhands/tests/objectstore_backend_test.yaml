@@ -1,0 +1,183 @@
+suite: bundled object-store backend selection and migration
+templates:
+  - templates/deployment.yaml
+  - templates/rustfs-bucket.yaml
+  - templates/objectstore-migration.yaml
+  - templates/validations.yaml
+  - templates/_objectstore.tpl
+  - templates/_env.yaml
+  - templates/_helpers.tpl
+  # deployment.yaml includes these by path; helm-unittest only resolves
+  # templates the suite lists.
+  - templates/keycloak-config-script.yaml
+  - templates/keycloak-realm-template.yaml
+  - templates/litellm-config-script.yaml
+  - templates/user-waitlist-configmap.yaml
+tests:
+  # --- endpoint selection -------------------------------------------------
+  - it: points the app at the bundled MinIO by default
+    template: templates/deployment.yaml
+    set:
+      filestore.ephemeral: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+
+  - it: points the app at RustFS once it is enabled
+    template: templates/deployment.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-rustfs-svc:9000
+
+  - it: keeps the same credentials across the switch, so only the endpoint moves
+    template: templates/deployment.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: default
+
+  # --- bucket provisioning ------------------------------------------------
+  - it: provisions the RustFS bucket, since the upstream chart does not
+    template: templates/rustfs-bucket.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+
+  - it: never gives the bucket job a delete path
+    template: templates/rustfs-bucket.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+    asserts:
+      - notMatchRegexRaw:
+          pattern: (DELETE|rm -r|--force)
+
+  - it: renders no bucket job when RustFS is off
+    template: templates/rustfs-bucket.yaml
+    set:
+      filestore.ephemeral: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- migration ----------------------------------------------------------
+  - it: copies objects on an upgrade when both stores are deployed
+    template: templates/objectstore-migration.yaml
+    release:
+      upgrade: true
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+
+  - it: copies additively and never deletes from either store
+    template: templates/objectstore-migration.yaml
+    release:
+      upgrade: true
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: mc mirror --preserve
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: mirror[^\n]*--remove
+
+  - it: never migrates on a fresh install, where there is nothing to copy
+    template: templates/objectstore-migration.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no migration job unless it is explicitly enabled
+    template: templates/objectstore-migration.yaml
+    release:
+      upgrade: true
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- external store is untouched ---------------------------------------
+  - it: renders neither bundled store for an external S3 install
+    set:
+      filestore.ephemeral: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/rustfs-bucket.yaml
+
+  # --- guards -------------------------------------------------------------
+  - it: fails when the RustFS credentials do not match the MinIO pair
+    template: templates/validations.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+      rustfs.secret.rustfs.access_key: something-else
+    asserts:
+      - failedTemplate:
+          errorMessage: "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey."
+
+  - it: fails when RustFS is enabled without a bundled store
+    template: templates/validations.yaml
+    set:
+      filestore.ephemeral: false
+      rustfs.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "rustfs.enabled is true but filestore.ephemeral is false, so nothing points at RustFS: an external S3/GCS store is in use. Set filestore.ephemeral=true to use RustFS as the bundled store, or rustfs.enabled=false."
+
+  - it: fails when a migration has no destination
+    template: templates/validations.yaml
+    set:
+      filestore.ephemeral: true
+      filestore.migration.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.migration.enabled is true but rustfs.enabled is false, so there is no destination to copy into. Set rustfs.enabled=true."
+
+  - it: fails when a migration has no source
+    template: templates/validations.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+      minio.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled unset (or true) until the migration has completed, then set it to false."

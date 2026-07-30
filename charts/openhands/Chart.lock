@@ -41,5 +41,5 @@ dependencies:
 - name: agent-canvas
   repository: ""
   version: '*'
-digest: sha256:a79b4f3d871e867b6fd24059e351dd6273968950b75bf75faf80924d432113d3
-generated: "2026-07-30T14:12:47.475503-05:00"
+digest: sha256:4546e55d77dc8062731de9bac05ca4c2569b39e68e6862d6f3cfc2b66efc8a0f
+generated: "2026-07-30T17:14:34.795484-05:00"

@@ -29,3 +29,30 @@ external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{/*
+Bundled object-store guards. Scoped to filestore.ephemeral rather than
+.Values.enabled, like the purge guard above: the bundled store is shared with
+runtime-api and automation, so these misconfigurations matter even in a
+server-less release.
+*/}}
+{{- if and .Values.filestore.ephemeral .Values.rustfs.enabled -}}
+{{- $mcAccess := (index .Values.minio.svcaccts 0).accessKey -}}
+{{- $mcSecret := (index .Values.minio.svcaccts 0).secretKey -}}
+{{- if or (ne (.Values.rustfs.secret.rustfs.access_key | toString) ($mcAccess | toString)) (ne (.Values.rustfs.secret.rustfs.secret_key | toString) ($mcSecret | toString)) -}}
+{{- fail "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey." -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.rustfs.enabled (not .Values.filestore.ephemeral) -}}
+{{- fail "rustfs.enabled is true but filestore.ephemeral is false, so nothing points at RustFS: an external S3/GCS store is in use. Set filestore.ephemeral=true to use RustFS as the bundled store, or rustfs.enabled=false." -}}
+{{- end -}}
+{{- if .Values.filestore.migration.enabled -}}
+{{- if not .Values.filestore.ephemeral -}}
+{{- fail "filestore.migration.enabled is true but filestore.ephemeral is false. The migration copies objects between two bundled stores; an external S3/GCS install has nothing to migrate." -}}
+{{- end -}}
+{{- if not .Values.rustfs.enabled -}}
+{{- fail "filestore.migration.enabled is true but rustfs.enabled is false, so there is no destination to copy into. Set rustfs.enabled=true." -}}
+{{- end -}}
+{{- if not (include "openhands.objectStore.minioEnabled" .) -}}
+{{- fail "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled unset (or true) until the migration has completed, then set it to false." -}}
+{{- end -}}
+{{- end -}}

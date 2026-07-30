@@ -452,6 +452,47 @@ To use an external PostgreSQL database instead of deploying one with the chart:
        DB_NAME: runtime_api_db
    ```
 
+### Using RustFS as the Bundled Store
+
+RustFS is an S3-compatible alternative to the bundled MinIO. It is off by default;
+MinIO remains the default bundled store.
+
+Enabling it deploys RustFS alongside MinIO and points every consumer at RustFS.
+MinIO keeps running so its PVC stays available as a rollback point:
+
+```yaml
+filestore:
+  ephemeral: true
+rustfs:
+  enabled: true
+```
+
+To copy the objects already in MinIO across during the upgrade, also set:
+
+```yaml
+filestore:
+  migration:
+    enabled: true
+```
+
+The copy runs as a `post-upgrade` Job. It is additive and idempotent — `mc mirror`
+without `--remove`, so nothing is ever deleted from either store — which means it
+repeats harmlessly on later upgrades. Because it runs after the consumers have
+been repointed, conversations that predate the migration may briefly not load
+until it finishes; that is self-healing and usually a matter of seconds.
+
+Once you have confirmed the objects are present in RustFS, stop deploying MinIO:
+
+```yaml
+minio:
+  enabled: false
+```
+
+Note the RustFS credentials in `rustfs.secret.rustfs` must match
+`minio.svcaccts[0]`. The app receives one credential pair for whichever bundled
+store is active, so a migration moves only the endpoint. The chart fails the
+render if they disagree.
+
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,

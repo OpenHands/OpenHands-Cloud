@@ -26,6 +26,8 @@ spec:
     - openhands/service/openhands-integrations-service
     - openhands/ingress/openhands-integrations-ingress
     - openhands/deployment/openhands-mcp
+    - openhands/deployment/openhands-rustfs
+    - openhands/service/openhands-rustfs-svc
     - openhands/service/openhands-mcp-service
     - openhands/ingress/openhands-mcp-ingress
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/deployment/automation{{repl end}}'

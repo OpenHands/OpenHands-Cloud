@@ -1,0 +1,107 @@
+{{- if and .Values.filestore.ephemeral .Values.rustfs.enabled .Values.filestore.migration.enabled (include "openhands.objectStore.minioEnabled" .) (not .Release.IsInstall) }}
+{{- /*
+Copies existing objects from the bundled MinIO into RustFS on the upgrade that
+switches backends. Both backends stay deployed while this runs, so MinIO's PVC
+remains the rollback point.
+
+Why this is simpler than the database migration:
+
+  * The objects are immutable per key — a conversation event is written once
+    under its own event id and never rewritten. So the copy is additive and
+    idempotent, and there is nothing to freeze. It repeats harmlessly on later
+    upgrades until minio.enabled is set to false.
+  * `mc` ships in the MinIO image this chart already proxies, so the copy needs
+    no new image in the proxy registry or the airgap bundle.
+  * The copy needs no Kubernetes API access at all — it talks to two S3
+    endpoints — so it needs no ServiceAccount, Role or RoleBinding.
+
+`mc mirror` WITHOUT --remove, deliberately: --remove deletes destination-only
+objects, and nothing in this chart's object handling is allowed a delete path.
+
+post-upgrade, not pre-upgrade: a pre-upgrade hook runs before the new manifests
+are applied, so on the upgrade that introduces RustFS there is no destination to
+copy into. The consequence is a brief window, between the consumers repointing
+and this Job finishing, in which conversations that predate the migration may not
+load. It is self-healing and typically seconds — a conversation whose sandbox is
+still live is served from the sandbox and unaffected.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-objectstore-migration
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: objectstore-migration
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.labels" . | nindent 8 }}
+        app.kubernetes.io/component: objectstore-migration
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.minio.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+      containers:
+        - name: copy
+          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+          imagePullPolicy: {{ .Values.minio.image.pullPolicy | default "IfNotPresent" }}
+          env:
+            # mc writes its config under $HOME; the image's default HOME is / and
+            # is not writable for a non-root user.
+            - name: HOME
+              value: /tmp
+            - name: SRC
+              value: {{ printf "http://%s-minio:9000" .Release.Name | quote }}
+            - name: DST
+              value: {{ printf "http://%s-rustfs-svc:9000" .Release.Name | quote }}
+            - name: BUCKET
+              value: {{ .Values.filestore.bucket | quote }}
+            - name: AK
+              value: {{ include "openhands.objectStore.accessKey" . | quote }}
+            - name: SK
+              value: {{ include "openhands.objectStore.secretKey" . | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              mc alias set src "$SRC" "$AK" "$SK" >/dev/null
+              mc alias set dst "$DST" "$AK" "$SK" >/dev/null
+
+              src_n=$(mc ls --recursive "src/$BUCKET" 2>/dev/null | grep -c . || true)
+              echo "source holds ${src_n} objects"
+              if [ "$src_n" = "0" ]; then
+                echo "nothing to copy"
+                exit 0
+              fi
+
+              # Additive copy. No --remove: destination-only objects are never
+              # deleted by this chart.
+              mc mirror --preserve "src/$BUCKET" "dst/$BUCKET"
+
+              dst_n=$(mc ls --recursive "dst/$BUCKET" 2>/dev/null | grep -c . || true)
+              echo "destination holds ${dst_n} objects"
+              if [ "$dst_n" -lt "$src_n" ]; then
+                echo "copy incomplete: ${dst_n} of ${src_n} objects present" >&2
+                exit 1
+              fi
+              echo "migration complete: ${dst_n} objects in RustFS"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+{{- end }}
