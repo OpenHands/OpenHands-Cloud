@@ -26,11 +26,24 @@ tests:
             name: AWS_S3_ENDPOINT
             value: http://RELEASE-NAME-minio:9000
 
-  - it: points the app at RustFS once it is enabled
+  - it: keeps the app on MinIO while RustFS is merely deployed
     template: templates/deployment.yaml
     set:
       filestore.ephemeral: true
       rustfs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+
+  - it: points the app at RustFS only once the backend is switched
+    template: templates/deployment.yaml
+    set:
+      filestore.ephemeral: true
+      rustfs.enabled: true
+      filestore.backend: rustfs
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -43,6 +56,7 @@ tests:
     set:
       filestore.ephemeral: true
       rustfs.enabled: true
+      filestore.backend: rustfs
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -181,3 +195,21 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled unset (or true) until the migration has completed, then set it to false."
+
+  - it: fails when the backend is switched to a store that is not deployed
+    template: templates/validations.yaml
+    set:
+      filestore.ephemeral: true
+      filestore.backend: rustfs
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.backend is rustfs but rustfs.enabled is false, so the store the app is pointed at is not deployed. Set rustfs.enabled=true, and consider deploying it first with filestore.backend still minio so it can be verified before the cutover."
+
+  - it: rejects an unknown backend
+    template: templates/validations.yaml
+    set:
+      filestore.ephemeral: true
+      filestore.backend: ceph
+    asserts:
+      - failedTemplate:
+          errorMessage: 'filestore.backend is "ceph". It must be "minio" or "rustfs".'

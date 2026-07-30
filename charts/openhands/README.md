@@ -457,23 +457,33 @@ To use an external PostgreSQL database instead of deploying one with the chart:
 RustFS is an S3-compatible alternative to the bundled MinIO. It is off by default;
 MinIO remains the default bundled store.
 
-Enabling it deploys RustFS alongside MinIO and points every consumer at RustFS.
-MinIO keeps running so its PVC stays available as a rollback point:
+Deploying a store and switching to it are separate steps, so RustFS can be brought
+up and verified before anything depends on it.
+
+**Step 1 — deploy RustFS and copy the objects across, still serving from MinIO:**
 
 ```yaml
 filestore:
   ephemeral: true
+  backend: minio        # unchanged; consumers stay on MinIO
+  migration:
+    enabled: true       # copies MinIO's objects into RustFS
 rustfs:
   enabled: true
 ```
 
-To copy the objects already in MinIO across during the upgrade, also set:
+Nothing depends on RustFS yet, so this upgrade is non-disruptive. Confirm the
+RustFS pod is ready and that the object counts match before continuing.
+
+**Step 2 — cut over:**
 
 ```yaml
 filestore:
-  migration:
-    enabled: true
+  backend: rustfs
 ```
+
+The objects are already present, so the switch is immediate. MinIO keeps running,
+so reverting is `backend: minio` again.
 
 The copy runs as a `post-upgrade` Job. It is additive and idempotent — `mc mirror`
 without `--remove`, so nothing is ever deleted from either store — which means it

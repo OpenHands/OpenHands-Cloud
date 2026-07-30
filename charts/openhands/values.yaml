@@ -133,6 +133,10 @@ filestore:
   # that switches backends. Requires both backends deployed. Never runs on a
   # fresh install. Copies are additive and idempotent, so the pass repeats
   # harmlessly on later upgrades until minio.enabled is set to false.
+  # Which bundled store the app and every consumer talk to. Changing this is the
+  # cutover; deploying RustFS (rustfs.enabled) is a separate step, so a store can
+  # be brought up and verified before anything depends on it.
+  backend: minio
   migration:
     enabled: false
 

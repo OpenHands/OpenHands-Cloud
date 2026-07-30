@@ -1,15 +1,17 @@
 {{/*
 Bundled object-store backend selection.
 
-Two bundled backends, in this precedence order:
+Two bundled backends:
 
-  rustfs   the rustfs subchart (rustfs.enabled)
-  minio    the bundled MinIO subchart (minio.enabled, defaulting to
+  rustfs   the rustfs subchart (rendered by rustfs.enabled)
+  minio    the bundled MinIO subchart (rendered by minio.enabled, defaulting to
            filestore.ephemeral)
 
-RustFS wins over MinIO when both are enabled, which is the state a migration
-runs in: MinIO stays deployed so its objects survive for rollback while every
-consumer is already pointed at RustFS.
+Deploying a store and switching to it are deliberately separate:
+rustfs.enabled renders RustFS, filestore.backend decides who the app talks to.
+That leaves a middle state — both deployed, consumers still on MinIO — where
+RustFS can be verified and the objects copied with nothing yet depending on it.
+The cutover then finds the data already present.
 
 Neither backend is bundled when filestore.ephemeral is false — that install
 uses an external store (S3/GCS) or none, and these helpers render nothing.
@@ -22,10 +24,8 @@ so a migration does not rotate anything the app holds.
 {{/* "rustfs", "minio", or "" when no bundled store is deployed. */}}
 {{- define "openhands.objectStore.backend" -}}
 {{- if not .Values.filestore.ephemeral -}}
-{{- else if .Values.rustfs.enabled -}}
-rustfs
 {{- else -}}
-minio
+{{ .Values.filestore.backend }}
 {{- end -}}
 {{- end -}}
 

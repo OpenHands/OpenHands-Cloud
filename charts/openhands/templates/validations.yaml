@@ -42,6 +42,12 @@ server-less release.
 {{- fail "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey." -}}
 {{- end -}}
 {{- end -}}
+{{- if and .Values.filestore.ephemeral (not (has .Values.filestore.backend (list "minio" "rustfs"))) -}}
+{{- fail (printf "filestore.backend is %q. It must be \"minio\" or \"rustfs\"." (.Values.filestore.backend | toString)) -}}
+{{- end -}}
+{{- if and .Values.filestore.ephemeral (eq .Values.filestore.backend "rustfs") (not .Values.rustfs.enabled) -}}
+{{- fail "filestore.backend is rustfs but rustfs.enabled is false, so the store the app is pointed at is not deployed. Set rustfs.enabled=true, and consider deploying it first with filestore.backend still minio so it can be verified before the cutover." -}}
+{{- end -}}
 {{- if and .Values.rustfs.enabled (not .Values.filestore.ephemeral) -}}
 {{- fail "rustfs.enabled is true but filestore.ephemeral is false, so nothing points at RustFS: an external S3/GCS store is in use. Set filestore.ephemeral=true to use RustFS as the bundled store, or rustfs.enabled=false." -}}
 {{- end -}}

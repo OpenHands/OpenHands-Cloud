@@ -417,9 +417,12 @@ spec:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
     filestore:
       ephemeral: true
-      # Copy the existing objects into RustFS on the upgrade that switches
-      # backends. MinIO stays deployed below so its PVC remains the rollback
-      # point; set minio.enabled: false once the migration has been confirmed.
+      # Deploy RustFS and copy the existing objects into it, but keep serving from
+      # MinIO. That makes this upgrade non-disruptive: nothing depends on RustFS
+      # until a later release sets backend: rustfs, and by then the objects are
+      # already there. MinIO stays deployed either way, so its PVC remains the
+      # rollback point until minio.enabled is set to false.
+      backend: minio
       migration:
         enabled: true
     rustfs:
