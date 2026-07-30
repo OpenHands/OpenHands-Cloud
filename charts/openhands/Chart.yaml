@@ -30,7 +30,7 @@ dependencies:
     condition: redis.enabled
   - name: replicated
     repository: oci://registry.replicated.com/library
-    version: 1.9.0
+    version: 1.19.7
     condition: replicated.enabled
   - name: rustfs
     version: 0.10.0

@@ -19,7 +19,7 @@ dependencies:
   version: 20.3.0
 - name: replicated
   repository: oci://registry.replicated.com/library
-  version: 1.9.0
+  version: 1.19.7
 - name: rustfs
   repository: https://charts.rustfs.com/
   version: 0.10.0
@@ -41,5 +41,5 @@ dependencies:
 - name: agent-canvas
   repository: ""
   version: '*'
-digest: sha256:693867877f59079af43583137beeb95dc6298f7b1c5a72d8e429a7ab954770e1
-generated: "2026-07-28T22:40:10.320867-05:00"
+digest: sha256:a79b4f3d871e867b6fd24059e351dd6273968950b75bf75faf80924d432113d3
+generated: "2026-07-30T14:12:47.475503-05:00"
