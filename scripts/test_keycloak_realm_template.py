@@ -20,6 +20,7 @@ REALM_TEMPLATE = (
 KEYCLOAK_CONFIG_SCRIPT = (
     REPO_ROOT / "charts" / "openhands" / "templates" / "keycloak-config-script.yaml"
 )
+OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 
 
 def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
@@ -197,4 +198,30 @@ def test_keycloak_config_script_includes_laminar_web_host_in_envsubst() -> None:
     script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
     assert "$LAMINAR_WEB_HOST" in script_template, (
         "keycloak-config-script.yaml must include $LAMINAR_WEB_HOST in envsubst"
+    )
+
+
+def test_keycloak_identity_provider_socket_timeout() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "test",
+            str(OPENHANDS_CHART),
+            "--set",
+            "enabled=true",
+            "--set",
+            "keycloak.enabled=true",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert re.search(
+        r"name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS"
+        r"\s+value: [\"']15000[\"']",
+        result.stdout,
     )
