@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.48.0
+  tag: 1.49.0
 
 autoscaling:
   enabled: false
@@ -426,6 +426,8 @@ keycloak:
   # provider (e.g. Bitbucket Data Center) to log in again.
   ssoSessionIdleTimeout: 259200
   ssoSessionMaxLifespan: 604800
+  # Allow self-hosted identity providers to survive brief network stalls.
+  idpHttpSocketTimeoutMillis: "15000"
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
@@ -467,6 +469,8 @@ keycloak:
       value: "xforwarded"
     - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
       value: "true"
+    - name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS
+      value: '{{ .Values.idpHttpSocketTimeoutMillis | default "15000" }}'
     # Bitnami Keycloak renders extraEnvVars with common.tplvalues.render, so
     # this is evaluated in the Keycloak subchart context at render time.
     - name: KC_DB_URL_PROPERTIES
@@ -614,7 +618,7 @@ litellm-helm:
   # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
   # format BerriAI uses for 1.84.x+ stable images).
   image:
-    tag: "1.84.1"
+    tag: "1.93.0"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
@@ -1177,7 +1181,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.36.0-python
+    tag: 1.39.1-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1299,6 +1303,9 @@ integrations-hub:
 
   # Service configuration
   service:
+    # Externally visible Integrations Hub site URL, including rootPath.
+    # Rendered as INTHUB_PUBLIC_BASE_URL for OAuth callback construction.
+    baseUrl: ""
     # Port the FastAPI container listens on (matches the integrations-hub
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000

@@ -6,6 +6,7 @@ tests:
     set:
       rootPath: /integrations-hub
       apiRootPath: /api/integrations-hub
+      service.baseUrl: https://pr-252.staging.all-hands.dev/integrations-hub
       openhands.baseUrl: https://pr-252.staging.all-hands.dev
       openhands.redirectProxyUrl: https://staging.all-hands.dev
       database.url: postgresql://example
@@ -31,5 +32,33 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
+            name: INTHUB_PUBLIC_BASE_URL
+            value: https://pr-252.staging.all-hands.dev/integrations-hub
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: INTHUB_OAUTH_REDIRECT_PROXY_URL
+            value: https://staging.all-hands.dev
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
             name: AUTH_URL
             value: https://pr-252.staging.all-hands.dev
+  - it: allows an explicit public base URL environment override
+    set:
+      service.baseUrl: https://derived.example.com/integrations-hub
+      env.INTHUB_PUBLIC_BASE_URL: https://override.example.com/integrations-hub
+      database.url: postgresql://example
+      credentialEncryption.secretName: encryption
+      cron.secretName: cron
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: INTHUB_PUBLIC_BASE_URL
+            value: https://override.example.com/integrations-hub
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: INTHUB_PUBLIC_BASE_URL
+            value: https://derived.example.com/integrations-hub
