@@ -1180,6 +1180,8 @@ spec:
       enabled: true
     minio:
       enabled: true
+    rustfs:
+      enabled: true
     postgresql:
       enabled: true
     redis:
