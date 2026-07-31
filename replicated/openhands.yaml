@@ -51,6 +51,9 @@ spec:
       ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE: true
+      # Keep account email immutable until OHE can reliably deliver Keycloak verification.
+      EMAIL_CHANGE_ENABLED: false
+      OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: false
       # Frontend feature flags must be set via the structured OH_WEB_CLIENT_FEATURE_FLAGS_*
       # form. Once any of these is present, from_env(AppServerConfig, 'OH') builds
       # feature_flags from them and the plain ENABLE_JIRA_DC env (set in _env.yaml) is
