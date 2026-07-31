@@ -468,11 +468,6 @@ spec:
 
     replicated:
       enabled: true
-      # SDK 1.19.7 reads `.Values.imagePullSecrets | default .Values.global.imagePullSecrets`
-      # and renders it with toYaml, which requires the map form. The global is a
-      # list of BARE STRINGS because the minio subchart renders it as
-      # `- name: {{ . }}` and breaks on maps, so it is set explicitly here rather
-      # than changing the global.
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       redisPassword: 'repl{{ ConfigOption "redis_password" }}'
