@@ -835,8 +835,7 @@ maintenanceTasks:
       cpu: "500m"
 
 budgetMaintenance:
-  # Disabled until https://github.com/OpenHands/enterprise/pull/80 ships.
-  enabled: false
+  enabled: true
   schedule: "*/15 * * * *" # Run every 15 minutes
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
