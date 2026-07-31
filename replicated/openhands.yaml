@@ -468,6 +468,8 @@ spec:
 
     replicated:
       enabled: true
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
       redisPassword: 'repl{{ ConfigOption "redis_password" }}'
       postgresUsername: 'repl{{ ConfigOption "postgres_username" }}'
       postgresPassword: 'repl{{ ConfigOption "postgres_password" }}'
