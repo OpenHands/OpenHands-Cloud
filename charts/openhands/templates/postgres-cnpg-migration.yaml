@@ -10,22 +10,31 @@ do from a container that has already exited.
 
 Sequence, all of it idempotent and guarded by a marker ConfigMap:
 
-  1. (-3) RBAC + ConfigMap carrying the Cluster manifest, the copy Pod manifest
-     and the copy script.
-  2. (-2) Orchestrator Job: apply the Cluster (which this Job owns while a
-     migration is pending — see postgres-cnpg.yaml); stop there if already
-     migrated or if there is no Bitnami server; otherwise wait for the Cluster,
-     record replica counts, scale writers to zero and suspend CronJobs, run the
-     copy Pod, verify, and write the marker.
+  1. pre-upgrade (-3) RBAC + ConfigMap carrying the Cluster manifest, the copy
+     Pod manifest and the copy script.
+  2. pre-upgrade (-2) Orchestrator Job: apply the Cluster (which this Job owns
+     while a migration is pending — see postgres-cnpg.yaml); stop there if
+     already migrated or if there is no Bitnami server; otherwise wait for the
+     Cluster, record replica counts and CronJob suspend states, scale writers
+     to zero and suspend CronJobs, run the copy Pod, verify, and write the
+     marker.
+  3. post-upgrade (-2) Resume Job: finish the restore once the upgrade's apply
+     has repointed everything at the new server. The apply restores only the
+     replica counts its own manifests render. It never resumes the CronJobs
+     (no manifest here renders spec.suspend, so the three-way merge has
+     nothing to overwrite the patched true with), nor extraWriters outside
+     this release, nor an autoscaled writer whose manifest omits replicas —
+     an HPA does not scale a workload up from zero. This Job covers those,
+     then deletes the recorded state.
 
-Writers are deliberately left scaled to zero on success. Helm's own apply
-restores them, and it is that apply which repoints them at the new server —
-bringing them back here would reconnect them to the old one and strand every
-write they made in between.
+Writers are deliberately left scaled to zero when the orchestrator succeeds:
+restoring them there, before the upgrade's apply, would reconnect them to the
+old server and strand every write they made in between.
 
-Pre-upgrade only: a fresh install has nothing to copy, and pre-upgrade hooks do
-not run on `helm install`. Weights sit after the CRD check (-5) so a missing
-operator is reported by that hook instead of failing here.
+Upgrades only: a fresh install has nothing to copy, and neither pre-upgrade nor
+post-upgrade hooks run on `helm install`. Pre-upgrade weights sit after the CRD
+check (-5) so a missing operator is reported by that hook instead of failing
+here.
 */ -}}
 {{- if and .Values.cnpg.enabled .Values.cnpg.migration.enabled }}
 {{- $rel := .Release.Name }}
@@ -75,7 +84,9 @@ metadata:
     {{- include "openhands.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres-migration
   annotations:
-    "helm.sh/hook": pre-upgrade
+    # Both hook events: the orchestrator Job (pre-upgrade) and the resume Job
+    # (post-upgrade) run under this identity. Same on the Role and RoleBinding.
+    "helm.sh/hook": pre-upgrade,post-upgrade
     "helm.sh/hook-weight": "-3"
     "helm.sh/hook-delete-policy": before-hook-creation
 {{- with $m.imagePullSecrets }}
@@ -92,7 +103,7 @@ metadata:
     {{- include "openhands.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres-migration
   annotations:
-    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook": pre-upgrade,post-upgrade
     "helm.sh/hook-weight": "-3"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
@@ -116,7 +127,9 @@ rules:
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "create", "patch", "update"]
+    # delete is for the resume Job, which removes the recorded state once the
+    # restore is finished.
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -127,7 +140,7 @@ metadata:
     {{- include "openhands.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres-migration
   annotations:
-    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook": pre-upgrade,post-upgrade
     "helm.sh/hook-weight": "-3"
     "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
@@ -444,7 +457,8 @@ spec:
               SUCCESS=0
               restore() {
                 if [ "$SUCCESS" = "1" ]; then
-                  log "writers left scaled to zero on purpose; the upgrade's apply brings them back on the new server."
+                  log "writers left scaled to zero and CronJobs left suspended on purpose;"
+                  log "  the upgrade's apply and the post-upgrade resume job bring them back on the new server."
                   return
                 fi
                 log "restoring writers after a failed migration"
@@ -455,9 +469,17 @@ spec:
                   log "  scaling $W back to $N"
                   $K scale "$W" --replicas="$N" >/dev/null 2>&1 || true
                 done
+                # Resume every CronJob this migration may have suspended, except
+                # one recorded as already suspended before it started: that state
+                # is the operator's, so put it back the way it was found.
+                RECORDED_CJS=" $($K get configmap "$STATE" -o jsonpath='{.data.cronjobs}' 2>/dev/null | tr '\n' ' ') "
                 for cj in $($K get cronjobs -o name 2>/dev/null | sed 's|.*/||'); do
                   case "$cj" in
-                    "$CRONJOB_PREFIX"*) $K patch cronjob "$cj" -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 || true ;;
+                    "$CRONJOB_PREFIX"*)
+                      case "$RECORDED_CJS" in
+                        *" $cj=true "*) log "  leaving $cj suspended, as it was before the migration" ;;
+                        *) $K patch cronjob "$cj" -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 || true ;;
+                      esac ;;
                   esac
                 done
                 log "restore done; the application is back on '$STS'."
@@ -540,10 +562,13 @@ spec:
               log "cluster settled: primary '$PRIMARY' running '$C_STATIMG'"
 
               # ---- 2. Freeze writes ----
-              # Record the replica counts once: a retry of this Job must not
-              # capture the zeros a previous attempt left behind.
+              # Record the replica counts and CronJob suspend states once: a
+              # retry of this Job must not capture the zeros and trues a
+              # previous attempt left behind. The suspend states let both
+              # restore paths tell a CronJob this migration suspended from one
+              # the operator had suspended beforehand.
               if $K get configmap "$STATE" >/dev/null 2>&1; then
-                log "reusing recorded replica counts from an earlier attempt"
+                log "reusing recorded state from an earlier attempt"
               else
                 : > /tmp/replicas
                 for w in $WRITERS; do
@@ -551,9 +576,19 @@ spec:
                   [ -z "$CUR" ] && { log "  $w not present; skipping"; continue; }
                   echo "$w=$CUR" >> /tmp/replicas
                 done
-                $K create configmap "$STATE" --from-file=replicas=/tmp/replicas >/dev/null
-                log "recorded replica counts:"
-                sed 's/^/    /' /tmp/replicas
+                : > /tmp/cronjobs
+                for cj in $($K get cronjobs -o name 2>/dev/null | sed 's|.*/||'); do
+                  case "$cj" in
+                    "$CRONJOB_PREFIX"*)
+                      SUS=$($K get cronjob "$cj" -o jsonpath='{.spec.suspend}' 2>/dev/null || echo "")
+                      echo "$cj=${SUS:-false}" >> /tmp/cronjobs ;;
+                  esac
+                done
+                $K create configmap "$STATE" \
+                  --from-file=replicas=/tmp/replicas \
+                  --from-file=cronjobs=/tmp/cronjobs >/dev/null
+                log "recorded pre-migration state:"
+                sed 's/^/    /' /tmp/replicas /tmp/cronjobs
               fi
 
               log "scaling writers to zero"
@@ -636,7 +671,8 @@ spec:
                 --from-literal=note="database copied from the Bitnami server to CloudNativePG" >/dev/null
               $K delete pod "$COPY_POD" --ignore-not-found --wait=false >/dev/null 2>&1 || true
               SUCCESS=1
-              log "migration complete. The upgrade will now point every service at '$CLUSTER'."
+              log "migration complete. The upgrade will now point every service at '$CLUSTER',"
+              log "and the post-upgrade resume job then brings back the CronJobs and any writer the apply leaves at zero."
               log "The Bitnami PersistentVolumeClaim is retained: re-enabling postgresql restores the pre-migration data."
       volumes:
         - name: manifests
@@ -647,6 +683,125 @@ spec:
                 path: cluster.yaml
               - key: copy-pod.yaml
                 path: copy-pod.yaml
+        - name: tmp
+          emptyDir: {}
+---
+# Finishes the restore after the upgrade's apply has repointed everything at
+# the new server. Runs on every upgrade while the migration is enabled and
+# exits immediately unless the orchestrator recorded state this upgrade.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-resume
+  namespace: {{ $ns }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migration
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "-2"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ $m.backoffLimit }}
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres-migration
+    spec:
+      serviceAccountName: {{ $name }}
+      restartPolicy: Never
+      {{- with $m.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: resume
+          image: "{{ $m.images.kubectl.repository }}:{{ $m.images.kubectl.tag }}"
+          imagePullPolicy: {{ $m.images.kubectl.pullPolicy | default "IfNotPresent" }}
+          env:
+            # kubectl writes its discovery cache under $HOME; give it a writable one.
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              NS='{{ $ns }}'
+              STATE='{{ $state }}'
+              CRONJOB_PREFIX='{{ $rel }}-'
+              K="kubectl -n $NS"
+
+              log() { echo "[resume] $*"; }
+
+              if ! $K get configmap "$STATE" >/dev/null 2>&1; then
+                log "no migration state recorded; nothing to resume."
+                exit 0
+              fi
+              log "a migration froze writers during this upgrade; finishing the restore"
+              FAILED=0
+
+              # The apply has already restored every replica count its manifests
+              # render, so a recorded writer still sitting at zero is one the
+              # apply does not manage: an extraWriter outside this release, or
+              # an autoscaled writer whose manifest omits replicas — an HPA does
+              # not scale a workload up from zero. Scale those back itself. A
+              # writer the apply deliberately set to zero this upgrade is
+              # indistinguishable from these and comes back too; the next apply
+              # reasserts the zero.
+              RECORDED=$($K get configmap "$STATE" -o jsonpath='{.data.replicas}' 2>/dev/null || echo "")
+              for line in $RECORDED; do
+                W=$(echo "$line" | cut -d= -f1)
+                N=$(echo "$line" | cut -d= -f2)
+                CUR=$($K get "$W" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "")
+                if [ "$CUR" = "0" ] && [ "$N" != "0" ]; then
+                  log "  scaling $W back to $N; the apply left it at zero"
+                  $K scale "$W" --replicas="$N" >/dev/null 2>&1 \
+                    || { log "  ERROR: could not scale $W"; FAILED=1; }
+                fi
+              done
+
+              # Resume the CronJobs the migration suspended: no manifest in this
+              # chart renders spec.suspend, so the apply leaves the patched true
+              # in place. One recorded as suspended before the migration stays
+              # that way; one not recorded at all (created since, or state
+              # written by an older chart version) is resumed rather than left
+              # stuck.
+              RECORDED_CJS=" $($K get configmap "$STATE" -o jsonpath='{.data.cronjobs}' 2>/dev/null | tr '\n' ' ') "
+              for cj in $($K get cronjobs -o name 2>/dev/null | sed 's|.*/||'); do
+                case "$cj" in
+                  "$CRONJOB_PREFIX"*)
+                    case "$RECORDED_CJS" in
+                      *" $cj=true "*) log "  leaving $cj suspended, as it was before the migration" ;;
+                      *)
+                        log "  resuming $cj"
+                        $K patch cronjob "$cj" -p '{"spec":{"suspend":false}}' >/dev/null 2>&1 \
+                          || { log "  ERROR: could not resume $cj"; FAILED=1; }
+                        ;;
+                    esac ;;
+                esac
+              done
+
+              if [ "$FAILED" != "0" ]; then
+                log "ERROR: some workloads could not be restored. The recorded state is kept"
+                log "       so retrying the upgrade retries the restore."
+                exit 1
+              fi
+              $K delete configmap "$STATE" >/dev/null
+              log "restore complete; every workload the migration stopped is back."
+      volumes:
         - name: tmp
           emptyDir: {}
 {{- end }}

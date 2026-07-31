@@ -230,7 +230,7 @@ tests:
           pattern: ^openhands-
           documentIndex: 0
 
-  - it: the migration Job and its pod template carry the recommended labels
+  - it: both migration Jobs and their pod templates carry the recommended labels
     template: postgres-cnpg-migration.yaml
     set:
       cnpg.enabled: true
@@ -239,6 +239,7 @@ tests:
     documentSelector:
       path: kind
       value: Job
+      matchMany: true
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]

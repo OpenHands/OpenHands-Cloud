@@ -24,8 +24,10 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      # Two Jobs render from this template, so kind alone is ambiguous. The
+      # orchestrator's container is named migrate, the post-upgrade one resume.
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       - equal:
           path: metadata.annotations["helm.sh/hook"]
@@ -41,8 +43,8 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       # rancher/kubectl ships no shell, so `sh -c` cannot start in it.
       - equal:
@@ -153,8 +155,8 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       # This Job owns the Cluster while a migration is pending, so changes to
       # the cnpg values have to reach it here.
@@ -174,8 +176,8 @@ tests:
       plugin-directory.enabled: false
       integrations-hub.enabled: false
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
@@ -193,8 +195,8 @@ tests:
       plugin-directory.enabled: true
       integrations-hub.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
@@ -223,8 +225,8 @@ tests:
       cnpg.migration.extraWriters:
         - deployment/custom-writer
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
@@ -258,8 +260,8 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       # Measured on a real cluster: one second after an operand-image change the
       # Cluster still reports phase healthy, readyInstances 1 and a matching
@@ -286,8 +288,8 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       # CloudNativePG publishes no observedGeneration, so metadata.generation
       # across the apply is what says whether a reconcile is still pending.
@@ -308,8 +310,8 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       # The drain loop also ends on timeout, so the result has to be confirmed.
       # Announcing "writers are down" regardless meant a copy could be taken
@@ -324,8 +326,8 @@ tests:
       cnpg.enabled: true
       cnpg.migration.enabled: true
     documentSelector:
-      path: kind
-      value: Job
+      path: spec.template.spec.containers[0].name
+      value: migrate
     asserts:
       # Diagnosing exactly this on the PVC migration took a support bundle. A
       # warning rather than a failure: the copy re-reads every table's row count
@@ -336,3 +338,122 @@ tests:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
           pattern: 'WARNING: the primary .* restarted or was replaced'
+
+  - it: records each CronJob's suspend state before touching it
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # The restore paths only resume what the migration itself suspended; a
+      # CronJob the operator had suspended beforehand goes back the way it was
+      # found. Unset suspend records as false.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '--from-file=cronjobs=/tmp/cronjobs'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\$\{SUS:-false\}'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\*" \$cj=true "\*\) log "  leaving \$cj suspended'
+
+  - it: runs the resume Job after the upgrade has repointed the writers
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: resume
+    asserts:
+      # Resuming from the orchestrator would reconnect everything to the old
+      # server and strand the writes made before the apply.
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgres-cnpg-migration-resume
+
+  - it: resume covers exactly what the apply cannot restore
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: resume
+    asserts:
+      # No manifest in this chart renders spec.suspend, so the apply's
+      # three-way merge never clears the patched true: the resume Job must.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '"suspend":false'
+      # A recorded writer still at zero is one the apply does not manage
+      # (extraWriters, autoscaled writers); anything the apply already
+      # restored is left alone.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\[ "\$CUR" = "0" \] && \[ "\$N" != "0" \]'
+      # A CronJob suspended before the migration stays suspended.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\*" \$cj=true "\*\) log "  leaving \$cj suspended'
+      # The recorded state is removed once the restore is done, and only then.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\$K delete configmap "\$STATE"'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'recorded state is kept'
+
+  - it: exits quietly on upgrades where no migration ran
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: resume
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'no migration state recorded; nothing to resume'
+
+  - it: shares one identity across both hook Jobs
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    asserts:
+      # The RBAC trio must exist at both hook points or the resume Job starts
+      # without permissions.
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade,post-upgrade
+
+  - it: lets the resume Job delete the recorded state
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["configmaps"]
+            verbs: ["get", "list", "create", "patch", "update", "delete"]

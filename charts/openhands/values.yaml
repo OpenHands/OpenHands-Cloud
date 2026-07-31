@@ -855,10 +855,11 @@ cnpg:
   # server.
   #
   # Writes are frozen while it runs: the workloads that write to the database
-  # scale to zero, the databases are copied and verified, and the upgrade's own
-  # apply brings them back pointed at the new server. If any step fails, the
-  # workloads are scaled back up against the untouched source and the upgrade
-  # fails.
+  # scale to zero and their CronJobs are suspended, the databases are copied
+  # and verified, the upgrade's own apply brings the workloads back pointed at
+  # the new server, and a post-upgrade hook resumes the CronJobs and anything
+  # else the apply leaves at zero. If any step fails, everything is restored
+  # against the untouched source and the upgrade fails.
   #
   # Allow more time than the default Helm timeout: hooks, apply and --wait all
   # share one budget (helm upgrade --timeout 30m).
