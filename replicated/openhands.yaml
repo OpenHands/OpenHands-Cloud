@@ -415,15 +415,6 @@ spec:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
       auth:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
-    replicated:
-      # The SDK subchart falls back to global.imagePullSecrets when this is unset
-      # (1.19.7: `.Values.imagePullSecrets | default .Values.global.imagePullSecrets`)
-      # and renders it with toYaml, which requires the map form. The global is a
-      # list of BARE STRINGS because the minio subchart renders it as
-      # `- name: {{ . }}` and would break on maps. Setting it explicitly here gives
-      # each consumer the shape it needs.
-      imagePullSecrets:
-        - name: '{{repl ImagePullSecretName }}'
     filestore:
       ephemeral: true
     minio:
@@ -477,6 +468,13 @@ spec:
 
     replicated:
       enabled: true
+      # SDK 1.19.7 reads `.Values.imagePullSecrets | default .Values.global.imagePullSecrets`
+      # and renders it with toYaml, which requires the map form. The global is a
+      # list of BARE STRINGS because the minio subchart renders it as
+      # `- name: {{ . }}` and breaks on maps, so it is set explicitly here rather
+      # than changing the global.
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
       redisPassword: 'repl{{ ConfigOption "redis_password" }}'
       postgresUsername: 'repl{{ ConfigOption "postgres_username" }}'
       postgresPassword: 'repl{{ ConfigOption "postgres_password" }}'
