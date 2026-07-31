@@ -99,9 +99,17 @@ Simply omit `route53_zone_id` from your `terraform.tfvars`.
 
 > **Note:** Automatic TLS certificate provisioning uses Route 53 DNS challenges. If you are not using Route 53, you will also need to [bring your own TLS certificates](#manual-tls-certificate-provisioning).
 
-Create A records pointing to the instance's Elastic IP for the following domains:
+Create A records pointing to the instance's Elastic IP. With the installer's
+default Simple mode, every hostname is a single label under your base domain,
+so one record covers the whole install, the admin console at
+`admin.<your-domain>:30000` included:
+- `*.<your-domain>`
+
+If you set `hostname_mode = "legacy"` to match an install on the installer's
+Legacy mode, create these instead:
 - `<your-domain>`
 - `app.<your-domain>`
+- `analytics.app.<your-domain>`
 - `auth.app.<your-domain>`
 - `llm-proxy.<your-domain>`
 - `runtime-api.<your-domain>`
@@ -124,9 +132,15 @@ user_private_key_path = "/path/to/private-key.pem"
 user_ca_path          = "/path/to/ca.pem"
 ```
 
-The certificate SANs must cover the base domain and all subdomains:
+With the default Simple mode, the certificate needs one wildcard name and
+nothing else:
+- `*.<your-domain>`
+
+If you set `hostname_mode = "legacy"`, the SANs must cover each name
+individually, including a second wildcard for sandbox runtimes:
 - `<your-domain>`
 - `app.<your-domain>`
+- `analytics.app.<your-domain>`
 - `auth.app.<your-domain>`
 - `llm-proxy.<your-domain>`
 - `runtime-api.<your-domain>`

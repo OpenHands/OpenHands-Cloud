@@ -15,7 +15,7 @@ github:
 keycloak:
   ingress:
     enabled: true
-    hostname: auth.app.${BASE_DOMAIN}
+    hostname: auth.${BASE_DOMAIN}
     tls: false
 
 sandbox:
@@ -24,7 +24,9 @@ sandbox:
   apiHostname: http://openhands-runtime-api:5000
 
 env:
-  RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.${BASE_DOMAIN}"
+  # Must agree with the runtime-api's RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR
+  # pair below, which is what actually names each sandbox ingress.
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtime.${BASE_DOMAIN}"
   LITELLM_DEFAULT_MODEL: litellm_proxy/${LLM_MODEL}
 
 runtime-api:
@@ -34,6 +36,10 @@ runtime-api:
     tls: false
   env:
     RUNTIME_BASE_URL: runtime.${BASE_DOMAIN}
+    # Dash separator keeps each sandbox one label under ${BASE_DOMAIN}
+    # ({id}-runtime.${BASE_DOMAIN}), so a single *.${BASE_DOMAIN} wildcard
+    # covers them.
+    RUNTIME_URL_SEPARATOR: "-"
     RUNTIME_DISABLE_SSL: "false"
     STORAGE_CLASS: standard
 
