@@ -374,7 +374,7 @@ keycloak:
 runtime-api:
   ingress:
     enabled: true
-    hostname: runtimes.openhands.example.com
+    hostname: runtime.openhands.example.com
 litellm-helm:
   ingress:
     enabled: true

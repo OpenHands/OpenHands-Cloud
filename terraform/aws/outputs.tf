@@ -15,17 +15,12 @@ output "ssh_key_file" {
 
 output "admin_console_url" {
   description = "Replicated Admin Console URL"
-  value       = "https://${var.base_domain}:30000"
+  value       = "https://admin.${var.base_domain}:30000"
 }
 
 output "app_url" {
   description = "OpenHands application URL"
   value       = "https://app.${var.base_domain}"
-}
-
-output "base_url" {
-  description = "OpenHands base URL"
-  value       = "https://${var.base_domain}"
 }
 
 output "certificate_file" {

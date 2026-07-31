@@ -62,7 +62,13 @@ spec:
       # Replicated installs expose Laminar at the analytics hostname. Set it
       # unconditionally (not gated on analytics_enabled) so the Keycloak realm
       # redirect URIs stay on the analytics domain either way.
-      LAMINAR_WEB_HOST: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+      LAMINAR_WEB_HOST: '{{repl ConfigOption "computed_analytics_hostname" }}'
+      # How the app addresses a sandbox. Must agree with the RUNTIME_BASE_URL /
+      # RUNTIME_URL_SEPARATOR pair given to the runtime-api below, which is what
+      # actually creates each sandbox ingress. The chart default hardcodes
+      # example.com, so this has to be set explicitly. The path-routing block
+      # further down replaces it with the <base>/{runtime_id} form.
+      RUNTIME_URL_PATTERN: 'https://{runtime_id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}'
       # OH_AGENT_SERVER_ENV is assembled by the chart from
       # spec.values.global.agentServerEnv, not hand-written here.
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
@@ -88,7 +94,7 @@ spec:
 
     ingress:
       enabled: true
-      host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
+      host: '{{repl ConfigOption "computed_app_hostname" }}'
       class: traefik
       annotations:
         nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
@@ -124,13 +130,13 @@ spec:
       ingress:
         enabled: true
         ingressClassName: traefik
-        hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}}'
+        hostname: '{{repl ConfigOption "computed_auth_hostname" }}'
         tls: true
         annotations:
-          nginx.ingress.kubernetes.io/upstream-vhost: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}}'
+          nginx.ingress.kubernetes.io/upstream-vhost: '{{repl ConfigOption "computed_auth_hostname" }}'
           nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
         secrets:
-          - name: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}}-tls'
+          - name: '{{repl ConfigOption "computed_auth_hostname" }}-tls'
             key: |
               {{repl ConfigOptionData "tls_private_key" | nindent 14}}
             certificate: |
@@ -231,14 +237,14 @@ spec:
         enabled: true
         className: traefik
         hosts:
-          - host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}}'
+          - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
             paths:
               - path: /
                 pathType: Prefix
         tls:
           - secretName: openhands-tls
             hosts:
-              - '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}llm-proxy.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "llm_proxy_hostname"}}{{repl end}}'
+              - '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
       proxy_config:
         environment_variables:
           OR_APP_NAME: "OpenHands"
@@ -286,7 +292,7 @@ spec:
       ingress:
         enabled: true
         className: traefik
-        host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime-api.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_api_hostname"}}{{repl end}}'
+        host: '{{repl ConfigOption "computed_runtime_api_hostname" }}'
         tls: true
         tlsSecretName: openhands-tls
         # Suppress the chart's default letsencrypt annotation: Replicated
@@ -313,8 +319,13 @@ spec:
         PGSSLMODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
-        RUNTIME_BASE_URL: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}'
-        RUNTIME_API_BASE_URL: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}'
+        RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
+        # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
+        # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
+        # it; "." nests it under the runtime base. The path-routing block below
+        # overrides this to "/", which the runtime-api reads as path mode.
+        RUNTIME_URL_SEPARATOR: '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
+        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_base_hostname" }}'
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
@@ -369,12 +380,12 @@ spec:
             environment:
               LOG_JSON: "1"
               LOG_JSON_LEVEL_KEY: "severity"
-              OH_ALLOW_CORS_ORIGINS_0: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
+              OH_ALLOW_CORS_ORIGINS_0: 'https://{{repl ConfigOption "computed_app_hostname" }}'
               OH_BASH_EVENTS_DIR: "/workspace/bash_events"
               OH_CONVERSATIONS_PATH: "/workspace/conversations"
               OH_ENABLE_VNC: "0"
               OH_VSCODE_PORT: "60001"
-              OH_WEBHOOKS_0_BASE_URL: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}/api/v1/webhooks'
+              OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
               OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
               VSCODE_PORT: "60001"
               WORKER_1: "12000"
@@ -503,7 +514,7 @@ spec:
       recursiveMerge: true
       values:
         env:
-          PERMITTED_CORS_ORIGINS: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}},{{repl ConfigOption "additional_cors_origins" | trim }}'
+          PERMITTED_CORS_ORIGINS: 'https://{{repl ConfigOption "computed_app_hostname" }},{{repl ConfigOption "additional_cors_origins" | trim }}'
     - when: '{{repl ConfigOptionEquals "postgres_type" "embedded_postgres" }}'
       recursiveMerge: true
       values:
@@ -630,8 +641,8 @@ spec:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/automation'
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
-          openhandsApiUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "app_hostname"}}{{repl end}}'
-          automationBaseUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "app_hostname"}}{{repl end}}'
+          openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+          automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           filestore:
             type: local
           env:
@@ -703,21 +714,31 @@ spec:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/kubectl'
     # Compute NO_PROXY variable, then evaluate proxy_enabled gate.
     # Assignments produce no output; the when value resolves to just the boolean.
+    #
+    # A NO_PROXY entry matches a host and its subdomains, so the runtime base
+    # covers nested sandboxes ({id}.runtime.<base>) but not flat ones
+    # ({id}-runtime.<base>), which are siblings of the base rather than
+    # children. For the dash separator, bypass the base's parent domain instead.
+    # In derive mode that parent is base_domain, already added below, so the
+    # extra entry only ever appears in custom mode.
     - when: >-
-        {{repl $derive := ConfigOptionEquals "hostname_mode" "derive" }}
         {{repl $bd := ConfigOption "base_domain" }}
-        {{repl $appDomain := $derive | ternary (printf "app.%s" $bd) (ConfigOption "app_hostname") }}
-        {{repl $authDomain := $derive | ternary (printf "auth.app.%s" $bd) (ConfigOption "auth_hostname") }}
-        {{repl $llmDomain := $derive | ternary (printf "llm-proxy.%s" $bd) (ConfigOption "llm_proxy_hostname") }}
-        {{repl $runtimeApiDomain := $derive | ternary (printf "runtime-api.%s" $bd) (ConfigOption "runtime_api_hostname") }}
-        {{repl $runtimeBaseDomain := $derive | ternary (printf "runtime.%s" $bd) (ConfigOption "runtime_base_hostname") }}
+        {{repl $appDomain := ConfigOption "computed_app_hostname" }}
+        {{repl $authDomain := ConfigOption "computed_auth_hostname" }}
+        {{repl $analyticsDomain := ConfigOption "computed_analytics_hostname" }}
+        {{repl $llmDomain := ConfigOption "computed_llm_proxy_hostname" }}
+        {{repl $runtimeApiDomain := ConfigOption "computed_runtime_api_hostname" }}
+        {{repl $runtimeBaseDomain := ConfigOption "computed_runtime_base_hostname" }}
+        {{repl $runtimeSeparator := ConfigOption "computed_runtime_hostname_separator" }}
         {{repl $computedNoProxy := "127.0.0.1,cluster.local,keycloak,keycloak-headless,kubernetes,localhost,oh-main-lite-llm,oh-main-runtime-api,openhands-integrations-service,openhands-litellm,openhands-mcp-service,openhands-minio,openhands-runtime-api,openhands-service,svc" }}
         {{repl if ne $bd "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $bd }}{{repl end }}
         {{repl if ne $appDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $appDomain }}{{repl end }}
         {{repl if ne $authDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $authDomain }}{{repl end }}
+        {{repl if ne $analyticsDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $analyticsDomain }}{{repl end }}
         {{repl if ne $llmDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $llmDomain }}{{repl end }}
         {{repl if ne $runtimeApiDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $runtimeApiDomain }}{{repl end }}
         {{repl if ne $runtimeBaseDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $runtimeBaseDomain }}{{repl end }}
+        {{repl if eq $runtimeSeparator "-" }}{{repl $runtimeParent := splitList "." $runtimeBaseDomain | rest | join "." }}{{repl if and (ne $runtimeParent "") (ne $runtimeParent $bd) }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $runtimeParent }}{{repl end }}{{repl end }}
         {{repl if ConfigOptionEquals "analytics_enabled" "1" }}{{repl $computedNoProxy = printf "%s,laminar-app-server-service,laminar-clickhouse,laminar-frontend,laminar-postgres,laminar-query-engine,laminar-quickwit-control-plane,laminar-quickwit-indexer,laminar-quickwit-janitor,laminar-quickwit-metastore,laminar-quickwit-searcher,laminar-rabbitmq,laminar-redis" $computedNoProxy }}{{repl end }}
         {{repl if ne (ConfigOption "no_proxy") "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy (ConfigOption "no_proxy") }}{{repl end }}
         {{repl ConfigOptionEquals "proxy_enabled" "1" }}
@@ -961,7 +982,7 @@ spec:
       values:
         env:
           RUNTIME_ROUTING_MODE: "path"
-          RUNTIME_URL_PATTERN: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}/{runtime_id}'
+          RUNTIME_URL_PATTERN: 'https://{{repl ConfigOption "computed_runtime_base_hostname" }}/{runtime_id}'
         runtime-api:
           env:
             RUNTIME_ROUTING_MODE: "path"
@@ -973,7 +994,7 @@ spec:
             enabled: false
           sandboxGateway:
             enabled: true
-            hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}runtime.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "runtime_base_hostname"}}{{repl end}}'
+            hostname: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
             tlsSecretName: openhands-tls
     - when: '{{repl ConfigOptionEquals "analytics_enabled" "1" }}'
       recursiveMerge: true
@@ -1039,7 +1060,7 @@ spec:
                     name: keycloak-realm
                     key: client-secret
               - name: AUTH_KEYCLOAK_ISSUER
-                value: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://auth.app.{{repl ConfigOption "base_domain"}}/realms/allhands{{repl else}}https://{{repl ConfigOption "auth_hostname"}}/realms/allhands{{repl end}}'
+                value: 'https://{{repl ConfigOption "computed_auth_hostname" }}/realms/allhands'
               # caBundle wiring (appended to the existing list — recursiveMerge
               # REPLACES arrays, so these must live alongside the Keycloak vars).
               # Next.js is Node, which honors NODE_EXTRA_CA_CERTS, not SSL_CERT_FILE;
@@ -1058,18 +1079,18 @@ spec:
                 readOnly: true
             ingress:
               enabled: true
-              hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+              hostname: '{{repl ConfigOption "computed_analytics_hostname" }}'
               className: "traefik"
               tls:
                 enabled: true
                 secretName: "openhands-tls"
                 clusterIssuer: "" # leave empty — cert-manager not needed
             env:
-              nextauthUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
-              nextPublicUrl: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+              nextauthUrl: 'https://{{repl ConfigOption "computed_analytics_hostname" }}'
+              nextPublicUrl: 'https://{{repl ConfigOption "computed_analytics_hostname" }}'
           apiIngress:
             enabled: true
-            hostname: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}analytics.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "analytics_hostname"}}{{repl end}}'
+            hostname: '{{repl ConfigOption "computed_analytics_hostname" }}'
             className: "traefik"
             tls:
               enabled: true
@@ -1106,17 +1127,17 @@ spec:
           # otherwise outbound HTTPS fails TLS verification.
           caBundle:
             enabled: true
-          appUrl: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}/plugins'
+          appUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}/plugins'
           # OpenHands API host (same host as appUrl, without the /plugins path).
           # The curl template appends /api/v1/app-conversations to this base.
-          curlApiUrl: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
+          curlApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           appEnv:
             MARKETPLACE_SOURCE: '{{repl ConfigOption "plugin_directory_marketplace_source"}}'
           database:
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
             port: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
           oidc:
-            issuerUrl: 'https://{{repl if ConfigOptionEquals "hostname_mode" "derive"}}auth.app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "auth_hostname"}}{{repl end}}'
+            issuerUrl: 'https://{{repl ConfigOption "computed_auth_hostname" }}'
           client:
             image:
               repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/plugin-directory-client'
@@ -1141,7 +1162,7 @@ spec:
             - name: '{{repl ImagePullSecretName }}'
           ingress:
             enabled: true
-            host: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}app.{{repl ConfigOption "base_domain"}}{{repl else}}{{repl ConfigOption "app_hostname"}}{{repl end}}'
+            host: '{{repl ConfigOption "computed_app_hostname" }}'
             className: traefik
             path: /canvas
             tls:
@@ -1150,7 +1171,7 @@ spec:
           staticServer:
             basePath: /canvas
             authRequired: false
-            lockToCloud: '{{repl if ConfigOptionEquals "hostname_mode" "derive"}}https://app.{{repl ConfigOption "base_domain"}}{{repl else}}https://{{repl ConfigOption "app_hostname"}}{{repl end}}'
+            lockToCloud: 'https://{{repl ConfigOption "computed_app_hostname" }}'
 
   builder:
     keycloak:

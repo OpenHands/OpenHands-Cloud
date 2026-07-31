@@ -19,6 +19,11 @@ safely. Value paths:
   analyticsHost .......... laminar.frontend.ingress.hostname
   routingMode ............ runtime-api.env.RUNTIME_ROUTING_MODE ("path" => path
                            routing; empty => subdomain, the default)
+  rtSeparator ............ runtime-api.env.RUNTIME_URL_SEPARATOR, how a sandbox
+                           id joins rtBaseHost in subdomain routing. "-" (flat)
+                           keeps sandboxes siblings of the base, so the wildcard
+                           lives one level up; "." (nested, the runtime-api's own
+                           default) puts them under it.
   analyticsEnabled ....... laminar.enabled
   probeImage ............. proxy base of image.repository + docker.io/alpine/openssl,
                            so the pull uses the proxy (and the pull secret KOTS
@@ -44,6 +49,7 @@ rtApiHost: {{ ($rtApi.ingress | default dict).host | default "" | quote }}
 rtBaseHost: {{ $rtApiEnv.RUNTIME_BASE_URL | default "" | quote }}
 analyticsHost: {{ $lamFrontIng.hostname | default "" | quote }}
 routingMode: {{ $rtApiEnv.RUNTIME_ROUTING_MODE | default "" | quote }}
+rtSeparator: {{ $rtApiEnv.RUNTIME_URL_SEPARATOR | default "." | quote }}
 analyticsEnabled: {{ $lam.enabled | default false }}
 probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/openhands/enterprise-server" $repo) | quote }}
 {{- end -}}
@@ -130,14 +136,23 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
 
               # Runtime base: path routing serves {base}/{id}, needing the exact
               # "{base}" SAN and "{base}" to resolve. Subdomain routing (default)
-              # serves {id}.{base}, needing a literal "*.{base}" SAN and a
-              # wildcard DNS record (probed via a synthetic subdomain).
+              # serves {id}{sep}{base}, needing a literal wildcard SAN and a
+              # wildcard DNS record (probed via a synthetic sandbox name).
+              # With the "-" separator each sandbox is a sibling of {base} rather
+              # than a child, so the covering wildcard is one label up: sandbox
+              # {id}-runtime.example.com is matched by *.example.com, never by
+              # *.runtime.example.com.
               if [ "$ROUTING" = "path" ]; then
                 check_san RTBASE "$H_RTBASE"
                 check_dns RTBASE "$H_RTBASE"
               else
-                if has_literal "*.$H_RTBASE"; then echo "SAN_RTBASE=OK"; else echo "SAN_RTBASE=FAIL"; fi
-                check_dns RTBASE "dns-preflight-probe.$H_RTBASE"
+                if [ "$SEPARATOR" = "-" ]; then
+                  _wild="*.${H_RTBASE#*.}"
+                else
+                  _wild="*.$H_RTBASE"
+                fi
+                if has_literal "$_wild"; then echo "SAN_RTBASE=OK"; else echo "SAN_RTBASE=FAIL"; fi
+                check_dns RTBASE "dns-preflight-probe${SEPARATOR}$H_RTBASE"
               fi
 
               # Analytics ingress only exists when analytics is enabled; the
@@ -150,6 +165,8 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
               value: {{ $p.cert | quote }}
             - name: ROUTING
               value: {{ $p.routingMode | quote }}
+            - name: SEPARATOR
+              value: {{ $p.rtSeparator | quote }}
             - name: ANALYTICS_ON
               value: {{ if $p.analyticsEnabled }}"1"{{ else }}"0"{{ end }}
             - name: H_APP
@@ -168,6 +185,14 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
 
 {{- define "troubleshoot.analyzers.tlsHostname" -}}
 {{- $p := include "troubleshoot.tlsHostname.vars" . | fromYaml -}}
+{{- /* Mirror of the collector's wildcard choice, for the warning text: the "-"
+       separator makes each sandbox a sibling of the runtime base, so the
+       covering wildcard sits one label above it. */ -}}
+{{- $sandboxExample := printf "{id}%s%s" $p.rtSeparator $p.rtBaseHost -}}
+{{- $sandboxWildcard := printf "*.%s" $p.rtBaseHost -}}
+{{- if eq $p.rtSeparator "-" -}}
+{{- $sandboxWildcard = printf "*.%s" (splitList "." $p.rtBaseHost | rest | join ".") -}}
+{{- end -}}
 # The runPod log is keyed by <collectorName>/<podName>.log (pod name == collector
 # name). All outcomes are pass/warn — non-blocking.
 # --- Application ---
@@ -276,7 +301,7 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
           {{- if eq $p.routingMode "path" }}
           message: 'The TLS certificate is missing the SAN required for sandbox runtimes: an exact "{{ $p.rtBaseHost }}" entry — path routing serves sandboxes under {{ $p.rtBaseHost }}/{id}. Sandboxes will fail to start until the certificate includes it.'
           {{- else }}
-          message: 'The TLS certificate is missing the SAN required for sandbox runtimes: a wildcard "*.{{ $p.rtBaseHost }}" — subdomain routing serves each sandbox at {id}.{{ $p.rtBaseHost }}. Sandboxes will fail to start until the certificate includes it.'
+          message: 'The TLS certificate is missing the SAN required for sandbox runtimes: a wildcard "{{ $sandboxWildcard }}" — subdomain routing serves each sandbox at {{ $sandboxExample }}. Sandboxes will fail to start until the certificate includes it.'
           {{- end }}
 - textAnalyze:
     checkName: "Sandbox runtime domain resolves in DNS"
@@ -291,7 +316,7 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
           {{- if eq $p.routingMode "path" }}
           message: '{{ $p.rtBaseHost }} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress.'
           {{- else }}
-          message: 'A wildcard DNS record "*.{{ $p.rtBaseHost }}" did not resolve (tested via a synthetic subdomain). Create a wildcard A/AAAA record so each {id}.{{ $p.rtBaseHost }} sandbox resolves.'
+          message: 'A wildcard DNS record "{{ $sandboxWildcard }}" did not resolve (tested via a synthetic sandbox name). Create a wildcard A/AAAA record so each {{ $sandboxExample }} sandbox resolves.'
           {{- end }}
 {{- if $p.analyticsEnabled }}
 # --- Analytics (Laminar) — only present/checked when analytics is enabled ---

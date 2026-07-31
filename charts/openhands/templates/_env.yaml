@@ -390,29 +390,56 @@
       name: {{ .Values.tavily.auth.existingSecret }}
       key: tavily-api-key
 {{- end }}
+{{- /* Keycloak's public hostname. An explicitly configured keycloak ingress
+       hostname wins: that is the host the keycloak Ingress serves, and the
+       realm's frontendUrl and redirect URIs are templated from this value, so
+       the two have to agree or login fails on a redirect_uri mismatch. The
+       auth.<app host> fallback only holds for the nested DNS layout. */}}
+{{- $kcIngress := (.Values.keycloak | default dict).ingress | default dict }}
+{{- $authWebHost := "" }}
+{{- if and $kcIngress.enabled $kcIngress.hostname }}
+{{- $authWebHost = $kcIngress.hostname }}
+{{- end }}
+{{- if not $authWebHost }}
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.prefixWithBranch }}
+{{- $authWebHost = printf "%s.auth.%s" .Values.branchSanitized .Values.ingress.host }}
+{{- else }}
+{{- $authWebHost = printf "auth.%s" .Values.ingress.host }}
+{{- end }}
+{{- else }}
+{{- $authWebHost = "keycloak" }}
+{{- end }}
+{{- end }}
 {{- if .Values.ingress.enabled }}
 {{- if .Values.ingress.prefixWithBranch }}
 - name: WEB_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-- name: AUTH_WEB_HOST
-  value: {{ .Values.branchSanitized }}.auth.{{ .Values.ingress.host }}
 - name: MCP_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
 {{- else }}
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
-- name: AUTH_WEB_HOST
-  value: auth.{{ .Values.ingress.host }}
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
 {{- end }}
 {{- else }}
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
-- name: AUTH_WEB_HOST
-  value: keycloak
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
+{{- end }}
+- name: AUTH_WEB_HOST
+  value: {{ $authWebHost }}
+{{- if .Values.ingress.enabled }}
+{{- /* The frontend builds its Keycloak redirect from AUTH_URL when it is set,
+       and otherwise prepends "auth." to whatever host the browser is on --
+       which yields auth.app.<base> on the flat layout, a hostname nothing
+       serves. Only emitted when an ingress exists, because without one
+       AUTH_WEB_HOST is the in-cluster service name and no browser can reach
+       it. See generate-auth-url.ts in the enterprise repo. */}}
+- name: AUTH_URL
+  value: https://{{ $authWebHost }}
 {{- end }}
 
 {{- if .Values.slack.enabled }}
