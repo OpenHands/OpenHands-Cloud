@@ -266,6 +266,46 @@ def render_tfvars(
     return "".join(lines)
 
 
+def render_gcp_tfvars(
+    *,
+    instance_name: str,
+    base_domain: str,
+    project_id: str,
+    region: str,
+    zone: str,
+    network: str,
+    subnetwork: str,
+    dns_managed_zone: str,
+    acme_email: str,
+    machine_type: str = "c3d-standard-8",
+    boot_disk_size_gb: int = 200,
+    allowed_admin_cidrs: Sequence[str] = (),
+    labels: dict[str, str] | None = None,
+) -> str:
+    label_values = labels or {}
+    cidrs = list(allowed_admin_cidrs) or ["0.0.0.0/0"]
+    lines = [
+        f"project_id = {_yaml_scalar(project_id)}\n",
+        f"region = {_yaml_scalar(region)}\n",
+        f"zone = {_yaml_scalar(zone)}\n",
+        f"instance_name = {_yaml_scalar(instance_name)}\n",
+        f"base_domain = {_yaml_scalar(base_domain)}\n",
+        f"network = {_yaml_scalar(network)}\n",
+        f"subnetwork = {_yaml_scalar(subnetwork)}\n",
+        f"dns_managed_zone = {_yaml_scalar(dns_managed_zone)}\n",
+        f"acme_email = {_yaml_scalar(acme_email)}\n",
+        f"machine_type = {_yaml_scalar(machine_type)}\n",
+        f"boot_disk_size_gb = {boot_disk_size_gb}\n",
+        f"allowed_admin_cidrs = {json.dumps(cidrs)}\n",
+    ]
+    if label_values:
+        lines.append("labels = {\n")
+        for key in sorted(label_values):
+            lines.append(f"  {json.dumps(key)} = {json.dumps(label_values[key])}\n")
+        lines.append("}\n")
+    return "".join(lines)
+
+
 def command_metadata(args: argparse.Namespace) -> int:
     chart_version = args.chart_version or read_chart_version(Path(args.chart_file))
     metadata = build_metadata(
@@ -354,6 +394,35 @@ def command_write_tfvars(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_write_gcp_tfvars(args: argparse.Namespace) -> int:
+    labels = {
+        "environment": "preview",
+        "preview-kind": "enterprise-replicated",
+        "enterprise-pr": str(validate_pr_number(args.pr)),
+        "enterprise-sha": normalize_sha(args.sha)[:40],
+    }
+    output = Path(args.output)
+    output.write_text(
+        render_gcp_tfvars(
+            instance_name=args.instance_name,
+            base_domain=args.base_domain,
+            project_id=args.project_id,
+            region=args.region,
+            zone=args.zone,
+            network=args.network,
+            subnetwork=args.subnetwork,
+            dns_managed_zone=args.dns_managed_zone,
+            acme_email=args.acme_email,
+            machine_type=args.machine_type,
+            boot_disk_size_gb=args.boot_disk_size_gb,
+            allowed_admin_cidrs=args.allowed_admin_cidr,
+            labels=labels,
+        )
+    )
+    print(f"Wrote {output}")
+    return 0
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -410,6 +479,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     tfvars.add_argument("--subnet-id", default="")
     tfvars.add_argument("--allowed-cidr", action="append", default=[])
     tfvars.set_defaults(func=command_write_tfvars)
+
+    gcp_tfvars = subparsers.add_parser("write-gcp-tfvars")
+    gcp_tfvars.add_argument("--output", required=True)
+    gcp_tfvars.add_argument("--pr", required=True)
+    gcp_tfvars.add_argument("--sha", required=True)
+    gcp_tfvars.add_argument("--instance-name", required=True)
+    gcp_tfvars.add_argument("--base-domain", required=True)
+    gcp_tfvars.add_argument("--project-id", required=True)
+    gcp_tfvars.add_argument("--region", required=True)
+    gcp_tfvars.add_argument("--zone", required=True)
+    gcp_tfvars.add_argument("--network", required=True)
+    gcp_tfvars.add_argument("--subnetwork", required=True)
+    gcp_tfvars.add_argument("--dns-managed-zone", required=True)
+    gcp_tfvars.add_argument("--acme-email", required=True)
+    gcp_tfvars.add_argument("--machine-type", default="c3d-standard-8")
+    gcp_tfvars.add_argument("--boot-disk-size-gb", type=int, default=200)
+    gcp_tfvars.add_argument("--allowed-admin-cidr", action="append", default=[])
+    gcp_tfvars.set_defaults(func=command_write_gcp_tfvars)
+
 
     return parser.parse_args(argv)
 

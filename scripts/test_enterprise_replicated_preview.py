@@ -123,3 +123,27 @@ def test_render_tfvars_includes_preview_tags_and_optional_network():
     assert 'allowed_cidrs = ["203.0.113.4/32"]' in rendered
     assert 'vpc_id = "vpc-123"' in rendered
     assert '"EnterprisePR" = "92"' in rendered
+
+
+def test_render_gcp_tfvars_matches_staging_preview_conventions():
+    rendered = preview.render_gcp_tfvars(
+        instance_name="oh-ent-pr-92-c23c797",
+        base_domain="pr-92.replicated.staging.all-hands.dev",
+        project_id="staging-092324",
+        region="us-central1",
+        zone="us-central1-a",
+        network="staging-core-app",
+        subnetwork="staging-core-app",
+        dns_managed_zone="staging-all-hands-dot-dev",
+        acme_email="ops@example.com",
+        allowed_admin_cidrs=["203.0.113.4/32"],
+        labels={"enterprise-pr": "92", "preview-kind": "enterprise-replicated"},
+    )
+
+    assert 'project_id = "staging-092324"' in rendered
+    assert 'region = "us-central1"' in rendered
+    assert 'network = "staging-core-app"' in rendered
+    assert 'dns_managed_zone = "staging-all-hands-dot-dev"' in rendered
+    assert 'allowed_admin_cidrs = ["203.0.113.4/32"]' in rendered
+    assert '"enterprise-pr" = "92"' in rendered
+
