@@ -21,7 +21,7 @@ resource "acme_certificate" "cert" {
   common_name     = var.base_domain
 
   # The wildcard layout collapses to a single SAN: every service hostname and
-  # every {id}-runtimes sandbox sits one label under base_domain.
+  # every {id}-runtime sandbox sits one label under base_domain.
   subject_alternative_names = var.hostname_mode == "wildcard" ? [
     "*.${var.base_domain}",
     ] : [

@@ -87,7 +87,7 @@ env:
   # RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR pair, which is what names each
   # sandbox ingress. The dash separator keeps sandboxes one label under the base
   # domain so a single wildcard certificate covers them.
-  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtimes.example.com"
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtime.example.com"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
@@ -911,7 +911,7 @@ runtime-api:
     # REQUIRED: the base each sandbox hostname is built from, as
     # {id}{RUNTIME_URL_SEPARATOR}{RUNTIME_BASE_URL}. Must agree with the app's
     # env.RUNTIME_URL_PATTERN above.
-    # RUNTIME_BASE_URL: "runtimes.example.com"
+    # RUNTIME_BASE_URL: "runtime.example.com"
     # Joins the sandbox id to the base. "-" (the flat layout) keeps sandboxes one
     # label under the base domain, so a single wildcard certificate covers them;
     # "." nests them under RUNTIME_BASE_URL and needs *.RUNTIME_BASE_URL instead.

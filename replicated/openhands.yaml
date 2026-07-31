@@ -321,7 +321,7 @@ spec:
         DB_NAME: "runtime_api_db"
         RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
         # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
-        # label deep ({id}-runtimes.<base>) so a single *.<base> wildcard covers
+        # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
         # it; "." nests it under the runtime base. The path-routing block below
         # overrides this to "/", which the runtime-api reads as path mode.
         RUNTIME_URL_SEPARATOR: '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
@@ -717,7 +717,7 @@ spec:
     #
     # A NO_PROXY entry matches a host and its subdomains, so the runtime base
     # covers nested sandboxes ({id}.runtime.<base>) but not flat ones
-    # ({id}-runtimes.<base>), which are siblings of the base rather than
+    # ({id}-runtime.<base>), which are siblings of the base rather than
     # children. For the dash separator, bypass the base's parent domain instead.
     # In derive mode that parent is base_domain, already added below, so the
     # extra entry only ever appears in custom mode.

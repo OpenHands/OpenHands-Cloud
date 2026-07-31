@@ -4,7 +4,7 @@
 
 locals {
   # On the wildcard layout every hostname -- app, auth, analytics, llm-proxy,
-  # runtime-api and each {id}-runtimes sandbox -- is a single label under
+  # runtime-api and each {id}-runtime sandbox -- is a single label under
   # base_domain, so one wildcard record covers all of them. The legacy layout
   # needs each name called out, plus its own sandbox wildcard a level deeper.
   dns_records = var.hostname_mode == "wildcard" ? {

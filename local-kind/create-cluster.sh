@@ -3,7 +3,7 @@
 #
 # Required env:
 #   BASE_DOMAIN    e.g. oh.example.com — every hostname is one label under it
-#                  (app., auth., runtime-api., and {id}-runtimes. per sandbox),
+#                  (app., auth., runtime-api., and {id}-runtime. per sandbox),
 #                  so *.$BASE_DOMAIN must resolve to 127.0.0.1
 #   TLS_CERT_FILE  full-chain certificate covering all hostnames above
 #   TLS_KEY_FILE   matching private key

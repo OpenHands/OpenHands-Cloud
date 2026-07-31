@@ -158,17 +158,22 @@ spec:
         # this is never itself a hostname -- the runtime-api joins the sandbox
         # ID onto it with computed_runtime_hostname_separator below. In path
         # routing it is the single shared host every sandbox is served under.
+        #
+        # Simple and Legacy share the one `runtime.<base_domain>` base, so there
+        # is no wildcard branch here. What separates the two is the separator
+        # below, which decides whether a sandbox is a sibling of that base or a
+        # child of it.
         - name: computed_runtime_base_hostname
           title: Computed Runtime Base Hostname
           type: text
           hidden: true
-          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "runtime_base_hostname" }}{{repl else if ConfigOptionEquals "hostname_mode" "wildcard" }}runtimes.{{repl ConfigOption "base_domain" }}{{repl else }}runtime.{{repl ConfigOption "base_domain" }}{{repl end }}'
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "runtime_base_hostname" }}{{repl else }}runtime.{{repl ConfigOption "base_domain" }}{{repl end }}'
         # Consumed as the runtime-api's RUNTIME_URL_SEPARATOR. A dash keeps
         # sandboxes one label deep; the runtime-api treats "/" as a switch into
         # path routing, so only "-" and "." are valid here.
         #
         # Only the Simple layout uses a dash, because there we choose the base
-        # (`runtimes.<base_domain>`) and can guarantee the sandboxes still land
+        # (`runtime.<base_domain>`) and can guarantee the sandboxes still land
         # under the single `*.<base_domain>` wildcard. Legacy and Manual nest
         # with a dot: in Manual the base is whatever was entered, so each sandbox
         # is a child of it.
@@ -180,8 +185,8 @@ spec:
         # The one wildcard SAN a certificate must carry literally for sandboxes.
         # A "-" separator makes each sandbox a sibling of the runtime base rather
         # than a child, so the covering wildcard sits one label above it:
-        # {id}-runtimes.example.com is matched by *.example.com, never by
-        # *.runtimes.example.com. Mirrors the chart preflight's has_literal check.
+        # {id}-runtime.example.com is matched by *.example.com, never by
+        # *.runtime.example.com. Mirrors the chart preflight's has_literal check.
         - name: computed_sandbox_wildcard
           title: Computed Sandbox Wildcard SAN
           type: text
@@ -1144,7 +1149,7 @@ spec:
           title: Sandbox Routing Mode
           help_text: |
             How sandbox URLs are constructed.
-            Subdomain gives each sandbox its own hostname. On the flat DNS layout that is `{id}-runtimes.<base domain>`, covered by a `*.<base domain>` SAN; on the nested layout it is `{id}.{runtime_base}`, which needs a `*.{runtime_base}` SAN.
+            Subdomain gives each sandbox its own hostname. On the flat DNS layout that is `{id}-runtime.<base domain>`, covered by a `*.<base domain>` SAN; on the nested layout it is `{id}.{runtime_base}`, which needs a `*.{runtime_base}` SAN.
             Path-based routes every sandbox at `{runtime_base}/{id}`. The uploaded TLS cert must have a SAN for `{runtime_base}`.
           type: select_one
           default: "subdomain"

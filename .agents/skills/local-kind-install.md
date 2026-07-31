@@ -48,7 +48,7 @@ The kubeconfig is the default context after `kind create cluster`.
   Realm provisioning re-runs on every app-pod restart and re-templates
   redirect URIs from `WEB_HOST`; manual `kcadm` edits do not survive restarts.
 - **Hostname layout is flat**: `app.<base>`, `auth.<base>`,
-  `runtime-api.<base>`, and each sandbox at `{id}-runtimes.<base>`, so one
+  `runtime-api.<base>`, and each sandbox at `{id}-runtime.<base>`, so one
   `*.<base>` cert and DNS record cover everything. `AUTH_WEB_HOST` follows
   `keycloak.ingress.hostname` when it is set, and only falls back to
   `auth.<ingress.host>` when it is not. The GitHub App script takes
@@ -70,6 +70,6 @@ The kubeconfig is the default context after `kind create cluster`.
 - `https://app.$BASE_DOMAIN` serves the login page (200, trusted cert).
 - Login with the GitHub App completes.
 - A conversation gets a `runtime-*` pod, its ingress at
-  `<id>-runtimes.$BASE_DOMAIN`, and an agent reply.
+  `<id>-runtime.$BASE_DOMAIN`, and an agent reply.
 - Troubleshoot: `support-bundle --load-cluster-specs -n openhands` collects,
   `support-bundle upload <archive>` sends it to the Vendor Portal.

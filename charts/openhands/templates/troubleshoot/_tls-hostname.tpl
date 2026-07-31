@@ -140,8 +140,8 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
               # wildcard DNS record (probed via a synthetic sandbox name).
               # With the "-" separator each sandbox is a sibling of {base} rather
               # than a child, so the covering wildcard is one label up: sandbox
-              # {id}-runtimes.example.com is matched by *.example.com, never by
-              # *.runtimes.example.com.
+              # {id}-runtime.example.com is matched by *.example.com, never by
+              # *.runtime.example.com.
               if [ "$ROUTING" = "path" ]; then
                 check_san RTBASE "$H_RTBASE"
                 check_dns RTBASE "$H_RTBASE"
