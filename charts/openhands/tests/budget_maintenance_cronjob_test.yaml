@@ -2,6 +2,13 @@ suite: openhands budget maintenance cronjob
 templates:
   - budget-maintenance-cronjob.yaml
 tests:
+  - it: is disabled by default
+    set:
+      enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
   - it: renders a CronJob running the budget maintenance command
     set:
       enabled: true

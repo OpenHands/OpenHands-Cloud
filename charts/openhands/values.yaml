@@ -813,7 +813,9 @@ maintenanceTasks:
       cpu: "500m"
 
 budgetMaintenance:
-  enabled: true
+  # Disabled until a published enterprise-server image includes
+  # https://github.com/OpenHands/enterprise/pull/80.
+  enabled: false
   schedule: "*/15 * * * *" # Run every 15 minutes
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
