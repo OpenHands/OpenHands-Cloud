@@ -1,3 +1,10 @@
+{{- if and .Values.redis.enabled .Values.valkey.enabled }}
+NOTE: both cache backends are enabled, so two caches are deployed and Redis is
+the one in use. If you meant to move to Valkey, also set:
+
+    redis.enabled=false
+
+{{ end }}
 {{- if not .Values.enabled }}
 The OpenHands application was not deployed by this release (enabled=false); only
 the enabled subcharts were installed.
