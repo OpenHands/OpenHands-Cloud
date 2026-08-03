@@ -964,6 +964,19 @@ runtime-api:
     # clusters are fixed-size.
     RUNTIME_PENDING_REAP_ENABLED: "false"
 
+# squat/generic-device-plugin DaemonSet that advertises host device nodes
+# (/dev/fuse, /dev/kvm) as extended resources, so sandbox pods can request
+# them without being privileged. The DaemonSet must run in the cluster where
+# runtime SANDBOXES are scheduled: enable it here only when sandboxes share
+# this cluster (e.g. the Replicated installer). When sandboxes run in a
+# separate cluster, leave this disabled and install the subchart on its own
+# into that cluster:
+#   helm install device-plugin charts/openhands/charts/device-plugin
+# See the subchart's values.yaml for the full option set (device list,
+# per-device chmod, priority class, images).
+device-plugin:
+  enabled: false
+
 jira:
   enabled: false
 

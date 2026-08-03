@@ -44,5 +44,8 @@ dependencies:
 - name: agent-canvas
   repository: ""
   version: '*'
-digest: sha256:afe153da0cd440a0cf739d8a8d2bc24ad287dfed8ee9b87771c979220ffa5bea
-generated: "2026-08-03T10:56:33.553296-05:00"
+- name: device-plugin
+  repository: ""
+  version: '*'
+digest: sha256:81001d0244e69166b42d16abb81df294e664a91ec8e268736ebd2dc7afb34d3c
+generated: "2026-08-03T16:50:36.593345669Z"
