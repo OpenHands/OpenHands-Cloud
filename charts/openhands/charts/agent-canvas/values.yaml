@@ -13,7 +13,7 @@ image:
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "1.8.0"
+  tag: "1.9.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
