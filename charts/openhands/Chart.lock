@@ -17,6 +17,9 @@ dependencies:
 - name: redis
   repository: oci://registry-1.docker.io/bitnamicharts
   version: 20.3.0
+- name: valkey
+  repository: https://valkey.io/valkey-helm/
+  version: 0.11.0
 - name: replicated
   repository: oci://registry.replicated.com/library
   version: 1.19.7
@@ -44,5 +47,5 @@ dependencies:
 - name: device-plugin
   repository: ""
   version: '*'
-digest: sha256:a00d5a9db5e54ac05a279afd37838eb9742fb9011bac85b40a33ac22dbbc780f
-generated: "2026-08-03T08:33:44.749467-04:00"
+digest: sha256:81001d0244e69166b42d16abb81df294e664a91ec8e268736ebd2dc7afb34d3c
+generated: "2026-08-03T16:50:36.593345669Z"

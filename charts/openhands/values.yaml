@@ -797,6 +797,39 @@ redis:
   replica:
     replicaCount: 0
 
+# Second bundled cache backend. Redis above wins while both are enabled
+# (templates/_cache.tpl).
+valkey:
+  enabled: false
+  image:
+    repository: valkey/valkey
+  auth:
+    enabled: true
+    # The same Secret the redis subchart reads.
+    usersExistingSecret: "redis"
+    aclUsers:
+      default:
+        permissions: "~* &* +@all"
+        passwordKey: "redis-password"
+  dataStorage:
+    enabled: false
+  replica:
+    enabled: false
+  readinessProbe:
+    # Chart default is false. The exec probe runs an unauthenticated
+    # `valkey-cli ping`, which exits 0 even on NOAUTH, so it gates on port
+    # reachability only and cannot flap under ACL auth.
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 150m
+      memory: 192Mi
+      ephemeral-storage: 2Gi
+
 maintenanceTasks:
   enabled: true
   schedule: "0 6 * * *" # Run daily at 1AM Eastern Time (6AM UTC)

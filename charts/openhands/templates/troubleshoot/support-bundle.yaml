@@ -70,13 +70,17 @@ spec:
         limits:
           maxAge: 336h
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- if include "openhands.cache.backend" . }}
+    {{- if eq (include "openhands.cache.backend" .) "valkey" }}
+    # Valkey logs (official valkey chart)
+    {{- else }}
     # Redis logs (Bitnami chart)
+    {{- end }}
     - logs:
-        name: app/{{ .Release.Name }}-redis/logs
+        name: app/{{ .Release.Name }}-{{ include "openhands.cache.backend" . }}/logs
         namespace: {{ .Release.Namespace }}
         selector:
-          - app.kubernetes.io/name=redis
+          - app.kubernetes.io/name={{ include "openhands.cache.backend" . }}
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
           maxAge: 336h
@@ -441,10 +445,12 @@ spec:
         tls:
           disabled: true
     {{- end }}
-    {{- if and .Values.redis.enabled .Values.replicated.enabled .Values.replicated.redisPassword }}
+    {{- if and (include "openhands.cache.backend" .) .Values.replicated.enabled .Values.replicated.redisPassword }}
+    {{- /* Collector type is `redis` for both backends: Valkey speaks RESP and
+    `default` is its ACL user. */}}
     - redis:
         collectorName: redis
-        uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ .Release.Name }}-redis-master.{{ .Release.Namespace }}.svc.cluster.local:6379
+        uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ include "openhands.cache.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379
     {{- end }}
   analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
     - deploymentStatus:
@@ -525,7 +531,7 @@ spec:
               when: ">= 1"
               message: "OpenHands PostgreSQL statefulset is ready"
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- if eq (include "openhands.cache.backend" .) "redis" }}
     - statefulsetStatus:
         name: {{ .Release.Name }}-redis-master
         namespace: {{ .Release.Namespace }}
@@ -536,6 +542,18 @@ spec:
           - pass:
               when: ">= 1"
               message: "OpenHands Redis statefulset is ready"
+    {{- end }}
+    {{- if eq (include "openhands.cache.backend" .) "valkey" }}
+    - deploymentStatus:
+        name: {{ .Release.Name }}-valkey
+        namespace: {{ .Release.Namespace }}
+        outcomes:
+          - fail:
+              when: "< 1"
+              message: "OpenHands Valkey deployment is not ready"
+          - pass:
+              when: ">= 1"
+              message: "OpenHands Valkey deployment is ready"
     {{- end }}
     {{- if .Values.keycloak.enabled }}
     - statefulsetStatus:
@@ -591,7 +609,7 @@ spec:
               when: "connected == true"
               message: "PostgreSQL database is healthy"
     {{- end }}
-    {{- if and .Values.redis.enabled .Values.replicated.enabled .Values.replicated.redisPassword }}
+    {{- if and (include "openhands.cache.backend" .) .Values.replicated.enabled .Values.replicated.redisPassword }}
     - redis:
         checkName: "Redis Cache Health"
         collectorName: redis

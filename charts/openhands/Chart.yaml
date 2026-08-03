@@ -28,6 +28,10 @@ dependencies:
     version: 20.3.0
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: redis.enabled
+  - name: valkey
+    version: 0.11.0
+    repository: https://valkey.io/valkey-helm/
+    condition: valkey.enabled
   - name: replicated
     repository: oci://registry.replicated.com/library
     version: 1.19.7
