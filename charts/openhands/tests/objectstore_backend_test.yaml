@@ -107,10 +107,19 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: mc mirror --preserve
+          pattern: mc cp --recursive
+      # `mc mirror` is rejected by rustfs, and its --remove form would delete
+      # destination-only objects. Neither belongs here.
       - notMatchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: mirror[^\n]*--remove
+          pattern: mc mirror
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: (^|\s)mc rm(\s|$)
+      # The copy image must carry mc, which the minio server image does not.
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "minio/mc:"
 
   - it: never migrates on a fresh install, where there is nothing to copy
     template: templates/objectstore-migration.yaml

@@ -10,13 +10,13 @@ Why this is simpler than the database migration:
     under its own event id and never rewritten. So the copy is additive and
     idempotent, and there is nothing to freeze. It repeats harmlessly on later
     upgrades until minio.enabled is set to false.
-  * `mc` ships in the MinIO image this chart already proxies, so the copy needs
-    no new image in the proxy registry or the airgap bundle.
   * The copy needs no Kubernetes API access at all — it talks to two S3
-    endpoints — so it needs no ServiceAccount, Role or RoleBinding.
+    endpoints — so it needs no ServiceAccount, Role or RoleBinding, and the only
+    image it needs is one carrying mc.
 
-`mc mirror` WITHOUT --remove, deliberately: --remove deletes destination-only
-objects, and nothing in this chart's object handling is allowed a delete path.
+`mc cp`, deliberately: it has no delete path, so destination-only objects can
+never be removed. It is also what works — rustfs rejects the recursive list
+comparison that `mirror` performs before copying.
 
 post-upgrade, not pre-upgrade: a pre-upgrade hook runs before the new manifests
 are applied, so on the upgrade that introduces RustFS there is no destination to
@@ -45,7 +45,7 @@ spec:
         app.kubernetes.io/component: objectstore-migration
     spec:
       restartPolicy: OnFailure
-      {{- with .Values.minio.imagePullSecrets }}
+      {{- with .Values.filestore.migration.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
@@ -54,8 +54,8 @@ spec:
         runAsGroup: {{ .Values.securityContext.runAsGroup }}
       containers:
         - name: copy
-          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
-          imagePullPolicy: {{ .Values.minio.image.pullPolicy | default "IfNotPresent" }}
+          image: "{{ .Values.filestore.migration.image.repository }}:{{ .Values.filestore.migration.image.tag }}"
+          imagePullPolicy: {{ .Values.filestore.migration.image.pullPolicy | default "IfNotPresent" }}
           env:
             # mc writes its config under $HOME; the image's default HOME is / and
             # is not writable for a non-root user.
@@ -79,18 +79,17 @@ spec:
               mc alias set src "$SRC" "$AK" "$SK" >/dev/null
               mc alias set dst "$DST" "$AK" "$SK" >/dev/null
 
-              src_n=$(mc ls --recursive "src/$BUCKET" 2>/dev/null | grep -c . || true)
+              src_n=$(mc ls --recursive "src/$BUCKET" | wc -l | tr -d ' ')
               echo "source holds ${src_n} objects"
               if [ "$src_n" = "0" ]; then
                 echo "nothing to copy"
                 exit 0
               fi
 
-              # Additive copy. No --remove: destination-only objects are never
-              # deleted by this chart.
-              mc mirror --preserve "src/$BUCKET" "dst/$BUCKET"
+              # cp, not mirror: see the note at the top of this file.
+              mc cp --recursive "src/$BUCKET/" "dst/$BUCKET/"
 
-              dst_n=$(mc ls --recursive "dst/$BUCKET" 2>/dev/null | grep -c . || true)
+              dst_n=$(mc ls --recursive "dst/$BUCKET" | wc -l | tr -d ' ')
               echo "destination holds ${dst_n} objects"
               if [ "$dst_n" -lt "$src_n" ]; then
                 echo "copy incomplete: ${dst_n} of ${src_n} objects present" >&2

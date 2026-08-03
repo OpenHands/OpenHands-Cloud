@@ -139,6 +139,12 @@ filestore:
   # harmlessly on later upgrades until minio.enabled is set to false.
   migration:
     enabled: false
+    # The copy runs `mc`, which the minio server image does not carry.
+    image:
+      repository: quay.io/minio/mc
+      tag: RELEASE.2025-08-13T08-35-41Z
+      pullPolicy: IfNotPresent
+    imagePullSecrets: []
 
 # Workspace archiving (app-server, explicit-delete path): before a still-running
 # sandbox is deleted, copy its workspace to object storage so the agent's work

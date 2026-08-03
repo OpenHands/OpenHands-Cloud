@@ -438,6 +438,10 @@ spec:
       # point; set minio.enabled: false once the migration has been confirmed.
       migration:
         enabled: true
+        image:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/mc'
+        imagePullSecrets:
+          - name: '{{repl ImagePullSecretName }}'
     rustfs:
       enabled: true
       image:
@@ -721,6 +725,10 @@ spec:
         minio:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
+        filestore:
+          migration:
+            image:
+              repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/mc'
         rustfs:
           image:
             rustfs:
