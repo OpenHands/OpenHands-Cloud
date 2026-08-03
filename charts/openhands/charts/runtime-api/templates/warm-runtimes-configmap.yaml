@@ -45,6 +45,10 @@ data:
           {{- with $config.count }}
           "count": {{ $config.count }},
           {{- end }}
+          {{- /* Omitted when false/unset: the loader defaults fuse_s3_mount to false. */}}
+          {{- with $config.fuse_s3_mount }}
+          "fuse_s3_mount": {{ . }},
+          {{- end }}
           "command": {{ $config.command | toJson }},
           "environment": {{ mergeOverwrite (deepCopy ($config.environment | default dict)) (deepCopy $globalAgentEnv) | toJson }}
           {{- with $config.run_as_user }},

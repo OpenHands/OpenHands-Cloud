@@ -247,6 +247,10 @@ warmRuntimes:
   # Canonical map form. Each key is the config's name (promoted to "name" in the
   # rendered JSON). Maps merge cleanly across values layers, so consumers can
   # override one field of one entry without re-declaring every entry.
+  # Set `fuse_s3_mount: true` on an entry for fusey warm pods: dormant startup,
+  # /workspace FUSE-mounted from object storage instead of a PVC. Needs the
+  # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
+  # device-plugin subchart).
   configsByName:
     default:
       # image omitted -> defaults to global.agentServerImage (repo:tag).
