@@ -51,6 +51,9 @@ spec:
       ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE: true
+      # Keep account email immutable until OHE can reliably deliver Keycloak verification.
+      EMAIL_CHANGE_ENABLED: false
+      OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: false
       # Frontend feature flags must be set via the structured OH_WEB_CLIENT_FEATURE_FLAGS_*
       # form. Once any of these is present, from_env(AppServerConfig, 'OH') builds
       # feature_flags from them and the plain ENABLE_JIRA_DC env (set in _env.yaml) is
@@ -168,6 +171,8 @@ spec:
           value: "xforwarded"
         - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
           value: "true"
+        - name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS
+          value: "15000"
         - name: KC_TRUSTSTORE_PATHS
           value: /etc/openhands/ca-bundle/ca-bundle.crt
         - name: KC_DB_URL_PROPERTIES
