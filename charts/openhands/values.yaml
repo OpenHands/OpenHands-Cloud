@@ -751,6 +751,10 @@ rustfs:
       access_key: "default"
       secret_key: "notasecret"
   replicaCount: 1
+  # The subchart defaults this on, publishing its console at a placeholder host.
+  # The store is only ever reached in-cluster.
+  ingress:
+    enabled: false
   mode:
     standalone:
       enabled: true
