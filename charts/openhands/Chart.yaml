@@ -54,3 +54,6 @@ dependencies:
   - name: agent-canvas
     version: '*'
     condition: agent-canvas.enabled
+  - name: device-plugin
+    version: '*'
+    condition: device-plugin.enabled

@@ -1,0 +1,114 @@
+suite: generic-device-plugin daemonset
+templates:
+  - templates/daemonset.yaml
+tests:
+  - it: advertises fuse by default, with no chmod init container or priority class
+    asserts:
+      - isKind:
+          of: DaemonSet
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/squat/generic-device-plugin:2cc50b0
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --domain
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: squat.ai
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: '{"groups":[{"count":10,"paths":[{"path":"/dev/fuse"}]}],"name":"fuse"}'
+      # --domain, its value, and one --device pair: kvm must not be advertised.
+      - lengthEqual:
+          path: spec.template.spec.containers[0].args
+          count: 4
+      - notExists:
+          path: spec.template.spec.initContainers
+      - notExists:
+          path: spec.template.spec.priorityClassName
+
+  - it: advertises kvm and relaxes its host permissions when enabled
+    set:
+      devices.kvm.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: '{"groups":[{"count":20,"paths":[{"path":"/dev/kvm"}]}],"name":"kvm"}'
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: busybox:1.36
+      - equal:
+          path: spec.template.spec.initContainers[0].command
+          value:
+            - sh
+            - -c
+            - if [ -e /dev/kvm ]; then chmod 0666 /dev/kvm; fi
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.privileged
+          value: true
+
+  - it: skips the init container when kvm is enabled without chmod
+    set:
+      devices.kvm.enabled: true
+      devices.kvm.chmod: null
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: '{"groups":[{"count":20,"paths":[{"path":"/dev/kvm"}]}],"name":"kvm"}'
+      - notExists:
+          path: spec.template.spec.initContainers
+
+  - it: passes extra device specs through verbatim
+    set:
+      extraDevices:
+        - '{"name":"serial","groups":[{"paths":[{"path":"/dev/ttyUSB0"}]}]}'
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: '{"name":"serial","groups":[{"paths":[{"path":"/dev/ttyUSB0"}]}]}'
+
+  - it: runs privileged, mounts the kubelet socket dir, and tolerates all taints
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: device-plugin
+            mountPath: /var/lib/kubelet/device-plugins
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - operator: Exists
+              effect: NoExecute
+            - operator: Exists
+              effect: NoSchedule
+
+  - it: sets the priority class when configured
+    set:
+      priorityClassName: system-node-critical
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: system-node-critical
+
+  - it: carries the recommended labels
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: device-plugin
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^device-plugin-
+      - isNotEmpty:
+          path: metadata.labels["app.kubernetes.io/version"]

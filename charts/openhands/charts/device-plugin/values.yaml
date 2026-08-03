@@ -1,0 +1,87 @@
+# Runs squat/generic-device-plugin as a DaemonSet that advertises host device
+# nodes (/dev/fuse, /dev/kvm, ...) as extended resources, so sandbox pods can
+# request them (e.g. `squat.ai/fuse: 1` in resources.limits) WITHOUT being
+# privileged. See https://github.com/squat/generic-device-plugin
+#
+# The DaemonSet must run in the cluster where runtime SANDBOXES are scheduled.
+# When sandboxes share a cluster with the rest of OpenHands (e.g. the
+# Replicated installer), enable it through the umbrella chart
+# (`device-plugin.enabled: true`). When sandboxes run in a separate cluster,
+# leave it disabled in the umbrella install and install this chart on its own
+# into the sandbox cluster:
+#
+#   helm install device-plugin charts/openhands/charts/device-plugin
+
+image:
+  repository: ghcr.io/squat/generic-device-plugin
+  # Upstream publishes no semver releases, only short-git-sha tags and a
+  # moving `latest`. Pin a sha so installs are reproducible.
+  tag: 2cc50b0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Priority class for the DaemonSet pods. Empty uses the cluster default.
+# system-node-critical is the conventional choice for device plugins, but GKE
+# (and other clusters that quota-restrict the system priority classes) rejects
+# it outside kube-system with "insufficient quota to match these scopes"
+# unless the namespace carries a matching ResourceQuota.
+priorityClassName: ""
+
+# Extended-resource domain prefix: devices are advertised as <domain>/<name>.
+domain: squat.ai
+
+# Each enabled entry is advertised as a schedulable extended resource named
+# <domain>/<key>. `count` is how many pods may claim the device per node at
+# once (device nodes like /dev/fuse and /dev/kvm are safely shared; the count
+# just caps concurrent claims). Path entries take any field of the
+# generic-device-plugin DeviceSpec path schema (path, mountPath, readOnly, ...).
+devices:
+  fuse:
+    enabled: true
+    count: 10
+    paths:
+      - path: /dev/fuse
+  kvm:
+    enabled: false
+    count: 20
+    # /dev/kvm defaults to 0660 root:kvm on most distros, which blocks the
+    # non-root sandbox UID from opening it even once scheduled into the pod.
+    # `chmod` relaxes the host device node via a privileged init container.
+    # Omit it if you grant access another way (a node udev rule or
+    # supplementalGroups).
+    chmod: "0666"
+    paths:
+      - path: /dev/kvm
+
+# Additional raw device specs (advanced), passed verbatim as --device flags.
+# YAML or JSON strings in generic-device-plugin's DeviceSpec schema.
+extraDevices: []
+
+# Image for the chmod init container; only rendered when an enabled device
+# sets `chmod`.
+initImage:
+  repository: busybox
+  tag: "1.36"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 10Mi
+  limits:
+    cpu: 50m
+    memory: 20Mi
+
+nodeSelector: {}
+
+# Tolerate everything by default: the plugin must run on every node sandboxes
+# can land on, including tainted ones (e.g. sysbox-runtime nodes).
+tolerations:
+  - operator: "Exists"
+    effect: "NoExecute"
+  - operator: "Exists"
+    effect: "NoSchedule"

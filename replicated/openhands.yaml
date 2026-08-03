@@ -364,15 +364,8 @@ spec:
         # Textarea is "one per line"; normalize to a comma list so a multiline value isn't YAML-folded into a space-joined token.
         ADDITIONAL_HOST_PATHS: 'repl{{ $hp := list }}repl{{ range $raw := splitList "\n" (ConfigOption "sandbox_additional_host_paths" | replace "\r" "\n") }}repl{{ $e := trim $raw }}repl{{ if $e }}repl{{ $hp = append $hp $e }}repl{{ end }}repl{{ end }}repl{{ $hp | join "," }}'
         SANDBOX_KVM_ENABLED: 'repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}'
-        KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
-      kvm:
-        enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
-        image: 
-          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/smarter-project/smarter-device-manager'
-          # Do not override the image tag here. Pin to a stable version in the chart.
-        initImage:
-          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
-          # Do not override the image tag here. Pin to a stable version in the chart.
+        # Must match the device-plugin subchart's domain + device name.
+        KVM_DEVICE_RESOURCE: "squat.ai/kvm"
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
@@ -421,6 +414,27 @@ spec:
             app: runtime-api
           annotations:
             kubernetes.io/ingress.class: traefik
+    # Advertises /dev/kvm (and /dev/fuse) to sandbox pods via the
+    # squat/generic-device-plugin DaemonSet. Replaces the smarter-device-manager
+    # plugin that used to live in the runtime-api subchart; the resource name
+    # moved from smarter-devices/kvm to squat.ai/kvm (KVM_DEVICE_RESOURCE above).
+    device-plugin:
+      enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+      devices:
+        kvm:
+          enabled: true
+      # The embedded cluster is k0s, which doesn't quota-restrict the system
+      # priority classes the way GKE does, so the DaemonSet can take the
+      # conventional device-plugin priority.
+      priorityClassName: system-node-critical
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/squat/generic-device-plugin'
+        # Do not override the image tag here. Pin to a stable version in the chart.
+      initImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+        # Do not override the image tag here. Pin to a stable version in the chart.
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
     sandbox:
       apiHostname: 'http://openhands-runtime-api:5000'
     postgresql:
@@ -1195,3 +1209,10 @@ spec:
       enabled: true
     agent-canvas:
       enabled: true
+    device-plugin:
+      enabled: true
+      # kvm carries the chmod init container, whose image must land in the
+      # airgap bundle too.
+      devices:
+        kvm:
+          enabled: true
