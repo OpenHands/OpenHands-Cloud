@@ -718,7 +718,17 @@ minio:
 #               endpoint: "http://<release>-rustfs-svc:9000", existingSecret: <s3 keys>}
 rustfs:
   enabled: false
+  # The subchart refuses to render without credentials. These match
+  # minio.svcaccts[0] so both bundled stores answer to the same pair.
+  secret:
+    rustfs:
+      access_key: "default"
+      secret_key: "notasecret"
   replicaCount: 1
+  # The subchart defaults this on, publishing its console at a placeholder host.
+  # The store is only ever reached in-cluster.
+  ingress:
+    enabled: false
   mode:
     standalone:
       enabled: true

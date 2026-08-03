@@ -184,3 +184,19 @@ tests:
       - template: deployment.yaml
         notExists:
           path: spec.template.spec.containers[0].env[?(@.name=="AWS_S3_BUCKET")]
+
+  # Deploying the bundled RustFS must not move anything onto it. Nothing in this
+  # chart reads from RustFS yet, so the app stays on MinIO until a later change
+  # wires the two together.
+  - it: keeps the app on the bundled MinIO when rustfs is enabled
+    set:
+      enabled: true
+      filestore.ephemeral: true
+      rustfs.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
