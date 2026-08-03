@@ -483,29 +483,15 @@
   value: "true"
 {{- end }}
 
-{{- $dbSslMode := "prefer" }}
-{{- if not .Values.postgresql.enabled }}
-{{- $dbSslMode = .Values.externalDatabase.sslMode | default "prefer" }}
-{{- end }}
-{{- if .Values.postgresql.enabled }}
+{{- $dbSslMode := include "openhands.postgres.sslMode" . }}
 - name: DB_HOST
-  value: "{{ .Release.Name }}-postgresql"
+  value: {{ include "openhands.postgres.host" . | quote }}
 - name: DB_PORT
-  value: "{{ .Values.postgresql.primary.service.ports.postgresql | default 5432 }}"
+  value: {{ include "openhands.postgres.port" . | quote }}
 - name: DB_USER
-  value: "{{ .Values.postgresql.auth.username }}"
+  value: {{ include "openhands.postgres.username" . | quote }}
 - name: DB_NAME
-  value: "{{ .Values.postgresql.auth.database }}"
-{{- else }}
-- name: DB_HOST
-  value: "{{ .Values.externalDatabase.host }}"
-- name: DB_PORT
-  value: "{{ .Values.externalDatabase.port | default 5432 }}"
-- name: DB_USER
-  value: "{{ .Values.externalDatabase.username }}"
-- name: DB_NAME
-  value: "{{ .Values.externalDatabase.database }}"
-{{- end }}
+  value: {{ include "openhands.postgres.database" . | quote }}
 - name: DB_SSL_MODE
   value: {{ $dbSslMode | quote }}
 - name: PGSSLMODE
@@ -566,7 +552,7 @@
 - name: DB_PASS
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.postgresql.auth.existingSecret }}
+      name: {{ include "openhands.postgres.passwordSecret" . }}
       key: password
 {{- if .Values.jira.enabled }}
 - name: ENABLE_JIRA

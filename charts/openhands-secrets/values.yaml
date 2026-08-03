@@ -5,6 +5,11 @@
 automation:
   enabled: false
 
+# Renders the basic-auth superuser Secret the CloudNativePG operator needs.
+# Off by default, matching cnpg.enabled in the openhands chart.
+cnpg:
+  enabled: false
+
 config:
   # Security secrets
   admin_password: ""

@@ -41,6 +41,23 @@ cert-manager:
       limits:
         memory: 64Mi
 
+# CloudNativePG operator. Cluster-scoped (CRDs plus a cluster-wide controller),
+# which is why it lives here rather than in the openhands chart: the Cluster
+# resources that chart renders need this operator already installed.
+#
+# Disabled by default so the cert-manager and trust-manager releases of this
+# chart do not carry it. The Replicated infra-cnpg release turns it on.
+cloudnative-pg:
+  enabled: false
+  crds:
+    create: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+
 trust-manager:
   enabled: true
   # Trust-manager needs to know which namespace its default CA trust bundle

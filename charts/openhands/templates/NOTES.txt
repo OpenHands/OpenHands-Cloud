@@ -36,3 +36,25 @@ Next steps:
 
 Docs: https://docs.all-hands.dev
 {{- end }}
+{{- /*
+Outside the block above so the warning also reaches a release that deploys the
+Bitnami subchart without the application itself.
+*/}}
+{{- if .Values.postgresql.enabled }}
+{{- if eq (include "openhands.postgres.backend" .) "bitnami" }}
+
+WARNING: this release runs PostgreSQL from the bundled Bitnami chart, which is
+deprecated and will be removed in a future release.
+
+Move to CloudNativePG. The chart migrates your data in a single upgrade; see
+"In-Cluster PostgreSQL with CloudNativePG" in the chart README for the steps.
+{{- else }}
+
+NOTE: the Bitnami PostgreSQL server is still deployed alongside CloudNativePG,
+holding the pre-migration data. Once you have verified the application, retire
+it:
+
+    helm upgrade {{ .Release.Name }} ... \
+      --set postgresql.enabled=false --set cnpg.migration.enabled=false
+{{- end }}
+{{- end }}

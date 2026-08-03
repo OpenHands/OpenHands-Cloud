@@ -1,0 +1,41 @@
+apiVersion: kots.io/v1beta2
+kind: HelmChart
+metadata:
+  name: infra-cnpg
+spec:
+  chart:
+    name: infra
+  releaseName: infra-cnpg
+  namespace: cnpg-system
+  # Weight 7 installs the operator and its CRDs after cert-manager (5) and
+  # trust-manager (6), and before openhands (10), whose Cluster resource is an
+  # unknown kind until these CRDs are registered.
+  weight: 7
+  helmUpgradeFlags: ["--wait", "--timeout", "600s"]
+  values:
+    cert-manager:
+      enabled: false
+    trust-manager:
+      enabled: false
+    cloudnative-pg:
+      enabled: true
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/cloudnative-pg/cloudnative-pg'
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
+
+  optionalValues:
+    - when: '{{repl HasLocalRegistry }}'
+      recursiveMerge: true
+      values:
+        cloudnative-pg:
+          image:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/cloudnative-pg'
+
+  builder:
+    cert-manager:
+      enabled: false
+    trust-manager:
+      enabled: false
+    cloudnative-pg:
+      enabled: true

@@ -95,6 +95,52 @@
         "accessKeyIdKey": { "type": "string" },
         "secretAccessKeyKey": { "type": "string" }
       }
+    },
+    "cnpg": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clusterName": { "type": "string" },
+        "operatorNamespace": { "type": "string" },
+        "instances": { "type": "integer", "minimum": 1 },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1 },
+            "pullPolicy": { "type": "string" }
+          }
+        },
+        "enableSuperuserAccess": { "type": "boolean" },
+        "superuserSecret": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string", "minLength": 1 }
+          }
+        },
+        "username": { "type": "string" },
+        "database": { "type": "string" },
+        "enablePDB": { "type": "boolean" },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "size": { "type": "string", "minLength": 1 },
+            "storageClass": { "type": "string" }
+          }
+        },
+        "migration": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
     }
   }
 }

@@ -16,6 +16,15 @@ spec:
     # The Sysbox installer DaemonSet runs in kube-system (privileged, host
     # namespaces), so KOTS must provision the image pull secret there too.
     - kube-system
+    # CloudNativePG operator (infra-cnpg release).
+    - cnpg-system
+
+  # PostgreSQL operand image. CloudNativePG takes it from a Cluster resource
+  # rather than a PodSpec, so KOTS cannot discover it by scanning manifests;
+  # listing it here mirrors it into air-gapped bundles. The reference the cluster
+  # actually uses is templated in replicated/openhands.yaml.
+  additionalImages:
+    - ghcr.io/cloudnative-pg/postgresql:17.10-standard-trixie
 
   statusInformers:
     # openhands
@@ -68,9 +77,10 @@ spec:
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/ingress/laminar-api-ingress{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/ingress/laminar-frontend-ingress{{repl end}}'
 
-    # postgres
-    - '{{repl if ConfigOptionEquals "postgres_type" "embedded_postgres"}}openhands/statefulset/openhands-postgresql{{repl end}}'
-    - '{{repl if ConfigOptionEquals "postgres_type" "embedded_postgres"}}openhands/service/openhands-postgresql{{repl end}}'
+    # postgres. CloudNativePG manages bare Pods, so there is no Deployment or
+    # StatefulSet to watch; the alias Service reports endpoints once the primary
+    # is serving.
+    - '{{repl if ConfigOptionEquals "postgres_type" "embedded_postgres"}}openhands/service/oh-main-postgresql{{repl end}}'
 
     # redis
     - openhands/statefulset/openhands-redis-master

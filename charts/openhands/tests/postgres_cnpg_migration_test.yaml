@@ -1,0 +1,459 @@
+suite: cnpg migration hook
+templates:
+  - postgres-cnpg-migration.yaml
+tests:
+  - it: renders nothing by default
+    set:
+      image.tag: test
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when cnpg is on but the migration is not requested
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the orchestrator as a pre-upgrade hook ordered after the CRD check
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      # Two Jobs render from this template, so kind alone is ambiguous. The
+      # orchestrator's container is named migrate, the post-upgrade one resume.
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade
+      # crd-check runs its Job at -5, so a missing operator is reported there.
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-2"
+
+  - it: uses an orchestrator image that has a shell
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # rancher/kubectl ships no shell, so `sh -c` cannot start in it.
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker.io/alpine/k8s:1.30.0
+
+  - it: copies from the bitnami service, never from the alias
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      # The alias points at the new cluster by the time this runs, so reading it
+      # would copy the target onto itself.
+      - matchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: 'value: "RELEASE-NAME-postgresql"'
+      - notMatchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: 'SRC_HOST\n\s+value: "oh-main-postgresql"'
+
+  - it: copies every database it discovers, skipping only the templates
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      # Discovery, not a hardcoded list, so databases an operator created by
+      # hand come across too — and the postgres database is a normal database
+      # that may hold user objects.
+      - matchRegex:
+          path: data["copy.sh"]
+          pattern: "datname NOT IN \\('template0','template1'\\) ORDER BY 1"
+      - notMatchRegex:
+          path: data["copy.sh"]
+          pattern: "'template0','template1','postgres'"
+
+  - it: copies the postgres database in place rather than recreating it
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      # The target's postgres database is CloudNativePG's maintenance database
+      # and cannot be dropped; --clean keeps a retry idempotent instead.
+      - matchRegex:
+          path: data["copy.sh"]
+          pattern: 'if \[ "\$db" = "postgres" \]; then'
+      - matchRegex:
+          path: data["copy.sh"]
+          pattern: 'PG_DUMP_ARGS="--clean --if-exists"'
+      # Nothing may drop the postgres database.
+      - notMatchRegex:
+          path: data["copy.sh"]
+          pattern: 'DROP DATABASE "postgres"'
+
+  - it: defaults the copy client to the operand image
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      # pg_dump refuses to dump a server newer than itself, so the client must
+      # not be older than either end of the copy.
+      - matchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: 'image: "ghcr\.io/cloudnative-pg/postgresql:17\.10-standard-trixie"'
+
+  - it: embeds the same cluster manifest the release applies
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      # Helm adopts the hook-created Cluster only if all three ownership keys
+      # are present.
+      - matchRegex:
+          path: data["cluster.yaml"]
+          pattern: 'app\.kubernetes\.io/managed-by: Helm'
+      - matchRegex:
+          path: data["cluster.yaml"]
+          pattern: 'meta\.helm\.sh/release-name: RELEASE-NAME'
+      - matchRegex:
+          path: data["cluster.yaml"]
+          pattern: 'meta\.helm\.sh/release-namespace: NAMESPACE'
+      - matchRegex:
+          path: data["cluster.yaml"]
+          pattern: 'helm\.sh/resource-policy: keep'
+
+  - it: applies the cluster on every run, before the already-migrated guard
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # This Job owns the Cluster while a migration is pending, so changes to
+      # the cnpg values have to reach it here.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'apply -f /migration/cluster\.yaml[\s\S]*marker.*present'
+
+  - it: quiesces only the writers that are deployed
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+      keycloak.enabled: false
+      litellm-helm.enabled: false
+      runtime-api.enabled: false
+      automation.enabled: false
+      plugin-directory.enabled: false
+      integrations-hub.enabled: false
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "WRITERS='deployment/openhands deployment/openhands-integrations deployment/openhands-mcp'"
+
+  - it: adds every enabled database consumer to the quiesce list
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+      keycloak.enabled: true
+      litellm-helm.enabled: true
+      runtime-api.enabled: true
+      automation.enabled: true
+      plugin-directory.enabled: true
+      integrations-hub.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "statefulset/keycloak"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "deployment/RELEASE-NAME-litellm"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "deployment/RELEASE-NAME-runtime-api"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "deployment/automation"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "deployment/plugin-directory"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "deployment/integrations-hub"
+
+  - it: appends operator-supplied writers
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+      cnpg.migration.extraWriters:
+        - deployment/custom-writer
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "deployment/custom-writer"
+
+  - it: grants only the permissions the orchestrator uses
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["postgresql.cnpg.io"]
+            resources: ["clusters"]
+            verbs: ["get", "list", "create", "patch", "update"]
+      - notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["secrets"]
+            verbs: ["get"]
+
+  - it: waits for the cluster to settle rather than for anything to be serving
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # Measured on a real cluster: one second after an operand-image change the
+      # Cluster still reports phase healthy, readyInstances 1 and a matching
+      # status.image, while the operator is about to delete the primary pod. A
+      # bare readiness check starts the copy against a server that then goes
+      # away, which is how the Bitnami PVC migration lost a restore.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'STABLE_POLLS=3'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'C_READY" = "\$C_WANT'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'C_CUR" = "\$C_TGT'
+      # The old check. readyInstances alone, and hardcoded to one instance.
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'READY" != "1"'
+
+  - it: gives the operator time to react when the apply changed the spec
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # CloudNativePG publishes no observedGeneration, so metadata.generation
+      # across the apply is what says whether a reconcile is still pending.
+      # Skipped when the apply changed nothing, so a retry is not slowed.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'GEN_BEFORE=\$\(\$K get cluster'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'GEN_BEFORE" != "\$GEN_AFTER'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'sleep "\$SETTLE"'
+
+  - it: fails rather than copying from a source that is still taking writes
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # The drain loop also ends on timeout, so the result has to be confirmed.
+      # Announcing "writers are down" regardless meant a copy could be taken
+      # from a moving source, which verification would then reject.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'REMAINING" != "0" \]; then[\s\S]*writers did not stop'
+
+  - it: reports a primary that was replaced while the copy ran
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # Diagnosing exactly this on the PVC migration took a support bundle. A
+      # warning rather than a failure: the copy re-reads every table's row count
+      # from both servers afterwards, so it is the authority on the data.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'PRIMARY_STAMP=\$\(\$K get pod'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'WARNING: the primary .* restarted or was replaced'
+
+  - it: records each CronJob's suspend state before touching it
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: migrate
+    asserts:
+      # The restore paths only resume what the migration itself suspended; a
+      # CronJob the operator had suspended beforehand goes back the way it was
+      # found. Unset suspend records as false.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '--from-file=cronjobs=/tmp/cronjobs'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\$\{SUS:-false\}'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\*" \$cj=true "\*\) log "  leaving \$cj suspended'
+
+  - it: runs the resume Job after the upgrade has repointed the writers
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: resume
+    asserts:
+      # Resuming from the orchestrator would reconnect everything to the old
+      # server and strand the writes made before the apply.
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-postgres-cnpg-migration-resume
+
+  - it: resume covers exactly what the apply cannot restore
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: resume
+    asserts:
+      # No manifest in this chart renders spec.suspend, so the apply's
+      # three-way merge never clears the patched true: the resume Job must.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '"suspend":false'
+      # A recorded writer still at zero is one the apply does not manage
+      # (extraWriters, autoscaled writers); anything the apply already
+      # restored is left alone.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\[ "\$CUR" = "0" \] && \[ "\$N" != "0" \]'
+      # A CronJob suspended before the migration stays suspended.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\*" \$cj=true "\*\) log "  leaving \$cj suspended'
+      # The recorded state is removed once the restore is done, and only then.
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: '\$K delete configmap "\$STATE"'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'recorded state is kept'
+
+  - it: exits quietly on upgrades where no migration ran
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: spec.template.spec.containers[0].name
+      value: resume
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'no migration state recorded; nothing to resume'
+
+  - it: shares one identity across both hook Jobs
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    asserts:
+      # The RBAC trio must exist at both hook points or the resume Job starts
+      # without permissions.
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade,post-upgrade
+
+  - it: lets the resume Job delete the recorded state
+    set:
+      image.tag: test
+      cnpg.enabled: true
+      cnpg.migration.enabled: true
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["configmaps"]
+            verbs: ["get", "list", "create", "patch", "update", "delete"]

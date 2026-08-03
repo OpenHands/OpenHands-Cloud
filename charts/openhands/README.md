@@ -452,6 +452,87 @@ To use an external PostgreSQL database instead of deploying one with the chart:
        DB_NAME: runtime_api_db
    ```
 
+### In-Cluster PostgreSQL with CloudNativePG
+
+[CloudNativePG](https://cloudnative-pg.io/) is the recommended way to run PostgreSQL in-cluster, and
+new installs should use it.
+
+> **The bundled Bitnami server is deprecated.** It is still the default so that existing installs
+> keep working, but it will be removed in a future release. Plan to migrate.
+
+The operator is cluster-scoped and is not installed by this chart. Install it first, into any
+namespace:
+
+```bash
+helm repo add cnpg https://cloudnative-pg.github.io/charts
+helm install cnpg cnpg/cloudnative-pg --namespace cnpg-system --create-namespace
+```
+
+Create a `kubernetes.io/basic-auth` Secret holding the same password as the existing
+`postgres-password` Secret. It has to be a second Secret because a Secret's type cannot be changed:
+
+```bash
+kubectl create secret generic postgres-superuser -n openhands \
+  --type=kubernetes.io/basic-auth \
+  --from-literal=username=postgres \
+  --from-literal=password="$POSTGRES_PASSWORD"
+```
+
+Then enable it:
+
+```yaml
+cnpg:
+  enabled: true
+  storage:
+    size: 50Gi
+    # storageClass: fast
+```
+
+No other values change. On a greenfield install, also set `databaseMigrations.createDatabases: true`.
+
+#### Migrating an existing Bitnami install
+
+One upgrade copies every database across and repoints every service.
+
+> **This takes the application down.** Writers are scaled to zero for the length of the copy. Size
+> the maintenance window against your database.
+
+Before you start: the migration **aborts if the old server has any role other than `postgres`**.
+Create those roles on the new server yourself first, or migrate them by hand.
+
+1. Install the operator and create the `postgres-superuser` Secret, as above.
+
+2. Run the migration. Leave `postgresql.enabled` set, so the old server stays up for the copy:
+
+   ```bash
+   helm upgrade openhands ... \
+     --set cnpg.enabled=true \
+     --set cnpg.migration.enabled=true \
+     --timeout 30m
+   ```
+
+   Safe to re-run. It verifies every table and aborts without touching the old server if anything
+   fails.
+
+3. Check that the application works.
+
+4. Retire the old server:
+
+   ```bash
+   helm upgrade openhands ... \
+     --set cnpg.enabled=true \
+     --set postgresql.enabled=false \
+     --set cnpg.migration.enabled=false
+   ```
+
+   This restarts the database pod once.
+
+The old server's PersistentVolumeClaim (`data-<release>-postgresql-0`) is kept until you delete it,
+so the pre-migration data stays available.
+
+`helm uninstall` leaves the CloudNativePG Cluster standing, since deleting it would take the data
+with it. Remove it deliberately with `kubectl delete cluster <release>-pg`.
+
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,
