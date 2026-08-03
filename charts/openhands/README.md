@@ -457,36 +457,45 @@ To use an external PostgreSQL database instead of deploying one with the chart:
 RustFS is an S3-compatible alternative to the bundled MinIO. It is off by default;
 MinIO remains the default bundled store.
 
-Enabling it deploys RustFS alongside MinIO and points every consumer at RustFS.
-MinIO keeps running so its PVC stays available as a rollback point:
+#### Migrating an existing MinIO install
 
-```yaml
-filestore:
-  ephemeral: true
-rustfs:
-  enabled: true
-```
+One upgrade copies the objects across and repoints every consumer. MinIO keeps
+running so its PVC stays available as a rollback point.
 
-To copy the objects already in MinIO across during the upgrade, also set:
+> **Enable the copy in the same upgrade that enables RustFS.** Consumers are
+> repointed as soon as `rustfs.enabled` is set, so enabling RustFS on its own
+> moves the application onto an empty bucket. Nothing fails — conversation
+> history simply stops loading once a sandbox is recycled.
 
-```yaml
-filestore:
-  migration:
-    enabled: true
-```
+1. Run the migration. Leave the bundled MinIO enabled so it can serve as the copy
+   source:
 
-The copy runs as a `post-upgrade` Job. It is additive and idempotent — `mc mirror`
-without `--remove`, so nothing is ever deleted from either store — which means it
-repeats harmlessly on later upgrades. Because it runs after the consumers have
-been repointed, conversations that predate the migration may briefly not load
-until it finishes; that is self-healing and usually a matter of seconds.
+   ```bash
+   helm upgrade openhands ... \
+     --set filestore.ephemeral=true \
+     --set rustfs.enabled=true \
+     --set filestore.migration.enabled=true
+   ```
 
-Once you have confirmed the objects are present in RustFS, stop deploying MinIO:
+   The copy runs as a `post-upgrade` Job, so allow for it in `--timeout`; Helm's
+   default is 5 minutes. It is safe to re-run: `mc cp --recursive` has no delete
+   path, so nothing is ever removed from either store and later upgrades repeat it
+   harmlessly. Because it runs after the consumers are repointed, conversations
+   that predate the migration may briefly not load until it finishes.
 
-```yaml
-minio:
-  enabled: false
-```
+2. Check that the application works and that the objects are present in RustFS.
+
+3. Retire MinIO:
+
+   ```bash
+   helm upgrade openhands ... \
+     --set filestore.ephemeral=true \
+     --set rustfs.enabled=true \
+     --set minio.enabled=false
+   ```
+
+To roll back before step 3, set `rustfs.enabled=false`. MinIO is only ever read
+from, so its objects are untouched.
 
 Note the RustFS credentials in `rustfs.secret.rustfs` must match
 `minio.svcaccts[0]`. The app receives one credential pair for whichever bundled
