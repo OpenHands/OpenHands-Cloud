@@ -70,8 +70,12 @@ $(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.
 	@# Rewrite any dependency that points to a remote registry but exists as a
 	@# sibling chart to use a local file:// reference instead. This lets
 	@# `helm package -u` resolve unpublished chart versions during local builds.
-	@cp $(CHARTDIR)/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml.bak
-	@trap 'mv $(CHARTDIR)/$1/Chart.yaml.bak $(CHARTDIR)/$1/Chart.yaml' EXIT; \
+	@# The copy lives outside the chart directory. Held inside it, `helm package`
+	@# picks it up and every released chart ships a Chart.yaml.bak alongside the
+	@# real one, because the restore only runs after packaging.
+	@mkdir -p $(BUILDDIR)/.chartbak/$1
+	@cp $(CHARTDIR)/$1/Chart.yaml $(BUILDDIR)/.chartbak/$1/Chart.yaml
+	@trap 'mv $(BUILDDIR)/.chartbak/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml' EXIT; \
 	for dep in $$$$(yq -r '.dependencies[].name // ""' $(CHARTDIR)/$1/Chart.yaml); do \
 		if [ -d $(CHARTDIR)/$$$$dep ]; then \
 			yq -i "(.dependencies[] | select(.name == \"$$$$dep\")).repository = \"file://../$$$$dep\"" $(CHARTDIR)/$1/Chart.yaml; \
