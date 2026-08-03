@@ -693,12 +693,6 @@ litellm-helm:
       allowed_fails: 3
 
 minio:
-  # Declared here so the object-store migration Job can reuse this image, which
-  # carries `mc`. Keep in step with the pinned minio subchart's own default.
-  image:
-    repository: quay.io/minio/minio
-    tag: RELEASE.2023-05-18T00-05-36Z
-    pullPolicy: IfNotPresent
   replicas: 1
   mode: standalone
   persistence:
@@ -744,8 +738,8 @@ rustfs:
       # Chart.yaml.
       tag: "1.0.0-beta.10"
       pullPolicy: IfNotPresent
-  # The subchart refuses to render without credentials, and validation requires
-  # these to match minio.svcaccts[0] so one pair works for either store.
+  # The subchart refuses to render without credentials. These match
+  # minio.svcaccts[0] so both bundled stores answer to the same pair.
   secret:
     rustfs:
       access_key: "default"
