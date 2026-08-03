@@ -480,8 +480,14 @@ running so its PVC stays available as a rollback point.
    The copy runs as a `post-upgrade` Job, so allow for it in `--timeout`; Helm's
    default is 5 minutes. It is safe to re-run: `mc cp --recursive` has no delete
    path, so nothing is ever removed from either store and later upgrades repeat it
-   harmlessly. Because it runs after the consumers are repointed, conversations
-   that predate the migration may briefly not load until it finishes.
+   harmlessly.
+
+   Because the Job runs after consumers are repointed, there is a window in which
+   a conversation that predates the migration returns no history. It does not
+   error, so nothing in the UI or a status check marks it. Measured at 23 seconds
+   for around 200 objects, and it grows with the amount of data to copy. Passing
+   `--wait` lengthens it, because Helm then holds the Job until the application is
+   ready instead of letting the copy overlap the rollout.
 
 2. Check that the application works and that the objects are present in RustFS.
 
@@ -494,8 +500,21 @@ running so its PVC stays available as a rollback point.
      --set minio.enabled=false
    ```
 
-To roll back before step 3, set `rustfs.enabled=false`. MinIO is only ever read
-from, so its objects are untouched.
+   > **This deletes MinIO's volume.** Its PVC carries no retention policy, so the
+   > upgrade that stops deploying MinIO also removes the disk holding the objects
+   > you migrated from. There is no rollback after this step. Take your own copy
+   > first if you want one.
+
+#### Rolling back before MinIO is retired
+
+Set `rustfs.enabled=false`. Consumers return to MinIO, whose objects were only
+ever read from, and the RustFS volumes are retained.
+
+> **Conversations created after the cutover do not come back.** The copy runs one
+> way only, so anything written while RustFS was active exists solely in RustFS.
+> Those conversations report no history available until RustFS is enabled again.
+> Their data is not destroyed — the RustFS volume is retained, and re-enabling it
+> restores access.
 
 Note the RustFS credentials in `rustfs.secret.rustfs` must match
 `minio.svcaccts[0]`. The app receives one credential pair for whichever bundled
