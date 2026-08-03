@@ -25,3 +25,24 @@ tests:
     asserts:
       - matchRegexRaw:
           pattern: "was not deployed by this release"
+  - it: warns when both cache backends are enabled
+    set:
+      valkey.enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "both cache backends are enabled"
+      - matchRegexRaw:
+          pattern: "redis.enabled=false"
+  # Not scoped to .Values.enabled: the cache subcharts install independently of
+  # the enterprise-server, so a server-less release can be misconfigured too.
+  - it: warns about both backends even when the app is not deployed
+    set:
+      enabled: false
+      valkey.enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "both cache backends are enabled"
+  - it: stays quiet at the chart defaults
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "both cache backends are enabled"

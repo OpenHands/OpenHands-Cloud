@@ -114,8 +114,6 @@ runtime-api:
     enabled: false
   warmRuntimes:
     enabled: false
-  kvm:
-    enabled: false
   cleanup:
     enabled: false
   dbCleanup:

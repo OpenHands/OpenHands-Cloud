@@ -29,8 +29,8 @@ chart `version` in `Chart.yaml` is then bumped automatically when that release P
 is merged (a minor bump, since feats move the minor for these pre-1.0 charts). No
 manual version bump, and no version-bump CI gate.
 
-The edit is path-aware and minimal by design. `runtime-api/values.yaml` has three
-`tag:` keys (`image.tag`, `kvm.image.tag`, `kvm.initImage.tag`); the script edits
+The edit is path-aware and minimal by design. `runtime-api/values.yaml` has multiple
+`tag:` keys (`image.tag`, `global.agentServerImage.tag`); the script edits
 exactly the one you name and leaves quoting, comments, and blank lines untouched.
 (`yq -i` strips blank lines; a full `ruamel` re-dump rewrites unrelated scalars
 like `dryRun: False` → `false`; a blanket `sed` hits the wrong `tag:`. The script

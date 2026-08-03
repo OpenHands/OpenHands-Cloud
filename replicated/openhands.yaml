@@ -364,15 +364,9 @@ spec:
         # Textarea is "one per line"; normalize to a comma list so a multiline value isn't YAML-folded into a space-joined token.
         ADDITIONAL_HOST_PATHS: 'repl{{ $hp := list }}repl{{ range $raw := splitList "\n" (ConfigOption "sandbox_additional_host_paths" | replace "\r" "\n") }}repl{{ $e := trim $raw }}repl{{ if $e }}repl{{ $hp = append $hp $e }}repl{{ end }}repl{{ end }}repl{{ $hp | join "," }}'
         SANDBOX_KVM_ENABLED: 'repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}'
+        # Must match the device-plugin subchart's domain + device name (the
+        # legacy smarter-devices domain; see the device-plugin block below).
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
-      kvm:
-        enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
-        image: 
-          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/smarter-project/smarter-device-manager'
-          # Do not override the image tag here. Pin to a stable version in the chart.
-        initImage:
-          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
-          # Do not override the image tag here. Pin to a stable version in the chart.
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
@@ -421,6 +415,34 @@ spec:
             app: runtime-api
           annotations:
             kubernetes.io/ingress.class: traefik
+    # Advertises /dev/kvm (and /dev/fuse) to sandbox pods via the
+    # squat/generic-device-plugin DaemonSet. Replaces the smarter-device-manager
+    # plugin that used to live in the runtime-api subchart.
+    device-plugin:
+      enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+      # Keep the resource domain smarter-device-manager used, even though the
+      # plugin behind it changed: pause/resume reuses a runtime's Deployment
+      # as-is (resume just scales replicas 0->1), so pre-upgrade pod templates
+      # keep requesting smarter-devices/kvm forever. Renaming the resource
+      # would leave every pre-upgrade sandbox unschedulable on its next
+      # resume. Must match KVM_DEVICE_RESOURCE above (and FUSE_DEVICE_RESOURCE
+      # if fuse mounts ever ship here).
+      domain: smarter-devices
+      devices:
+        kvm:
+          enabled: true
+      # The embedded cluster is k0s, which doesn't quota-restrict the system
+      # priority classes the way GKE does, so the DaemonSet can take the
+      # conventional device-plugin priority.
+      priorityClassName: system-node-critical
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/squat/generic-device-plugin'
+        # Do not override the image tag here. Pin to a stable version in the chart.
+      initImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+        # Do not override the image tag here. Pin to a stable version in the chart.
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
     sandbox:
       apiHostname: 'http://openhands-runtime-api:5000'
     postgresql:
@@ -1228,3 +1250,10 @@ spec:
       enabled: true
     agent-canvas:
       enabled: true
+    device-plugin:
+      enabled: true
+      # kvm carries the chmod init container, whose image must land in the
+      # airgap bundle too.
+      devices:
+        kvm:
+          enabled: true

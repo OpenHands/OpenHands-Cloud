@@ -829,6 +829,39 @@ redis:
   replica:
     replicaCount: 0
 
+# Second bundled cache backend. Redis above wins while both are enabled
+# (templates/_cache.tpl).
+valkey:
+  enabled: false
+  image:
+    repository: valkey/valkey
+  auth:
+    enabled: true
+    # The same Secret the redis subchart reads.
+    usersExistingSecret: "redis"
+    aclUsers:
+      default:
+        permissions: "~* &* +@all"
+        passwordKey: "redis-password"
+  dataStorage:
+    enabled: false
+  replica:
+    enabled: false
+  readinessProbe:
+    # Chart default is false. The exec probe runs an unauthenticated
+    # `valkey-cli ping`, which exits 0 even on NOAUTH, so it gates on port
+    # reachability only and cannot flap under ACL auth.
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 150m
+      memory: 192Mi
+      ephemeral-storage: 2Gi
+
 maintenanceTasks:
   enabled: true
   schedule: "0 6 * * *" # Run daily at 1AM Eastern Time (6AM UTC)
@@ -962,6 +995,19 @@ runtime-api:
     # Replicated installer turns it on in replicated/openhands.yaml, since OHE
     # clusters are fixed-size.
     RUNTIME_PENDING_REAP_ENABLED: "false"
+
+# squat/generic-device-plugin DaemonSet that advertises host device nodes
+# (/dev/fuse, /dev/kvm) as extended resources, so sandbox pods can request
+# them without being privileged. The DaemonSet must run in the cluster where
+# runtime SANDBOXES are scheduled: enable it here only when sandboxes share
+# this cluster (e.g. the Replicated installer). When sandboxes run in a
+# separate cluster, leave this disabled and install the subchart on its own
+# into that cluster:
+#   helm install device-plugin charts/openhands/charts/device-plugin
+# See the subchart's values.yaml for the full option set (device list,
+# per-device chmod, priority class, images).
+device-plugin:
+  enabled: false
 
 jira:
   enabled: false

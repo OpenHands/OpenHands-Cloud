@@ -1,0 +1,101 @@
+{{- /* Devices are advertised by the kubelet as node-level extended
+resources, so the namespace this DaemonSet runs in is irrelevant to the
+sandbox pods that consume them. */}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "device-plugin.fullname" . }}
+  labels:
+    {{- include "device-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "device-plugin.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "device-plugin.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- $chmods := list }}
+      {{- range $name, $device := .Values.devices }}
+      {{- if and $device.enabled $device.chmod }}
+      {{- range $device.paths }}
+      {{- $chmods = append $chmods (printf "if [ -e %s ]; then chmod %s %s; fi" .path $device.chmod .path) }}
+      {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- if $chmods }}
+      initContainers:
+        # The plugin schedules device nodes into pods but never touches their
+        # host permissions; devices that set `chmod` get relaxed here so the
+        # non-root sandbox UID can open them.
+        - name: chmod-devices
+          image: "{{ .Values.initImage.repository }}:{{ .Values.initImage.tag }}"
+          imagePullPolicy: {{ .Values.initImage.pullPolicy }}
+          securityContext:
+            privileged: true
+          command: ["sh", "-c", {{ join "; " $chmods | quote }}]
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+      {{- end }}
+      containers:
+        - name: generic-device-plugin
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            {{- with .Values.domain }}
+            - --domain
+            - {{ . | quote }}
+            {{- end }}
+            {{- /* JSON is valid YAML, so rendering each DeviceSpec as one
+            JSON string keeps the flag legible and sidesteps nesting YAML
+            blocks inside a YAML string. */}}
+            {{- range $name, $device := .Values.devices }}
+            {{- if $device.enabled }}
+            - --device
+            - {{ toJson (dict "name" $name "groups" (list (dict "count" (int (default 1 $device.count)) "paths" $device.paths))) | quote }}
+            {{- end }}
+            {{- end }}
+            {{- range .Values.extraDevices }}
+            - --device
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - containerPort: 8080
+              name: http
+          # Reads host devices and registers with the kubelet, so it runs
+          # privileged — the device plugin only, never the sandboxes.
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
