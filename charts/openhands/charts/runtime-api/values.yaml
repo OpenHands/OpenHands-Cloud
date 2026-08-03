@@ -116,9 +116,9 @@ securityContext: {}
 
 # The KVM device plugin that used to live here (smarter-device-manager,
 # .kvm.*) moved to the sibling device-plugin subchart, which advertises
-# /dev/kvm via squat/generic-device-plugin as squat.ai/kvm. Point the
-# runtime-api's KVM_DEVICE_RESOURCE env var there when enabling
-# SANDBOX_KVM_ENABLED.
+# /dev/kvm via squat/generic-device-plugin as <domain>/kvm (squat.ai/kvm
+# with the subchart defaults). Point the runtime-api's KVM_DEVICE_RESOURCE
+# env var at that resource name when enabling SANDBOX_KVM_ENABLED.
 
 postgresql:
   enabled: false

@@ -17,7 +17,7 @@ tests:
           content: squat.ai
       - contains:
           path: spec.template.spec.containers[0].args
-          content: '{"groups":[{"count":10,"paths":[{"path":"/dev/fuse"}]}],"name":"fuse"}'
+          content: '{"groups":[{"count":256,"paths":[{"path":"/dev/fuse"}]}],"name":"fuse"}'
       # --domain, its value, and one --device pair: kvm must not be advertised.
       - lengthEqual:
           path: spec.template.spec.containers[0].args
@@ -33,7 +33,7 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: '{"groups":[{"count":20,"paths":[{"path":"/dev/kvm"}]}],"name":"kvm"}'
+          content: '{"groups":[{"count":256,"paths":[{"path":"/dev/kvm"}]}],"name":"kvm"}'
       - equal:
           path: spec.template.spec.initContainers[0].image
           value: busybox:1.36
@@ -54,7 +54,7 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: '{"groups":[{"count":20,"paths":[{"path":"/dev/kvm"}]}],"name":"kvm"}'
+          content: '{"groups":[{"count":256,"paths":[{"path":"/dev/kvm"}]}],"name":"kvm"}'
       - notExists:
           path: spec.template.spec.initContainers
 

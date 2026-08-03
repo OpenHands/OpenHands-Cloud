@@ -36,18 +36,20 @@ domain: squat.ai
 
 # Each enabled entry is advertised as a schedulable extended resource named
 # <domain>/<key>. `count` is how many pods may claim the device per node at
-# once (device nodes like /dev/fuse and /dev/kvm are safely shared; the count
-# just caps concurrent claims). Path entries take any field of the
-# generic-device-plugin DeviceSpec path schema (path, mountPath, readOnly, ...).
+# once: device nodes like /dev/fuse and /dev/kvm are safely shared, and the
+# advertised copies are synthetic and free, so the defaults sit well above any
+# realistic per-node sandbox density — lower them only to impose a deliberate
+# concurrency cap. Path entries take any field of the generic-device-plugin
+# DeviceSpec path schema (path, mountPath, readOnly, ...).
 devices:
   fuse:
     enabled: true
-    count: 10
+    count: 256
     paths:
       - path: /dev/fuse
   kvm:
     enabled: false
-    count: 20
+    count: 256
     # /dev/kvm defaults to 0660 root:kvm on most distros, which blocks the
     # non-root sandbox UID from opening it even once scheduled into the pod.
     # `chmod` relaxes the host device node via a privileged init container.
