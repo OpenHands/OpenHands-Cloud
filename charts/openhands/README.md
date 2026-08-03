@@ -503,6 +503,45 @@ To use an external Redis instance:
    #   --from-literal=redis-password=<your-redis-password>
    ```
 
+### Switching the Bundled Cache to Valkey
+
+The bundled cache is Redis by default. Bitnami's license change froze the free
+Redis chart and images, so they receive no further CVE patches, and the
+replacement is the official Valkey chart. It ships with this chart but is off
+until you turn it on.
+
+Cut over by disabling Redis and enabling Valkey in the same upgrade:
+
+```yaml
+redis:
+  enabled: false
+valkey:
+  enabled: true
+```
+
+Redis remains the active cache while both are enabled, so enabling Valkey on its
+own deploys it without moving anything.
+
+The cache is discarded at cutover. Conversations continue, and sign-in sessions
+are unaffected because they do not live in the cache. Rate limiting briefly
+allows requests it would otherwise have counted.
+
+**Nothing else changes.** The app still reads `REDIS_HOST`, `REDIS_PORT` and
+`REDIS_PASSWORD`, and the password still comes from the existing `redis` Secret's
+`redis-password` key, so no secret has to be created before upgrading or kept in
+order to revert. To revert, restore the two values above.
+
+If you pin cache resources or persistence, translate the keys you set — a
+leftover `redis:` block is not read once Redis is disabled, and its sizing will
+not be applied:
+
+| Redis key | Valkey key |
+|---|---|
+| `redis.master.resources` | `valkey.resources` |
+| `redis.master.persistence.enabled` | `valkey.dataStorage.enabled` |
+| `redis.replica.replicaCount: 0` | `valkey.replica.enabled: false` |
+| `redis.auth.existingSecret` | `valkey.auth.usersExistingSecret` |
+
 ### Storage Class Configuration
 
 By default, the chart expects a storage class named `standard-rwo`. If you're using EKS, which typically has a `gp2` storage class, you can configure the chart to use it instead:
