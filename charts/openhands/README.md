@@ -493,9 +493,13 @@ running so its PVC stays available as a rollback point.
    many small conversation events is slower than the byte total suggests.
 
    Plan for it: the copy has to finish inside `--timeout`, and at around 60,000
-   objects it exhausts a 600 second budget on its own. Note also that the copy
-   repeats on every later upgrade until MinIO is disabled, so each unrelated
-   configuration change pays the same window again.
+   objects it exhausts a 600 second budget on its own.
+
+   The copy also re-runs in full on every later upgrade until MinIO is disabled,
+   because it does not skip objects already present. Those repeats do not repeat the
+   window, since RustFS already holds the data, but they do spend the same time
+   inside `--timeout` on every unrelated configuration change. Complete step 3 to
+   stop paying it.
 
 2. Check that the application works and that the objects are present in RustFS.
 
