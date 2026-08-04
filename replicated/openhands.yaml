@@ -539,6 +539,12 @@ spec:
 
     crdCheck:
       enabled: true
+      # THROWAWAY PROBE, NEVER MERGE. ec-probe-preupgrade-abort only.
+      # The last entry does not exist, so `kubectl wait` fails immediately and the
+      # pre-upgrade hook fails at weight -5. backoffLimit 0 makes it fail in
+      # seconds instead of retrying for ~10 minutes and colliding with the 600 s
+      # helm timeout, which would make the two failure causes indistinguishable.
+      backoffLimit: 0
       crds:
         - certificates.cert-manager.io
         - issuers.cert-manager.io
@@ -547,6 +553,7 @@ spec:
         - ingressroutes.traefik.io
         - middlewares.traefik.io
         - tlsstores.traefik.io
+        - doesnotexist.probe.openhands.dev
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/rancher/kubectl'
       imagePullSecrets:
