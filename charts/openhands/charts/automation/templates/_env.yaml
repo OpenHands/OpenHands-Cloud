@@ -35,38 +35,50 @@
 - name: AUTOMATION_GCP_REGION
   value: {{ .Values.gcp.region | quote }}
 {{- end }}
-# File storage configuration
-- name: FILE_STORE_PATH
-  value: {{ .Values.filestore.bucket }}
-{{- if .Values.filestore.ephemeral }}
-# Ephemeral mode: use S3-compatible storage (minio)
+# Uploaded-package storage (see values.filestore)
 - name: FILE_STORE
-  value: s3
-{{- if .Values.minio.enabled }}
-# Using deployed minio subchart
-- name: AWS_ACCESS_KEY_ID
-  value: {{ (index .Values.minio.svcaccts 0).accessKey }}
-- name: AWS_SECRET_ACCESS_KEY
-  value: {{ (index .Values.minio.svcaccts 0).secretKey }}
-- name: AWS_S3_ENDPOINT
-  value: {{ printf "http://%s-minio:9000" .Release.Name }}
-{{- else }}
-# Using external minio (e.g., parent chart's minio instance)
-- name: AWS_ACCESS_KEY_ID
-  value: {{ .Values.minio.external.accessKey }}
-- name: AWS_SECRET_ACCESS_KEY
-  value: {{ .Values.minio.external.secretKey }}
-- name: AWS_S3_ENDPOINT
-  value: {{ .Values.minio.external.endpoint }}
-{{- end }}
+  value: {{ .Values.filestore.type | quote }}
+{{- if eq .Values.filestore.type "s3" }}
 - name: AWS_S3_BUCKET
-  value: {{ .Values.filestore.bucket }}
+  value: {{ .Values.filestore.bucket | quote }}
+{{- with .Values.filestore.endpoint }}
+- name: AWS_S3_ENDPOINT
+  value: {{ . | quote }}
+# The service refuses an AWS_S3_SECURE value that contradicts the endpoint
+# scheme, so it is derived rather than configurable.
 - name: AWS_S3_SECURE
-  value: "false"
+  value: {{ hasPrefix "https://" . | quote }}
+{{- end }}
+{{- with .Values.filestore.region }}
+- name: AWS_REGION
+  value: {{ . | quote }}
+{{- end }}
+{{- if .Values.filestore.createBucket }}
+- name: AWS_S3_AUTO_CREATE_BUCKET
+  value: "true"
+{{- end }}
+{{- if .Values.filestore.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else if .Values.filestore.accessKey }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ .Values.filestore.accessKey | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ .Values.filestore.secretKey | quote }}
+{{- end }}
+{{- else if eq .Values.filestore.type "gcs" }}
+- name: GCS_BUCKET_NAME
+  value: {{ .Values.filestore.bucket | quote }}
 {{- else }}
-# Production mode: use cloud storage (gcs, s3, etc.)
-- name: FILE_STORE
-  value: {{ .Values.filestore.type }}
+{{- fail (printf "filestore.type must be \"s3\" or \"gcs\", got %q" .Values.filestore.type) }}
 {{- end }}
 # Admin API key for issuing per-user automation API keys
 {{- if .Values.adminApiKeyFromSecret }}

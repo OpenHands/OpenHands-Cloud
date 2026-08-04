@@ -110,41 +110,36 @@ gcp:
   project: ""
   region: ""
 
-# File storage configuration (aligned with openhands chart pattern)
-# Supports multiple backends: gcs, s3, or in-cluster minio for ephemeral environments
+# Object storage for uploaded automation packages. Packages must outlive the
+# pod, so this is always a durable object store: any S3-compatible store
+# (AWS S3, MinIO, ...) or GCS.
 filestore:
-  # When true, uses S3-compatible storage (minio) for ephemeral/feature environments
-  # When false, uses cloud storage specified by 'type' (for production)
-  ephemeral: false
-  # Bucket name for storing automation data
-  bucket: automation-data
-  # Storage type when ephemeral=false (e.g., gcs, s3)
+  # "s3" or "gcs"
   type: gcs
 
-# Minio configuration for ephemeral storage (filestore.ephemeral=true)
-#
-# Two deployment modes:
-# 1. Standalone: Set minio.enabled=true to deploy minio as a subchart
-# 2. Subchart of openhands: Set minio.enabled=false and configure minio.external
-#    to use the parent chart's minio instance
-minio:
-  # When true, point the app at the release's minio service
-  # (http://<release>-minio:9000) using the first svcaccts credentials below.
-  # Set to false when deployed as subchart of openhands (uses parent's minio)
-  enabled: false
+  # Bucket to store packages in (both backends).
+  bucket: automation-data
 
-  # External minio configuration (used when enabled=false but filestore.ephemeral=true)
-  # Configure this to point to an existing minio instance (e.g., parent chart's minio)
-  external:
-    endpoint: "http://minio:9000"
-    accessKey: "default"
-    secretKey: "notasecret"
+  # s3 only. Leave empty for AWS (boto3 targets the regional endpoint); set
+  # for other S3-compatible stores, e.g. an in-cluster MinIO:
+  # http://<release>-minio:9000. TLS is inferred from the URL scheme — an
+  # http:// endpoint renders AWS_S3_SECURE=false.
+  endpoint: ""
+  region: ""
 
-  # Credentials used when enabled=true (only the first entry is read)
-  svcaccts:
-    - accessKey: "automationkey"
-      secretKey: "automationsecret"
-      user: root
+  # s3 only. Create the bucket at startup if nothing else provisions it.
+  createBucket: false
+
+  # s3 credentials — first match wins:
+  #   1. existingSecret: Secret holding the access key pair (key names below)
+  #   2. accessKey/secretKey: inline, for throwaway/dev environments only
+  #   3. neither: ambient AWS identity (IRSA, instance profile)
+  # gcs always uses ambient identity (Workload Identity / ADC).
+  existingSecret: ""
+  accessKeyIdKey: AWS_ACCESS_KEY_ID
+  secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  accessKey: ""
+  secretKey: ""
 
 # Service key from K8s secret (for staging/production)
 # Used by OpenHands SaaS to authenticate requests to the automation service

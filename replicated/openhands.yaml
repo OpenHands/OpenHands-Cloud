@@ -672,21 +672,16 @@ spec:
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           # Uploaded automation packages must survive pod replacement, so store
           # them on the bundled MinIO (persistent here — minio.persistence
-          # above) instead of the pod filesystem. ephemeral: true selects the
-          # subchart's S3 mode; minio.enabled stays false so it targets the
-          # parent chart's MinIO through minio.external.
+          # above) instead of the pod filesystem.
           filestore:
-            ephemeral: true
-          minio:
-            external:
-              endpoint: http://openhands-minio:9000
-              # Matches the parent chart's minio.svcaccts credentials.
-              accessKey: default
-              secretKey: notasecret
-          env:
+            type: s3
+            endpoint: http://openhands-minio:9000
             # The bundled MinIO's bucket job only creates the parent chart's
-            # buckets, so the service provisions its own bucket on startup.
-            AWS_S3_AUTO_CREATE_BUCKET: "true"
+            # buckets, so the service provisions its own on startup.
+            createBucket: true
+            # Matches the parent chart's minio.svcaccts credentials.
+            accessKey: default
+            secretKey: notasecret
           database:
             createDatabaseUser: true
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'

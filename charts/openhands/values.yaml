@@ -1189,27 +1189,30 @@ automation:
     project: ""
     region: ""
   
-  # File storage configuration (aligned with openhands chart pattern)
-  # Supports multiple backends: gcs, s3, or in-cluster minio for ephemeral environments
+  # Object storage for uploaded automation packages. Packages must outlive the
+  # pod, so this is always a durable object store: any S3-compatible store
+  # (AWS S3, MinIO, ...) or GCS. See the automation subchart's values.yaml for
+  # the full key reference. To use the bundled MinIO, set type: s3 and
+  # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
-    # When true, uses S3-compatible storage (minio) for ephemeral/feature environments
-    # When false, uses cloud storage specified by 'type' (for production)
-    ephemeral: false
-    # Bucket name for storing automation data
-    bucket: automation-data
-    # Storage type when ephemeral=false (e.g., gcs, s3)
+    # "s3" or "gcs"
     type: gcs
-  
-  # Minio configuration for ephemeral storage
-  # When deployed as subchart of openhands, automation uses parent's minio instance
-  minio:
-    # Don't deploy minio as subchart - use parent's minio instance
-    enabled: false
-    # External minio configuration (points to parent chart's minio)
-    external:
-      endpoint: "http://minio:9000"
-      accessKey: "default"
-      secretKey: "notasecret"
+    # Bucket to store packages in (both backends).
+    bucket: automation-data
+    # s3 only. Leave empty for AWS; set for other S3-compatible stores. TLS is
+    # inferred from the URL scheme.
+    endpoint: ""
+    region: ""
+    # s3 only. Create the bucket at startup if nothing else provisions it.
+    createBucket: false
+    # s3 credentials: existingSecret wins, then inline accessKey/secretKey,
+    # then ambient AWS identity (IRSA, instance profile). gcs always uses
+    # ambient identity (Workload Identity / ADC).
+    existingSecret: ""
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKey: ""
+    secretKey: ""
   
   # Service key from K8s secret
   serviceKeyFromSecret:
