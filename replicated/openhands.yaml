@@ -8,7 +8,10 @@ spec:
   releaseName: openhands
   namespace: openhands
   weight: 10
-  helmUpgradeFlags: ["--wait", "--timeout", "600s", "--force-conflicts"]
+  # 1800s, not 600s: --timeout bounds each hook Job, and the object-store
+  # migration hook (freeze, copy, verify) runs inside it. Size the maintenance
+  # window against the object count — the copy is bound by it, not by bytes.
+  helmUpgradeFlags: ["--wait", "--timeout", "1800s", "--force-conflicts"]
   values:
     global:
       imageRegistry: 'images.r9.all-hands.dev'
@@ -458,6 +461,20 @@ spec:
     # the app targets the bundled instance automatically.
     filestore:
       type: s3
+      # Copy the bundled object store from MinIO into RustFS and repoint every
+      # consumer at RustFS when the apply lands. MinIO stays deployed below as
+      # the rollback source; a later, deliberate release retires it. The copy is
+      # incremental and additive, so a re-run after a timeout resumes rather than
+      # restarting, and repeats harmlessly once complete.
+      migration:
+        enabled: true
+        images:
+          kubectl:
+            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
+          mc:
+            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/mc'
+        imagePullSecrets:
+          - name: '{{repl ImagePullSecretName }}'
     minio:
       enabled: true
       persistence:
@@ -473,10 +490,9 @@ spec:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
-    # RustFS is deployed here but consumed by nothing: MinIO keeps precedence
-    # while both are enabled (templates/_objectstore.tpl), so the app stays on
-    # MinIO. This brings the store up empty and running ahead of the migration
-    # release that copies the data across and repoints consumers.
+    # RustFS is the object-store backend once filestore.migration.enabled flips
+    # precedence to it (templates/_objectstore.tpl). MinIO stays deployed as the
+    # rollback source until a later release retires it.
     rustfs:
       enabled: true
       image:
@@ -691,13 +707,17 @@ spec:
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           # Uploaded automation packages must survive pod replacement, so store
-          # them on the bundled MinIO (persistent here — minio.persistence
-          # above) instead of the pod filesystem.
+          # them on the bundled object store instead of the pod filesystem. This
+          # points at RustFS in lock-step with the app: the migration copies the
+          # automation-data bucket across and both consumers cut over together on
+          # this release. (The parent chart cannot template a subchart's values,
+          # so automation is repointed here rather than through the object-store
+          # helper the app uses.)
           filestore:
             type: s3
-            endpoint: http://openhands-minio:9000
-            # The bundled MinIO's bucket job only creates the parent chart's
-            # buckets, so the service provisions its own on startup.
+            endpoint: http://openhands-rustfs-svc:9000
+            # The bundled store's bucket job only creates the parent chart's
+            # session bucket, so the service provisions its own on startup.
             createBucket: true
             # Matches the parent chart's minio.svcaccts credentials.
             accessKey: default
@@ -760,6 +780,13 @@ spec:
               repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/rustfs'
             initImage:
               repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/busybox'
+        filestore:
+          migration:
+            images:
+              kubectl:
+                repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/k8s'
+              mc:
+                repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/mc'
         litellm-helm:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/litellm-database'
@@ -1243,6 +1270,11 @@ spec:
       enabled: true
     rustfs:
       enabled: true
+    # Render the object-store migration hook at build time so its kubectl and mc
+    # images land in the airgap bundle.
+    filestore:
+      migration:
+        enabled: true
     postgresql:
       enabled: true
     redis:

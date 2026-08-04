@@ -144,11 +144,19 @@ filestore:
   # what is missing and repeats harmlessly once complete.
   migration:
     enabled: false
-    # The copy runs `mc`, which the RustFS/MinIO server images do not carry.
-    image:
-      repository: quay.io/minio/mc
-      tag: RELEASE.2025-08-13T08-35-41Z
-      pullPolicy: IfNotPresent
+    images:
+      # Orchestrator: freezes writers and drives the copy Pod, so it needs
+      # kubectl and a shell (not rancher/kubectl, which has neither a shell nor
+      # the coreutils the script uses).
+      kubectl:
+        repository: docker.io/alpine/k8s
+        tag: "1.30.0"
+        pullPolicy: IfNotPresent
+      # Copy Pod: runs `mc`, which the RustFS/MinIO server images do not carry.
+      mc:
+        repository: quay.io/minio/mc
+        tag: RELEASE.2025-08-13T08-35-41Z
+        pullPolicy: IfNotPresent
     imagePullSecrets: []
     # Extra "deployment/x" | "statefulset/x" writers to freeze for the copy,
     # beyond the ones the chart derives from its own render conditions.
