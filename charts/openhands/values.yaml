@@ -750,15 +750,29 @@ rustfs:
     rustfs:
       access_key: "default"
       secret_key: "notasecret"
-  # The subchart leaves log_rotation unset, so nothing prunes rotated logs. Set
-  # retention to keep the log volume bounded.
+  # The subchart leaves log_rotation unset, so nothing prunes rotated logs and the
+  # volume grows without bound.
   config:
     rustfs:
       log_level: warn
       log_rotation:
-        size: 100
         time: hour
         keep_files: 8
+  # The byte-based retention keys have no values path in the subchart, and its
+  # log_rotation.size renders RUSTFS_OBS_LOG_ROTATION_SIZE_MB, which the server
+  # does not read. Set them directly; env wins over the subchart's envFrom.
+  extraEnv:
+    # Ceiling on the log directory, independent of rotation cadence, compression
+    # ratio and file count. Well inside logStorageSize below.
+    - name: RUSTFS_OBS_LOG_MAX_TOTAL_SIZE_BYTES
+      value: "268435456"
+    # Rotate on bytes, so the ceiling does not track request volume.
+    - name: RUSTFS_OBS_LOG_MAX_SINGLE_FILE_SIZE_BYTES
+      value: "10485760"
+    # Compression is on by default and compressed files are otherwise kept
+    # forever.
+    - name: RUSTFS_OBS_LOG_COMPRESSED_FILE_RETENTION_DAYS
+      value: "1"
   replicaCount: 1
   # The subchart defaults this on, publishing its console at a placeholder host.
   # The store is only ever reached in-cluster.
