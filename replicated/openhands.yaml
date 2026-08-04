@@ -464,6 +464,16 @@ spec:
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/mc'
         imagePullSecrets:
           - name: '{{repl ImagePullSecretName }}'
+    # THROWAWAY PROBE, NEVER MERGE. Two pre-upgrade sleeps, each under the 600 s
+    # --timeout but 800 s together, to see whether KOTS caps the whole deploy.
+    timeoutProbe:
+      enabled: true
+      count: 2
+      seconds: 400
+      image:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
     rustfs:
       enabled: true
       image:

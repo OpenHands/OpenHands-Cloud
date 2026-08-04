@@ -1,0 +1,51 @@
+{{- /*
+THROWAWAY PROBE, NEVER MERGE. ec-probe-timeout-budget only.
+
+Two pre-upgrade Jobs that each sleep well under --timeout but together exceed it.
+Helm documents --timeout as "time to wait for any individual Kubernetes operation
+(like Jobs for hooks)", so if that is the only deadline both Jobs succeed and the
+upgrade completes. If KOTS imposes a cumulative deploy budget on top, the deploy
+dies partway through the second Job.
+
+Deliberately succeeding rather than failing: the question is whether a long but
+healthy deploy is allowed, which a failing hook cannot answer.
+*/}}
+{{- if .Values.timeoutProbe.enabled }}
+{{- range $i := until (int .Values.timeoutProbe.count) }}
+{{- if $i }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $.Release.Name }}-timeout-probe-{{ $i }}
+  labels:
+    {{- include "openhands.labels" $ | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "{{ sub -3 $i }}"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.labels" $ | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with $.Values.timeoutProbe.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sleep
+          image: "{{ $.Values.timeoutProbe.image.repository }}:{{ $.Values.timeoutProbe.image.tag }}"
+          imagePullPolicy: {{ $.Values.timeoutProbe.image.pullPolicy }}
+          command: ["sh", "-c", "echo probe {{ $i }} start; sleep {{ $.Values.timeoutProbe.seconds }}; echo probe {{ $i }} done"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+{{- end }}
+{{- end }}

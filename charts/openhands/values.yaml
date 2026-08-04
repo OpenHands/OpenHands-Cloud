@@ -728,6 +728,17 @@ minio:
 # it with the existing external-S3 values — no separate wiring:
 #   filestore: {ephemeral: false, type: s3, secure: false,
 #               endpoint: "http://<release>-rustfs-svc:9000", existingSecret: <s3 keys>}
+# THROWAWAY PROBE, NEVER MERGE. See templates/timeout-probe.yaml.
+timeoutProbe:
+  enabled: false
+  count: 2
+  seconds: 400
+  image:
+    repository: docker.io/library/busybox
+    tag: "1.37"
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
 rustfs:
   enabled: false
   image:
