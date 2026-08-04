@@ -73,9 +73,14 @@ $(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.
 	@# The copy lives outside the chart directory. Held inside it, `helm package`
 	@# picks it up and every released chart ships a Chart.yaml.bak alongside the
 	@# real one, because the restore only runs after packaging.
+	@# Chart.lock is restored for the same reason: `helm package -u` regenerates it
+	@# to match the rewritten repositories, and a lock describing a Chart.yaml that
+	@# no longer exists fails `helm dependency build` with an out-of-sync error.
 	@mkdir -p $(BUILDDIR)/.chartbak/$1
 	@cp $(CHARTDIR)/$1/Chart.yaml $(BUILDDIR)/.chartbak/$1/Chart.yaml
-	@trap 'mv $(BUILDDIR)/.chartbak/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml' EXIT; \
+	@if [ -f $(CHARTDIR)/$1/Chart.lock ]; then cp $(CHARTDIR)/$1/Chart.lock $(BUILDDIR)/.chartbak/$1/Chart.lock; fi
+	@trap 'mv $(BUILDDIR)/.chartbak/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml; \
+		if [ -f $(BUILDDIR)/.chartbak/$1/Chart.lock ]; then mv $(BUILDDIR)/.chartbak/$1/Chart.lock $(CHARTDIR)/$1/Chart.lock; fi' EXIT; \
 	for dep in $$$$(yq -r '.dependencies[].name // ""' $(CHARTDIR)/$1/Chart.yaml); do \
 		if [ -d $(CHARTDIR)/$$$$dep ]; then \
 			yq -i "(.dependencies[] | select(.name == \"$$$$dep\")).repository = \"file://../$$$$dep\"" $(CHARTDIR)/$1/Chart.yaml; \
