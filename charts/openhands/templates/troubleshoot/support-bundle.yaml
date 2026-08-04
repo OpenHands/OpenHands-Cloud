@@ -509,9 +509,11 @@ spec:
               when: ">= 1"
               message: "OpenHands LiteLLM deployment is ready"
     {{- end }}
-    {{- /* Analyze whichever bundled object store is active. RustFS is a
-           StatefulSet, MinIO a Deployment, so the analyzer type follows the
-           backend rather than assuming a Deployment exists. */}}
+    {{- /* Analyze whichever bundled object store is active. Both run as a
+           Deployment in the chart's config — MinIO always, and RustFS in the
+           standalone mode the chart pins (the subchart only uses a StatefulSet
+           in distributed mode). The analyzer follows the backend rather than
+           assuming which store exists. */}}
     {{- if eq (include "openhands.objectStore.backend" .) "minio" }}
     - deploymentStatus:
         name: {{ .Release.Name }}-minio
@@ -525,16 +527,16 @@ spec:
               message: "OpenHands MinIO deployment is ready"
     {{- end }}
     {{- if eq (include "openhands.objectStore.backend" .) "rustfs" }}
-    - statefulsetStatus:
+    - deploymentStatus:
         name: {{ .Release.Name }}-rustfs
         namespace: {{ .Release.Namespace }}
         outcomes:
           - fail:
               when: "< 1"
-              message: "OpenHands RustFS statefulset is not ready"
+              message: "OpenHands RustFS deployment is not ready"
           - pass:
               when: ">= 1"
-              message: "OpenHands RustFS statefulset is ready"
+              message: "OpenHands RustFS deployment is ready"
     {{- end }}
     {{- if index .Values "runtime-api" "enabled" }}
     - deploymentStatus:
