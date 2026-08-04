@@ -123,3 +123,66 @@ tests:
       rustfs.secret.rustfs.access_key: something-else
     asserts:
       - notFailedTemplate: {}
+
+  # --- migration repoint --------------------------------------------------
+  - it: repoints the app at RustFS once the migration switch is on, MinIO still deployed
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-rustfs-svc:9000
+
+  - it: the migration switch is inert without RustFS deployed, so precedence stays MinIO
+    documentSelector:
+      path: metadata.name
+      value: openhands
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+      rustfs.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+
+  # --- migration guards ---------------------------------------------------
+  - it: fails the migration when RustFS is not deployed as the destination
+    template: templates/validations.yaml
+    set:
+      minio.enabled: true
+      rustfs.enabled: false
+      filestore.migration.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.migration.enabled is true but rustfs.enabled is false, so there is no destination to copy into. Set rustfs.enabled=true."
+
+  - it: fails the migration when MinIO is not deployed as the source
+    template: templates/validations.yaml
+    set:
+      minio.enabled: false
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled=true until the migration has completed, then retire MinIO in a later release."
+
+  - it: does not guard the migration when the switch is off
+    template: templates/validations.yaml
+    set:
+      minio.enabled: true
+      rustfs.enabled: true
+      filestore.migration.enabled: false
+    asserts:
+      - notFailedTemplate: {}
