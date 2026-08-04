@@ -484,10 +484,18 @@ running so its PVC stays available as a rollback point.
 
    Because the Job runs after consumers are repointed, there is a window in which
    a conversation that predates the migration returns no history. It does not
-   error, so nothing in the UI or a status check marks it. Measured at 23 seconds
-   for around 200 objects, and it grows with the amount of data to copy. Passing
-   `--wait` lengthens it, because Helm then holds the Job until the application is
-   ready instead of letting the copy overlap the rollout.
+   error: the request succeeds and returns nothing, so neither the UI nor a status
+   check marks it, and the application logs nothing for the whole window.
+
+   The window scales with the number of objects, at roughly a fixed 13 seconds plus
+   150 objects per second. Measured at 24 seconds for 220 objects and 159 seconds
+   for 22,000. The copy is bound by object count rather than size, so an install with
+   many small conversation events is slower than the byte total suggests.
+
+   Plan for it: the copy has to finish inside `--timeout`, and at around 60,000
+   objects it exhausts a 600 second budget on its own. Note also that the copy
+   repeats on every later upgrade until MinIO is disabled, so each unrelated
+   configuration change pays the same window again.
 
 2. Check that the application works and that the objects are present in RustFS.
 
