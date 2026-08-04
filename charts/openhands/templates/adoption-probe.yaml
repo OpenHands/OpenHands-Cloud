@@ -1,0 +1,20 @@
+{{- /*
+THROWAWAY PROBE, NEVER MERGE. ec-probe-apply-adoption only.
+
+One inert ConfigMap that no earlier release renders. Create it by hand before
+deploying this release, so the upgrade's apply meets a resource that is present
+in the new manifest, absent from the previous one, and already in the cluster.
+That is the condition release 1361 died on, and the one a pre-upgrade
+orchestrator creates when it provisions RustFS before the apply.
+
+Exercises both failure modes at once: helm's "invalid ownership metadata"
+refusal, and the server-side-apply field-manager conflict.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-adoption-probe
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+data:
+  probe: apply-adoption
