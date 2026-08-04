@@ -750,12 +750,8 @@ rustfs:
     rustfs:
       access_key: "default"
       secret_key: "notasecret"
-  # Log retention. The subchart rotates logs but ships log_rotation unset, so it
-  # emits no RUSTFS_OBS_LOG_KEEP_FILES and nothing ever prunes the rotated files
-  # (measured at 6.1 GB on a 1Gi PVC). Setting size makes rotation byte-triggered
-  # so the ceiling is size × (keep_files + 1) ≈ 900 MB, independent of read load
-  # and inside the logStorageSize PVC below. log_level: warn because the volume
-  # is 100% INFO span tracing on a healthy store. See rustfs-log-retention-plan.md.
+  # The subchart leaves log_rotation unset, so nothing prunes rotated logs. Set
+  # retention to keep the log volume bounded.
   config:
     rustfs:
       log_level: warn
