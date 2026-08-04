@@ -752,7 +752,11 @@ rustfs:
     rustfs:
       log_level: warn
       log_rotation:
-        time: hour
+        # Ceiling on the file count, applied before any size cap. log_rotation.time
+        # is deliberately unset: the server accepts only minutely/hourly/daily and
+        # silently treats anything else as daily, so the subchart's documented
+        # "hour" is worse than its own default of hourly. Cadence is immaterial
+        # anyway, since MAX_SINGLE_FILE_SIZE_BYTES below is what rotation fires on.
         keep_files: 8
   # The byte-based retention keys have no values path in the subchart, and its
   # log_rotation.size renders RUSTFS_OBS_LOG_ROTATION_SIZE_MB, which the server
@@ -765,6 +769,13 @@ rustfs:
     # Rotate on bytes, so the ceiling does not track request volume.
     - name: RUSTFS_OBS_LOG_MAX_SINGLE_FILE_SIZE_BYTES
       value: "10485760"
+    # Gates every cap above: a file younger than this is never eligible for
+    # cleanup, so the default of 3600 lets the directory grow to the write rate
+    # times an hour no matter what the ceilings say. Measured: at debug level with
+    # an 8Mi ceiling the directory still reached 1.27Gi in 92s until this was
+    # lowered.
+    - name: RUSTFS_OBS_LOG_MIN_FILE_AGE_SECONDS
+      value: "60"
     # Cleanup runs on an interval, so the peak overshoots the ceiling by roughly
     # the write rate times this value. Kept short to bound that transient.
     - name: RUSTFS_OBS_LOG_CLEANUP_INTERVAL_SECONDS
