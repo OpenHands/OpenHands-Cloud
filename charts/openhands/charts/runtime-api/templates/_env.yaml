@@ -100,7 +100,7 @@
 {{- if .Values.datadog.enabled }}
 # Datadog environment variables
 - name: DD_AGENT_HOST
-  value: "datadog-agent.all-hands-system.svc.cluster.local"
+  value: {{ .Values.datadog.agentHost | quote }}
 - name: DD_TRACE_AGENT_PORT
   value: "8126"
 - name: DD_DOGSTATSD_PORT

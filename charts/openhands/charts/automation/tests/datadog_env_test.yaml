@@ -1,0 +1,43 @@
+suite: datadog env wiring
+templates:
+  - templates/deployment.yaml
+tests:
+  # The SaaS deployment relies on the DD_* env being emitted by default,
+  # pointed at its agent service.
+  - it: emits DD_* env with the SaaS agent host by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DD_AGENT_HOST
+            value: datadog-agent.all-hands-system.svc.cluster.local
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DD_TRACE_ENABLED
+            value: "true"
+
+  - it: honors an overridden agent host and env tag
+    set:
+      datadog.env: prod
+      datadog.agentHost: datadog-agent.datadog.svc.cluster.local
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DD_AGENT_HOST
+            value: datadog-agent.datadog.svc.cluster.local
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DD_ENV
+            value: prod
+
+  - it: omits the DD_* env vars when disabled
+    set:
+      datadog.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="DD_AGENT_HOST")]
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="DD_TRACE_ENABLED")]

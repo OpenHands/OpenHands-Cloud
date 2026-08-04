@@ -1,7 +1,7 @@
 # `infra` chart
 
-Cluster-wide infrastructure (cert-manager, trust-manager) that the OpenHands
-application chart depends on at runtime.
+Cluster-wide infrastructure (cert-manager, trust-manager, the optional
+Datadog Agent) that the OpenHands application chart depends on at runtime.
 
 > **This chart exists solely to support Replicated installations.** It is
 > not published to OCI and is not intended for standalone use. Operators
@@ -36,17 +36,23 @@ application chart runs.
   containerd drop-in. It targets Embedded Cluster (k0s) and discovers the
   containerd config path at runtime, so it works regardless of the EC
   `--data-dir`. Requires a Debian/Ubuntu host with internet access.
+- The `datadog` subchart dep installs the Datadog node Agent DaemonSet and
+  Cluster Agent when `datadog.enabled: true`. Workloads reach the agent
+  through the chart's node-local Service (pinned to the name
+  `datadog-agent`); the openhands HelmChart CR points the app services'
+  `DD_AGENT_HOST` at it.
 
 ## Releases
 
-Three Replicated HelmChart manifests reference this chart with different
+Four Replicated HelmChart manifests reference this chart with different
 toggles:
 
-| Manifest                              | `cert-manager.enabled` | `trust-manager.enabled` | `crdCheck.enabled` | `sysbox.enabled`              | KOTS weight |
-|---------------------------------------|------------------------|-------------------------|--------------------|-------------------------------|-------------|
-| `replicated/infra-cert-manager.yaml`  | `true`                 | `false`                 | `false`            | `false`                       | 5           |
-| `replicated/infra-trust-manager.yaml` | `false`                | `true`                  | `true`             | `false`                       | 6           |
-| `replicated/infra-sysbox.yaml`        | `false`                | `false`                 | `false`            | `true` when Sandbox Isolation = Sysbox | 7           |
+| Manifest                              | `cert-manager.enabled` | `trust-manager.enabled` | `crdCheck.enabled` | `sysbox.enabled`              | `datadog.enabled`         | KOTS weight |
+|---------------------------------------|------------------------|-------------------------|--------------------|-------------------------------|---------------------------|-------------|
+| `replicated/infra-cert-manager.yaml`  | `true`                 | `false`                 | `false`            | `false`                       | `false`                   | 5           |
+| `replicated/infra-trust-manager.yaml` | `false`                | `true`                  | `true`             | `false`                       | `false`                   | 6           |
+| `replicated/infra-sysbox.yaml`        | `false`                | `false`                 | `false`            | `true` when Sandbox Isolation = Sysbox | `false`          | 7           |
+| `replicated/infra-datadog.yaml`       | `false`                | `false`                 | `false`            | `false`                       | `true` when Datadog Monitoring is enabled | 8           |
 
 The trust-manager release runs the CRD check before applying its own
 resources, because `helm install --wait` only waits for pods to become

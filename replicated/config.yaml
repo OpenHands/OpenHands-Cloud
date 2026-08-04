@@ -1388,6 +1388,59 @@ spec:
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
 
+    - name: datadog_configuration
+      title: Datadog Monitoring
+      description: Optionally install the Datadog Agent to monitor this installation with your Datadog account
+      items:
+        - name: datadog_enabled
+          title: Enable Datadog
+          help_text: Install the Datadog node Agent and Cluster Agent into the cluster. They ship infrastructure metrics and Kubernetes events to your Datadog account, plus container logs and application traces as configured below.
+          type: bool
+          default: "0"
+        - name: datadog_api_key
+          title: Datadog API Key
+          help_text: An API key from your Datadog organization (Organization Settings → API Keys).
+          type: password
+          when: 'repl{{ ConfigOptionEquals "datadog_enabled" "1" }}'
+          required: true
+        - name: datadog_site
+          title: Datadog Site
+          help_text: The Datadog site to send data to, matching where your organization is hosted — e.g. datadoghq.com (US1), us3.datadoghq.com, us5.datadoghq.com, datadoghq.eu (EU1), or ap1.datadoghq.com.
+          type: text
+          default: "datadoghq.com"
+          when: 'repl{{ ConfigOptionEquals "datadog_enabled" "1" }}'
+          required: true
+        - name: datadog_cluster_name
+          title: Cluster Name
+          help_text: The kube_cluster_name tag applied to everything this installation sends, so it stays distinguishable if you monitor multiple clusters.
+          type: text
+          default: "openhands"
+          when: 'repl{{ ConfigOptionEquals "datadog_enabled" "1" }}'
+          required: true
+          validation:
+            regex:
+              pattern: '^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$'
+              message: Must start with a letter and contain only lowercase letters, numbers, hyphens, and dots.
+        - name: datadog_env
+          title: Environment Tag
+          help_text: The env tag applied to metrics, logs, and traces from this installation (e.g. prod, staging).
+          type: text
+          default: "prod"
+          when: 'repl{{ ConfigOptionEquals "datadog_enabled" "1" }}'
+          required: true
+        - name: datadog_logs_enabled
+          title: Collect Container Logs
+          help_text: Tail stdout/stderr of every container in the cluster — including OpenHands sandboxes, which run user workloads — and ship them to Datadog Log Management.
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "datadog_enabled" "1" }}'
+        - name: datadog_apm_enabled
+          title: Collect Application Traces (APM)
+          help_text: Enable tracing instrumentation in the OpenHands services and send application traces to Datadog APM.
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "datadog_enabled" "1" }}'
+
     - name: automations_configuration
       title: Automations
       description: Configure the Automations UI and backend

@@ -449,8 +449,9 @@ spec:
     # config.yaml; CI (check-secret-checksum) fails if a password field is missing here.
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
-    # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack,
+    # laminar, datadog).
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key") (ConfigOption "datadog_api_key")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -469,6 +470,13 @@ spec:
       host: 'repl{{ ConfigOption "gitlab_host" }}'
     slack:
       enabled: repl{{ ConfigOptionEquals "slack_enabled" "1" }}
+    # The automation subchart defaults datadog.enabled on (the SaaS agent it
+    # points at always exists there). Default it off here; the Datadog APM
+    # optionalValues block below re-enables it against the local agent.
+    automation:
+      datadog:
+        enabled: false
+
     smtp:
       enabled: repl{{ ConfigOptionEquals "smtp_enabled" "1" }}
       host: 'repl{{ ConfigOption "smtp_host" }}'
@@ -1101,6 +1109,31 @@ spec:
           rabbitmq:
             persistence:
               storageClass: "openebs-hostpath"
+    # Datadog APM wiring: point each service's DD_* env at the node-local
+    # agent Service installed by the infra-datadog release
+    # (replicated/infra-datadog.yaml) and switch its tracing on. Log
+    # collection needs no wiring here — the agent tails container stdout
+    # directly from the node.
+    - when: '{{repl and (ConfigOptionEquals "datadog_enabled" "1") (ConfigOptionEquals "datadog_apm_enabled" "1") }}'
+      recursiveMerge: true
+      values:
+        datadog:
+          enabled: true
+          env: '{{repl ConfigOption "datadog_env" }}'
+          agentHost: datadog-agent.datadog.svc.cluster.local
+        runtime-api:
+          datadog:
+            enabled: true
+            env: '{{repl ConfigOption "datadog_env" }}'
+            agentHost: datadog-agent.datadog.svc.cluster.local
+        # Only takes effect when the Automations option also deploys the
+        # subchart; harmless otherwise.
+        automation:
+          datadog:
+            enabled: true
+            env: '{{repl ConfigOption "datadog_env" }}'
+            agentHost: datadog-agent.datadog.svc.cluster.local
+
     # OEM User Creation Flow: register the privileged
     # POST /api/organizations/provision-user endpoint so superadmins can
     # provision users (and mint per-user API keys) into orgs they create.

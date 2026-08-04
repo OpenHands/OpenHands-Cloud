@@ -5,8 +5,11 @@ dependencies:
 - name: trust-manager
   repository: oci://quay.io/jetstack/charts
   version: 0.22.1
+- name: datadog
+  repository: https://helm.datadoghq.com
+  version: 3.234.0
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
-digest: sha256:ee6c9e0ba7c097cc59f0dc12409169a11831b548283b77ec7f8f90a94869ebf5
-generated: "2026-05-27T10:31:04.277099-04:00"
+digest: sha256:3246dd1647b597f8cd0a1bcd42fb3b4a3fdc61426e983850b5606b8f5a4211cc
+generated: "2026-08-04T08:48:45.860016-04:00"

@@ -16,6 +16,9 @@ spec:
     # The Sysbox installer DaemonSet runs in kube-system (privileged, host
     # namespaces), so KOTS must provision the image pull secret there too.
     - kube-system
+    # Home of the optional Datadog Agent (infra-datadog release); listed so
+    # KOTS provisions the image pull secret for the proxied agent images.
+    - datadog
 
   statusInformers:
     # openhands

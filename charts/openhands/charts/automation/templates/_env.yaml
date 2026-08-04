@@ -113,9 +113,10 @@
 - name: LMNR_FORCE_HTTP
   value: {{ .Values.lmnrForceHttp | quote }}
 {{- end }}
+{{- if .Values.datadog.enabled }}
 # Datadog configuration
 - name: DD_AGENT_HOST
-  value: "datadog-agent.all-hands-system.svc.cluster.local"
+  value: {{ .Values.datadog.agentHost | quote }}
 - name: DD_TRACE_AGENT_PORT
   value: "8126"
 - name: DD_SERVICE
@@ -124,6 +125,7 @@
   value: {{ .Values.datadog.env | quote }}
 - name: DD_TRACE_ENABLED
   value: "true"
+{{- end }}
 {{- end }}
 
 {{/*

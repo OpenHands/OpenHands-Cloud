@@ -1,0 +1,87 @@
+apiVersion: kots.io/v1beta2
+kind: HelmChart
+metadata:
+  name: infra-datadog
+spec:
+  chart:
+    name: infra
+  releaseName: infra-datadog
+  namespace: datadog
+  # Weight 8 runs after the other infra releases (cert-manager 5,
+  # trust-manager 6, sysbox 7) and before the openhands app (10). Nothing
+  # depends on the agent being up, but installing it first means the app's
+  # startup logs and traces are captured from the first boot.
+  weight: 8
+  helmUpgradeFlags: ["--wait", "--timeout", "600s"]
+  values:
+    # This release only carries the Datadog Agent; cert-manager and
+    # trust-manager are installed by their own releases.
+    cert-manager:
+      enabled: false
+    trust-manager:
+      enabled: false
+    datadog:
+      # Off by default. The "Enable Datadog" config option flips it on below.
+      enabled: false
+      # Rewrites both images the chart deploys (agent, cluster-agent).
+      registry: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/gcr.io/datadoghq'
+      agents:
+        image:
+          pullSecrets:
+            - name: '{{repl ImagePullSecretName }}'
+      clusterAgent:
+        image:
+          pullSecrets:
+            - name: '{{repl ImagePullSecretName }}'
+
+  optionalValues:
+    - when: '{{repl ConfigOptionEquals "datadog_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        datadog:
+          enabled: true
+          datadog:
+            apiKey: '{{repl ConfigOption "datadog_api_key" }}'
+            site: '{{repl ConfigOption "datadog_site" }}'
+            clusterName: '{{repl ConfigOption "datadog_cluster_name" }}'
+            # DD_ENV on the agent containers sets the global env applied to
+            # everything the agent collects that carries no env of its own
+            # (host metrics, container logs, Kubernetes events).
+            env:
+              - name: DD_ENV
+                value: '{{repl ConfigOption "datadog_env" }}'
+            logs:
+              enabled: repl{{ ConfigOptionEquals "datadog_logs_enabled" "1" }}
+              containerCollectAll: repl{{ ConfigOptionEquals "datadog_logs_enabled" "1" }}
+    # Outbound intake goes to the configured Datadog site, so the agent needs
+    # the egress proxy when one is configured. DD_PROXY_* only applies to
+    # traffic to Datadog — kubelet/apiserver connections are unaffected.
+    # datadog.env is an array and recursiveMerge replaces arrays, so DD_ENV
+    # from the block above is repeated here.
+    - when: '{{repl and (ConfigOptionEquals "datadog_enabled" "1") (ConfigOptionEquals "proxy_enabled" "1") }}'
+      recursiveMerge: true
+      values:
+        datadog:
+          datadog:
+            env:
+              - name: DD_ENV
+                value: '{{repl ConfigOption "datadog_env" }}'
+              - name: DD_PROXY_HTTP
+                value: '{{repl ConfigOption "http_proxy" }}'
+              - name: DD_PROXY_HTTPS
+                value: '{{repl ConfigOption "https_proxy" }}'
+    - when: '{{repl HasLocalRegistry }}'
+      recursiveMerge: true
+      values:
+        datadog:
+          registry: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}'
+
+  builder:
+    # Render only the Datadog Agent so `replicated release` discovers its
+    # images; cert-manager/trust-manager images come from their own releases.
+    cert-manager:
+      enabled: false
+    trust-manager:
+      enabled: false
+    datadog:
+      enabled: true

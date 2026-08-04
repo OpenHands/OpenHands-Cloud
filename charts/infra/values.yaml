@@ -55,6 +55,73 @@ trust-manager:
     limits:
       memory: 64Mi
 
+# Datadog Agent (node DaemonSet + cluster agent). Disabled by default; the
+# Replicated "Datadog Monitoring" config group turns it on and supplies the
+# API key, site, and tags. Values under the inner `datadog:` key are the
+# upstream chart's own `datadog` group (the dependency is also named datadog).
+datadog:
+  enabled: false
+  datadog:
+    # The upstream chart deploys the Datadog Operator (plus its CRDs) by
+    # default alongside the classic DaemonSet install. Nothing here uses the
+    # operator, and its image ships from a registry the classic `registry`
+    # override below does not rewrite, so keep the install to the agent and
+    # cluster-agent only.
+    operator:
+      enabled: false
+    # The embedded cluster's (k0s) kubelet serves a self-signed certificate
+    # that is not signed by the cluster CA the agent validates against, so
+    # kubelet checks fail closed with verification on.
+    kubelet:
+      tlsVerify: false
+    # Tail stdout/stderr of every container on the node. This includes the
+    # OpenHands sandboxes (user workloads); the Replicated layer can switch
+    # both off via the "Collect Container Logs" config option.
+    logs:
+      enabled: true
+      containerCollectAll: true
+    # APM stays at chart defaults: the trace-agent listens on TCP 8126 inside
+    # the pod and the chart's node-local Service (internalTrafficPolicy:
+    # Local) exposes it, so workloads reach the agent on their own node via
+    # DD_AGENT_HOST=<service>.<namespace>.svc.cluster.local with no hostPort.
+  agents:
+    # The node-local Service workloads send traces/dogstatsd to is named after
+    # the Helm release by default. Pin it so DD_AGENT_HOST wiring (the
+    # openhands HelmChart CR) does not depend on the release name.
+    localService:
+      overrideName: datadog-agent
+    # The upstream chart sets no resources; these are conservative defaults in
+    # line with the other components in this chart.
+    containers:
+      agent:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+      traceAgent:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+      processAgent:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+  clusterAgent:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
 # Pre-install/pre-upgrade hook that waits for required CRDs to be Established
 # before the chart applies resources that depend on them. Use this when a
 # release in this chart references CRDs installed by a separate release — for

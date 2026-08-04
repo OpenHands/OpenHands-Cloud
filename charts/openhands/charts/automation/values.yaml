@@ -160,7 +160,12 @@ automationWebhookSecretFromSecret:
 
 # Datadog configuration
 datadog:
+  # On by default: the SaaS deployment always runs an agent at the host below.
+  enabled: true
   env: "dev"
+  # Host the DD_* env vars point at. The default is the agent Service of the
+  # OpenHands Cloud (SaaS) deployment.
+  agentHost: "datadog-agent.all-hands-system.svc.cluster.local"
 
 # Env vars passed directly to the container
 env: {}

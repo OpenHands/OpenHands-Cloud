@@ -326,6 +326,9 @@ monitoring:
 datadog:
   enabled: false
   env: "dev"
+  # Host the DD_* env vars point at. The default is the agent Service of the
+  # OpenHands Cloud (SaaS) deployment.
+  agentHost: "datadog-agent.all-hands-system.svc.cluster.local"
 
 replicated:
   enabled: false
