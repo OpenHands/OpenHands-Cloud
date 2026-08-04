@@ -47,5 +47,5 @@ dependencies:
 - name: device-plugin
   repository: ""
   version: '*'
-digest: sha256:81001d0244e69166b42d16abb81df294e664a91ec8e268736ebd2dc7afb34d3c
-generated: "2026-08-03T16:50:36.593345669Z"
+digest: sha256:0ad41488e887e41253f880752ce1c70e3479600eaeea2ceecbf561be35d69415
+generated: "2026-08-04T10:48:38.125056-04:00"
