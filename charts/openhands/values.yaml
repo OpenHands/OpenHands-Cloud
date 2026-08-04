@@ -727,18 +727,42 @@ minio:
       memory: 512Mi
       cpu: 100m
 
-# Opt-in alternative to the bundled MinIO. RustFS speaks S3, so point the app at
-# it with the ordinary filestore values — no separate wiring:
-#   filestore: {type: s3, endpoint: "http://<release>-rustfs-svc:9000",
-#               existingSecret: <s3 keys>}
+# Opt-in bundled object store, deployed alongside MinIO rather than instead of
+# it. Enabling it deploys RustFS but does NOT repoint the app: MinIO keeps
+# precedence while both are enabled (see templates/_objectstore.tpl), so the
+# store comes up empty and consumed by nothing until a later migration copies
+# the data across and repoints consumers. With MinIO disabled, RustFS becomes
+# the sole bundled store and the app targets it through the ordinary filestore
+# values — no separate wiring.
 rustfs:
   enabled: false
+  image:
+    rustfs:
+      repository: rustfs/rustfs
+      # The subchart treats an empty tag as "use my appVersion", but the bucket
+      # Job needs a concrete one. Bump this together with the rustfs chart pin in
+      # Chart.yaml.
+      tag: "1.0.0-beta.10"
+      pullPolicy: IfNotPresent
   # The subchart refuses to render without credentials. These match
   # minio.svcaccts[0] so both bundled stores answer to the same pair.
   secret:
     rustfs:
       access_key: "default"
       secret_key: "notasecret"
+  # Log retention. The subchart rotates logs but ships log_rotation unset, so it
+  # emits no RUSTFS_OBS_LOG_KEEP_FILES and nothing ever prunes the rotated files
+  # (measured at 6.1 GB on a 1Gi PVC). Setting size makes rotation byte-triggered
+  # so the ceiling is size × (keep_files + 1) ≈ 900 MB, independent of read load
+  # and inside the logStorageSize PVC below. log_level: warn because the volume
+  # is 100% INFO span tracing on a healthy store. See rustfs-log-retention-plan.md.
+  config:
+    rustfs:
+      log_level: warn
+      log_rotation:
+        size: 100
+        time: hour
+        keep_files: 8
   replicaCount: 1
   # The subchart defaults this on, publishing its console at a placeholder host.
   # The store is only ever reached in-cluster.

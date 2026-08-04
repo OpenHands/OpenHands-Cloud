@@ -29,3 +29,19 @@ external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{/*
+Credential-match guard for the bundled object store. The app is handed one
+credential pair for whichever bundled store is active (see
+templates/_objectstore.tpl), sourced from minio.svcaccts[0], so RustFS must
+answer to the same pair or object access breaks the moment consumers switch to
+it. Scoped to both stores being deployed — the state in which a switch is
+imminent — rather than to .Values.enabled, since the bundled store is shared
+with runtime-api and automation and matters even in a server-less release.
+*/}}
+{{- if and .Values.minio.enabled .Values.rustfs.enabled -}}
+{{- $mcAccess := (index .Values.minio.svcaccts 0).accessKey -}}
+{{- $mcSecret := (index .Values.minio.svcaccts 0).secretKey -}}
+{{- if or (ne (.Values.rustfs.secret.rustfs.access_key | toString) ($mcAccess | toString)) (ne (.Values.rustfs.secret.rustfs.secret_key | toString) ($mcSecret | toString)) -}}
+{{- fail "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey." -}}
+{{- end -}}
+{{- end -}}
