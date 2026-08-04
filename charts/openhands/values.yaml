@@ -765,6 +765,10 @@ rustfs:
     # Rotate on bytes, so the ceiling does not track request volume.
     - name: RUSTFS_OBS_LOG_MAX_SINGLE_FILE_SIZE_BYTES
       value: "10485760"
+    # Cleanup runs on an interval, so the peak overshoots the ceiling by roughly
+    # the write rate times this value. Kept short to bound that transient.
+    - name: RUSTFS_OBS_LOG_CLEANUP_INTERVAL_SECONDS
+      value: "60"
     # Compression is on by default and compressed files are otherwise kept
     # forever.
     - name: RUSTFS_OBS_LOG_COMPRESSED_FILE_RETENTION_DAYS
