@@ -455,16 +455,17 @@ To use an external PostgreSQL database instead of deploying one with the chart:
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,
-disable the ephemeral filestore and configure the connection:
+disable the bundled MinIO and configure the connection:
 
 ```yaml
+minio:
+  enabled: false            # stops deploying the in-cluster MinIO
 filestore:
-  ephemeral: false          # stops deploying the in-cluster MinIO
   type: s3
   bucket: your-bucket-name
   region: your-s3-region
   # endpoint: https://your-s3-endpoint   # only for S3-compatible stores (MinIO/R2/…); omit for AWS S3
-  # secure: false                        # only for a plain-HTTP endpoint
+  #                                      # TLS is inferred from the URL scheme
   existingSecret: s3-credentials         # omit to use IRSA / Pod Identity instead
 ```
 

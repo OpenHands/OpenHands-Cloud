@@ -20,18 +20,18 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "ingress/enabled.*want boolean"
-  - it: rejects a non-boolean filestore.secure
+  - it: rejects a storage backend the app does not support
     set:
-      filestore.secure: "yes"
+      filestore.type: local
     asserts:
       - failedTemplate:
-          errorPattern: "filestore/secure.*want boolean"
-  - it: rejects a non-boolean filestore.ephemeral
+          errorPattern: "filestore/type"
+  - it: rejects a non-boolean minio.enabled
     set:
-      filestore.ephemeral: "nope"
+      minio.enabled: "yes"
     asserts:
       - failedTemplate:
-          errorPattern: "filestore/ephemeral.*want boolean"
+          errorPattern: "minio/enabled.*want boolean"
   - it: rejects a non-string filestore.region
     set:
       filestore.region: true
@@ -47,7 +47,6 @@ tests:
       filestore.bucket: prod-sessions
       filestore.region: us-west-2
       filestore.endpoint: https://minio.example.com
-      filestore.secure: false
       filestore.existingSecret: s3-creds
       filestore.accessKeyIdKey: access-key
       filestore.secretAccessKeyKey: secret-key

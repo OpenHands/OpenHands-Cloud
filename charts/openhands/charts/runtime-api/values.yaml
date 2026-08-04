@@ -213,7 +213,7 @@ cleanup:
 # (endpoint defaults to http://<release>-minio:9000) or any S3-compatible store.
 runtimeFileArchive:
   enabled: false
-  storeType: google_cloud # google_cloud | s3
+  storeType: google_cloud # s3 | gcs (alias: google_cloud)
   # Existing object-storage bucket that receives the archives. The chart does
   # not create it; provision it and grant the cleanup identity write access.
   bucket: ""
@@ -225,17 +225,20 @@ runtimeFileArchive:
   format: both # both, git-delta (compact), or tar.gz.
   # S3-compatible connection — only used when storeType=s3.
   s3:
-    # Empty endpoint -> bundled in-cluster minio (http://<release>-minio:9000),
-    # UNLESS region or existingSecret is set (external S3), in which case the
-    # endpoint is left unset so boto3 targets the AWS regional endpoint.
+    # Leave empty for AWS (boto3 targets the regional endpoint); set for any
+    # other S3-compatible store, e.g. the parent chart's bundled MinIO:
+    # http://<release>-minio:9000. TLS is inferred from the URL scheme.
     endpoint: ""
-    region: "" # Set for external (non-minio) S3; also drops the minio endpoint default.
-    secure: false # true for HTTPS endpoints (external S3).
-    # Defaults to the bundled minio dev creds (match minio.svcaccts). Override
-    # for an external store, or use existingSecret below.
-    accessKeyId: "default"
-    secretAccessKey: "notasecret"
-    existingSecret: "" # Optional secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.
+    region: "" # AWS region of the bucket; required for real AWS S3.
+    # Credentials — first match wins: existingSecret, inline
+    # accessKeyId/secretAccessKey, else the pod's ambient AWS identity
+    # (IRSA / Pod Identity / instance profile). For the bundled MinIO, set the
+    # inline pair to the parent chart's minio.svcaccts credentials.
+    existingSecret: "" # Secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY keys.
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKeyId: ""
+    secretAccessKey: ""
 
 warmRuntimes:
   enabled: false

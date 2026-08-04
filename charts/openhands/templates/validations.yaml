@@ -19,10 +19,10 @@ contents before recreating it — so with purge on, every ordinary upgrade of a
 persistent install destroys the conversation and session files. Deliberately NOT
 scoped to .Values.enabled: the bundled store is shared with runtime-api and
 automation, so the data is at risk even in a server-less release. Scoped instead
-to filestore.ephemeral, which is what deploys the bundled store at all, so
+to minio.enabled, which is what deploys the bundled store at all, so
 external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
 */}}
-{{- if .Values.filestore.ephemeral -}}
+{{- if .Values.minio.enabled -}}
 {{- range .Values.minio.buckets -}}
 {{- if .purge -}}
 {{- fail (printf "minio.buckets entry %q sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data." .name) -}}

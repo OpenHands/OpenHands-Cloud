@@ -453,9 +453,13 @@ spec:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
       auth:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
+    # Conversation/session files live on the bundled MinIO, which is durable
+    # here (persistence below). With no endpoint or credentials configured,
+    # the app targets the bundled instance automatically.
     filestore:
-      ephemeral: true
+      type: s3
     minio:
+      enabled: true
       persistence:
         enabled: true
       resources:
@@ -670,10 +674,18 @@ spec:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+          # Uploaded automation packages must survive pod replacement, so store
+          # them on the bundled MinIO (persistent here — minio.persistence
+          # above) instead of the pod filesystem.
           filestore:
-            type: local
-          env:
-            LOCAL_STORAGE_PATH: /tmp/automation
+            type: s3
+            endpoint: http://openhands-minio:9000
+            # The bundled MinIO's bucket job only creates the parent chart's
+            # buckets, so the service provisions its own on startup.
+            createBucket: true
+            # Matches the parent chart's minio.svcaccts credentials.
+            accessKey: default
+            secretKey: notasecret
           database:
             createDatabaseUser: true
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'

@@ -101,38 +101,42 @@ agentServerEnv: {}
 integrations:
   resolverLabel: "openhands"
 
+# Object storage for conversation/session files. Always a durable object
+# store: any S3-compatible store (AWS S3, the bundled MinIO, R2, ...) or GCS.
+# To use the bundled MinIO, set minio.enabled: true and type: s3 — with no
+# endpoint or credentials configured, the app targets the bundled instance
+# automatically.
 filestore:
-  # ephemeral: true deploys the bundled in-cluster MinIO (a conditional
-  # dependency) and points the app at it — handy for POC/feature envs. NOTE the
-  # name is misleading: the bundled MinIO is only non-persistent with THIS
-  # chart's minio.persistence.enabled: false default, and Replicated installs
-  # override it to true (replicated/openhands.yaml), so those hold durable
-  # customer data in a PVC. Treat the bundled store as persistent unless you
-  # have checked minio.persistence for the install in front of you. For a
-  # managed store set ephemeral: false and use an external store (S3 or GCS).
-  ephemeral: false
-  # Bucket name (S3/GCS) or MinIO bucket for conversation/session file storage.
+  # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
+  # template renders whichever spelling the app natively reads.
+  type: gcs
+
+  # Bucket to store conversation/session files in (both backends).
   bucket: openhands-sessions
-  # Store backend when ephemeral: false. "s3" (AWS S3 or any S3-compatible store)
-  # or "google_cloud" / "gcs" (GCS via Workload Identity). Empty keeps the legacy
-  # behavior (FILE_STORE set to this raw value). The external-S3 path below also
-  # auto-engages if any of region/endpoint/existingSecret is set.
-  type: ""
-  # --- External S3 (used when type: s3, or any field below is set) ---
+
+  # s3 only. Leave empty for AWS (boto3 targets the regional endpoint) or for
+  # the bundled MinIO (minio.enabled). Set for any other S3-compatible store.
+  # TLS is inferred from the URL scheme — an http:// endpoint renders
+  # AWS_S3_SECURE=false.
+  endpoint: ""
   # AWS region of the bucket. Required for real AWS S3 (boto3 needs it to sign).
   region: ""
-  # Custom endpoint for S3-compatible stores (MinIO/R2/GCS-interop/…). Leave
-  # empty for real AWS S3 so boto3 uses the regional endpoint.
-  endpoint: ""
-  # Use TLS. Defaults to true when unset; set false only for a plain-HTTP
-  # S3-compatible endpoint.
-  secure: true
-  # Name of an existing Secret holding AWS credentials. Omit to use the pod's
-  # ambient AWS identity (IRSA / Pod Identity / instance profile) with no keys.
+
+  # s3 credentials — first match wins:
+  #   1. existingSecret: Secret holding the access key pair (key names below)
+  #   2. accessKey/secretKey: inline, for throwaway/dev environments only
+  #   3. minio.enabled: the bundled MinIO's minio.svcaccts credentials
+  #   4. none: ambient AWS identity (IRSA / Pod Identity / instance profile)
+  # google_cloud always uses ambient identity (Workload Identity / ADC).
   existingSecret: ""
-  # Keys within existingSecret (defaults match the AWS SDK env var names).
   accessKeyIdKey: AWS_ACCESS_KEY_ID
   secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  accessKey: ""
+  secretKey: ""
+
+  # Optional SHARED_EVENT_STORAGE_PROVIDER override ("aws" | "gcp"); when empty
+  # the app derives the provider from FILE_STORE.
+  provider: ""
 
 # Workspace archiving (app-server, explicit-delete path): before a still-running
 # sandbox is deleted, copy its workspace to object storage so the agent's work
@@ -142,12 +146,12 @@ filestore:
 #
 # storeType: "google_cloud" uses the app-server ServiceAccount's Workload
 # Identity (GKE; needs roles/storage.objectAdmin on the bucket). "s3" uses the
-# AWS_S3_*/AWS_*_KEY env, already populated from the in-cluster minio when
-# filestore.ephemeral=true — so self-hosted installs can archive to minio or any
-# S3-compatible store. Empty = auto (s3 if ephemeral, else google_cloud).
+# AWS_S3_*/AWS_*_KEY env populated from values.filestore — so self-hosted
+# installs can archive to the bundled MinIO or any S3-compatible store.
+# Empty = follow filestore.type (s3 -> s3, google_cloud -> google_cloud).
 runtimeFileArchive:
   enabled: false
-  storeType: "" # google_cloud | s3; empty = auto by filestore.ephemeral
+  storeType: "" # s3 | gcs (alias: google_cloud); empty = follow filestore.type
   # Existing object-storage bucket that receives the archives. The chart does
   # not create it; provision it and grant the app-server identity write access.
   bucket: ""
@@ -681,6 +685,13 @@ litellm-helm:
       allowed_fails: 3
 
 minio:
+  # Deploy the bundled in-cluster MinIO (a conditional dependency) — handy for
+  # POC/feature envs and self-contained installs. Durability follows
+  # persistence.enabled below: false here by default, but Replicated installs
+  # override it to true (replicated/openhands.yaml) and hold durable customer
+  # data in a PVC. When enabled and filestore.type is s3 with no endpoint or
+  # credentials configured, the app targets this instance automatically.
+  enabled: false
   replicas: 1
   mode: standalone
   persistence:
@@ -713,9 +724,9 @@ minio:
       cpu: 100m
 
 # Opt-in alternative to the bundled MinIO. RustFS speaks S3, so point the app at
-# it with the existing external-S3 values — no separate wiring:
-#   filestore: {ephemeral: false, type: s3, secure: false,
-#               endpoint: "http://<release>-rustfs-svc:9000", existingSecret: <s3 keys>}
+# it with the ordinary filestore values — no separate wiring:
+#   filestore: {type: s3, endpoint: "http://<release>-rustfs-svc:9000",
+#               existingSecret: <s3 keys>}
 rustfs:
   enabled: false
   # The subchart refuses to render without credentials. These match
@@ -1189,27 +1200,30 @@ automation:
     project: ""
     region: ""
   
-  # File storage configuration (aligned with openhands chart pattern)
-  # Supports multiple backends: gcs, s3, or in-cluster minio for ephemeral environments
+  # Object storage for uploaded automation packages. Packages must outlive the
+  # pod, so this is always a durable object store: any S3-compatible store
+  # (AWS S3, MinIO, ...) or GCS. See the automation subchart's values.yaml for
+  # the full key reference. To use the bundled MinIO, set type: s3 and
+  # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
-    # When true, uses S3-compatible storage (minio) for ephemeral/feature environments
-    # When false, uses cloud storage specified by 'type' (for production)
-    ephemeral: false
-    # Bucket name for storing automation data
-    bucket: automation-data
-    # Storage type when ephemeral=false (e.g., gcs, s3)
+    # "s3" or "gcs"
     type: gcs
-  
-  # Minio configuration for ephemeral storage
-  # When deployed as subchart of openhands, automation uses parent's minio instance
-  minio:
-    # Don't deploy minio as subchart - use parent's minio instance
-    enabled: false
-    # External minio configuration (points to parent chart's minio)
-    external:
-      endpoint: "http://minio:9000"
-      accessKey: "default"
-      secretKey: "notasecret"
+    # Bucket to store packages in (both backends).
+    bucket: automation-data
+    # s3 only. Leave empty for AWS; set for other S3-compatible stores. TLS is
+    # inferred from the URL scheme.
+    endpoint: ""
+    region: ""
+    # s3 only. Create the bucket at startup if nothing else provisions it.
+    createBucket: false
+    # s3 credentials: existingSecret wins, then inline accessKey/secretKey,
+    # then ambient AWS identity (IRSA, instance profile). gcs always uses
+    # ambient identity (Workload Identity / ADC).
+    existingSecret: ""
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKey: ""
+    secretKey: ""
   
   # Service key from K8s secret
   serviceKeyFromSecret:
