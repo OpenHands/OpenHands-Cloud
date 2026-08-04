@@ -119,9 +119,24 @@ tests:
             name: AWS_S3_BUCKET
           any: true
 
+  - it: accepts google_cloud as an alias of the service's native gcs
+    set:
+      filestore.type: google_cloud
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: gcs
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GCS_BUCKET_NAME
+            value: automation-data
+
   - it: rejects storage backends the service does not support
     set:
       filestore.type: local
     asserts:
       - failedTemplate:
-          errorPattern: filestore.type must be "s3" or "gcs"
+          errorPattern: filestore.type must be "s3", "gcs", or "google_cloud"

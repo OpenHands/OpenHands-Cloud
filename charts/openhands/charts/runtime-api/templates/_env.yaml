@@ -26,11 +26,14 @@
 {{- if .Values.runtimeFileArchive.enabled }}
 # Archive the workspace before the cleanup CronJob pauses/stops a runtime. See
 # values.runtimeFileArchive. s3 targets the in-cluster minio (or external S3);
-# google_cloud uses the cleanup ServiceAccount's Workload Identity.
+# google_cloud uses the cleanup ServiceAccount's Workload Identity. "gcs"
+# normalizes to the archive code's native "google_cloud".
+{{- $archiveStore := .Values.runtimeFileArchive.storeType | default "google_cloud" }}
+{{- if eq $archiveStore "gcs" }}{{- $archiveStore = "google_cloud" }}{{- end }}
 - name: RUNTIME_FILE_ARCHIVE_ENABLED
   value: "true"
 - name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
-  value: {{ .Values.runtimeFileArchive.storeType | default "google_cloud" | quote }}
+  value: {{ $archiveStore | quote }}
 - name: RUNTIME_FILE_ARCHIVE_BUCKET
   value: {{ .Values.runtimeFileArchive.bucket | quote }}
 - name: RUNTIME_FILE_ARCHIVE_PREFIX
@@ -39,7 +42,7 @@
   value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
 - name: RUNTIME_FILE_ARCHIVE_FORMAT
   value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
-{{- if eq (.Values.runtimeFileArchive.storeType | default "google_cloud") "s3" }}
+{{- if eq $archiveStore "s3" }}
 {{- with .Values.runtimeFileArchive.s3.endpoint }}
 - name: AWS_S3_ENDPOINT
   value: {{ . | quote }}

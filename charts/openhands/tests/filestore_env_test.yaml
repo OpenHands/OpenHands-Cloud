@@ -189,6 +189,18 @@ tests:
             name: AWS_ACCESS_KEY_ID
             value: default
 
+  - it: normalizes the canonical gcs spelling to the app's native google_cloud
+    set:
+      enabled: true
+      filestore.type: gcs
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: google_cloud
+
   - it: wires GCS through FILE_STORE with no S3 env
     set:
       enabled: true

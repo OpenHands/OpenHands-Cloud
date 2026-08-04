@@ -213,7 +213,7 @@ cleanup:
 # (endpoint defaults to http://<release>-minio:9000) or any S3-compatible store.
 runtimeFileArchive:
   enabled: false
-  storeType: google_cloud # google_cloud | s3
+  storeType: google_cloud # s3 | gcs (alias: google_cloud)
   # Existing object-storage bucket that receives the archives. The chart does
   # not create it; provision it and grant the cleanup identity write access.
   bucket: ""

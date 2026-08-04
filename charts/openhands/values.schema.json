@@ -85,7 +85,7 @@
       "type": "object",
       "properties": {
         "bucket": { "type": "string" },
-        "type": { "type": "string", "enum": ["s3", "google_cloud"] },
+        "type": { "type": "string", "enum": ["s3", "gcs", "google_cloud"] },
         "provider": { "type": "string" },
         "region": { "type": "string" },
         "endpoint": { "type": "string" },

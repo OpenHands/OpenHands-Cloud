@@ -107,8 +107,9 @@ integrations:
 # endpoint or credentials configured, the app targets the bundled instance
 # automatically.
 filestore:
-  # "s3" or "google_cloud" (GCS).
-  type: google_cloud
+  # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
+  # template renders whichever spelling the app natively reads.
+  type: gcs
 
   # Bucket to store conversation/session files in (both backends).
   bucket: openhands-sessions
@@ -150,7 +151,7 @@ filestore:
 # Empty = follow filestore.type (s3 -> s3, google_cloud -> google_cloud).
 runtimeFileArchive:
   enabled: false
-  storeType: "" # google_cloud | s3; empty = follow filestore.type
+  storeType: "" # s3 | gcs (alias: google_cloud); empty = follow filestore.type
   # Existing object-storage bucket that receives the archives. The chart does
   # not create it; provision it and grant the app-server identity write access.
   bucket: ""

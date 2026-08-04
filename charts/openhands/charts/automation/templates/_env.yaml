@@ -35,10 +35,13 @@
 - name: AUTOMATION_GCP_REGION
   value: {{ .Values.gcp.region | quote }}
 {{- end }}
-# Uploaded-package storage (see values.filestore)
+# Uploaded-package storage (see values.filestore). "google_cloud" normalizes
+# to "gcs", the service's native FILE_STORE value.
+{{- $store := .Values.filestore.type }}
+{{- if eq $store "google_cloud" }}{{- $store = "gcs" }}{{- end }}
 - name: FILE_STORE
-  value: {{ .Values.filestore.type | quote }}
-{{- if eq .Values.filestore.type "s3" }}
+  value: {{ $store | quote }}
+{{- if eq $store "s3" }}
 - name: AWS_S3_BUCKET
   value: {{ .Values.filestore.bucket | quote }}
 {{- with .Values.filestore.endpoint }}
@@ -74,11 +77,11 @@
 - name: AWS_SECRET_ACCESS_KEY
   value: {{ .Values.filestore.secretKey | quote }}
 {{- end }}
-{{- else if eq .Values.filestore.type "gcs" }}
+{{- else if eq $store "gcs" }}
 - name: GCS_BUCKET_NAME
   value: {{ .Values.filestore.bucket | quote }}
 {{- else }}
-{{- fail (printf "filestore.type must be \"s3\" or \"gcs\", got %q" .Values.filestore.type) }}
+{{- fail (printf "filestore.type must be \"s3\", \"gcs\", or \"google_cloud\", got %q" .Values.filestore.type) }}
 {{- end }}
 # Admin API key for issuing per-user automation API keys
 {{- if .Values.adminApiKeyFromSecret }}

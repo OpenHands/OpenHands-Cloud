@@ -95,13 +95,14 @@
 {{- end }}
 {{- /* No credential env at all: ambient AWS identity (IRSA / Pod Identity /
        instance profile). */}}
-{{- else if eq .Values.filestore.type "google_cloud" }}
+{{- else if or (eq .Values.filestore.type "gcs") (eq .Values.filestore.type "google_cloud") }}
 # GCS via ambient identity (Workload Identity / ADC); the bucket comes from
-# FILE_STORE_PATH above.
+# FILE_STORE_PATH above. "gcs" is the charts' canonical spelling; the app's
+# native FILE_STORE value is "google_cloud", so both normalize to it here.
 - name: FILE_STORE
   value: google_cloud
 {{- else }}
-{{- fail (printf "filestore.type must be \"s3\" or \"google_cloud\", got %q" .Values.filestore.type) }}
+{{- fail (printf "filestore.type must be \"s3\", \"gcs\", or \"google_cloud\", got %q" .Values.filestore.type) }}
 {{- end }}
 {{- if .Values.filestore.provider }}
 - name: SHARED_EVENT_STORAGE_PROVIDER
@@ -109,6 +110,8 @@
 {{- end }}
 {{- if .Values.runtimeFileArchive.enabled }}
 {{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" (eq .Values.filestore.type "s3")) }}
+{{- /* "gcs" normalizes to the archive code's native "google_cloud". */}}
+{{- if eq $archiveStore "gcs" }}{{- $archiveStore = "google_cloud" }}{{- end }}
 # Archive a sandbox's workspace before an explicit delete. Empty storeType
 # follows filestore.type. The s3 store reuses the AWS_S3_*/AWS_*_KEY connection
 # env populated from values.filestore above (bundled MinIO, external S3, or the
