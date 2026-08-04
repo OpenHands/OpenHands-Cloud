@@ -96,7 +96,7 @@ spec:
         limits:
           maxAge: 336h
     {{- end }}
-    {{- if .Values.filestore.ephemeral }}
+    {{- if .Values.minio.enabled }}
     # MinIO logs (MinIO chart)
     - logs:
         name: app/{{ .Release.Name }}-minio/logs
@@ -495,7 +495,7 @@ spec:
               when: ">= 1"
               message: "OpenHands LiteLLM deployment is ready"
     {{- end }}
-    {{- if .Values.filestore.ephemeral }}
+    {{- if .Values.minio.enabled }}
     - deploymentStatus:
         name: {{ .Release.Name }}-minio
         namespace: {{ .Release.Namespace }}

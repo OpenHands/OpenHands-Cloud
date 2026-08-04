@@ -50,7 +50,7 @@ tests:
   # install. These cases pin the guard that rejects it.
   - it: fails when the bundled MinIO bucket sets purge true
     set:
-      filestore.ephemeral: true
+      minio.enabled: true
       minio.buckets:
         - name: openhands-sessions
           policy: none
@@ -63,7 +63,7 @@ tests:
     # regardless of whether this release runs the server.
     set:
       enabled: false
-      filestore.ephemeral: true
+      minio.enabled: true
       minio.buckets:
         - name: openhands-sessions
           policy: none
@@ -73,7 +73,7 @@ tests:
           errorMessage: 'minio.buckets entry "openhands-sessions" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
   - it: fails on any purging bucket, not just the first
     set:
-      filestore.ephemeral: true
+      minio.enabled: true
       minio.buckets:
         - name: openhands-sessions
           policy: none
@@ -86,15 +86,15 @@ tests:
           errorMessage: 'minio.buckets entry "scratch" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
   - it: allows the bundled MinIO with the shipped purge false default
     set:
-      filestore.ephemeral: true
+      minio.enabled: true
     asserts:
       - hasDocuments:
           count: 0
   - it: ignores minio values entirely for external-store releases
-    # ephemeral: false never renders the minio dependency, so leftover values
-    # must not block an external-S3 or GCS install.
+    # minio.enabled: false never renders the minio dependency, so leftover
+    # values must not block an external-S3 or GCS install.
     set:
-      filestore.ephemeral: false
+      minio.enabled: false
       minio.buckets:
         - name: openhands-sessions
           policy: none
