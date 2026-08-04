@@ -473,6 +473,22 @@ spec:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
+    # RustFS is deployed here but consumed by nothing: MinIO keeps precedence
+    # while both are enabled (templates/_objectstore.tpl), so the app stays on
+    # MinIO. This brings the store up empty and running ahead of the migration
+    # release that copies the data across and repoints consumers.
+    rustfs:
+      enabled: true
+      image:
+        rustfs:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/rustfs/rustfs'
+        # RustFS runs a busybox init container even in standalone mode.
+        initImage:
+          repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
+      imagePullSecrets:
+        - name: '{{repl ImagePullSecretName }}'
+      storageclass:
+        dataStorageSize: 100Gi
     # sha256 of every secret (password) config value. Changing any secret in the
     # KOTS config changes this hash, which changes the openhands pod-template
     # annotation (checksum/config-secrets) and forces a rollout so secret-backed
@@ -738,6 +754,12 @@ spec:
         minio:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
+        rustfs:
+          image:
+            rustfs:
+              repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/rustfs'
+            initImage:
+              repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/busybox'
         litellm-helm:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/litellm-database'
@@ -1218,6 +1240,8 @@ spec:
     litellm-helm:
       enabled: true
     minio:
+      enabled: true
+    rustfs:
       enabled: true
     postgresql:
       enabled: true
