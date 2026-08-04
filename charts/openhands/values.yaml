@@ -134,6 +134,44 @@ filestore:
   accessKey: ""
   secretKey: ""
 
+  # One-time copy of the bundled object store from MinIO into RustFS, run by a
+  # pre-upgrade hook on the upgrade that switches backends. Requires both stores
+  # deployed (minio.enabled and rustfs.enabled). Enabling it also repoints every
+  # consumer at RustFS when the apply lands (see templates/_objectstore.tpl) —
+  # MinIO stays deployed as the rollback source until a later, deliberate
+  # release turns it off. Never runs on a fresh install. The copy is incremental
+  # by key-set difference and additive (no delete path), so a re-run copies only
+  # what is missing and repeats harmlessly once complete.
+  migration:
+    enabled: false
+    # The copy runs `mc`, which the RustFS/MinIO server images do not carry.
+    image:
+      repository: quay.io/minio/mc
+      tag: RELEASE.2025-08-13T08-35-41Z
+      pullPolicy: IfNotPresent
+    imagePullSecrets: []
+    # Extra "deployment/x" | "statefulset/x" writers to freeze for the copy,
+    # beyond the ones the chart derives from its own render conditions.
+    extraWriters: []
+    timeouts:
+      # Seconds to wait for the RustFS StatefulSet to become ready before
+      # freezing anything. RustFS is deployed by an earlier release, so this is a
+      # readiness wait, not a provisioning one.
+      storeReady: 300
+      # Seconds to wait for frozen writer pods to actually terminate.
+      drain: 300
+      # Seconds for the copy + verify of all buckets.
+      copy: 1800
+      # Overall Job deadline; keep below the helm --timeout.
+      total: 2700
+    backoffLimit: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
   # Optional SHARED_EVENT_STORAGE_PROVIDER override ("aws" | "gcp"); when empty
   # the app derives the provider from FILE_STORE.
   provider: ""

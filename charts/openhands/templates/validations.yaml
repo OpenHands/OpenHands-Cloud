@@ -45,3 +45,17 @@ with runtime-api and automation and matters even in a server-less release.
 {{- fail "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey." -}}
 {{- end -}}
 {{- end -}}
+{{/*
+Object-store migration guards. The migration copies from the bundled MinIO into
+RustFS and repoints consumers, so both stores have to be deployed: RustFS as the
+destination and MinIO as the source (and rollback point). Leave minio.enabled
+true until a later release retires it.
+*/}}
+{{- if .Values.filestore.migration.enabled -}}
+{{- if not .Values.rustfs.enabled -}}
+{{- fail "filestore.migration.enabled is true but rustfs.enabled is false, so there is no destination to copy into. Set rustfs.enabled=true." -}}
+{{- end -}}
+{{- if not .Values.minio.enabled -}}
+{{- fail "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled=true until the migration has completed, then retire MinIO in a later release." -}}
+{{- end -}}
+{{- end -}}
