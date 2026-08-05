@@ -189,6 +189,10 @@ data:
               value: {{ .Values.rustfs.secret.rustfs.secret_key | quote }}
             - name: BUCKETS
               value: {{ $buckets | join " " | quote }}
+            # Substituted by the orchestrator: "check" reports the outstanding
+            # difference read-only, "copy" performs the copy and verifies.
+            - name: MODE
+              value: "__MODE__"
           command: ["/bin/sh", "/migration/copy.sh"]
           volumeMounts:
             - name: scripts
@@ -227,11 +231,28 @@ data:
       mc find "$_alias/$_bucket" 2>/dev/null | cut -c "$_off-" | sort
     }
 
+    # MODE=check lists both stores and reports the outstanding difference without
+    # copying, verifying or mutating anything. The orchestrator runs it that way
+    # BEFORE freezing writers, so an already-complete migration costs one listing
+    # pass instead of an outage, and a marker that no longer reflects reality is
+    # caught instead of trusted.
+    MODE="${MODE:-copy}"
+
     FAIL=0
     SUMMARY=""
+    OUTSTANDING=0
     for b in $BUCKETS; do
       if ! mc ls "src/$b" >/dev/null 2>&1; then
         log "source bucket '$b' absent; nothing to copy"
+        continue
+      fi
+      if [ "$MODE" = "check" ]; then
+        # Read-only: a missing destination bucket just means everything is missing.
+        keys src "$b" > /tmp/src.keys
+        keys dst "$b" > /tmp/dst.keys 2>/dev/null || : > /tmp/dst.keys
+        N=$(comm -23 /tmp/src.keys /tmp/dst.keys | wc -l | tr -d ' ')
+        log "bucket '$b': $N object(s) in source and absent from destination"
+        OUTSTANDING=$(( OUTSTANDING + N ))
         continue
       fi
       mc mb --ignore-existing "dst/$b" >/dev/null 2>&1 || true
@@ -259,6 +280,13 @@ data:
       fi
       SUMMARY="$SUMMARY $b=$COUNT"
     done
+
+    if [ "$MODE" = "check" ]; then
+      # Parsed by the orchestrator to decide whether a freeze is needed at all.
+      echo "CHECK-OUTSTANDING $OUTSTANDING"
+      log "check complete; $OUTSTANDING object(s) outstanding"
+      exit 0
+    fi
 
     if [ "$FAIL" != "0" ]; then
       log "one or more buckets did not verify"
@@ -336,13 +364,23 @@ spec:
 
               log() { echo "[migrate $(date -u +%H:%M:%S)] $*"; }
 
-              # 1. Idempotency marker. Once written, every later run is a no-op.
-              if $K get configmap "$MARKER" >/dev/null 2>&1; then
-                log "marker '$MARKER' present; object store already migrated."
-                exit 0
-              fi
+              # Run the transient copy Pod in "$1" mode ("check" or "copy") and
+              # wait for it. One manifest serves both; the Pod name is reused, so
+              # delete any predecessor first. Returns non-zero unless it Succeeded.
+              run_copy_pod() {
+                $K delete pod "$COPY_POD" --ignore-not-found --wait=true >/dev/null 2>&1 || true
+                sed "s|__MODE__|$1|" /migration/copy-pod.yaml | $K apply -f -
+                DEADLINE=$(( $(date +%s) + COPY )); PHASE=""
+                while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                  PHASE=$($K get pod "$COPY_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+                  { [ "$PHASE" = "Succeeded" ] || [ "$PHASE" = "Failed" ]; } && break
+                  sleep 5
+                done
+                $K logs "$COPY_POD" 2>/dev/null || true
+                [ "$PHASE" = "Succeeded" ]
+              }
 
-              # 2. Wait for RustFS. It is deployed by an earlier release; this
+              # 1. Wait for RustFS. It is deployed by an earlier release; this
               #    hook never creates it. Its absence is a misconfiguration to
               #    report before anything is frozen.
               if ! $K get deployment "$RUSTFS_DEPLOY" >/dev/null 2>&1; then
@@ -351,6 +389,30 @@ spec:
               fi
               log "waiting for RustFS to be ready"
               $K rollout status deployment "$RUSTFS_DEPLOY" --timeout="${STORE_READY}s"
+
+              # 2. Decide from the outstanding difference, not from the marker.
+              #    The marker records that a copy once completed; it does NOT mean
+              #    the stores still agree. A rollback leaves the marker in place
+              #    while consumers resume writing to the source, so trusting it
+              #    would repoint them onto a store missing everything written since
+              #    (proven: a marker-skipped redeploy left objects behind while the
+              #    apply repointed the app anyway). The copy is incremental and
+              #    additive, so the honest test is the difference itself, and it
+              #    costs one read-only listing pass with nothing frozen.
+              if ! run_copy_pod check; then
+                log "ERROR: difference check did not succeed"
+                exit 1
+              fi
+              OUTSTANDING=$($K logs "$COPY_POD" 2>/dev/null | sed -n 's/^CHECK-OUTSTANDING //p' | tail -1)
+              $K delete pod "$COPY_POD" --ignore-not-found >/dev/null 2>&1 || true
+              if [ "${OUTSTANDING:-1}" = "0" ]; then
+                log "nothing outstanding; stores already agree. No writers frozen."
+                exit 0
+              fi
+              log "$OUTSTANDING object(s) outstanding; continuing with the copy"
+              # A marker left by an earlier completed migration must go, or the
+              # marker write at the end fails as AlreadyExists after a good copy.
+              $K delete configmap "$MARKER" --ignore-not-found >/dev/null 2>&1 || true
 
               # Restore trap. On success the writers are left as the copy found
               # them, for Helm's apply to bring back. On failure — including a
@@ -420,19 +482,11 @@ spec:
                 exit 1
               fi
 
-              # 5. Copy the difference in a transient Pod, then wait for it.
-              $K delete pod "$COPY_POD" --ignore-not-found --wait=true >/dev/null 2>&1 || true
-              $K apply -f /migration/copy-pod.yaml
+              # 5. Copy the difference in a transient Pod, then wait for it. Same
+              #    manifest as the check, run in copy mode against a frozen source.
               log "copying objects"
-              DEADLINE=$(( $(date +%s) + COPY )); PHASE=""
-              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-                PHASE=$($K get pod "$COPY_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-                { [ "$PHASE" = "Succeeded" ] || [ "$PHASE" = "Failed" ]; } && break
-                sleep 5
-              done
-              $K logs "$COPY_POD" 2>/dev/null || true
-              if [ "$PHASE" != "Succeeded" ]; then
-                log "ERROR: copy did not succeed (phase='$PHASE')"
+              if ! run_copy_pod copy; then
+                log "ERROR: copy did not succeed"
                 exit 1
               fi
 
