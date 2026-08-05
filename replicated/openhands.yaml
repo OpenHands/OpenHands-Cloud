@@ -448,11 +448,11 @@ spec:
     postgresql:
       enabled: repl{{ ConfigOptionEquals "postgres_type" "embedded_postgres" }}
     redis:
+      enabled: false
+    valkey:
       enabled: true
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
-      auth:
-        password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/valkey/valkey'
     # Conversation/session files live on the bundled MinIO, which is durable
     # here (persistence below). With no endpoint or credentials configured,
     # the app targets the bundled instance automatically.
@@ -732,9 +732,9 @@ spec:
         postgresql:
           image:
             repository: '{{repl LocalRegistryNamespace }}/postgresql'
-        redis:
+        valkey:
           image:
-            repository: '{{repl LocalRegistryNamespace }}/redis'
+            repository: '{{repl LocalRegistryNamespace }}/valkey'
         minio:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
@@ -1221,7 +1221,7 @@ spec:
       enabled: true
     postgresql:
       enabled: true
-    redis:
+    valkey:
       enabled: true
     runtime-api:
       enabled: true
