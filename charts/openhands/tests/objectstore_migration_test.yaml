@@ -182,7 +182,7 @@ tests:
   # The store is no longer deployed by an earlier release, so there is nothing to
   # wait for. The orchestrator checks the pre-created claim instead, and the copy
   # Pod brings its own RustFS.
-  - it: checks the data claim instead of waiting on a Deployment
+  - it: applies the data claim instead of waiting on a Deployment
     documentSelector:
       path: kind
       value: Job
@@ -192,7 +192,7 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: "get pvc \"\\$DATA_CLAIM\""
+          pattern: "apply -f /migration/claim.yaml"
       - notMatchRegexRaw:
           pattern: "rollout status deployment"
 

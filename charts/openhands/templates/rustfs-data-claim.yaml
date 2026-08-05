@@ -1,42 +1,49 @@
 {{- if .Values.rustfs.enabled }}
-{{- $claim := .Values.rustfs.mode.standalone.existingClaim.dataClaim }}
 {{/*
-RustFS's data claim, created ahead of everything that needs it.
+RustFS's data claim.
 
-It exists as a hook rather than an ordinary resource because the migration's copy
-Pod mounts it during pre-upgrade, before Helm's apply runs. The subchart is
-pointed at it by name (rustfs.mode.standalone.existingClaim.dataClaim) and so
-renders no claim of its own, which is what lets the store come up already holding
-the copied data instead of being deployed empty by an earlier release.
+WHO CREATES IT depends on whether this upgrade is migrating data into the store,
+and the gate below is load-bearing. Helm snapshots the release's resources before
+hooks run, so an object that first appears during a pre-upgrade hook is one Helm
+then refuses to apply — it fails the upgrade with `no PersistentVolumeClaim with
+the name "..." found`, after the hook has already frozen writers, leaving the app
+down. Measured on kind.
 
-Both annotations below are load-bearing and were arrived at by measurement, not
-from the docs:
+So on a MIGRATING upgrade this template renders NOTHING: the migration
+orchestrator's Job creates and owns the claim (with the Helm ownership metadata
+below, sourced from the same values), its copy Pod mounts it during pre-upgrade,
+and the RustFS subchart mounts it by name via existingClaim. Helm adopts the claim
+on the next upgrade that leaves the migration off, which works because by then the
+claim predates the upgrade. This mirrors templates/postgres-cnpg-migration.yaml
+(#986), which solves the identical problem the same way.
 
-  hook-delete-policy: hook-failed
-    displaces the DEFAULT of before-hook-creation, which would delete and
-    recreate this claim on every later upgrade — losing every object on the
-    second upgrade while the first appeared to work.
+A fresh INSTALL renders it here regardless of the migration switch: the
+orchestrator is a pre-upgrade hook only, so on an install nothing else creates it.
 
-  resource-policy: keep
-    blocks the deletion that hook-failed would otherwise perform, and blocks
-    uninstall. On its own it does NOT protect a hook resource from the default
-    delete policy: a measured upgrade changed the claim's UID with only this set.
+Two earlier attempts are worth recording so they are not retried:
 
-Keep both. Re-verify if Helm is bumped, since this is version-specific behaviour.
+  - Rendering this as a hook with the default delete policy destroys data: Helm
+    deletes and recreates the claim on the second upgrade, so the first upgrade
+    appears to work and the second silently empties the store.
+  - Rendering it as a hook with hook-delete-policy hook-failed plus
+    resource-policy keep protects the data but is not idempotent. Hook creation is
+    create-not-apply, so the next upgrade fails with "already exists". Measured.
+
+resource-policy keep stays, for a different reason than hook lifecycle: it stops
+`helm uninstall` taking the conversation data with it. That makes the claim
+outlive the release deliberately, which is documented in the upgrade note.
 */}}
+{{- if or .Release.IsInstall (not .Values.filestore.migration.enabled) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ $claim }}
+  name: {{ .Values.rustfs.mode.standalone.existingClaim.dataClaim }}
   namespace: {{ .Release.Namespace }}
   labels:
+    {{- /* Carries app.kubernetes.io/managed-by, without which Helm refuses to
+           adopt the object the orchestrator created. */}}
     {{- include "openhands.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    # Runs before the migration orchestrator at -1, so the claim exists by the
-    # time that hook's copy Pod mounts it.
-    "helm.sh/hook-weight": "-10"
-    "helm.sh/hook-delete-policy": hook-failed
     "helm.sh/resource-policy": keep
 spec:
   accessModes:
@@ -47,4 +54,5 @@ spec:
   resources:
     requests:
       storage: {{ .Values.rustfs.storageclass.dataStorageSize }}
+{{- end }}
 {{- end }}

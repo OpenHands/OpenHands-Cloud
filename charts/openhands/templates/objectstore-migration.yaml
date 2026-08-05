@@ -127,6 +127,12 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "create", "delete"]
+  # The orchestrator applies RustFS's data claim so the copy Pod can mount it
+  # during pre-upgrade. Without these verbs the apply is Forbidden, which reads
+  # identically to a missing claim.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -160,6 +166,33 @@ metadata:
     "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": before-hook-creation
 data:
+  # RustFS's data claim, created by the orchestrator so the copy Pod can mount it
+  # during pre-upgrade, before Helm's apply runs. templates/rustfs-data-claim.yaml
+  # renders the same object as an ordinary resource, and the apply adopts this one
+  # — which is why the managed-by label and both meta.helm.sh annotations are
+  # required. Helm refuses to adopt an object missing any of the three. Same shape
+  # the CNPG migration uses for the Cluster it creates.
+  claim.yaml: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: {{ $dataClaim }}
+      namespace: {{ $ns }}
+      labels:
+        {{- include "openhands.labels" . | nindent 8 }}
+      annotations:
+        meta.helm.sh/release-name: {{ .Release.Name }}
+        meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+        helm.sh/resource-policy: keep
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      {{- with .Values.rustfs.storageclass.name }}
+      storageClassName: {{ . }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.rustfs.storageclass.dataStorageSize }}
   # Transient copy Pod. Applied by the orchestrator once the writers are frozen.
   copy-pod.yaml: |
     apiVersion: v1
@@ -451,8 +484,13 @@ spec:
               #    is no RustFS Deployment to wait for any more, because the copy
               #    Pod brings its own sidecar and the apply deploys the store
               #    afterwards, against the claim this hook fills.
-              if ! $K get pvc "$DATA_CLAIM" >/dev/null 2>&1; then
-                log "ERROR: data claim '$DATA_CLAIM' not found. It is created by a pre-upgrade hook at weight -10; a missing claim means that hook did not run."
+              #    `apply` is idempotent: it creates the claim on the first run
+              #    and patches a no-op on a retry, so this needs no exists check.
+              #    It carries Helm's ownership metadata, so the apply that follows
+              #    this hook adopts it rather than colliding with it.
+              log "ensuring data claim '$DATA_CLAIM'"
+              if ! CLAIM_ERR=$($K apply -f /migration/claim.yaml 2>&1); then
+                log "ERROR: could not ensure data claim '$DATA_CLAIM': $CLAIM_ERR"
                 exit 1
               fi
 
@@ -581,4 +619,6 @@ spec:
             items:
               - key: copy-pod.yaml
                 path: copy-pod.yaml
+              - key: claim.yaml
+                path: claim.yaml
 {{- end }}
