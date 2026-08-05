@@ -84,16 +84,22 @@
     "filestore": {
       "type": "object",
       "properties": {
-        "ephemeral": { "type": "boolean" },
         "bucket": { "type": "string" },
-        "type": { "type": "string" },
+        "type": { "type": "string", "enum": ["s3", "gcs", "google_cloud"] },
         "provider": { "type": "string" },
         "region": { "type": "string" },
         "endpoint": { "type": "string" },
-        "secure": { "type": "boolean" },
         "existingSecret": { "type": "string" },
         "accessKeyIdKey": { "type": "string" },
-        "secretAccessKeyKey": { "type": "string" }
+        "secretAccessKeyKey": { "type": "string" },
+        "accessKey": { "type": "string" },
+        "secretKey": { "type": "string" }
+      }
+    },
+    "minio": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
       }
     }
   }

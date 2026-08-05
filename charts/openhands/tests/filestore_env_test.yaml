@@ -89,13 +89,12 @@ tests:
                 name: s3-creds
                 key: secret-key
 
-  - it: uses ambient identity and a custom endpoint when no secret is set
+  - it: derives TLS from the endpoint scheme and uses ambient identity when no creds are set
     set:
       enabled: true
       filestore.type: s3
       filestore.bucket: bk
-      filestore.endpoint: https://minio.example.com
-      filestore.secure: false
+      filestore.endpoint: http://minio.internal:9000
     asserts:
       - template: deployment.yaml
         contains:
@@ -108,7 +107,8 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: AWS_S3_ENDPOINT
-            value: https://minio.example.com
+            value: http://minio.internal:9000
+      # http endpoint means plaintext — AWS_S3_SECURE is derived, not configured.
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
@@ -124,29 +124,15 @@ tests:
         notExists:
           path: spec.template.spec.containers[0].env[?(@.name=="AWS_SECRET_ACCESS_KEY")]
 
-  - it: auto-engages the external S3 path from a marker field without type=s3
-    set:
-      enabled: true
-      filestore.bucket: bk
-      filestore.region: eu-central-1
-    asserts:
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: FILE_STORE
-            value: s3
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: AWS_REGION
-            value: eu-central-1
+  # Rejection of unsupported filestore.type values is covered by the schema
+  # enum (see values_schema_test.yaml); the template guard in _env.yaml is
+  # unreachable behind it and kept only for schema-bypassed renders.
 
-  - it: leaves the ephemeral MinIO wiring unchanged
+  - it: targets the bundled MinIO when it is deployed and no endpoint or creds are set
     set:
       enabled: true
-      filestore.ephemeral: true
+      minio.enabled: true
+      filestore.type: s3
       filestore.bucket: openhands-sessions
     asserts:
       - template: deployment.yaml
@@ -167,8 +153,55 @@ tests:
           content:
             name: AWS_S3_SECURE
             value: "false"
+      # Falls back to the bundled MinIO's svcaccts credentials.
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: default
 
-  - it: passes a non-S3 store type straight through to FILE_STORE
+  - it: prefers explicit configuration over the bundled MinIO fallback
+    set:
+      enabled: true
+      minio.enabled: true
+      filestore.type: s3
+      filestore.endpoint: https://s3.example.com
+      filestore.accessKey: explicit-key
+      filestore.secretKey: explicit-secret
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: https://s3.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: explicit-key
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: default
+
+  - it: normalizes the canonical gcs spelling to the app's native google_cloud
+    set:
+      enabled: true
+      filestore.type: gcs
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: google_cloud
+
+  - it: wires GCS through FILE_STORE with no S3 env
     set:
       enabled: true
       filestore.type: google_cloud
@@ -180,7 +213,24 @@ tests:
           content:
             name: FILE_STORE
             value: google_cloud
-      # The external-S3 branch stays dormant, so none of its AWS_S3_* env leaks.
+      # The S3 branch stays dormant, so none of its AWS_S3_* env leaks.
       - template: deployment.yaml
         notExists:
           path: spec.template.spec.containers[0].env[?(@.name=="AWS_S3_BUCKET")]
+
+  # Deploying the bundled RustFS must not move anything onto it. Nothing in this
+  # chart reads from RustFS yet, so the app stays on MinIO until a later change
+  # wires the two together.
+  - it: keeps the app on the bundled MinIO when rustfs is enabled
+    set:
+      enabled: true
+      minio.enabled: true
+      filestore.type: s3
+      rustfs.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000

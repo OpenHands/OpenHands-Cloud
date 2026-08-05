@@ -1,0 +1,142 @@
+suite: filestore env wiring
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: wires an S3-compatible store (bundled MinIO) with inline creds and bucket auto-create
+    set:
+      filestore.type: s3
+      filestore.endpoint: http://openhands-minio:9000
+      filestore.createBucket: true
+      filestore.accessKey: default
+      filestore.secretKey: notasecret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: s3
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_BUCKET
+            value: automation-data
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://openhands-minio:9000
+      # http endpoint means plaintext — AWS_S3_SECURE is derived, not configured
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_SECURE
+            value: "false"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_AUTO_CREATE_BUCKET
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: default
+
+  - it: derives AWS_S3_SECURE=true from an https endpoint
+    set:
+      filestore.type: s3
+      filestore.endpoint: https://s3.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_SECURE
+            value: "true"
+
+  - it: prefers existingSecret credentials over inline keys
+    set:
+      filestore.type: s3
+      filestore.existingSecret: s3-creds
+      filestore.accessKey: should-not-render
+      filestore.secretKey: should-not-render
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: AWS_SECRET_ACCESS_KEY
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: should-not-render
+
+  - it: renders no credential env for ambient identity (IRSA) and no endpoint vars for real AWS
+    set:
+      filestore.type: s3
+      filestore.bucket: acme-automation
+      filestore.region: us-east-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_REGION
+            value: us-east-1
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_SECURE
+          any: true
+
+  - it: wires GCS from the shared bucket value by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: gcs
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GCS_BUCKET_NAME
+            value: automation-data
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_BUCKET
+          any: true
+
+  - it: accepts google_cloud as an alias of the service's native gcs
+    set:
+      filestore.type: google_cloud
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FILE_STORE
+            value: gcs
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GCS_BUCKET_NAME
+            value: automation-data
+
+  - it: rejects storage backends the service does not support
+    set:
+      filestore.type: local
+    asserts:
+      - failedTemplate:
+          errorPattern: filestore.type must be "s3", "gcs", or "google_cloud"

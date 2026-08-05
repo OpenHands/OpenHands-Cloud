@@ -47,43 +47,28 @@
   value: 'true'
 - name: SANDBOX_CLOSE_DELAY
   value: "1800"
-{{- if .Values.filestore.ephemeral }}
-- name: FILE_STORE
-  value: s3
-- name: AWS_ACCESS_KEY_ID
-  value: {{ (index .Values.minio.svcaccts 0).accessKey }}
-- name: AWS_SECRET_ACCESS_KEY
-  value: {{ (index .Values.minio.svcaccts 0).secretKey }}
-- name: AWS_S3_ENDPOINT
-  value: {{ printf "http://%s-minio:9000" $.Release.Name }}
-- name: AWS_S3_BUCKET
-  value: {{ .Values.filestore.bucket }}
-- name: AWS_S3_SECURE
-  value: 'false'
-{{- else if or (eq (.Values.filestore.type | default "") "s3") .Values.filestore.existingSecret .Values.filestore.region .Values.filestore.endpoint }}
-# External S3 (or S3-compatible) object store — the durable alternative to the
-# bundled MinIO. Engaged by filestore.type=s3 or any external marker
-# (existingSecret / region / endpoint). The app's S3FileStore uses boto3, so
-# credentials come from filestore.existingSecret when set, otherwise from the
-# pod's ambient AWS identity (IRSA / Pod Identity / instance profile). Unlike the
-# ephemeral branch, AWS_S3_ENDPOINT is left unset for real AWS so boto3 targets
-# the regional endpoint instead of being pinned to MinIO.
+{{- if eq .Values.filestore.type "s3" }}
+{{- /* Empty endpoint targets the bundled MinIO when it is deployed, otherwise
+       real AWS (boto3 uses the regional endpoint). */}}
+{{- $endpoint := .Values.filestore.endpoint }}
+{{- if and (not $endpoint) .Values.minio.enabled }}
+{{- $endpoint = printf "http://%s-minio:9000" $.Release.Name }}
+{{- end }}
 - name: FILE_STORE
   value: s3
 - name: AWS_S3_BUCKET
   value: {{ .Values.filestore.bucket | quote }}
-{{- if .Values.filestore.region }}
+{{- with .Values.filestore.region }}
 - name: AWS_REGION
-  value: {{ .Values.filestore.region | quote }}
+  value: {{ . | quote }}
 {{- end }}
-{{- if .Values.filestore.endpoint }}
+{{- if $endpoint }}
 - name: AWS_S3_ENDPOINT
-  value: {{ .Values.filestore.endpoint | quote }}
+  value: {{ $endpoint | quote }}
 {{- end }}
-{{- $secure := .Values.filestore.secure }}
-{{- if kindIs "invalid" $secure }}{{- $secure = true }}{{- end }}
+# TLS is inferred from the endpoint scheme; no endpoint (real AWS) means TLS.
 - name: AWS_S3_SECURE
-  value: {{ $secure | quote }}
+  value: {{ or (not $endpoint) (hasPrefix "https://" $endpoint) | quote }}
 {{- if .Values.filestore.existingSecret }}
 - name: AWS_ACCESS_KEY_ID
   valueFrom:
@@ -95,23 +80,43 @@
     secretKeyRef:
       name: {{ .Values.filestore.existingSecret }}
       key: {{ .Values.filestore.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else if .Values.filestore.accessKey }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ .Values.filestore.accessKey | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ .Values.filestore.secretKey | quote }}
+{{- else if .Values.minio.enabled }}
+# Bundled MinIO service-account creds — the default when the chart deploys its
+# own MinIO and no explicit credentials are configured.
+- name: AWS_ACCESS_KEY_ID
+  value: {{ (index .Values.minio.svcaccts 0).accessKey }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ (index .Values.minio.svcaccts 0).secretKey }}
 {{- end }}
-{{- else }}
+{{- /* No credential env at all: ambient AWS identity (IRSA / Pod Identity /
+       instance profile). */}}
+{{- else if or (eq .Values.filestore.type "gcs") (eq .Values.filestore.type "google_cloud") }}
+# GCS via ambient identity (Workload Identity / ADC); the bucket comes from
+# FILE_STORE_PATH above. "gcs" is the charts' canonical spelling; the app's
+# native FILE_STORE value is "google_cloud", so both normalize to it here.
 - name: FILE_STORE
-  value: {{ .Values.filestore.type }}
+  value: google_cloud
+{{- else }}
+{{- fail (printf "filestore.type must be \"s3\", \"gcs\", or \"google_cloud\", got %q" .Values.filestore.type) }}
 {{- end }}
 {{- if .Values.filestore.provider }}
 - name: SHARED_EVENT_STORAGE_PROVIDER
   value: {{ .Values.filestore.provider }}
 {{- end }}
 {{- if .Values.runtimeFileArchive.enabled }}
-{{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" .Values.filestore.ephemeral) }}
-# Archive a sandbox's workspace before an explicit delete. The s3 store reuses
-# the AWS_S3_*/AWS_*_KEY connection env: with filestore.ephemeral it is the
-# in-cluster minio set above; on a non-ephemeral external-S3 store the operator
-# supplies it through the pod's normal AWS credential mechanism (IRSA, a mounted
-# secret, etc.). google_cloud uses the pod ServiceAccount's Workload Identity.
-# See values.runtimeFileArchive.
+{{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" (eq .Values.filestore.type "s3")) }}
+{{- /* "gcs" normalizes to the archive code's native "google_cloud". */}}
+{{- if eq $archiveStore "gcs" }}{{- $archiveStore = "google_cloud" }}{{- end }}
+# Archive a sandbox's workspace before an explicit delete. Empty storeType
+# follows filestore.type. The s3 store reuses the AWS_S3_*/AWS_*_KEY connection
+# env populated from values.filestore above (bundled MinIO, external S3, or the
+# pod's ambient AWS identity). google_cloud uses the pod ServiceAccount's
+# Workload Identity. See values.runtimeFileArchive.
 - name: RUNTIME_FILE_ARCHIVE_ENABLED
   value: "true"
 - name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
