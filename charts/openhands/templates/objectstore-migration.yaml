@@ -100,11 +100,14 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
-  # Marker and freeze record; no delete — the records are meant to survive a
-  # retry, and the marker makes the next run a no-op.
+  # Marker and freeze record. Delete is required for both: a marker left by an
+  # earlier completed migration is cleared before a fresh copy, or the create at
+  # the end fails as AlreadyExists after the data has already moved; and the
+  # freeze record is torn up on success so a later run records current replicas
+  # rather than reusing these.
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "create"]
+    verbs: ["get", "list", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -499,6 +502,12 @@ spec:
                 --from-literal=buckets="$SUMMARY" >/dev/null
               $K delete pod "$COPY_POD" --ignore-not-found >/dev/null 2>&1 || true
               SUCCESS=1
+              # The freeze record exists only to restore writers after a run that
+              # died before its trap could. The copy is done, so keeping it would
+              # just make a later run reuse these replica counts instead of
+              # recording current ones. Writers are still at zero here by design,
+              # for Helm's apply to restore from chart values.
+              $K delete configmap "$FREEZE" --ignore-not-found >/dev/null 2>&1 || true
               log "object-store migration complete"
       volumes:
         - name: tmp
