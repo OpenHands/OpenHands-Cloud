@@ -51,12 +51,29 @@ filestore.migration.enabled (perform the copy + repoint consumers).
 {{- end }}
 {{- $writers = concat $writers $m.extraWriters }}
 {{- /* Buckets to copy: the app's session bucket always, the automation package
-       bucket when automation is deployed. A source bucket that does not exist is
-       skipped by copy.sh, not an error. */}}
+       bucket when automation is deployed, and the sandbox workspace archive when
+       it resolves to the bundled store. A source bucket that does not exist is
+       skipped by copy.sh, not an error, so an over-broad list is cheap while a
+       short one silently strands data.
+
+       The archive lands in the bundled store only when its store type resolves to
+       s3, since the s3 path reuses the app's AWS_S3_* connection env. That
+       derivation mirrors templates/_env.yaml: an empty storeType follows
+       filestore.type. Nothing we ship enables the archive, but a Helm install that
+       sets filestore.type=s3, minio.enabled and runtimeFileArchive.enabled would
+       otherwise have a bucket in the bundled store that this copy skipped while
+       the apply repointed its consumers anyway. */}}
 {{- $buckets := list .Values.filestore.bucket }}
 {{- if .Values.automation.enabled }}
 {{- $buckets = append $buckets .Values.automation.filestore.bucket }}
 {{- end }}
+{{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" (eq .Values.filestore.type "s3")) }}
+{{- if and .Values.runtimeFileArchive.enabled (eq $archiveStore "s3") .Values.runtimeFileArchive.bucket }}
+{{- $buckets = append $buckets .Values.runtimeFileArchive.bucket }}
+{{- end }}
+{{- /* An operator may point two of these at one bucket; copying it twice is
+       harmless but doubles the outage and the marker summary. */}}
+{{- $buckets = $buckets | uniq }}
 ---
 apiVersion: v1
 kind: ServiceAccount
