@@ -461,13 +461,14 @@ spec:
     # the app targets the bundled instance automatically.
     filestore:
       type: s3
-      # Copy the bundled object store from MinIO into RustFS and repoint every
-      # consumer at RustFS when the apply lands. MinIO stays deployed below as
-      # the rollback source; a later, deliberate release retires it. The copy is
-      # incremental and additive, so a re-run after a timeout resumes rather than
-      # restarting, and repeats harmlessly once complete.
+      # Driven by the Object Store config group. When the operator turns the
+      # migration on, the pre-upgrade hook copies MinIO into RustFS and Helm's
+      # apply repoints every consumer at RustFS. MinIO stays deployed below as
+      # the rollback source until the operator retires it (minio_enabled off).
+      # The copy is incremental and additive, so a re-run after a timeout resumes
+      # rather than restarting, and repeats harmlessly once complete.
       migration:
-        enabled: true
+        enabled: repl{{ ConfigOptionEquals "object_store_migration_enabled" "1" }}
         images:
           kubectl:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
@@ -476,7 +477,7 @@ spec:
         imagePullSecrets:
           - name: '{{repl ImagePullSecretName }}'
     minio:
-      enabled: true
+      enabled: repl{{ ConfigOptionEquals "minio_enabled" "1" }}
       persistence:
         enabled: true
       resources:
@@ -490,11 +491,12 @@ spec:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
-    # RustFS is the object-store backend once filestore.migration.enabled flips
-    # precedence to it (templates/_objectstore.tpl). MinIO stays deployed as the
-    # rollback source until a later release retires it.
+    # RustFS is the object-store backend once the migration flips precedence to
+    # it (templates/_objectstore.tpl). Deploying it alone changes nothing; MinIO
+    # keeps precedence until the migration runs, and stays deployed as the
+    # rollback source until the operator retires it (minio_enabled off).
     rustfs:
-      enabled: true
+      enabled: repl{{ ConfigOptionEquals "rustfs_enabled" "1" }}
       image:
         rustfs:
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/rustfs/rustfs'
