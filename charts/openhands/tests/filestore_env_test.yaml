@@ -128,10 +128,10 @@ tests:
   # enum (see values_schema_test.yaml); the template guard in _env.yaml is
   # unreachable behind it and kept only for schema-bypassed renders.
 
-  - it: targets the bundled MinIO when it is deployed and no endpoint or creds are set
+  - it: targets the bundled RustFS when it is deployed and no endpoint or creds are set
     set:
       enabled: true
-      minio.enabled: true
+      rustfs.enabled: true
       filestore.type: s3
       filestore.bucket: openhands-sessions
     asserts:
@@ -146,14 +146,14 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: AWS_S3_ENDPOINT
-            value: http://RELEASE-NAME-minio:9000
+            value: http://RELEASE-NAME-rustfs-svc:9000
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
           content:
             name: AWS_S3_SECURE
             value: "false"
-      # Falls back to the bundled MinIO's svcaccts credentials.
+      # Falls back to the bundled RustFS secret credentials.
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
@@ -161,10 +161,10 @@ tests:
             name: AWS_ACCESS_KEY_ID
             value: default
 
-  - it: prefers explicit configuration over the bundled MinIO fallback
+  - it: prefers explicit configuration over the bundled-store fallback
     set:
       enabled: true
-      minio.enabled: true
+      rustfs.enabled: true
       filestore.type: s3
       filestore.endpoint: https://s3.example.com
       filestore.accessKey: explicit-key
@@ -218,13 +218,11 @@ tests:
         notExists:
           path: spec.template.spec.containers[0].env[?(@.name=="AWS_S3_BUCKET")]
 
-  # Deploying the bundled RustFS must not move anything onto it. Nothing in this
-  # chart reads from RustFS yet, so the app stays on MinIO until a later change
-  # wires the two together.
-  - it: keeps the app on the bundled MinIO when rustfs is enabled
+  # RustFS is the only bundled store, so enabling it is what points the app at
+  # it. There is no second backend left to take precedence.
+  - it: points the app at RustFS when it is enabled
     set:
       enabled: true
-      minio.enabled: true
       filestore.type: s3
       rustfs.enabled: true
     asserts:
@@ -233,4 +231,4 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: AWS_S3_ENDPOINT
-            value: http://RELEASE-NAME-minio:9000
+            value: http://RELEASE-NAME-rustfs-svc:9000

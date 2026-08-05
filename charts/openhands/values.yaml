@@ -134,48 +134,6 @@ filestore:
   accessKey: ""
   secretKey: ""
 
-  # One-time copy of the bundled object store from MinIO into RustFS, run by a
-  # pre-upgrade hook on the upgrade that switches backends. Requires both stores
-  # deployed (minio.enabled and rustfs.enabled). Enabling it also repoints every
-  # consumer at RustFS when the apply lands (see templates/_objectstore.tpl) —
-  # MinIO stays deployed as the rollback source until a later, deliberate
-  # release turns it off. Never runs on a fresh install. The copy is incremental
-  # by key-set difference and additive (no delete path), so a re-run copies only
-  # what is missing and repeats harmlessly once complete.
-  migration:
-    enabled: false
-    images:
-      # Orchestrator: freezes writers and drives the copy Pod, so it needs
-      # kubectl and a shell (not rancher/kubectl, which has neither a shell nor
-      # the coreutils the script uses).
-      kubectl:
-        repository: docker.io/alpine/k8s
-        tag: "1.30.0"
-        pullPolicy: IfNotPresent
-      # Copy Pod: runs `mc`, which the RustFS/MinIO server images do not carry.
-      mc:
-        repository: quay.io/minio/mc
-        tag: RELEASE.2025-08-13T08-35-41Z
-        pullPolicy: IfNotPresent
-    imagePullSecrets: []
-    # Extra "deployment/x" | "statefulset/x" writers to freeze for the copy,
-    # beyond the ones the chart derives from its own render conditions.
-    extraWriters: []
-    timeouts:
-      # Seconds to wait for frozen writer pods to actually terminate.
-      drain: 300
-      # Seconds for the copy + verify of all buckets.
-      copy: 1800
-      # Overall Job deadline; keep below the helm --timeout.
-      total: 2700
-    backoffLimit: 1
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        memory: 512Mi
-
   # Optional SHARED_EVENT_STORAGE_PROVIDER override ("aws" | "gcp"); when empty
   # the app derives the provider from FILE_STORE.
   provider: ""
@@ -730,52 +688,6 @@ litellm-helm:
       context_window_fallbacks: []
       allowed_fails: 3
 
-minio:
-  # Deploy the bundled in-cluster MinIO (a conditional dependency) — handy for
-  # POC/feature envs and self-contained installs. Durability follows
-  # persistence.enabled below: false here by default, but Replicated installs
-  # override it to true (replicated/openhands.yaml) and hold durable customer
-  # data in a PVC. When enabled and filestore.type is s3 with no endpoint or
-  # credentials configured, the app targets this instance automatically.
-  enabled: false
-  replicas: 1
-  mode: standalone
-  persistence:
-    enabled: false
-  buckets:
-    - name: openhands-sessions
-      policy: none
-      # MUST stay false. The minio chart runs its bucket job as a
-      # post-install,post-upgrade hook, and purge: true makes that job
-      # "mc rm -r --force" the bucket before recreating it — so every ordinary
-      # upgrade of a persistent install (Replicated sets persistence.enabled:
-      # true) would wipe every conversation and session file. A render-time
-      # guard in templates/validations.yaml rejects true for bundled installs.
-      purge: false
-  svcaccts:
-    # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
-    # (separate subchart), so it carries its own matching default in
-    # runtime-api.runtimeFileArchive.s3.{accessKeyId,secretAccessKey}; change
-    # both together, or point the archive at an existingSecret.
-    - accessKey: "default"
-      secretKey: "notasecret"
-      user: root
-  rootUser: "root"
-  resources:
-    requests:
-      memory: 100Mi
-      cpu: 100m
-    limits:
-      memory: 512Mi
-      cpu: 100m
-
-# Opt-in bundled object store, deployed alongside MinIO rather than instead of
-# it. Enabling it deploys RustFS but does NOT repoint the app: MinIO keeps
-# precedence while both are enabled (see templates/_objectstore.tpl), so the
-# store comes up empty and consumed by nothing until a later migration copies
-# the data across and repoints consumers. With MinIO disabled, RustFS becomes
-# the sole bundled store and the app targets it through the ordinary filestore
-# values — no separate wiring.
 rustfs:
   enabled: false
   image:

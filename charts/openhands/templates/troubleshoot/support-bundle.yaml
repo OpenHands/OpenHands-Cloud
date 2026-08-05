@@ -96,20 +96,9 @@ spec:
         limits:
           maxAge: 336h
     {{- end }}
-    {{- /* Collect logs from whichever bundled object store is active, keyed off
-           the backend helper rather than minio.enabled so a RustFS-only render
-           collects RustFS instead of a MinIO pod that does not exist. */}}
-    {{- if eq (include "openhands.objectStore.backend" .) "minio" }}
-    # MinIO logs (MinIO chart)
-    - logs:
-        name: app/{{ .Release.Name }}-minio/logs
-        namespace: {{ .Release.Namespace }}
-        selector:
-          - app=minio
-          - release={{ .Release.Name }}
-        limits:
-          maxAge: 336h
-    {{- end }}
+    {{- /* Collect the bundled store's logs when one is deployed. Keyed off the
+           backend helper rather than rustfs.enabled so an external-store render
+           collects nothing instead of a pod that does not exist. */}}
     {{- if eq (include "openhands.objectStore.backend" .) "rustfs" }}
     # RustFS logs (rustfs chart)
     - logs:
@@ -509,23 +498,9 @@ spec:
               when: ">= 1"
               message: "OpenHands LiteLLM deployment is ready"
     {{- end }}
-    {{- /* Analyze whichever bundled object store is active. Both run as a
-           Deployment in the chart's config — MinIO always, and RustFS in the
-           standalone mode the chart pins (the subchart only uses a StatefulSet
-           in distributed mode). The analyzer follows the backend rather than
-           assuming which store exists. */}}
-    {{- if eq (include "openhands.objectStore.backend" .) "minio" }}
-    - deploymentStatus:
-        name: {{ .Release.Name }}-minio
-        namespace: {{ .Release.Namespace }}
-        outcomes:
-          - fail:
-              when: "< 1"
-              message: "OpenHands MinIO deployment is not ready"
-          - pass:
-              when: ">= 1"
-              message: "OpenHands MinIO deployment is ready"
-    {{- end }}
+    {{- /* Analyze the bundled store when one is deployed. RustFS runs as a
+           Deployment in the standalone mode the chart pins; the subchart only
+           uses a StatefulSet in distributed mode. */}}
     {{- if eq (include "openhands.objectStore.backend" .) "rustfs" }}
     - deploymentStatus:
         name: {{ .Release.Name }}-rustfs
