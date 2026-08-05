@@ -178,8 +178,11 @@ tests:
       - notMatchRegexRaw:
           pattern: "(grep |awk |sed )"
 
-  # --- destination is not created here ------------------------------------
-  - it: waits for RustFS rather than creating it
+  # --- the destination is a sidecar, not a deployed Service ----------------
+  # The store is no longer deployed by an earlier release, so there is nothing to
+  # wait for. The orchestrator checks the pre-created claim instead, and the copy
+  # Pod brings its own RustFS.
+  - it: checks the data claim instead of waiting on a Deployment
     documentSelector:
       path: kind
       value: Job
@@ -189,6 +192,53 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: "rollout status deployment"
+          pattern: "get pvc \"\\$DATA_CLAIM\""
       - notMatchRegexRaw:
-          pattern: "(kubectl apply.*rustfs|mc mb.*only)"
+          pattern: "rollout status deployment"
+
+  - it: runs RustFS as a native sidecar in the copy Pod, on the chart's pinned tag
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+      rustfs.image.rustfs.tag: "1.0.0-beta.99"
+    asserts:
+      # restartPolicy Always on an initContainer is what makes it a sidecar that
+      # terminates when the copy container exits, so the Job can complete.
+      - matchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: "restartPolicy: Always"
+      # Same tag as the workload: the sidecar initialises the volume the chart's
+      # instance then serves, so a version skew risks a format mismatch.
+      - matchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: "image: \"rustfs/rustfs:1.0.0-beta.99\""
+
+  - it: copies into the sidecar over localhost, not into a Service
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: "value: \"http://127.0.0.1:9000\""
+      - notMatchRegexRaw:
+          pattern: "rustfs-svc:9000"
+
+  - it: mounts the pre-created data claim into the copy Pod
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+      rustfs.mode.standalone.existingClaim.dataClaim: some-other-claim
+    asserts:
+      - matchRegex:
+          path: data["copy-pod.yaml"]
+          pattern: "claimName: some-other-claim"

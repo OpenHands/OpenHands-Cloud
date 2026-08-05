@@ -1,0 +1,84 @@
+suite: rustfs pre-created data claim
+templates:
+  - templates/rustfs-data-claim.yaml
+tests:
+  - it: renders nothing when RustFS is off
+    set:
+      rustfs.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the claim when RustFS is on, whether or not a migration follows
+    set:
+      rustfs.enabled: true
+      filestore.migration.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: kind
+          value: PersistentVolumeClaim
+
+  # Both annotations are load-bearing and were arrived at by measuring an upgrade,
+  # not from the docs. Without hook-delete-policy the default before-hook-creation
+  # deletes and recreates the claim on the second upgrade, losing every object;
+  # resource-policy keep alone does NOT prevent that.
+  - it: carries both deletion protections
+    set:
+      rustfs.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: hook-failed
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  # Must exist before the migration orchestrator at -1 mounts it.
+  - it: runs before the migration hook, on install and upgrade
+    set:
+      rustfs.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-10"
+
+  # One source of truth: the subchart mounts this same value by name, so a claim
+  # rendered under a different name would leave the store deployed on an empty
+  # volume while the copy filled another.
+  - it: takes its name from the value the subchart mounts
+    set:
+      rustfs.enabled: true
+      rustfs.mode.standalone.existingClaim.dataClaim: renamed-claim
+    asserts:
+      - equal:
+          path: metadata.name
+          value: renamed-claim
+
+  - it: sizes and classes the claim from the same values the subchart would have used
+    set:
+      rustfs.enabled: true
+      rustfs.storageclass.name: fast-disks
+      rustfs.storageclass.dataStorageSize: 250Gi
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 250Gi
+      - equal:
+          path: spec.storageClassName
+          value: fast-disks
+
+  # An empty class means "use the cluster default", which must render as an absent
+  # field rather than storageClassName: "" — the latter means "no class at all"
+  # and leaves the claim unbound forever.
+  - it: omits the storage class when none is set
+    set:
+      rustfs.enabled: true
+      rustfs.storageclass.name: ""
+    asserts:
+      - notExists:
+          path: spec.storageClassName

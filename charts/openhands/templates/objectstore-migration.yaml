@@ -34,8 +34,10 @@ filestore.migration.enabled (perform the copy + repoint consumers).
 {{- $marker := printf "%s-objectstore-migrated" $rel }}
 {{- $freeze := printf "%s-objectstore-migration-freeze" $rel }}
 {{- $srcEndpoint := printf "http://%s-minio:9000" $rel }}
-{{- $dstEndpoint := printf "http://%s-rustfs-svc:9000" $rel }}
-{{- $rustfsDeploy := printf "%s-rustfs" $rel }}
+{{/* The destination is a RustFS sidecar inside the copy Pod, writing straight into
+     the data claim, so the store is populated before Helm's apply deploys it. */}}
+{{- $dstEndpoint := "http://127.0.0.1:9000" }}
+{{- $dataClaim := .Values.rustfs.mode.standalone.existingClaim.dataClaim }}
 {{- /* Writers are every workload that holds object-store credentials, derived
        from the same render conditions the chart uses to deploy them — never a
        hardcoded list that can drift from what is actually running. */}}
@@ -171,7 +173,34 @@ data:
     spec:
       restartPolicy: Never
       activeDeadlineSeconds: {{ $m.timeouts.copy }}
+      # RustFS needs long enough to flush and close cleanly on SIGTERM. An abrupt
+      # kill leaves a half-written temp directory behind (observed as
+      # "tmp-old -> DirectoryNotEmpty" on a spike whose writer was force-deleted).
+      terminationGracePeriodSeconds: 30
       serviceAccountName: {{ $name }}
+      # A native sidecar: an init container with restartPolicy Always starts
+      # before the copy container, stays up alongside it, and is terminated once
+      # it exits, so the Job can complete. Needs Kubernetes 1.29 or newer.
+      initContainers:
+        - name: rustfs
+          restartPolicy: Always
+          image: "{{ .Values.rustfs.image.rustfs.repository }}:{{ .Values.rustfs.image.rustfs.tag }}"
+          imagePullPolicy: {{ .Values.rustfs.image.rustfs.pullPolicy }}
+          env:
+            # The volume this instance initialises carries its own IAM state, so
+            # these must be the pair the subchart will serve with, or the store
+            # the apply deploys cannot authenticate against its own data.
+            - name: RUSTFS_ACCESS_KEY
+              value: {{ .Values.rustfs.secret.rustfs.access_key | quote }}
+            - name: RUSTFS_SECRET_KEY
+              value: {{ .Values.rustfs.secret.rustfs.secret_key | quote }}
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_ADDRESS
+              value: "127.0.0.1:9000"
+          volumeMounts:
+            - name: data
+              mountPath: /data
       {{- with $m.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -220,6 +249,9 @@ data:
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $dataClaim }}
         - name: scripts
           configMap:
             name: {{ $name }}
@@ -239,7 +271,21 @@ data:
     log() { echo "[copy $(date -u +%H:%M:%S)] $*"; }
 
     mc alias set src "$SRC_ENDPOINT" "$SRC_ACCESS_KEY" "$SRC_SECRET_KEY" >/dev/null
-    mc alias set dst "$DST_ENDPOINT" "$DST_ACCESS_KEY" "$DST_SECRET_KEY" >/dev/null
+
+    # The destination is a sidecar in this Pod, so it may still be starting.
+    # Poll rather than assume; a Service-backed destination was ready before the
+    # orchestrator ever created this Pod, a sidecar is not.
+    log "waiting for the RustFS sidecar to accept connections"
+    _n=0
+    until mc alias set dst "$DST_ENDPOINT" "$DST_ACCESS_KEY" "$DST_SECRET_KEY" >/dev/null 2>&1; do
+      _n=$(( _n + 1 ))
+      if [ "$_n" -gt 60 ]; then
+        log "ERROR: sidecar did not accept connections within 120s"
+        exit 1
+      fi
+      sleep 2
+    done
+    log "sidecar ready"
 
     # Objects list, one key per line, relative to the bucket. `mc find` prints
     # full "alias/bucket/key" paths; cut by character offset strips the fixed
@@ -372,12 +418,11 @@ spec:
             - |
               set -eu
               NS='{{ $ns }}'
-              RUSTFS_DEPLOY='{{ $rustfsDeploy }}'
+              DATA_CLAIM='{{ $dataClaim }}'
               COPY_POD='{{ $copyPod }}'
               MARKER='{{ $marker }}'
               FREEZE='{{ $freeze }}'
               WRITERS='{{ $writers | join " " }}'
-              STORE_READY={{ $m.timeouts.storeReady }}
               DRAIN={{ $m.timeouts.drain }}
               COPY={{ $m.timeouts.copy }}
               K="kubectl -n $NS"
@@ -400,15 +445,16 @@ spec:
                 [ "$PHASE" = "Succeeded" ]
               }
 
-              # 1. Wait for RustFS. It is deployed by an earlier release; this
-              #    hook never creates it. Its absence is a misconfiguration to
-              #    report before anything is frozen.
-              if ! $K get deployment "$RUSTFS_DEPLOY" >/dev/null 2>&1; then
-                log "ERROR: RustFS deployment '$RUSTFS_DEPLOY' not found. Deploy RustFS (rustfs.enabled) in an earlier release before enabling the migration."
+              # 1. Confirm the data claim exists. It is created by the
+              #    pre-install/pre-upgrade hook at weight -10, so by here it must
+              #    be present; the copy Pod cannot be scheduled without it. There
+              #    is no RustFS Deployment to wait for any more, because the copy
+              #    Pod brings its own sidecar and the apply deploys the store
+              #    afterwards, against the claim this hook fills.
+              if ! $K get pvc "$DATA_CLAIM" >/dev/null 2>&1; then
+                log "ERROR: data claim '$DATA_CLAIM' not found. It is created by a pre-upgrade hook at weight -10; a missing claim means that hook did not run."
                 exit 1
               fi
-              log "waiting for RustFS to be ready"
-              $K rollout status deployment "$RUSTFS_DEPLOY" --timeout="${STORE_READY}s"
 
               # 2. Decide from the outstanding difference, not from the marker.
               #    The marker records that a copy once completed; it does NOT mean

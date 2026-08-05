@@ -1,0 +1,50 @@
+{{- if .Values.rustfs.enabled }}
+{{- $claim := .Values.rustfs.mode.standalone.existingClaim.dataClaim }}
+{{/*
+RustFS's data claim, created ahead of everything that needs it.
+
+It exists as a hook rather than an ordinary resource because the migration's copy
+Pod mounts it during pre-upgrade, before Helm's apply runs. The subchart is
+pointed at it by name (rustfs.mode.standalone.existingClaim.dataClaim) and so
+renders no claim of its own, which is what lets the store come up already holding
+the copied data instead of being deployed empty by an earlier release.
+
+Both annotations below are load-bearing and were arrived at by measurement, not
+from the docs:
+
+  hook-delete-policy: hook-failed
+    displaces the DEFAULT of before-hook-creation, which would delete and
+    recreate this claim on every later upgrade — losing every object on the
+    second upgrade while the first appeared to work.
+
+  resource-policy: keep
+    blocks the deletion that hook-failed would otherwise perform, and blocks
+    uninstall. On its own it does NOT protect a hook resource from the default
+    delete policy: a measured upgrade changed the claim's UID with only this set.
+
+Keep both. Re-verify if Helm is bumped, since this is version-specific behaviour.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $claim }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # Runs before the migration orchestrator at -1, so the claim exists by the
+    # time that hook's copy Pod mounts it.
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": hook-failed
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.rustfs.storageclass.name }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.rustfs.storageclass.dataStorageSize }}
+{{- end }}

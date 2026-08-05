@@ -162,10 +162,6 @@ filestore:
     # beyond the ones the chart derives from its own render conditions.
     extraWriters: []
     timeouts:
-      # Seconds to wait for the RustFS StatefulSet to become ready before
-      # freezing anything. RustFS is deployed by an earlier release, so this is a
-      # readiness wait, not a provisioning one.
-      storeReady: 300
       # Seconds to wait for frozen writer pods to actually terminate.
       drain: 300
       # Seconds for the copy + verify of all buckets.
@@ -842,6 +838,19 @@ rustfs:
   mode:
     standalone:
       enabled: true
+      # The data claim is created by templates/rustfs-data-claim.yaml as a
+      # pre-install/pre-upgrade hook, so it exists before the migration's copy Pod
+      # mounts it and before the subchart's Deployment starts. Naming it here is
+      # the single source of truth: the hook renders this value as the claim's
+      # name, and the subchart mounts the same value instead of creating its own.
+      # Subchart values cannot be templated, so this cannot derive from
+      # .Release.Name and must be changed if the release is not named "openhands".
+      #
+      # Only the data claim is pre-created. Leaving logsClaim empty keeps the
+      # subchart creating the logs claim itself, which needs no backfill.
+      existingClaim:
+        dataClaim: openhands-rustfs-data
+        logsClaim: ""
     distributed:
       enabled: false
   storageclass:
