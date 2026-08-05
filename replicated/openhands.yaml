@@ -709,15 +709,18 @@ spec:
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           # Uploaded automation packages must survive pod replacement, so store
-          # them on the bundled object store instead of the pod filesystem. This
-          # points at RustFS in lock-step with the app: the migration copies the
-          # automation-data bucket across and both consumers cut over together on
-          # this release. (The parent chart cannot template a subchart's values,
-          # so automation is repointed here rather than through the object-store
-          # helper the app uses.)
+          # them on the bundled object store instead of the pod filesystem. The
+          # parent chart cannot template a subchart's values, so the endpoint is
+          # selected here to track the app's active backend rather than through
+          # the object-store helper the app uses (templates/_objectstore.tpl):
+          # RustFS once the migration is on or MinIO has been retired, MinIO
+          # otherwise. The migration copies the automation-data bucket across, so
+          # this keeps automation on the same store as the app through every
+          # lifecycle step instead of pinning it to a RustFS that a MinIO-only
+          # install never deploys. Keep the condition in sync with that helper.
           filestore:
             type: s3
-            endpoint: http://openhands-rustfs-svc:9000
+            endpoint: '{{repl if and (ConfigOptionEquals "rustfs_enabled" "1") (or (ConfigOptionEquals "object_store_migration_enabled" "1") (ConfigOptionEquals "minio_enabled" "0")) }}http://openhands-rustfs-svc:9000{{repl else}}http://openhands-minio:9000{{repl end}}'
             # The bundled store's bucket job only creates the parent chart's
             # session bucket, so the service provisions its own on startup.
             createBucket: true
