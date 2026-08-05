@@ -45,61 +45,36 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-  # The bundled MinIO bucket job runs on post-upgrade too, so purge: true wipes
-  # conversation and session data on every ordinary upgrade of a persistent
-  # install. These cases pin the guard that rejects it.
-  - it: fails when the bundled MinIO bucket sets purge true
+  # MinIO is gone from the chart, so a values file still carrying a `minio:`
+  # block has it silently ignored. These cases pin the guard that catches an
+  # install left with no bundled store at all.
+  - it: fails when stale minio values are the only bundled store configured
     set:
+      rustfs.enabled: false
       minio.enabled: true
-      minio.buckets:
-        - name: openhands-sessions
-          policy: none
-          purge: true
     asserts:
       - failedTemplate:
-          errorMessage: 'minio.buckets entry "openhands-sessions" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
-  - it: fails on a purging bucket even when the enterprise-server is disabled
-    # runtime-api and automation share the bundled store, so the data is at risk
-    # regardless of whether this release runs the server.
+          errorMessage: "values still set `minio`, which this chart no longer reads: the bundled MinIO was removed after its data was migrated to RustFS. That leaves this release with no bundled object store. Set rustfs.enabled=true to use the bundled store, or configure filestore for an external S3/GCS store, then delete the stale minio block."
+  - it: fires even when the enterprise-server is disabled
+    # runtime-api and automation share the bundled store, so a release with no
+    # store is broken regardless of whether it runs the server.
     set:
       enabled: false
+      rustfs.enabled: false
       minio.enabled: true
-      minio.buckets:
-        - name: openhands-sessions
-          policy: none
-          purge: true
     asserts:
       - failedTemplate:
-          errorMessage: 'minio.buckets entry "openhands-sessions" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
-  - it: fails on any purging bucket, not just the first
+          errorMessage: "values still set `minio`, which this chart no longer reads: the bundled MinIO was removed after its data was migrated to RustFS. That leaves this release with no bundled object store. Set rustfs.enabled=true to use the bundled store, or configure filestore for an external S3/GCS store, then delete the stale minio block."
+  - it: tolerates stale minio values once RustFS is deployed
     set:
-      minio.enabled: true
-      minio.buckets:
-        - name: openhands-sessions
-          policy: none
-          purge: false
-        - name: scratch
-          policy: none
-          purge: true
-    asserts:
-      - failedTemplate:
-          errorMessage: 'minio.buckets entry "scratch" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
-  - it: allows the bundled MinIO with the shipped purge false default
-    set:
+      rustfs.enabled: true
       minio.enabled: true
     asserts:
       - hasDocuments:
           count: 0
-  - it: ignores minio values entirely for external-store releases
-    # minio.enabled: false never renders the minio dependency, so leftover
-    # values must not block an external-S3 or GCS install.
+  - it: leaves an external-store release alone when no minio block is set
     set:
-      minio.enabled: false
-      minio.buckets:
-        - name: openhands-sessions
-          policy: none
-          purge: true
+      rustfs.enabled: false
     asserts:
       - hasDocuments:
           count: 0
-

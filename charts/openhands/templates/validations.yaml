@@ -13,49 +13,14 @@ are never rendered, so a server-less release must not trip them.
 {{- fail "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database." -}}
 {{- end -}}
 {{/*
-Data-loss guard for the bundled MinIO. Its chart runs the bucket job on
-post-install AND post-upgrade, and purge: true makes that job delete the bucket
-contents before recreating it — so with purge on, every ordinary upgrade of a
-persistent install destroys the conversation and session files. Deliberately NOT
-scoped to .Values.enabled: the bundled store is shared with runtime-api and
-automation, so the data is at risk even in a server-less release. Scoped instead
-to minio.enabled, which is what deploys the bundled store at all, so
-external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
+Stale-MinIO guard. MinIO was removed from this chart, so a values file still
+carrying a `minio:` block gets it silently ignored: the key is unknown, nothing
+warns, and an install that relied on it for its bundled store ends up with no
+store at all and an empty FILE_STORE. Catch that at render instead of letting it
+produce a broken object path. Not scoped to .Values.enabled, since the bundled
+store is shared with runtime-api and automation and matters even in a
+server-less release.
 */}}
-{{- if .Values.minio.enabled -}}
-{{- range .Values.minio.buckets -}}
-{{- if .purge -}}
-{{- fail (printf "minio.buckets entry %q sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data." .name) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{/*
-Credential-match guard for the bundled object store. The app is handed one
-credential pair for whichever bundled store is active (see
-templates/_objectstore.tpl), sourced from minio.svcaccts[0], so RustFS must
-answer to the same pair or object access breaks the moment consumers switch to
-it. Scoped to both stores being deployed — the state in which a switch is
-imminent — rather than to .Values.enabled, since the bundled store is shared
-with runtime-api and automation and matters even in a server-less release.
-*/}}
-{{- if and .Values.minio.enabled .Values.rustfs.enabled -}}
-{{- $mcAccess := (index .Values.minio.svcaccts 0).accessKey -}}
-{{- $mcSecret := (index .Values.minio.svcaccts 0).secretKey -}}
-{{- if or (ne (.Values.rustfs.secret.rustfs.access_key | toString) ($mcAccess | toString)) (ne (.Values.rustfs.secret.rustfs.secret_key | toString) ($mcSecret | toString)) -}}
-{{- fail "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey." -}}
-{{- end -}}
-{{- end -}}
-{{/*
-Object-store migration guards. The migration copies from the bundled MinIO into
-RustFS and repoints consumers, so both stores have to be deployed: RustFS as the
-destination and MinIO as the source (and rollback point). Leave minio.enabled
-true until a later release retires it.
-*/}}
-{{- if .Values.filestore.migration.enabled -}}
-{{- if not .Values.rustfs.enabled -}}
-{{- fail "filestore.migration.enabled is true but rustfs.enabled is false, so there is no destination to copy into. Set rustfs.enabled=true." -}}
-{{- end -}}
-{{- if not .Values.minio.enabled -}}
-{{- fail "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled=true until the migration has completed, then retire MinIO in a later release." -}}
-{{- end -}}
+{{- if and (hasKey .Values "minio") (not .Values.rustfs.enabled) -}}
+{{- fail "values still set `minio`, which this chart no longer reads: the bundled MinIO was removed after its data was migrated to RustFS. That leaves this release with no bundled object store. Set rustfs.enabled=true to use the bundled store, or configure filestore for an external S3/GCS store, then delete the stale minio block." -}}
 {{- end -}}
