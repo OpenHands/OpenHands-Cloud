@@ -625,8 +625,12 @@ litellm-helm:
   # --use_v2_migration_resolver arg passed via the Replicated values and so
   # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
   # format BerriAI uses for 1.84.x+ stable images).
+  #
+  # 1.94.1 picks up the orphaned prisma query-engine reaping fix
+  # (BerriAI/litellm#33424, released in v1.94.0), which addresses the gradual
+  # per-worker memory growth seen on 1.93.0.
   image:
-    tag: "1.93.0"
+    tag: "1.94.1"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
