@@ -316,6 +316,8 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: scripts
+              mountPath: /migration
           command:
             - /bin/sh
             - -c
@@ -447,4 +449,10 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: scripts
+          configMap:
+            name: {{ $name }}
+            items:
+              - key: copy-pod.yaml
+                path: copy-pod.yaml
 {{- end }}
