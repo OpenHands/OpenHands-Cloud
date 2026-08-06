@@ -461,14 +461,20 @@ spec:
     # the app targets the bundled instance automatically.
     filestore:
       type: s3
-      # Driven by the Object Store config group. When the operator turns the
-      # migration on, the pre-upgrade hook copies MinIO into RustFS and Helm's
-      # apply repoints every consumer at RustFS. MinIO stays deployed below as
-      # the rollback source until the operator retires it (minio_enabled off).
-      # The copy is incremental and additive, so a re-run after a timeout resumes
-      # rather than restarting, and repeats harmlessly once complete.
+      # Object-store lifecycle — the vendor drives it here, across releases; it is
+      # NOT exposed to the operator. Three switches move a fleet from MinIO to
+      # RustFS one release at a time (see templates/_objectstore.tpl):
+      #   baseline (this release): minio.enabled=true, rustfs.enabled=false,
+      #     migration.enabled=false — existing installs keep MinIO, nothing moves.
+      #   migrate: rustfs.enabled=true and migration.enabled=true — the pre-upgrade
+      #     hook copies MinIO into RustFS and Helm's apply repoints every consumer.
+      #     MinIO stays deployed as the rollback source. The copy is incremental
+      #     and additive, so a re-run after a timeout resumes rather than restarts.
+      #   retire/adopt: migration.enabled=false and minio.enabled=false together —
+      #     consumers stay on RustFS via the selector and Helm adopts the claim.
+      # Flip the automation endpoint (below) in lock-step with these.
       migration:
-        enabled: repl{{ ConfigOptionEquals "object_store_migration_enabled" "1" }}
+        enabled: false
         images:
           kubectl:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
@@ -477,7 +483,7 @@ spec:
         imagePullSecrets:
           - name: '{{repl ImagePullSecretName }}'
     minio:
-      enabled: repl{{ ConfigOptionEquals "minio_enabled" "1" }}
+      enabled: true
       persistence:
         enabled: true
       resources:
@@ -493,10 +499,10 @@ spec:
         - name: '{{repl ImagePullSecretName }}'
     # RustFS is the object-store backend once the migration flips precedence to
     # it (templates/_objectstore.tpl). Deploying it alone changes nothing; MinIO
-    # keeps precedence until the migration runs, and stays deployed as the
-    # rollback source until the operator retires it (minio_enabled off).
+    # keeps precedence until the migration runs. Off at baseline; the vendor turns
+    # it on in the migrate release (see the lifecycle note under filestore above).
     rustfs:
-      enabled: repl{{ ConfigOptionEquals "rustfs_enabled" "1" }}
+      enabled: false
       image:
         rustfs:
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/rustfs/rustfs'
@@ -710,17 +716,17 @@ spec:
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           # Uploaded automation packages must survive pod replacement, so store
           # them on the bundled object store instead of the pod filesystem. The
-          # parent chart cannot template a subchart's values, so the endpoint is
-          # selected here to track the app's active backend rather than through
-          # the object-store helper the app uses (templates/_objectstore.tpl):
-          # RustFS once the migration is on or MinIO has been retired, MinIO
-          # otherwise. The migration copies the automation-data bucket across, so
-          # this keeps automation on the same store as the app through every
-          # lifecycle step instead of pinning it to a RustFS that a MinIO-only
-          # install never deploys. Keep the condition in sync with that helper.
+          # parent chart cannot template a subchart's values, so this endpoint is
+          # set here and must be kept in lock-step with the object-store lifecycle
+          # switches under filestore/minio/rustfs above (the app follows those via
+          # templates/_objectstore.tpl; automation cannot). MinIO at baseline;
+          # switch to http://openhands-rustfs-svc:9000 in the migrate release (the
+          # migration copies the automation-data bucket across) and leave it there
+          # through retirement. Never point it at a store those switches leave
+          # undeployed.
           filestore:
             type: s3
-            endpoint: '{{repl if and (ConfigOptionEquals "rustfs_enabled" "1") (or (ConfigOptionEquals "object_store_migration_enabled" "1") (ConfigOptionEquals "minio_enabled" "0")) }}http://openhands-rustfs-svc:9000{{repl else}}http://openhands-minio:9000{{repl end}}'
+            endpoint: http://openhands-minio:9000
             # The bundled store's bucket job only creates the parent chart's
             # session bucket, so the service provisions its own on startup.
             createBucket: true

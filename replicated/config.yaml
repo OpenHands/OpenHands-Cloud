@@ -1129,48 +1129,6 @@ spec:
           type: text
           default: "runtime_api_db"
 
-    - name: object_store_configuration
-      title: Object Store
-      description: >-
-        Where OpenHands keeps conversation and workspace-archive objects. The
-        bundled MinIO is the default. RustFS is an alternative bundled store you
-        can migrate onto in place, across ordinary upgrades, without leaving the
-        release.
-      items:
-        - name: minio_enabled
-          title: Deploy Bundled MinIO
-          help_text: >-
-            Deploy the bundled MinIO object store. Leave this enabled for the
-            default configuration. Disable it only as the final step of a RustFS
-            migration — once every consumer is reading and writing RustFS — to
-            retire MinIO and reclaim its volume.
-          type: bool
-          default: "1"
-        - name: rustfs_enabled
-          title: Deploy Bundled RustFS
-          help_text: >-
-            Deploy the bundled RustFS object store alongside MinIO. On its own
-            this only deploys RustFS; it moves no data and does not repoint the
-            app, because MinIO keeps precedence while both are enabled. Enable it
-            together with the migration below to copy the data across and cut
-            over.
-          type: bool
-          default: "0"
-        - name: object_store_migration_enabled
-          title: Migrate MinIO Data Into RustFS
-          help_text: >-
-            During the next upgrade, copy every object from MinIO into RustFS and
-            repoint the app at RustFS when the copy completes. The copy is
-            incremental and additive, so a re-run after a timeout resumes rather
-            than restarts, and repeats harmlessly once complete. MinIO stays
-            deployed as the rollback source. To finish the migration later,
-            disable this together with "Deploy Bundled MinIO" in the same
-            upgrade: that keeps the app on RustFS and retires MinIO. Disabling
-            this while MinIO is still deployed sends the app back to MinIO.
-          type: bool
-          default: "0"
-          when: 'repl{{ ConfigOptionEquals "rustfs_enabled" "1" }}'
-
     - name: sandbox_configuration
       title: Sandbox Configuration
       description: OpenHands conversations run in isolated sandboxes. Configure sandbox resources and lifecycle settings here. Adjust these settings based on your expected workload and the size of your cluster.
