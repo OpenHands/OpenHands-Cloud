@@ -95,12 +95,6 @@
         "accessKey": { "type": "string" },
         "secretKey": { "type": "string" }
       }
-    },
-    "minio": {
-      "type": "object",
-      "properties": {
-        "enabled": { "type": "boolean" }
-      }
     }
   }
 }
