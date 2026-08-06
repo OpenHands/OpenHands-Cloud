@@ -4,12 +4,17 @@ on:
   pull_request:
     paths:
       - 'scripts/**'
+      # Several suites here assert contracts that span the chart and the
+      # Replicated manifests, so they have to run when either side moves and
+      # not only when the test itself is edited.
+      - 'charts/**'
+      - 'replicated/**'
       - '.github/workflows/publish-release-charts.yml'
       - '.github/workflows/test-scripts.yml'
 
 jobs:
   test-scripts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -50,4 +55,5 @@ jobs:
           --with uvicorn
           --with httpx
           --with ruamel.yaml
+          --with PyYAML
           python -m pytest scripts -q
