@@ -101,6 +101,23 @@
       "properties": {
         "enabled": { "type": "boolean" }
       }
+    },
+    "laminar": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clickhouse": {
+          "type": "object",
+          "properties": {
+            "diagnostics": {
+              "type": "object",
+              "properties": {
+                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

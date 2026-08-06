@@ -107,6 +107,40 @@ spec:
         limits:
           maxAge: 336h
     {{- end }}
+    {{- if .Values.laminar.enabled }}
+    # Laminar ClickHouse pod logs plus read-only system-table diagnostics. The
+    # ClickHouse system tables themselves are TTL-bounded, so this collector
+    # captures table sizes, TTL metadata and the most recent trace rows.
+    - logs:
+        name: app/laminar-clickhouse/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-clickhouse
+        limits:
+          maxAge: 336h
+    - exec:
+        name: app/laminar-clickhouse-diagnostics
+        collectorName: laminar-clickhouse-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-clickhouse
+        containerName: clickhouse
+        command: ["/bin/bash", "-ec"]
+        args:
+          - |
+            client=(clickhouse-client --host localhost --port 9000 --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}")
+            run() {
+              echo "== $1 =="
+              if ! "${client[@]}" --query "$2"; then
+                echo "ERROR: query failed"
+              fi
+              echo
+            }
+            run "system diagnostic table sizes and ttl" "SELECT database, name, total_rows, formatReadableSize(total_bytes) AS size, metadata_modification_time, if(position(create_table_query, 'TTL') = 0, 'none', substring(create_table_query, position(create_table_query, 'TTL'), 160)) AS ttl FROM system.tables WHERE database = 'system' AND name IN ('asynchronous_metric_log','metric_log','query_log','query_thread_log','query_views_log','part_log','session_log','text_log','trace_log','crash_log','opentelemetry_span_log','zookeeper_log','blob_storage_log','processors_profile_log') ORDER BY total_bytes DESC FORMAT JSONEachRow"
+            run "recent trace_log rows" "SELECT event_time, trace_type, thread_name, query_id FROM system.trace_log ORDER BY event_time DESC LIMIT 50 FORMAT JSONEachRow"
+            run "recent text_log rows" "SELECT event_time, level, logger_name, message FROM system.text_log ORDER BY event_time DESC LIMIT 50 FORMAT JSONEachRow"
+        timeout: 30s
+    {{- end }}
     {{- if index .Values "runtime-api" "enabled" }}
     # Runtime API logs
     - logs:

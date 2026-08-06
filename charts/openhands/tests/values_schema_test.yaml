@@ -32,6 +32,18 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "minio/enabled.*want boolean"
+  - it: rejects ClickHouse diagnostic retention above the supported bound
+    set:
+      laminar.clickhouse.diagnostics.retentionDays: 4
+    asserts:
+      - failedTemplate:
+          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*Must be less than or equal to 3"
+  - it: rejects ClickHouse diagnostic retention below the supported bound
+    set:
+      laminar.clickhouse.diagnostics.retentionDays: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*Must be greater than or equal to 1"
   - it: rejects a non-string filestore.region
     set:
       filestore.region: true
@@ -50,5 +62,6 @@ tests:
       filestore.existingSecret: s3-creds
       filestore.accessKeyIdKey: access-key
       filestore.secretAccessKeyKey: secret-key
+      laminar.clickhouse.diagnostics.retentionDays: 2
     asserts:
       - notFailedTemplate: {}
