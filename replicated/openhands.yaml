@@ -461,18 +461,11 @@ spec:
     # the app targets the bundled instance automatically.
     filestore:
       type: s3
-      # Object-store lifecycle — the vendor drives it here, across releases; it is
-      # NOT exposed to the operator. Three switches move a fleet from MinIO to
-      # RustFS one release at a time (see templates/_objectstore.tpl):
-      #   baseline (this release): minio.enabled=true, rustfs.enabled=false,
-      #     migration.enabled=false — existing installs keep MinIO, nothing moves.
-      #   migrate: rustfs.enabled=true and migration.enabled=true — the pre-upgrade
-      #     hook copies MinIO into RustFS and Helm's apply repoints every consumer.
-      #     MinIO stays deployed as the rollback source. The copy is incremental
-      #     and additive, so a re-run after a timeout resumes rather than restarts.
-      #   retire/adopt: migration.enabled=false and minio.enabled=false together —
-      #     consumers stay on RustFS via the selector and Helm adopts the claim.
-      # Flip the automation endpoint (below) in lock-step with these.
+      # Switches for the bundled object store: they select the backend and run the
+      # one-time MinIO->RustFS migration (see templates/_objectstore.tpl). Enabling
+      # rustfs + migration copies MinIO into RustFS and repoints consumers, with
+      # MinIO kept as the rollback source; turning minio off afterwards retires it
+      # and Helm adopts the claim. Move the automation endpoint (below) in lock-step.
       migration:
         enabled: false
         images:
@@ -497,10 +490,9 @@ spec:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
-    # RustFS is the object-store backend once the migration flips precedence to
-    # it (templates/_objectstore.tpl). Deploying it alone changes nothing; MinIO
-    # keeps precedence until the migration runs. Off at baseline; the vendor turns
-    # it on in the migrate release (see the lifecycle note under filestore above).
+    # RustFS becomes the backend once the migration flips precedence to it
+    # (templates/_objectstore.tpl); deployed alone it changes nothing, since MinIO
+    # keeps precedence until the migration runs.
     rustfs:
       enabled: false
       image:
