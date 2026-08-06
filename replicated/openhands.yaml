@@ -474,12 +474,12 @@ spec:
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       storageclass:
-        # 500Gi matches the bundled MinIO PVC that RustFS is migrated from (the
-        # minio subchart default, which this overlay never overrode). The target
-        # must never be smaller than the source it copies, and RustFS only ever
-        # holds what MinIO held, so this is both the floor and the ceiling.
-        # Applied at volume creation only — a PVC can't shrink and only grows
-        # where the storage class allows — so it isn't exposed as a config option.
+        # 500Gi matches the MinIO PVC RustFS was migrated from (the minio
+        # subchart default of 500Gi in the migrate release). The target must
+        # never be smaller than the source it copied, and RustFS only ever holds
+        # what MinIO held, so this is both the floor and the ceiling. Applied at
+        # volume creation only — a PVC can't shrink and only grows where the
+        # storage class allows — so it isn't exposed as a config option.
         dataStorageSize: 500Gi
     # sha256 of every secret (password) config value. Changing any secret in the
     # KOTS config changes this hash, which changes the openhands pod-template
