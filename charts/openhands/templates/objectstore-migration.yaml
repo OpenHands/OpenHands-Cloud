@@ -54,17 +54,10 @@ filestore.migration.enabled (perform the copy + repoint consumers).
 {{- $writers = concat $writers $m.extraWriters }}
 {{- /* Buckets to copy: the app's session bucket always, the automation package
        bucket when automation is deployed, and the sandbox workspace archive when
-       it resolves to the bundled store. A source bucket that does not exist is
+       its store type resolves to s3 (that path reuses the app's AWS_S3_* env,
+       mirroring templates/_env.yaml). A source bucket that does not exist is
        skipped by copy.sh, not an error, so an over-broad list is cheap while a
-       short one silently strands data.
-
-       The archive lands in the bundled store only when its store type resolves to
-       s3, since the s3 path reuses the app's AWS_S3_* connection env. That
-       derivation mirrors templates/_env.yaml: an empty storeType follows
-       filestore.type. Nothing we ship enables the archive, but a Helm install that
-       sets filestore.type=s3, minio.enabled and runtimeFileArchive.enabled would
-       otherwise have a bucket in the bundled store that this copy skipped while
-       the apply repointed its consumers anyway. */}}
+       short one silently strands data. */}}
 {{- $buckets := list .Values.filestore.bucket }}
 {{- if .Values.automation.enabled }}
 {{- $buckets = append $buckets .Values.automation.filestore.bucket }}
@@ -478,31 +471,21 @@ spec:
                 [ "$PHASE" = "Succeeded" ]
               }
 
-              # 1. Confirm the data claim exists. It is created by the
-              #    pre-install/pre-upgrade hook at weight -10, so by here it must
-              #    be present; the copy Pod cannot be scheduled without it. There
-              #    is no RustFS Deployment to wait for any more, because the copy
-              #    Pod brings its own sidecar and the apply deploys the store
-              #    afterwards, against the claim this hook fills.
-              #    `apply` is idempotent: it creates the claim on the first run
-              #    and patches a no-op on a retry, so this needs no exists check.
-              #    It carries Helm's ownership metadata, so the apply that follows
-              #    this hook adopts it rather than colliding with it.
+              # 1. Ensure the data claim exists (idempotent apply: creates it on
+              #    the first run, no-op patch on a retry). The copy Pod mounts it
+              #    and brings its own RustFS sidecar, so there is no Deployment to
+              #    wait for; the claim carries Helm's ownership metadata, so the
+              #    apply that follows adopts it instead of colliding with it.
               log "ensuring data claim '$DATA_CLAIM'"
               if ! CLAIM_ERR=$($K apply -f /migration/claim.yaml 2>&1); then
                 log "ERROR: could not ensure data claim '$DATA_CLAIM': $CLAIM_ERR"
                 exit 1
               fi
 
-              # 2. Decide from the outstanding difference, not from the marker.
-              #    The marker records that a copy once completed; it does NOT mean
-              #    the stores still agree. A rollback leaves the marker in place
-              #    while consumers resume writing to the source, so trusting it
-              #    would repoint them onto a store missing everything written since
-              #    (proven: a marker-skipped redeploy left objects behind while the
-              #    apply repointed the app anyway). The copy is incremental and
-              #    additive, so the honest test is the difference itself, and it
-              #    costs one read-only listing pass with nothing frozen.
+              # 2. Decide from the outstanding difference, not the marker: a
+              #    rollback leaves the marker set while consumers write to the
+              #    source again, so trusting it would repoint onto a stale store.
+              #    The check is one read-only listing pass with nothing frozen.
               if ! run_copy_pod check; then
                 log "ERROR: difference check did not succeed"
                 exit 1

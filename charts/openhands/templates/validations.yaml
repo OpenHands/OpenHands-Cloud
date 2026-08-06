@@ -2,9 +2,12 @@
 Render-time configuration guards. Emits no resources; each block fails the
 render with a clear message when values are invalid or conflicting, so the
 mistake is caught at install/upgrade instead of producing a broken object.
-Each guard is scoped to .Values.enabled: when the enterprise-server is not
-deployed (enabled=false), the ingress and database env these guards check
-are never rendered, so a server-less release must not trip them.
+
+The ingress and database guards are scoped to .Values.enabled, since the env
+they check is only rendered for the enterprise-server. The object-store guards
+are deliberately not: the bundled store is shared with runtime-api and
+automation, so they scope to the store's own switches (minio.enabled/
+rustfs.enabled) and fire even in a server-less release.
 */}}
 {{- if and .Values.enabled .Values.ingress.enabled (not .Values.ingress.host) -}}
 {{- fail "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false." -}}
@@ -14,13 +17,10 @@ are never rendered, so a server-less release must not trip them.
 {{- end -}}
 {{/*
 Data-loss guard for the bundled MinIO. Its chart runs the bucket job on
-post-install AND post-upgrade, and purge: true makes that job delete the bucket
+post-install and post-upgrade, and purge: true makes that job delete the bucket
 contents before recreating it — so with purge on, every ordinary upgrade of a
-persistent install destroys the conversation and session files. Deliberately NOT
-scoped to .Values.enabled: the bundled store is shared with runtime-api and
-automation, so the data is at risk even in a server-less release. Scoped instead
-to minio.enabled, which is what deploys the bundled store at all, so
-external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
+persistent install destroys the conversation and session files. Scoped to
+minio.enabled, so external-S3/GCS releases are unaffected.
 */}}
 {{- if .Values.minio.enabled -}}
 {{- range .Values.minio.buckets -}}
@@ -35,8 +35,7 @@ credential pair for whichever bundled store is active (see
 templates/_objectstore.tpl), sourced from minio.svcaccts[0], so RustFS must
 answer to the same pair or object access breaks the moment consumers switch to
 it. Scoped to both stores being deployed — the state in which a switch is
-imminent — rather than to .Values.enabled, since the bundled store is shared
-with runtime-api and automation and matters even in a server-less release.
+imminent.
 */}}
 {{- if and .Values.minio.enabled .Values.rustfs.enabled -}}
 {{- $mcAccess := (index .Values.minio.svcaccts 0).accessKey -}}

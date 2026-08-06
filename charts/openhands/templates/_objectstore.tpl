@@ -14,9 +14,8 @@ never moves a consumer onto an empty store.
 The migration switch is what repoints consumers. filestore.migration.enabled
 flips precedence to RustFS: the pre-upgrade hook copies the data across before
 Helm's apply lands, and the apply then renders every consumer pointed at RustFS.
-MinIO stays deployed (minio.enabled) as the rollback source, exactly as the
-CNPG migration keeps the old database server deployed while consumers already
-resolve to the new one.
+MinIO stays deployed (minio.enabled) as the rollback source (see
+templates/objectstore-migration.yaml).
 
 Neither backend is bundled when both are disabled: that install uses an
 external store (S3/GCS) or none, and these helpers render nothing.
