@@ -134,6 +134,48 @@ filestore:
   accessKey: ""
   secretKey: ""
 
+  # One-time copy of the bundled object store from MinIO into RustFS, run by a
+  # pre-upgrade hook on the upgrade that switches backends. Requires both stores
+  # deployed (minio.enabled and rustfs.enabled). Enabling it also repoints every
+  # consumer at RustFS when the apply lands (see templates/_objectstore.tpl) —
+  # MinIO stays deployed as the rollback source until a later, deliberate
+  # release turns it off. Never runs on a fresh install. The copy is incremental
+  # by key-set difference and additive (no delete path), so a re-run copies only
+  # what is missing and repeats harmlessly once complete.
+  migration:
+    enabled: false
+    images:
+      # Orchestrator: freezes writers and drives the copy Pod, so it needs
+      # kubectl and a shell (not rancher/kubectl, which has neither a shell nor
+      # the coreutils the script uses).
+      kubectl:
+        repository: docker.io/alpine/k8s
+        tag: "1.30.0"
+        pullPolicy: IfNotPresent
+      # Copy Pod: runs `mc`, which the RustFS/MinIO server images do not carry.
+      mc:
+        repository: quay.io/minio/mc
+        tag: RELEASE.2025-08-13T08-35-41Z
+        pullPolicy: IfNotPresent
+    imagePullSecrets: []
+    # Extra "deployment/x" | "statefulset/x" writers to freeze for the copy,
+    # beyond the ones the chart derives from its own render conditions.
+    extraWriters: []
+    timeouts:
+      # Seconds to wait for frozen writer pods to actually terminate.
+      drain: 300
+      # Seconds for the copy + verify of all buckets.
+      copy: 1800
+      # Overall Job deadline; keep below the helm --timeout.
+      total: 2700
+    backoffLimit: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
   # Optional SHARED_EVENT_STORAGE_PROVIDER override ("aws" | "gcp"); when empty
   # the app derives the provider from FILE_STORE.
   provider: ""
@@ -727,18 +769,67 @@ minio:
       memory: 512Mi
       cpu: 100m
 
-# Opt-in alternative to the bundled MinIO. RustFS speaks S3, so point the app at
-# it with the ordinary filestore values — no separate wiring:
-#   filestore: {type: s3, endpoint: "http://<release>-rustfs-svc:9000",
-#               existingSecret: <s3 keys>}
+# Opt-in bundled object store, deployed alongside MinIO rather than instead of
+# it. Enabling it deploys RustFS but does NOT repoint the app: MinIO keeps
+# precedence while both are enabled (see templates/_objectstore.tpl), so the
+# store comes up empty and consumed by nothing until a later migration copies
+# the data across and repoints consumers. With MinIO disabled, RustFS becomes
+# the sole bundled store and the app targets it through the ordinary filestore
+# values — no separate wiring.
 rustfs:
   enabled: false
+  image:
+    rustfs:
+      repository: rustfs/rustfs
+      # The subchart treats an empty tag as "use my appVersion", but the bucket
+      # Job needs a concrete one. Bump this together with the rustfs chart pin in
+      # Chart.yaml.
+      tag: "1.0.0-beta.10"
+      pullPolicy: IfNotPresent
   # The subchart refuses to render without credentials. These match
   # minio.svcaccts[0] so both bundled stores answer to the same pair.
   secret:
     rustfs:
       access_key: "default"
       secret_key: "notasecret"
+  # The subchart leaves log_rotation unset, so nothing prunes rotated logs and the
+  # volume grows without bound.
+  config:
+    rustfs:
+      log_level: warn
+      log_rotation:
+        # Ceiling on the file count, applied before any size cap. log_rotation.time
+        # is deliberately unset: the server accepts only minutely/hourly/daily and
+        # silently treats anything else as daily, so the subchart's documented
+        # "hour" is worse than its own default of hourly. Cadence is immaterial
+        # anyway, since MAX_SINGLE_FILE_SIZE_BYTES below is what rotation fires on.
+        keep_files: 8
+  # The byte-based retention keys have no values path in the subchart, and its
+  # log_rotation.size renders RUSTFS_OBS_LOG_ROTATION_SIZE_MB, which the server
+  # does not read. Set them directly; env wins over the subchart's envFrom.
+  extraEnv:
+    # Ceiling on the log directory, independent of rotation cadence, compression
+    # ratio and file count. Well inside logStorageSize below.
+    - name: RUSTFS_OBS_LOG_MAX_TOTAL_SIZE_BYTES
+      value: "268435456"
+    # Rotate on bytes, so the ceiling does not track request volume.
+    - name: RUSTFS_OBS_LOG_MAX_SINGLE_FILE_SIZE_BYTES
+      value: "10485760"
+    # Gates every cap above: a file younger than this is never eligible for
+    # cleanup, so the default of 3600 lets the directory grow to the write rate
+    # times an hour no matter what the ceilings say. Measured: at debug level with
+    # an 8Mi ceiling the directory still reached 1.27Gi in 92s until this was
+    # lowered.
+    - name: RUSTFS_OBS_LOG_MIN_FILE_AGE_SECONDS
+      value: "60"
+    # Cleanup runs on an interval, so the peak overshoots the ceiling by roughly
+    # the write rate times this value. Kept short to bound that transient.
+    - name: RUSTFS_OBS_LOG_CLEANUP_INTERVAL_SECONDS
+      value: "60"
+    # Compression is on by default and compressed files are otherwise kept
+    # forever.
+    - name: RUSTFS_OBS_LOG_COMPRESSED_FILE_RETENTION_DAYS
+      value: "1"
   replicaCount: 1
   # The subchart defaults this on, publishing its console at a placeholder host.
   # The store is only ever reached in-cluster.
@@ -747,6 +838,19 @@ rustfs:
   mode:
     standalone:
       enabled: true
+      # The data claim is created by templates/rustfs-data-claim.yaml as a
+      # pre-install/pre-upgrade hook, so it exists before the migration's copy Pod
+      # mounts it and before the subchart's Deployment starts. Naming it here is
+      # the single source of truth: the hook renders this value as the claim's
+      # name, and the subchart mounts the same value instead of creating its own.
+      # Subchart values cannot be templated, so this cannot derive from
+      # .Release.Name and must be changed if the release is not named "openhands".
+      #
+      # Only the data claim is pre-created. Leaving logsClaim empty keeps the
+      # subchart creating the logs claim itself, which needs no backfill.
+      existingClaim:
+        dataClaim: openhands-rustfs-data
+        logsClaim: ""
     distributed:
       enabled: false
   storageclass:
