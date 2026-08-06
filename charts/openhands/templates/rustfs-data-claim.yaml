@@ -1,37 +1,18 @@
 {{- if .Values.rustfs.enabled }}
 {{/*
-RustFS's data claim.
+RustFS's data claim. The gate below is load-bearing: Helm snapshots a release's
+resources before hooks run, so a claim that first appears in a pre-upgrade hook
+fails the apply with `no PersistentVolumeClaim "..." found` — after the hook has
+frozen writers, leaving the app down.
 
-WHO CREATES IT depends on whether this upgrade is migrating data into the store,
-and the gate below is load-bearing. Helm snapshots the release's resources before
-hooks run, so an object that first appears during a pre-upgrade hook is one Helm
-then refuses to apply — it fails the upgrade with `no PersistentVolumeClaim with
-the name "..." found`, after the hook has already frozen writers, leaving the app
-down. Measured on kind.
+So a migrating upgrade renders nothing here and the migration hook creates and owns
+the claim (RustFS mounts it by name via existingClaim); Helm adopts it on the next
+non-migrating upgrade, when the claim already predates the upgrade. A fresh install
+renders it here, since the hook is pre-upgrade only. Same approach as
+templates/postgres-cnpg-migration.yaml (#986).
 
-So on a MIGRATING upgrade this template renders NOTHING: the migration
-orchestrator's Job creates and owns the claim (with the Helm ownership metadata
-below, sourced from the same values), its copy Pod mounts it during pre-upgrade,
-and the RustFS subchart mounts it by name via existingClaim. Helm adopts the claim
-on the next upgrade that leaves the migration off, which works because by then the
-claim predates the upgrade. This mirrors templates/postgres-cnpg-migration.yaml
-(#986), which solves the identical problem the same way.
-
-A fresh INSTALL renders it here regardless of the migration switch: the
-orchestrator is a pre-upgrade hook only, so on an install nothing else creates it.
-
-Two earlier attempts are worth recording so they are not retried:
-
-  - Rendering this as a hook with the default delete policy destroys data: Helm
-    deletes and recreates the claim on the second upgrade, so the first upgrade
-    appears to work and the second silently empties the store.
-  - Rendering it as a hook with hook-delete-policy hook-failed plus
-    resource-policy keep protects the data but is not idempotent. Hook creation is
-    create-not-apply, so the next upgrade fails with "already exists". Measured.
-
-resource-policy keep stays, for a different reason than hook lifecycle: it stops
-`helm uninstall` taking the conversation data with it. That makes the claim
-outlive the release deliberately, which is documented in the upgrade note.
+resource-policy keep makes the claim outlive `helm uninstall` so it never takes the
+conversation data with it.
 */}}
 {{- if or .Release.IsInstall (not .Values.filestore.migration.enabled) }}
 apiVersion: v1
