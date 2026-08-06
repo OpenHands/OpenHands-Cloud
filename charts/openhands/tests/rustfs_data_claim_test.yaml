@@ -9,16 +9,9 @@ tests:
       - hasDocuments:
           count: 0
 
-  # WHO creates the claim depends on whether the upgrade is migrating into it.
-  # Helm refuses to apply an object that first appears during a pre-upgrade hook
-  # ("no PersistentVolumeClaim with the name ... found"), so on a migrating
-  # upgrade this template must render nothing and the orchestrator Job owns the
-  # claim; Helm adopts it on the next upgrade that leaves the migration off. Same
-  # shape as templates/postgres-cnpg-migration.yaml (#986). Measured on kind.
-  - it: renders the claim on a fresh install, even with a migration configured
+  - it: renders the claim on a fresh install
     set:
       rustfs.enabled: true
-      filestore.migration.enabled: true
     asserts:
       - hasDocuments:
           count: 1
@@ -26,12 +19,14 @@ tests:
           path: kind
           value: PersistentVolumeClaim
 
-  - it: renders the claim on a non-migrating upgrade, for Helm to adopt
+  # On installs that migrated from MinIO the claim already exists — a prior migrate
+  # release's pre-upgrade hook created it with the managed-by label — so rendering
+  # it on the upgrade is what lets Helm adopt it instead of erroring.
+  - it: renders the claim on an upgrade, for Helm to adopt
     release:
       upgrade: true
     set:
       rustfs.enabled: true
-      filestore.migration.enabled: false
     asserts:
       - hasDocuments:
           count: 1
@@ -39,21 +34,8 @@ tests:
           path: kind
           value: PersistentVolumeClaim
 
-  - it: renders nothing on a migrating upgrade, leaving the claim to the orchestrator
-    release:
-      upgrade: true
-    set:
-      rustfs.enabled: true
-      filestore.migration.enabled: true
-    asserts:
-      - hasDocuments:
-          count: 0
-
-  # An ORDINARY resource, not a hook. Rendering it as a hook was tried twice and
-  # failed both ways: the default delete policy destroys data on the second
-  # upgrade, and hook-delete-policy hook-failed plus resource-policy keep is not
-  # idempotent because hook creation is create-not-apply, so the next upgrade
-  # fails with "already exists".
+  # An ordinary resource, not a hook, so Helm manages it across upgrades and the
+  # resource-policy below is what protects the data.
   - it: is not a hook
     set:
       rustfs.enabled: true
@@ -63,8 +45,7 @@ tests:
       - notExists:
           path: metadata.annotations["helm.sh/hook-delete-policy"]
 
-  # Guards the conversation data against helm uninstall, which is a different
-  # concern from the hook lifecycle above.
+  # Guards the conversation data against helm uninstall.
   - it: survives uninstall
     set:
       rustfs.enabled: true
@@ -73,8 +54,8 @@ tests:
           path: metadata.annotations["helm.sh/resource-policy"]
           value: keep
 
-  # The orchestrator creates this same object early so its copy Pod can mount it;
-  # Helm refuses to adopt an object without this label.
+  # A prior migrate release's hook may have created this object; Helm refuses to
+  # adopt one that lacks this label.
   - it: carries the managed-by label the apply needs to adopt it
     set:
       rustfs.enabled: true
@@ -84,8 +65,7 @@ tests:
           value: Helm
 
   # One source of truth: the subchart mounts this same value by name, so a claim
-  # rendered under a different name would leave the store deployed on an empty
-  # volume while the copy filled another.
+  # rendered under a different name would leave RustFS on an empty volume.
   - it: takes its name from the value the subchart mounts
     set:
       rustfs.enabled: true
