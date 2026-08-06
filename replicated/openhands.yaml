@@ -456,9 +456,9 @@ spec:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
       auth:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
-    # Conversation/session files live on the bundled MinIO, which is durable
-    # here (persistence below). With no endpoint or credentials configured,
-    # the app targets the bundled instance automatically.
+    # Conversation/session files live on the bundled object store, durable here
+    # (persistence below). With no endpoint or credentials configured, the app
+    # targets the active bundled backend automatically (see templates/_objectstore.tpl).
     filestore:
       type: s3
       # Switches for the bundled object store: they select the backend and run the
@@ -467,7 +467,7 @@ spec:
       # MinIO kept as the rollback source; turning minio off afterwards retires it
       # and Helm adopts the claim. Move the automation endpoint (below) in lock-step.
       migration:
-        enabled: false
+        enabled: true
         images:
           kubectl:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
@@ -494,7 +494,7 @@ spec:
     # (templates/_objectstore.tpl); deployed alone it changes nothing, since MinIO
     # keeps precedence until the migration runs.
     rustfs:
-      enabled: false
+      enabled: true
       image:
         rustfs:
           repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/rustfs/rustfs'
@@ -718,7 +718,7 @@ spec:
           # undeployed.
           filestore:
             type: s3
-            endpoint: http://openhands-minio:9000
+            endpoint: http://openhands-rustfs-svc:9000
             # The bundled store's bucket job only creates the parent chart's
             # session bucket, so the service provisions its own on startup.
             createBucket: true
