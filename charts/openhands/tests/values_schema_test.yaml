@@ -43,13 +43,13 @@ tests:
       laminar.clickhouse.diagnostics.retentionDays: 4
     asserts:
       - failedTemplate:
-          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*Must be less than or equal to 3"
+          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*maximum: got 4, want 3"
   - it: rejects ClickHouse diagnostic retention below the supported bound
     set:
       laminar.clickhouse.diagnostics.retentionDays: 0
     asserts:
       - failedTemplate:
-          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*Must be greater than or equal to 1"
+          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*minimum: got 0, want 1"
   - it: rejects a non-string filestore.region
     set:
       filestore.region: true
