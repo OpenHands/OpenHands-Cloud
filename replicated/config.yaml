@@ -1239,6 +1239,20 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: sandbox_max_num_sandboxes
+          title: Max Concurrent Sandboxes
+          help_text: >-
+            Maximum number of concurrent sandboxes the app will start across the
+            cluster. Set to 0 (default) for no cap. Use this to bound resource
+            consumption on shared or memory-constrained clusters; once the cap is
+            reached, new conversations wait for an existing sandbox to be freed
+            rather than spawning a new one.
+          type: text
+          default: "0"
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.
