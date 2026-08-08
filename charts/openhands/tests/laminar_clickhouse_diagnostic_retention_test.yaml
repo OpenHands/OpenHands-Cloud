@@ -1,0 +1,46 @@
+suite: laminar clickhouse diagnostic retention
+templates:
+  - laminar-clickhouse-diagnostic-retention-job.yaml
+tests:
+  - it: renders nothing when Laminar is disabled
+    set:
+      laminar.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a post-install and post-upgrade retention job when Laminar is enabled
+    set:
+      laminar.enabled: true
+      laminar.clickhouse.diagnostics.retentionDays: 2
+      laminar.images.clickhouse.repository: clickhouse/clickhouse-server
+      laminar.images.clickhouse.tag: "25.1"
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 900
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: clickhouse/clickhouse-server:25.1
+      - equal:
+          path: spec.template.spec.containers[0].env[2].name
+          value: CLICKHOUSE_DIAGNOSTIC_RETENTION_DAYS
+      - equal:
+          path: spec.template.spec.containers[0].env[2].value
+          value: "2"
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: "ALTER TABLE system\\.\\$\\{table\\} MODIFY TTL"
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: "trace_log"
