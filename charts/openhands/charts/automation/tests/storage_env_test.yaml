@@ -134,6 +134,15 @@ tests:
             name: GCS_BUCKET_NAME
             value: automation-data
 
+
+  - it: rejects legacy ephemeral storage when type is not S3
+    set:
+      filestore.ephemeral: true
+      filestore.type: gcs
+    asserts:
+      - failedTemplate:
+          errorPattern: filestore.type must be "s3" when legacy filestore.ephemeral is true
+
   - it: rejects storage backends the service does not support
     set:
       filestore.type: local

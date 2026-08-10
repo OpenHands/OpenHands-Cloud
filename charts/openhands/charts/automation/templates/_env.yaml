@@ -39,6 +39,9 @@
 # to "gcs", the service's native FILE_STORE value.
 {{- $store := .Values.filestore.type }}
 {{- if eq $store "google_cloud" }}{{- $store = "gcs" }}{{- end }}
+{{- if and .Values.filestore.ephemeral (ne $store "s3") }}
+{{- fail (printf "filestore.type must be \"s3\" when legacy filestore.ephemeral is true; got %q" .Values.filestore.type) }}
+{{- end }}
 - name: FILE_STORE
   value: {{ $store | quote }}
 {{- if eq $store "s3" }}
