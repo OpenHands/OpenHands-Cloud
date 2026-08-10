@@ -215,6 +215,22 @@
     secretKeyRef:
       name: keycloak-realm
       key: smtp-password
+{{- if (include "openhands.keycloakProvisionRealm" .) }}
+- name: KEYCLOAK_SMTP_HOST
+  value: {{ .Values.keycloak.smtp.host | quote }}
+- name: KEYCLOAK_SMTP_PORT
+  value: {{ .Values.keycloak.smtp.port | quote }}
+- name: KEYCLOAK_SMTP_FROM
+  value: {{ .Values.keycloak.smtp.from | quote }}
+- name: KEYCLOAK_SMTP_FROM_DISPLAY_NAME
+  value: {{ .Values.keycloak.smtp.fromDisplayName | quote }}
+- name: KEYCLOAK_SMTP_USER
+  value: {{ .Values.keycloak.smtp.user | quote }}
+- name: KEYCLOAK_SMTP_SSL
+  value: {{ .Values.keycloak.smtp.ssl | quote }}
+- name: KEYCLOAK_SMTP_STARTTLS
+  value: {{ .Values.keycloak.smtp.starttls | quote }}
+{{- end }}
 - name: KEYCLOAK_ADMIN_PASSWORD
   valueFrom:
     secretKeyRef:

@@ -1,0 +1,89 @@
+suite: keycloak smtp env wiring
+templates:
+  - deployment.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  # deployment.yaml unconditionally checksums these ConfigMaps into its pod
+  # annotations, so they must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: injects keycloak SMTP env vars when realm provisioning is enabled
+    set:
+      enabled: true
+      keycloak.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_HOST
+            value: smtp.resend.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_PORT
+            value: "465"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_SSL
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_STARTTLS
+            value: "false"
+
+  - it: applies custom keycloak SMTP values
+    set:
+      enabled: true
+      keycloak.enabled: true
+      keycloak.smtp.host: smtp.gmail.com
+      keycloak.smtp.port: "587"
+      keycloak.smtp.ssl: false
+      keycloak.smtp.starttls: true
+      keycloak.smtp.user: me@gmail.com
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_HOST
+            value: smtp.gmail.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_PORT
+            value: "587"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_SSL
+            value: "false"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_STARTTLS
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[1].env
+          content:
+            name: KEYCLOAK_SMTP_USER
+            value: me@gmail.com
+
+  - it: omits keycloak SMTP env vars when realm provisioning is disabled
+    set:
+      enabled: true
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+    asserts:
+      - template: deployment.yaml
+        notMatchRegexRaw:
+          pattern: 'KEYCLOAK_SMTP_HOST'
