@@ -33,6 +33,31 @@ BASE_URL=https://release-under-test.example.test \
   npx playwright test tests/example.spec.ts --list
 ```
 
+## ReportPortal
+
+ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
+is enabled, the harness keeps the existing Playwright reporters and also uploads
+test results, steps, traces, videos, screenshots, and other Playwright
+attachments through `@reportportal/agent-js-playwright`.
+
+Required variables:
+
+- `REPORTPORTAL_ENDPOINT`: the full ReportPortal API endpoint, preferably ending
+  in `/api/v2` for asynchronous reporting;
+- `REPORTPORTAL_PROJECT`: the destination project name;
+- `REPORTPORTAL_API_KEY`: the reporter credential, supplied only through a
+  secret; and
+- `REPORTPORTAL_ENVIRONMENT`: the release environment attached to each launch.
+
+Optional launch metadata:
+
+- `REPORTPORTAL_LAUNCH` defaults to `OpenHands Cloud E2E`;
+- `REPORTPORTAL_REVISION` identifies the exact tested release commit or tag; and
+- `REPORTPORTAL_WORKFLOW` identifies the Argo Workflow run.
+
+Do not pass Playwright's `--reporter` CLI option in Argo. That option replaces
+this configured reporter array and would silently disable ReportPortal uploads.
+
 ## Authentication
 
 The setup project runs before browser tests and writes `fixtures/auth.json`. That file contains session data, is ignored by Git, and must never be committed.
@@ -53,7 +78,8 @@ The release workflow is responsible for:
 2. Setting `BASE_URL` to the environment created from that release.
 3. Supplying credentials and explicit `TEST_*` fixture values without logging them.
 4. Running from `/workspace/e2e_tests` with locked dependencies.
-5. Persisting `playwright-report/` and `test-results/` outside Git.
+5. Supplying the ReportPortal settings and API-key Secret when reporting is
+   enabled. Argo retains failed pod logs for failures before Playwright starts.
 
 The harness intentionally does not infer a deployment from a branch name or default to a hosted environment.
 

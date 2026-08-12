@@ -1,6 +1,12 @@
-import { defineConfig, devices } from "@playwright/test";
+import {
+  defineConfig,
+  devices,
+  type ReporterDescription,
+} from "@playwright/test";
 import dotenv from "dotenv";
 import path from "path";
+
+import { getReportPortalReporter } from "./reportportal";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
 
@@ -16,6 +22,22 @@ function getBaseURL(): string {
   return new URL(baseUrl).toString();
 }
 
+function getReporters(): ReporterDescription[] {
+  const reporters: ReporterDescription[] = [
+    ["html", { outputFolder: "playwright-report" }],
+    ["list"],
+  ];
+  if (process.env.CI) {
+    reporters.push(["github"]);
+  }
+
+  const reportPortalReporter = getReportPortalReporter();
+  if (reportPortalReporter) {
+    reporters.push(reportPortalReporter);
+  }
+  return reporters;
+}
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
@@ -24,9 +46,7 @@ export default defineConfig({
   workers: 1,
 
   // Reporter configuration
-  reporter: process.env.CI
-    ? [["html", { outputFolder: "playwright-report" }], ["list"], ["github"]]
-    : [["html", { outputFolder: "playwright-report" }], ["list"]],
+  reporter: getReporters(),
 
   // Timeout configuration
   timeout: 120_000, // 2 minutes per test (agent operations can be slow)
