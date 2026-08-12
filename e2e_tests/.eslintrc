@@ -1,0 +1,63 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": "./tsconfig.json"
+  },
+  "extends": [
+    "airbnb-base",
+    "airbnb-typescript/base",
+    "prettier",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "plugins": ["prettier", "unused-imports"],
+  "rules": {
+    "unused-imports/no-unused-imports": "error",
+    "prettier/prettier": ["error"],
+    "@typescript-eslint/prefer-optional-chain": "error",
+    "import/extensions": [
+      "error",
+      "ignorePackages",
+      {
+        "": "never",
+        "ts": "never"
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["*.ts"],
+      "rules": {
+        "no-param-reassign": [
+          "error",
+          {
+            "props": true,
+            "ignorePropertyModificationsFor": ["acc", "page"]
+          }
+        ],
+        "no-restricted-syntax": "off",
+        "import/prefer-default-export": "off",
+        "no-underscore-dangle": "off",
+        "import/no-extraneous-dependencies": "off",
+        "no-console": "off",
+        "no-await-in-loop": "off",
+        "class-methods-use-this": "off",
+        "@typescript-eslint/no-use-before-define": "off",
+        "no-plusplus": "off",
+        "no-promise-executor-return": "off",
+        "@typescript-eslint/no-throw-literal": "off",
+        "@typescript-eslint/no-shadow": "off",
+        "@typescript-eslint/no-unused-vars": [
+          "error",
+          {
+            "argsIgnorePattern": "^_",
+            "varsIgnorePattern": "^_"
+          }
+        ]
+      },
+      "parserOptions": {
+        "project": ["./tsconfig.json"]
+      }
+    }
+  ]
+}

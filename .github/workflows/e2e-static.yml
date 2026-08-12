@@ -1,0 +1,32 @@
+name: E2E Static Checks
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/e2e-static.yml"
+      - "e2e_tests/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e_tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e_tests/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint and type-check
+        run: npm run lint
+      - name: Discover Chromium tests
+        env:
+          BASE_URL: https://release-under-test.invalid
+        run: npx playwright test --project=chromium --list
