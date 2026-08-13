@@ -57,11 +57,12 @@ Deployment:
 
 Keycloak admin (cleanup):
 
-- `KEYCLOAK_URL` — base URL of the Keycloak server.
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
 - `KEYCLOAK_ADMIN_PASSWORD` — admin password.
 - `KEYCLOAK_NEW_USER_EMAIL` — email of the New User to delete.
+
+The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
 
 Returning User (GitHub):
 

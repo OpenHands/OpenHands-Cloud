@@ -24,11 +24,14 @@ import path from "path";
  *  - BASE_URL                      (required) release environment under test.
  *
  * Keycloak admin (cleanup):
- *  - KEYCLOAK_URL                  base URL of the Keycloak server.
  *  - KEYCLOAK_REALM                realm to administer (default: "allhands").
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
  *  - KEYCLOAK_NEW_USER_EMAIL       email of the New User to delete.
+ *
+ *  The Keycloak server URL is derived from BASE_URL by prefixing the subdomain
+ *  with "auth." (e.g. https://staging.all-hands.dev →
+ *  https://auth.staging.all-hands.dev).
  *
  * Returning User (GitHub):
  *  - RETURNING_GITHUB_USERNAME
@@ -108,12 +111,25 @@ export function githubCredentialsFor(user: RunUser): GitHubCredentials {
 /** Resolve and validate the Keycloak admin config used for New User cleanup. */
 export function keycloakAdminConfig(): KeycloakAdminConfig {
   return {
-    keycloakUrl: required("KEYCLOAK_URL"),
+    keycloakUrl: keycloakUrlFromBaseUrl(),
     realm: process.env.KEYCLOAK_REALM || DEFAULT_KEYCLOAK_REALM,
     username: required("KEYCLOAK_ADMIN_USERNAME"),
     password: required("KEYCLOAK_ADMIN_PASSWORD"),
     newUserEmail: required("KEYCLOAK_NEW_USER_EMAIL"),
   };
+}
+
+/**
+ * Derive the Keycloak URL from BASE_URL by prefixing the subdomain with "auth.".
+ * e.g. https://staging.all-hands.dev → https://auth.staging.all-hands.dev
+ */
+function keycloakUrlFromBaseUrl(): string {
+  const baseUrl = process.env.BASE_URL;
+  if (!baseUrl) {
+    throw new Error("BASE_URL is required to derive the Keycloak URL.");
+  }
+  const url = new URL(baseUrl);
+  return `${url.protocol}//auth.${url.host}`;
 }
 
 /** Storage-state file path for a given user role. */
