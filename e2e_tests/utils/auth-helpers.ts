@@ -121,10 +121,7 @@ function isOnboardingUrl(urlString: string): boolean {
  * onboarding-intermediate page (accept-tos, onboarding form) or the final
  * app URL with no intermediate auth/redirect hosts left in the chain.
  */
-function isSettledAppUrl(
-  urlString: string,
-  allowOnboarding: boolean,
-): boolean {
+function isSettledAppUrl(urlString: string, allowOnboarding: boolean): boolean {
   if (allowOnboarding && isOnboardingUrl(urlString)) {
     return true;
   }
@@ -162,10 +159,9 @@ export async function completeLoginAndOnboard(
   // run before the final-URL wait — otherwise waitForURL would resolve on
   // /accept-tos or /onboarding (neither contains the excluded substrings) and
   // skip the onboarding steps.
-  await page.waitForURL(
-    (url) => isSettledAppUrl(url.toString(), true),
-    { timeout: 60_000 },
-  );
+  await page.waitForURL((url) => isSettledAppUrl(url.toString(), true), {
+    timeout: 60_000,
+  });
 
   // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
   // sequence — loop until we're past both.
@@ -175,10 +171,9 @@ export async function completeLoginAndOnboard(
 
   // Phase 3: wait for the final app URL (no intermediate auth hosts, no
   // onboarding pages) and assert the home screen is visible.
-  await page.waitForURL(
-    (url) => isSettledAppUrl(url.toString(), false),
-    { timeout: 60_000 },
-  );
+  await page.waitForURL((url) => isSettledAppUrl(url.toString(), false), {
+    timeout: 60_000,
+  });
 
   await expect(page.getByTestId("home-screen")).toBeVisible({
     timeout: 30_000,
@@ -204,7 +199,6 @@ async function runOnboardingSteps(
 
   if (page.url().includes("/onboarding")) {
     await handleOnboardingForm(page, userIdentifier);
-    return;
   }
 }
 
@@ -260,9 +254,7 @@ async function handleOnboardingForm(
       // Step 2+: single/multi-select steps. For org size, select "solo".
       // For any remaining select step, pick the first available option.
       const soloOption = page.getByTestId("step-option-solo");
-      const isOrgSizeStep = await soloOption
-        .isVisible()
-        .catch(() => false);
+      const isOrgSizeStep = await soloOption.isVisible().catch(() => false);
 
       if (isOrgSizeStep) {
         stepIdentifier = soloOption;
@@ -297,10 +289,9 @@ async function handleOnboardingForm(
     // Race both signals so whichever fires first resolves immediately.
     await Promise.race([
       stepIdentifier.waitFor({ state: "hidden", timeout: 30_000 }),
-      page.waitForURL(
-        (url) => !url.toString().includes("/onboarding"),
-        { timeout: 30_000 },
-      ),
+      page.waitForURL((url) => !url.toString().includes("/onboarding"), {
+        timeout: 30_000,
+      }),
     ]).catch(() => {});
   }
 
@@ -536,7 +527,9 @@ async function handleOAuthAuthorization(page: Page): Promise<void> {
       throw e;
     }
     if (msg.includes("form not found")) {
-      console.log("Authorize page bypassed (form not found, already redirected).");
+      console.log(
+        "Authorize page bypassed (form not found, already redirected).",
+      );
       return;
     }
   }
