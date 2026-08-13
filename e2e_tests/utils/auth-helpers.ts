@@ -1,4 +1,4 @@
-import { Page } from "@playwright/test";
+import { Page, expect } from "@playwright/test";
 import { generate } from "otplib";
 import type { GitHubCredentials } from "./config";
 
@@ -103,6 +103,176 @@ export async function authenticateWithGitHub(
   await handleOAuthAuthorization(page);
 
   console.log("GitHub authentication flow completed");
+}
+
+/**
+ * URLs that count as "onboarding in progress" — pages the app redirects to
+ * for first-time users before they reach the home screen.
+ */
+const ONBOARDING_PATHS = ["/accept-tos", "/onboarding"];
+
+/** True if the URL is one of the onboarding-intermediate pages. */
+function isOnboardingUrl(urlString: string): boolean {
+  return ONBOARDING_PATHS.some((p) => urlString.includes(p));
+}
+
+/**
+ * URL predicate for a "settled" post-redirect destination: either an
+ * onboarding-intermediate page (accept-tos, onboarding form) or the final
+ * app URL with no intermediate auth/redirect hosts left in the chain.
+ */
+function isSettledAppUrl(
+  urlString: string,
+  allowOnboarding: boolean,
+): boolean {
+  if (allowOnboarding && isOnboardingUrl(urlString)) {
+    return true;
+  }
+  return (
+    !urlString.includes("github.com") &&
+    !urlString.includes("login") &&
+    !urlString.includes("keycloak") &&
+    !urlString.includes("sessions/verified-device") &&
+    !isOnboardingUrl(urlString)
+  );
+}
+
+/**
+ * Complete the login and onboarding flow after GitHub authentication.
+ *
+ * Drives the post-OAuth redirect chain (GitHub → Keycloak → app) through any
+ * onboarding steps that first-time users encounter — Terms of Service
+ * acceptance and the onboarding form (org name + domain) — then asserts the
+ * app home screen is visible.
+ *
+ * Works for both users who have already onboarded (redirect straight to the
+ * app) and those who need onboarding (redirect to /accept-tos and/or
+ * /onboarding first).
+ *
+ * @param userIdentifier Used to name the org/domain in the onboarding form
+ *   (analytics-only fields). Typically the GitHub username.
+ */
+export async function completeLoginAndOnboard(
+  page: Page,
+  userIdentifier?: string,
+): Promise<void> {
+  // Phase 1: wait for the redirect chain to settle on either an onboarding
+  // page (TOS or form) or the final app URL (already onboarded). The
+  // onboarding paths are matched explicitly here so the onboarding handlers
+  // run before the final-URL wait — otherwise waitForURL would resolve on
+  // /accept-tos or /onboarding (neither contains the excluded substrings) and
+  // skip the onboarding steps.
+  await page.waitForURL(
+    (url) => isSettledAppUrl(url.toString(), true),
+    { timeout: 60_000 },
+  );
+
+  // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
+  // sequence — loop until we're past both.
+  while (isOnboardingUrl(page.url())) {
+    await runOnboardingSteps(page, userIdentifier);
+  }
+
+  // Phase 3: wait for the final app URL (no intermediate auth hosts, no
+  // onboarding pages) and assert the home screen is visible.
+  await page.waitForURL(
+    (url) => isSettledAppUrl(url.toString(), false),
+    { timeout: 60_000 },
+  );
+
+  await expect(page.getByTestId("home-screen")).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+/**
+ * Run the onboarding step the user is currently on.
+ *
+ * Dispatches to the TOS handler or the onboarding-form handler based on the
+ * current URL. Each handler completes its step and waits for the page to
+ * navigate to the next destination (another onboarding step or the app).
+ */
+async function runOnboardingSteps(
+  page: Page,
+  userIdentifier?: string,
+): Promise<void> {
+  if (page.url().includes("/accept-tos")) {
+    console.log("Onboarding: accepting Terms of Service...");
+    await handleTOSAcceptance(page);
+    return;
+  }
+
+  if (page.url().includes("/onboarding")) {
+    await handleOnboardingForm(page, userIdentifier);
+    return;
+  }
+}
+
+/**
+ * Fill the onboarding form (org name + domain, then any subsequent steps)
+ * and submit it. After submission the app redirects to "/" or "/canvas".
+ *
+ * The onboarding form for self-hosted deployments has three steps:
+ *   1. Org name + domain (text inputs — analytics-only, named after the e2e user)
+ *   2. Org size (single select — we pick "solo")
+ *   3. Use case (multi select — we pick the first option)
+ *
+ * Each step is advanced by clicking the Next/Finish button in step-actions.
+ */
+async function handleOnboardingForm(
+  page: Page,
+  userIdentifier?: string,
+): Promise<void> {
+  console.log("Onboarding: filling onboarding form...");
+
+  const orgName = userIdentifier || "openhands-e2e";
+  const orgDomain = `${orgName}.e2e.test`;
+
+  // Drive each step until the form submits and the page navigates away from
+  // /onboarding (redirects to "/" or "/canvas").
+  while (page.url().includes("/onboarding")) {
+    await page
+      .getByTestId("onboarding-form")
+      .waitFor({ state: "visible", timeout: 15_000 });
+
+    // Step 1: org name + domain text inputs.
+    const orgNameInput = page.getByTestId("form-input-org_name");
+    if (await orgNameInput.isVisible().catch(() => false)) {
+      await orgNameInput.fill(orgName);
+      await page.getByTestId("form-input-org_domain").fill(orgDomain);
+    } else {
+      // Step 2+: single/multi-select steps. For org size, select "solo".
+      // For any remaining select step, pick the first available option.
+      const soloOption = page.getByTestId("step-option-solo");
+      if (await soloOption.isVisible().catch(() => false)) {
+        await soloOption.click();
+      } else {
+        const firstOption = page
+          .getByTestId("step-content")
+          .locator('button[data-testid^="step-option-"]')
+          .first();
+        if (await firstOption.isVisible().catch(() => false)) {
+          await firstOption.click();
+        }
+      }
+    }
+
+    // Click the primary action button (Next or Finish).
+    const actionButton = page
+      .getByTestId("step-actions")
+      .getByRole("button", { name: /^(next|finish)$/i });
+    await actionButton.click();
+
+    // Wait for the page to leave /onboarding (form submitted) or advance to
+    // the next step.
+    await page
+      .waitForURL((url) => !url.toString().includes("/onboarding"), {
+        timeout: 30_000,
+      })
+      .catch(() => {});
+  }
+
+  console.log("Onboarding form completed.");
 }
 
 /**
