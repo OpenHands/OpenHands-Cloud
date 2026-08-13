@@ -7,7 +7,7 @@ This directory contains the Playwright harness and release-level end-to-end test
 - Node.js 20 or newer
 - A supported Playwright browser
 - An explicit non-production or intentionally selected release target
-- Dedicated test-account credentials or a pre-generated Playwright storage state
+- Three credential sets: Keycloak admin, Returning User (GitHub), and New User (GitHub) — or pre-generated Playwright storage states for the two user roles
 
 ## Install
 
@@ -35,15 +35,96 @@ BASE_URL=https://release-under-test.example.test \
 
 ## Authentication
 
-The setup project runs before browser tests and writes `fixtures/auth.json`. That file contains session data, is ignored by Git, and must never be committed.
+OpenHands Cloud uses Keycloak as its identity provider, federating identities from GitHub. The harness exercises the same spec suite under two user roles so both the "returning user" and "brand-new user" paths are covered in every run.
 
-Supported authentication modes:
+### Credential roles
 
-- `AUTH_METHOD=github` uses `GITHUB_TEST_USERNAME`, `GITHUB_TEST_PASSWORD`, and optional `GITHUB_TEST_TOTP_SECRET`.
-- `AUTH_METHOD=keycloak` uses `KEYCLOAK_USERNAME` and `KEYCLOAK_PASSWORD`.
-- `AUTH_METHOD=skip` requires `fixtures/auth.json` to exist before Playwright starts.
+Three credential sets are required before any test run:
+
+| Role | Provider | Credentials | Purpose |
+| --- | --- | --- | --- |
+| Keycloak admin | Keycloak | username + password | Administers Keycloak; deletes the New User before each run |
+| Returning User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account already exists |
+| New User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
+
+The New User's Keycloak account is identified by email. At the start of a run, the Keycloak admin logs in and deletes any existing user whose email matches `KEYCLOAK_NEW_USER_EMAIL`. The New User then logs in via GitHub and is provisioned from scratch, exercising the onboarding path.
+
+### Environment variables
+
+Deployment:
+
+- `BASE_URL` (required) — release environment under test.
+
+Keycloak admin (cleanup):
+
+- `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
+- `KEYCLOAK_ADMIN_USERNAME` — admin username.
+- `KEYCLOAK_ADMIN_PASSWORD` — admin password.
+- `KEYCLOAK_NEW_USER_EMAIL` — email of the New User to delete.
+
+The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
+
+Returning User (GitHub):
+
+- `RETURNING_GITHUB_USERNAME`
+- `RETURNING_GITHUB_PASSWORD`
+- `RETURNING_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
+
+New User (GitHub):
+
+- `NEW_GITHUB_USERNAME`
+- `NEW_GITHUB_PASSWORD`
+- `NEW_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
+
+Test fixtures (optional overrides):
+
+- `TEST_REPO_URL` — repo used in conversations (default: `https://github.com/OpenHands/deploy`).
+- `TEST_PROMPT` — prompt used in conversations (default: `Flip a coin!`).
+- `TEST_ENV` — label for the environment.
+
+### Storage-state files
+
+Each role has its own setup project that logs in via GitHub and writes a Playwright storage-state file (session cookies + localStorage). These files contain session data, are ignored by Git, and must never be committed.
+
+- `fixtures/auth.returning.json` — produced by `setup:returning`.
+- `fixtures/auth.new-user.json` — produced by `setup:new-user`.
+
+### Project topology
+
+```text
+keycloak-cleanup ──▶ setup:new-user
+setup:returning
+
+chromium:returning ──▶ setup:returning
+chromium:new-user  ──▶ setup:new-user
+(and firefox / webkit variants)
+```
+
+Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
+
+### Auth behavior: `AUTH_METHOD`
+
+- Default — each setup project logs in fresh and overwrites its storage-state file.
+- `AUTH_METHOD=skip` — a setup project reuses its existing storage-state file if present, and skips login. If the file is missing the setup project fails. This is how the Argo workflow consumes pre-generated state files.
 
 Tests that verify isolation between users require a second storage-state file through `SECONDARY_AUTH_STATE`. The Argo workflow must mount that file separately from the primary state.
+
+### Common commands
+
+```bash
+# Both users, chromium only (primary browser)
+BASE_URL=https://release-under-test.example.test npm run test:chromium
+
+# One role across all browsers
+BASE_URL=https://release-under-test.example.test npm run test:returning
+BASE_URL=https://release-under-test.example.test npm run test:new-user
+
+# Just the auth setup (both users)
+BASE_URL=https://release-under-test.example.test npm run setup:auth
+
+# Just the Keycloak cleanup
+BASE_URL=https://release-under-test.example.test npm run keycloak:cleanup
+```
 
 ## Argo execution contract
 
@@ -51,7 +132,7 @@ The release workflow is responsible for:
 
 1. Checking out the exact OpenHands-Cloud release commit or tag.
 2. Setting `BASE_URL` to the environment created from that release.
-3. Supplying credentials and explicit `TEST_*` fixture values without logging them.
+3. Supplying all three credential sets (Keycloak admin, Returning User, New User) plus `KEYCLOAK_NEW_USER_EMAIL` and explicit `TEST_*` fixture values, without logging them.
 4. Running from `/workspace/e2e_tests` with locked dependencies.
 5. Persisting `playwright-report/` and `test-results/` outside Git.
 
@@ -63,8 +144,10 @@ The harness intentionally does not infer a deployment from a branch name or defa
 e2e_tests/
 ├── fixtures/          # Generated or mounted authentication state
 ├── pages/             # Shared page objects
-├── tests/             # Setup and independent Playwright specs
-├── utils/             # Shared test helpers
+├── tests/
+│   ├── setup/         # Per-role setup projects (keycloak-cleanup, setup-returning, setup-new-user)
+│   └── *.spec.ts      # Specs run under both user roles
+├── utils/             # Shared config, auth helpers, keycloak admin, test helpers
 ├── package-lock.json  # Locked Node dependencies
 ├── playwright.config.ts
 └── tsconfig.json
