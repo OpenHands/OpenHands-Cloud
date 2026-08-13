@@ -1,4 +1,4 @@
-import { Page, expect } from "@playwright/test";
+import { Page, Locator, expect } from "@playwright/test";
 import { generate } from "otplib";
 import type { GitHubCredentials } from "./config";
 
@@ -218,6 +218,10 @@ async function runOnboardingSteps(
  *   3. Use case (multi select — we pick the first option)
  *
  * Each step is advanced by clicking the Next/Finish button in step-actions.
+ * Between intermediate steps the form uses React state changes (not URL
+ * changes), so we detect step transitions by waiting for the current step's
+ * identifying element to disappear rather than waiting for a URL change.
+ * Only the final "Finish" click causes a real navigation.
  */
 async function handleOnboardingForm(
   page: Page,
@@ -235,27 +239,49 @@ async function handleOnboardingForm(
       .getByTestId("onboarding-form")
       .waitFor({ state: "visible", timeout: 15_000 });
 
-    // Step 1: org name + domain text inputs.
+    // Identify the current step by an element unique to it, so we can detect
+    // when React swaps in the next step (the element becomes hidden).
     const orgNameInput = page.getByTestId("form-input-org_name");
-    if (await orgNameInput.isVisible().catch(() => false)) {
-      await orgNameInput.fill(orgName);
-      await page.getByTestId("form-input-org_domain").fill(orgDomain);
+    const isOrgNameStep = await orgNameInput.isVisible().catch(() => false);
+
+    /** Element that disappears when this step advances to the next. */
+    let stepIdentifier: Locator;
+    /** Elements to interact with on the current step. */
+    let fillAction: () => Promise<void>;
+
+    if (isOrgNameStep) {
+      // Step 1: org name + domain text inputs.
+      stepIdentifier = orgNameInput;
+      fillAction = async () => {
+        await orgNameInput.fill(orgName);
+        await page.getByTestId("form-input-org_domain").fill(orgDomain);
+      };
     } else {
       // Step 2+: single/multi-select steps. For org size, select "solo".
       // For any remaining select step, pick the first available option.
       const soloOption = page.getByTestId("step-option-solo");
-      if (await soloOption.isVisible().catch(() => false)) {
-        await soloOption.click();
+      const isOrgSizeStep = await soloOption
+        .isVisible()
+        .catch(() => false);
+
+      if (isOrgSizeStep) {
+        stepIdentifier = soloOption;
+        fillAction = async () => {
+          await soloOption.click();
+        };
       } else {
         const firstOption = page
           .getByTestId("step-content")
           .locator('button[data-testid^="step-option-"]')
           .first();
-        if (await firstOption.isVisible().catch(() => false)) {
+        stepIdentifier = firstOption;
+        fillAction = async () => {
           await firstOption.click();
-        }
+        };
       }
     }
+
+    await fillAction();
 
     // Click the primary action button (Next or Finish).
     const actionButton = page
@@ -263,13 +289,19 @@ async function handleOnboardingForm(
       .getByRole("button", { name: /^(next|finish)$/i });
     await actionButton.click();
 
-    // Wait for the page to leave /onboarding (form submitted) or advance to
-    // the next step.
-    await page
-      .waitForURL((url) => !url.toString().includes("/onboarding"), {
-        timeout: 30_000,
-      })
-      .catch(() => {});
+    // Detect step transition without a 30 s URL-wait timeout:
+    //  - Intermediate step: React swaps the step content → the step's
+    //    identifier element becomes hidden almost instantly.
+    //  - Final step: the form submits → real navigation changes the URL
+    //    away from /onboarding.
+    // Race both signals so whichever fires first resolves immediately.
+    await Promise.race([
+      stepIdentifier.waitFor({ state: "hidden", timeout: 30_000 }),
+      page.waitForURL(
+        (url) => !url.toString().includes("/onboarding"),
+        { timeout: 30_000 },
+      ),
+    ]).catch(() => {});
   }
 
   console.log("Onboarding form completed.");
