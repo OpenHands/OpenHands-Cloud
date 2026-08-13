@@ -29,4 +29,4 @@ jobs:
       - name: Discover Chromium tests
         env:
           BASE_URL: https://release-under-test.invalid
-        run: npx playwright test --project=chromium --list
+        run: npx playwright test --project=chromium:returning --list
