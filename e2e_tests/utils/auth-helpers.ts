@@ -106,31 +106,31 @@ export async function authenticateWithGitHub(
 }
 
 /**
- * Handle Terms of Service acceptance flow.
+ * Handle the Terms of Service acceptance dialog if it appears.
+ *
+ * After OAuth redirects back to the app, first-time users see a dialog with
+ * an "I accept the terms of service" checkbox and a Continue button.
  */
 export async function handleTOSAcceptance(page: Page): Promise<void> {
-  // Wait for the TOS page to be fully loaded
   await page
     .waitForLoadState("networkidle", { timeout: 10_000 })
     .catch(() => {});
 
-  // Find and click the TOS checkbox
-  const tosCheckbox = page.locator('input[type="checkbox"]');
+  // Click the "I accept the terms of service" checkbox
+  const tosCheckbox = page.getByRole("checkbox", {
+    name: /accept the terms of service/i,
+  });
   await tosCheckbox.waitFor({ state: "visible", timeout: 10_000 });
   await tosCheckbox.click();
 
-  // Find and click the Continue button
-  const continueButton = page.getByRole("button", { name: "Continue" });
+  // Click the Continue button
+  const continueButton = page.getByRole("button", { name: /continue/i });
   await continueButton.click();
 
-  // Wait for redirect to home page after TOS acceptance
-  await page.waitForURL(
-    (url) => {
-      const urlString = url.toString();
-      return !urlString.includes("/accept-tos");
-    },
-    { timeout: 30_000 },
-  );
+  // Wait for redirect away from the TOS page/dialog
+  await page.waitForURL((url) => !url.toString().includes("/accept-tos"), {
+    timeout: 30_000,
+  });
 }
 
 /**
@@ -157,6 +157,11 @@ async function handleGithubLoginPage(
 
 /**
  * Handle GitHub 2FA if enabled.
+ *
+ * GitHub rejects TOTP codes that have already been used within the same
+ * 30-second window. On Playwright retries (which re-run the whole login flow),
+ * the same code would be generated again and rejected. To avoid this, we
+ * wait until we're in a fresh TOTP window before generating the code.
  */
 async function handle2FA(page: Page, totpSecret: string): Promise<void> {
   // Check if 2FA page appears
@@ -168,6 +173,11 @@ async function handle2FA(page: Page, totpSecret: string): Promise<void> {
 
   if (isOtpVisible) {
     console.log("2FA required, generating TOTP code...");
+
+    // Wait for a fresh TOTP window to avoid reuse errors on retry. TOTP codes
+    // are 30 seconds long, so we wait until we're at least 5 seconds into a
+    // new window to give plenty of time before it expires.
+    await waitForFreshTotpWindow();
 
     const totpCode = await generateTOTP(totpSecret);
     await otpField.fill(totpCode);
@@ -188,6 +198,26 @@ async function handle2FA(page: Page, totpSecret: string): Promise<void> {
 
   // Handle potential device verification page after 2FA
   await handleDeviceVerification(page);
+}
+
+/**
+ * Wait until we're in a fresh TOTP window (at least 5 seconds into a new
+ * 30-second period). This prevents "code already used" errors on retries.
+ */
+async function waitForFreshTotpWindow(): Promise<void> {
+  const TOTP_WINDOW_SECONDS = 30;
+  const SAFE_OFFSET_SECONDS = 5;
+  const now = Date.now();
+  const epochSeconds = Math.floor(now / 1000);
+  const secondsIntoWindow = epochSeconds % TOTP_WINDOW_SECONDS;
+
+  if (secondsIntoWindow < SAFE_OFFSET_SECONDS) {
+    const waitMs = (SAFE_OFFSET_SECONDS - secondsIntoWindow) * 1000;
+    console.log(
+      `Waiting ${waitMs}ms for a fresh TOTP window (currently ${secondsIntoWindow}s into window)...`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
 }
 
 /**
@@ -226,22 +256,87 @@ async function generateTOTP(secret: string): Promise<string> {
 
 /**
  * Handle the OAuth authorization prompt if it appears.
+ *
+ * After 2FA, GitHub either lands on the OAuth authorize page (if the app
+ * hasn't been authorized yet) or redirects straight back to the app (if it
+ * has). The authorize page's Authorize button is kept disabled by GitHub's
+ * clickjacking protection, which requires document.hasFocus() — this never
+ * resolves in Playwright. So instead of waiting for the button, we submit
+ * the form directly via JavaScript.
  */
 async function handleOAuthAuthorization(page: Page): Promise<void> {
-  // Only check for OAuth authorization if we're on the OAuth authorization page
+  // Wait for navigation to a stable destination: either the OAuth authorize
+  // page (app not yet authorized) or a non-GitHub URL (redirected back to
+  // the app). Using a positive condition avoids matching intermediate
+  // redirect URLs in the GitHub → Keycloak → app chain.
+  await page
+    .waitForURL(
+      (url) => {
+        const urlString = url.toString();
+        return (
+          urlString.startsWith("https://github.com/login/oauth/authorize") ||
+          !urlString.includes("github.com")
+        );
+      },
+      { timeout: 30_000 },
+    )
+    .catch(() => {});
+
+  // If we're not on the OAuth authorize page, GitHub skipped it (the app was
+  // previously authorized) and redirected straight back to the app.
   const currentUrl = page.url();
-  if (!currentUrl.includes("oauth/authorize")) {
+  if (!currentUrl.startsWith("https://github.com/login/oauth/authorize")) {
+    console.log("No OAuth authorization page shown (redirected back to app).");
     return;
   }
 
-  // Use btn-primary to distinguish from cancel button (both have name="authorize")
-  const authorizeButton = page.locator('button.btn-primary[name="authorize"]');
-  const isAuthVisible = await authorizeButton
-    .isVisible({ timeout: 5_000 })
-    .catch(() => false);
+  console.log("On OAuth authorization page, submitting form directly...");
 
-  if (isAuthVisible) {
-    console.log("OAuth authorization required, clicking authorize...");
-    await authorizeButton.click();
+  // Submit the authorize form directly. The form contains all the hidden
+  // fields (client_id, redirect_uri, state, scope) server-rendered; we just
+  // need to set authorize=1 and submit. This bypasses the disabled button
+  // and GitHub's clickjacking protection entirely.
+  //
+  // GitHub may auto-redirect away from the authorize page at any moment
+  // (when the app was recently authorized). In that case the form won't
+  // exist or the execution context will be destroyed — both are handled
+  // below as a bypass.
+  try {
+    await page.evaluate(() => {
+      const form = document.querySelector<HTMLFormElement>(
+        'form[action="/login/oauth/authorize"]',
+      );
+      if (!form) {
+        throw new Error("OAuth authorize form not found on page");
+      }
+      let input = form.querySelector<HTMLInputElement>(
+        'input[name="authorize"]',
+      );
+      if (!input) {
+        input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "authorize";
+        form.appendChild(input);
+      }
+      input.value = "1";
+      form.submit();
+    });
+  } catch (e) {
+    const msg = String(e);
+    // "Execution context was destroyed" means form.submit() triggered a
+    // navigation — the form was submitted successfully.
+    // "form not found" means GitHub already redirected away from the
+    // authorize page (bypass) — nothing to do.
+    if (
+      !msg.includes("Execution context was destroyed") &&
+      !msg.includes("form not found")
+    ) {
+      throw e;
+    }
+    if (msg.includes("form not found")) {
+      console.log("Authorize page bypassed (form not found, already redirected).");
+      return;
+    }
   }
+  console.log("OAuth authorize form submitted.");
 }
