@@ -9,6 +9,8 @@ This directory contains the Playwright harness and release-level end-to-end test
 - An explicit non-production or intentionally selected release target
 - Three credential sets: Keycloak admin, Returning User (GitHub), and New User (GitHub) — or pre-generated Playwright storage states for the two user roles
 
+> **Opt-in roles:** Each user role is enabled by setting its `*_GITHUB_USERNAME` env var. Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
+
 ## Install
 
 ```bash
@@ -66,14 +68,14 @@ The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain wi
 
 Returning User (GitHub):
 
-- `RETURNING_GITHUB_USERNAME`
-- `RETURNING_GITHUB_PASSWORD`
+- `RETURNING_GITHUB_USERNAME` — **required to enable this role**; leave unset to skip the Returning User entirely.
+- `RETURNING_GITHUB_PASSWORD` — required when the role is enabled.
 - `RETURNING_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
 
 New User (GitHub):
 
-- `NEW_GITHUB_USERNAME`
-- `NEW_GITHUB_PASSWORD`
+- `NEW_GITHUB_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup) entirely.
+- `NEW_GITHUB_PASSWORD` — required when the role is enabled.
 - `NEW_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
 
 Test fixtures (optional overrides):

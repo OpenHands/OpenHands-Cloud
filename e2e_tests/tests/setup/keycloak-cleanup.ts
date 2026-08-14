@@ -1,5 +1,5 @@
 import { test as setup } from "@playwright/test";
-import { keycloakAdminConfig } from "../../utils/config";
+import { isUserEnabled, keycloakAdminConfig } from "../../utils/config";
 import { deleteNewUsersByEmail } from "../../utils/keycloak-admin";
 
 /**
@@ -12,8 +12,12 @@ import { deleteNewUsersByEmail } from "../../utils/keycloak-admin";
  * This is a Node-only step (no browser interaction), but it is implemented as
  * a Playwright project so the harness can order it via project dependencies
  * and report it alongside the rest of the run.
+ *
+ * Skipped when NEW_GITHUB_USERNAME is unset (no New User role to clean up).
  */
 setup("delete new user from keycloak", async () => {
+  setup.skip(!isUserEnabled("new-user"), "NEW_GITHUB_USERNAME not set");
+
   const config = keycloakAdminConfig();
   await deleteNewUsersByEmail(config);
 });
