@@ -2,6 +2,7 @@ import { test as setup } from "@playwright/test";
 import fs from "fs";
 import {
   githubCredentialsFor,
+  isUserEnabled,
   skipAuth,
   authNewUserFile,
 } from "../../utils/config";
@@ -21,8 +22,15 @@ import {
  * Logs the New User in via GitHub and saves the authenticated storage state to
  * fixtures/auth.new-user.json. When AUTH_METHOD=skip is set and that file
  * already exists, the login is skipped and the existing state is reused.
+ *
+ * When NEW_GITHUB_USERNAME is unset, this project (and its dependent test
+ * projects) are skipped entirely — the run simply doesn't exercise the New
+ * User role. This is useful for fresh clusters where there are no pre-existing
+ * users to delete and re-onboard.
  */
 setup("authenticate new user", async ({ page, baseURL }) => {
+  setup.skip(!isUserEnabled("new-user"), "NEW_GITHUB_USERNAME not set");
+
   if (skipAuth() && fs.existsSync(authNewUserFile)) {
     console.log(
       "Reusing existing New User state from fixtures/auth.new-user.json",
