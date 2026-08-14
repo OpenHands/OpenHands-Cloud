@@ -229,9 +229,29 @@ async function handleOnboardingForm(
   // Drive each step until the form submits and the page navigates away from
   // /onboarding (redirects to "/" or "/canvas").
   while (page.url().includes("/onboarding")) {
-    await page
-      .getByTestId("onboarding-form")
-      .waitFor({ state: "visible", timeout: 15_000 });
+    // Only wait for the onboarding form while still on /onboarding. An
+    // already-onboarded user may be routed through /onboarding briefly
+    // before the app client-side redirects to "/" or "/canvas"; in that
+    // case the form never renders, so race the selector wait against that
+    // navigation and bail out when the URL moves off /onboarding.
+    const onForm = await Promise.race([
+      page
+        .getByTestId("onboarding-form")
+        .waitFor({ state: "visible", timeout: 15_000 })
+        .then(() => true)
+        .catch(() => false),
+      page
+        .waitForURL((url) => !url.toString().includes("/onboarding"), {
+          timeout: 15_000,
+        })
+        .then(() => false)
+        .catch(() => false),
+    ]);
+
+    if (!onForm) {
+      console.log("Onboarding form skipped; already onboarded.");
+      return;
+    }
 
     // Identify the current step by an element unique to it, so we can detect
     // when React swaps in the next step (the element becomes hidden).
@@ -375,17 +395,22 @@ async function handle2FA(page: Page, totpSecret: string): Promise<void> {
     const totpCode = await generateTOTP(totpSecret);
     await otpField.fill(totpCode);
 
-    // Wait briefly to see if JavaScript auto-submits the form
-    // Then check if we're still on the same page before clicking submit
+    // After filling the code, GitHub's JS usually auto-submits the form.
+    // Sometimes it does not — in that case we must click the "Verify" button
+    // ourselves. Detect the race by waiting briefly for the URL to navigate
+    // off the two-factor page; if it doesn't, click Verify. The two-factor
+    // page lives at /sessions/two-factor (e.g. /sessions/two-factor/app), so
+    // key the wait on that path rather than "authenticate".
     const isStillOn2FAPage = await page
-      .waitForURL((url) => !url.toString().includes("authenticate"), {
+      .waitForURL((url) => !url.toString().includes("/sessions/two-factor"), {
         timeout: 3_000,
       })
       .then(() => false)
       .catch(() => true);
 
     if (isStillOn2FAPage) {
-      await page.locator('input[type="submit"][value="Submit"]').click();
+      console.log("2FA page did not auto-navigate, clicking Verify...");
+      await page.getByRole("button", { name: "Verify" }).click();
     }
   }
 
