@@ -113,7 +113,6 @@ test.describe("api keys", () => {
     );
 
     // Response format: { items: [], next_page_id: string | null }
-    console.log('Found Response Body', responseBody);
     expect(responseBody).toHaveProperty("items");
     expect(Array.isArray(responseBody.items)).toBe(true);
     console.log(
