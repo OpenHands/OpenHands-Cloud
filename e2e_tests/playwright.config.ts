@@ -70,7 +70,7 @@ export default defineConfig({
       name: "setup",
       testMatch: /global-setup\.ts/,
       use: {
-        storageState: undefined, // Don't use existing auth for setup
+        storageState: { cookies: [], origins: [] },
       },
     },
 
