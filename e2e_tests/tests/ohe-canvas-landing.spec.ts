@@ -18,6 +18,10 @@ test("authenticated OHE member can open Agent Canvas", async ({ page }) => {
   await page.goto("/canvas");
 
   await expect(page).toHaveURL(/\/canvas\/?$/);
+  await expect(
+    page.getByRole("heading", { name: "An error occurred" }),
+    "Agent Canvas rendered its error boundary instead of the landing page.",
+  ).toHaveCount(0);
   await expect(page.getByTestId("home-screen")).toBeVisible();
   await expect(page.getByTestId("home-chat-launcher")).toBeVisible();
   await expect(
