@@ -29,4 +29,5 @@ jobs:
       - name: Discover Chromium tests
         env:
           BASE_URL: https://release-under-test.invalid
+          RETURNING_GITHUB_USERNAME: discovery-placeholder
         run: npx playwright test --project=chromium:returning --list
