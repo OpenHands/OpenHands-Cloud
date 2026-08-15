@@ -9,8 +9,13 @@ import path from "path";
 import { getReportPortalReporter } from "./reportportal";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
+import {
+  authReturningFile,
+  authNewUserFile,
+  isUserEnabled,
+} from "./utils/config";
 
-const authFile = path.resolve(import.meta.dirname, "./fixtures/auth.json");
+dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
 
 function getBaseURL(): string {
   const baseUrl = process.env.BASE_URL?.trim();
@@ -37,6 +42,19 @@ function getReporters(): ReporterDescription[] {
   }
   return reporters;
 }
+/**
+ * Each user role is opt-in via its `*_GITHUB_USERNAME` env var. When a role is
+ * disabled, its paired test projects match no specs (so they don't try to load
+ * a storage-state file that was never produced) and the corresponding setup
+ * project skips. This lets a run exercise a fresh cluster with no returning
+ * user, or vice versa.
+ */
+const hasReturningUser = isUserEnabled("returning");
+const hasNewUser = isUserEnabled("new-user");
+
+/** Match the given file pattern when the role is enabled; match nothing otherwise. */
+const matchFor = (enabled: boolean, pattern: RegExp) =>
+  enabled ? pattern : /$a/;
 
 export default defineConfig({
   testDir: "./tests",
@@ -54,7 +72,10 @@ export default defineConfig({
     timeout: 30_000, // 30 seconds for assertions
   },
 
-  // Shared settings for all projects
+  // Shared settings for all projects. NOTE: storageState is intentionally NOT
+  // set here. Each project sets its own storageState so the setup projects can
+  // run with a fresh context and *create* the auth files that the test
+  // projects then consume.
   use: {
     // Base URL for navigation
     baseURL: getBaseURL(),
@@ -71,8 +92,6 @@ export default defineConfig({
     // Ignore SSL errors (for staging/development environments)
     ignoreHTTPSErrors: true,
 
-    storageState: authFile,
-
     // Browser viewport
     viewport: { width: 1280, height: 720 },
 
@@ -83,40 +102,122 @@ export default defineConfig({
     navigationTimeout: 30_000,
   },
 
-  // Define test projects
+  // Project topology
+  //
+  // The suite exercises two user roles over the same specs: "returning" and
+  // "new-user". Each role has a setup project that produces a storage-state
+  // file; each browser has a paired test project per role that consumes it.
+  //
+  //   keycloak-cleanup ──▶ setup:new-user
+  //   setup:returning
+  //
+  //   chromium:returning ──▶ setup:returning
+  //   chromium:new-user  ──▶ setup:new-user
+  //   (and firefox / webkit variants)
   projects: [
-    // Setup project - handles authentication
+    // --- Setup projects -------------------------------------------------
+
+    // Delete the New User from Keycloak so their next login creates a fresh
+    // account. Node-only (no browser). Skipped entirely (no matched tests)
+    // when NEW_GITHUB_USERNAME is unset.
     {
-      name: "setup",
-      testMatch: /global-setup\.ts/,
+      name: "keycloak-cleanup",
+      testMatch: matchFor(hasNewUser, /setup\/keycloak-cleanup\.ts/),
+    },
+
+    // Authenticate the Returning User via GitHub. Matches no tests (so it
+    // doesn't launch a browser) when RETURNING_GITHUB_USERNAME is unset.
+    {
+      name: "setup:returning",
+      testMatch: matchFor(hasReturningUser, /setup\/setup-returning\.ts/),
+    },
+
+    // Authenticate the New User via GitHub. Depends on keycloak-cleanup so
+    // the account is gone before this login runs. Matches no tests when
+    // NEW_GITHUB_USERNAME is unset.
+    {
+      name: "setup:new-user",
+      testMatch: matchFor(hasNewUser, /setup\/setup-new-user\.ts/),
+      dependencies: ["keycloak-cleanup"],
+    },
+
+    // --- Test projects --------------------------------------------------
+    //
+    // Each spec file (*.spec.ts) is picked up by both the returning and
+    // new-user variants of every browser, so the same suite runs once per
+    // user role. The active role is exposed to specs via project metadata
+    // (`project.metadata.user`); see utils/config.ts#runUser.
+
+    // Chromium (primary browser)
+    {
+      name: "chromium:returning",
+      testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
+      testIgnore: /setup\//,
       use: {
-        storageState: undefined, // Don't use existing auth for setup
+        ...devices["Desktop Chrome"],
+        storageState: authReturningFile,
       },
+      dependencies: ["setup:returning"],
+      metadata: { user: "returning" },
+    },
+    {
+      name: "chromium:new-user",
+      testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
+      testIgnore: /setup\//,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: authNewUserFile,
+      },
+      dependencies: ["setup:new-user"],
+      metadata: { user: "new-user" },
     },
 
-    // Chromium tests (primary browser)
+    // Firefox (optional - run with --project=firefox:*)
     {
-      name: "chromium",
-      use: devices["Desktop Chrome"],
-      dependencies: ["setup"],
-    },
-
-    // Firefox tests (optional - run with --project=firefox)
-    {
-      name: "firefox",
+      name: "firefox:returning",
+      testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
+      testIgnore: /setup\//,
       use: {
         ...devices["Desktop Firefox"],
+        storageState: authReturningFile,
       },
-      dependencies: ["setup"],
+      dependencies: ["setup:returning"],
+      metadata: { user: "returning" },
+    },
+    {
+      name: "firefox:new-user",
+      testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
+      testIgnore: /setup\//,
+      use: {
+        ...devices["Desktop Firefox"],
+        storageState: authNewUserFile,
+      },
+      dependencies: ["setup:new-user"],
+      metadata: { user: "new-user" },
     },
 
-    // WebKit tests (optional - run with --project=webkit)
+    // WebKit (optional - run with --project=webkit:*)
     {
-      name: "webkit",
+      name: "webkit:returning",
+      testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
+      testIgnore: /setup\//,
       use: {
         ...devices["Desktop Safari"],
+        storageState: authReturningFile,
       },
-      dependencies: ["setup"],
+      dependencies: ["setup:returning"],
+      metadata: { user: "returning" },
+    },
+    {
+      name: "webkit:new-user",
+      testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
+      testIgnore: /setup\//,
+      use: {
+        ...devices["Desktop Safari"],
+        storageState: authNewUserFile,
+      },
+      dependencies: ["setup:new-user"],
+      metadata: { user: "new-user" },
     },
   ],
 
