@@ -30,13 +30,14 @@ jobs:
         env:
           BASE_URL: https://release-under-test.invalid
           RETURNING_GITHUB_USERNAME: discovery-placeholder
-        run: npx playwright test --project=chromium --list
+        run: npx playwright test --project=chromium:returning --list
       - name: Validate ReportPortal configuration contract
         env:
           BASE_URL: https://release-under-test.invalid
+          RETURNING_GITHUB_USERNAME: discovery-placeholder
         run: |
           if REPORTPORTAL_ENABLED=true \
-            npx playwright test --project=chromium --list --reporter=list \
+            npx playwright test --project=chromium:returning --list --reporter=list \
             > /tmp/reportportal-error.log 2>&1; then
             echo "ReportPortal unexpectedly accepted missing configuration" >&2
             exit 1
@@ -55,7 +56,7 @@ jobs:
           REPORTPORTAL_ENVIRONMENT=development \
           REPORTPORTAL_REVISION=0123456789abcdef \
           REPORTPORTAL_WORKFLOW=openhands-e2e-example \
-            npx playwright test --project=chromium --list \
+            npx playwright test --project=chromium:returning --list \
             > /tmp/reportportal-agent.log 2>&1
           grep -F '"POST /api/v2/openhands/launch HTTP/1.1" 501 -' \
             /tmp/reportportal-server.log

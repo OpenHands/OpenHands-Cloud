@@ -7,8 +7,6 @@ import dotenv from "dotenv";
 import path from "path";
 
 import { getReportPortalReporter } from "./reportportal";
-
-dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
 import {
   authReturningFile,
   authNewUserFile,
