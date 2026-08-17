@@ -1,11 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
-import fs from "fs";
-import path from "path";
+import { runUser } from "../utils/config";
 
-const AUTH_STATE = path.resolve(import.meta.dirname, "../fixtures/auth.json");
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
+
 const NEAR_ZERO_LIMIT = 0.000001;
-
-test.use({ storageState: AUTH_STATE });
 
 type Organization = {
   id: string;
@@ -36,12 +39,6 @@ type StartTask = {
 };
 
 async function requireAdminOrganization(page: Page): Promise<Organization> {
-  if (!fs.existsSync(AUTH_STATE)) {
-    throw new Error(
-      `Missing admin authentication fixture: ${AUTH_STATE}. Create e2e_tests/fixtures/auth.json for an organization admin before running this test.`,
-    );
-  }
-
   const organizationsResponse = await page.request.get("/api/organizations");
   expect(organizationsResponse.ok()).toBe(true);
   const organizations = (await organizationsResponse.json()) as {
