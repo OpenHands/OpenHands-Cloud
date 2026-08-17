@@ -128,52 +128,6 @@ export async function expectNoConsoleErrors(
   }
 }
 
-/**
- * Environment helper to get environment-specific values
- */
-export const env = {
-  baseUrl: process.env.BASE_URL || "https://staging.all-hands.dev",
-  testEnv: process.env.TEST_ENV || "staging",
-  testRepoUrl:
-    process.env.TEST_REPO_URL || "https://github.com/OpenHands/deploy",
-  testPrompt: process.env.TEST_PROMPT || "Flip a coin!",
-  isCI: process.env.CI === "true",
-
-  getFeatureBranchUrl(branchName: string): string {
-    // Sanitize branch name for URL
-    const sanitized = branchName.replace(/[^a-zA-Z0-9-]/g, "-").toLowerCase();
-    return `https://${sanitized}.staging.all-hands.dev`;
-  },
-};
-
-/**
- * Check if running in a specific environment
- */
-export function isEnvironment(
-  env: "staging" | "production" | "local",
-): boolean {
-  const baseUrl = process.env.BASE_URL || "";
-
-  switch (env) {
-    case "staging":
-      return baseUrl.includes("staging.all-hands.dev");
-    case "production":
-      return baseUrl.includes("app.all-hands.dev");
-    case "local":
-      return baseUrl.includes("localhost");
-    default:
-      return false;
-  }
-}
-
-/**
- * Skip test in specific environments
- */
-export function skipInEnvironment(
-  test: { skip: (condition: boolean, message: string) => void },
-  envs: ("staging" | "production" | "local")[],
-  reason: string,
-): void {
-  const shouldSkip = envs.some(isEnvironment);
-  test.skip(shouldSkip, `Skipped in ${envs.join(", ")}: ${reason}`);
-}
+// Environment helpers and fixture values live in ./config (single source of
+// truth). Re-exported here for backward compatibility with existing imports.
+export { env, isEnvironment, skipInEnvironment } from "./config";
