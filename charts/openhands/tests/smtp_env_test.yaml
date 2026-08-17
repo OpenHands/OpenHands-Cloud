@@ -55,6 +55,7 @@ tests:
               secretKeyRef:
                 name: smtp-credentials
                 key: smtp-username
+                optional: true
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
@@ -64,6 +65,7 @@ tests:
               secretKeyRef:
                 name: smtp-credentials
                 key: smtp-password
+                optional: true
 
   - it: reads credentials from an overridden existing secret
     set:
@@ -81,6 +83,7 @@ tests:
               secretKeyRef:
                 name: custom-smtp-secret
                 key: smtp-username
+                optional: true
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
@@ -90,6 +93,7 @@ tests:
               secretKeyRef:
                 name: custom-smtp-secret
                 key: smtp-password
+                optional: true
 
   - it: falls back to SSL and defaults useTls when unset
     set:
