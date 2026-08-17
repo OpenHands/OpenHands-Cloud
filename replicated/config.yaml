@@ -996,11 +996,11 @@ spec:
 
     - name: smtp_configuration
       title: SMTP Email Delivery
-      description: Configure SMTP for OpenHands email notifications
+      description: Configure SMTP for OpenHands email notifications and Keycloak sign-in emails (email verification, account linking, password reset)
       items:
         - name: smtp_enabled
           title: Enable SMTP
-          help_text: Enable SMTP email delivery for budget alerts and admin notifications
+          help_text: Enable SMTP email delivery for budget alerts and admin notifications, and for Keycloak account emails (email verification, account linking, password reset)
           type: bool
           default: "0"
         - name: smtp_host
@@ -1036,7 +1036,7 @@ spec:
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_username
           title: SMTP Username
-          help_text: Username for SMTP authentication
+          help_text: Username for SMTP authentication. Leave blank if your SMTP server does not require authentication.
           type: text
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_password
