@@ -2,6 +2,16 @@ import { Page, Locator, expect } from "@playwright/test";
 import { BasePage } from "./BasePage";
 
 /**
+ * Budget given to the error-banner watch inside the readiness/message races.
+ *
+ * On a genuinely failed conversation the error banner appears quickly, so a
+ * short fixed budget is enough to fail fast. Keeping this small also stops the
+ * losing branch of Promise.race from polling for the full readiness timeout
+ * (which otherwise leaves a ~60s dangling wait in the trace even on success).
+ */
+const ERROR_BANNER_WAIT_MS = 5_000;
+
+/**
  * Agent states that can be observed during conversation
  */
 export enum AgentState {
@@ -98,7 +108,7 @@ export class ConversationPage extends BasePage {
         .then(() => "ready" as const)
         .catch(() => "timeout" as const),
       this.errorBanner
-        .waitFor({ state: "visible", timeout })
+        .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
         .then(() => "error" as const)
         .catch(() => "timeout" as const),
     ]);
@@ -335,7 +345,7 @@ export class ConversationPage extends BasePage {
         .then(() => "match" as const)
         .catch(() => "timeout" as const),
       this.errorBanner
-        .waitFor({ state: "visible", timeout })
+        .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
         .then(() => "error" as const)
         .catch(() => "timeout" as const),
     ]);
