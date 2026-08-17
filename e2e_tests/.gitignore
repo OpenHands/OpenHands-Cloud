@@ -13,6 +13,8 @@ playwright/.cache/
 
 # Authentication state (contains session tokens)
 fixtures/auth.json
+fixtures/auth.returning.json
+fixtures/auth.new-user.json
 
 # TypeScript build output
 *.tsbuildinfo
