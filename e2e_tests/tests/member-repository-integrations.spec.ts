@@ -1,7 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import path from "node:path";
+import { runUser } from "../utils/config";
 
-const authState = path.resolve(import.meta.dirname, "../fixtures/auth.json");
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 const providerLabels: Record<string, string> = {
   azure_devops: "Azure DevOps",
@@ -10,8 +15,6 @@ const providerLabels: Record<string, string> = {
   github: "GitHub",
   gitlab: "GitLab",
 };
-
-test.use({ storageState: authState });
 
 function requireEnvironment(name: string, guidance: string): string {
   const value = process.env[name]?.trim();
