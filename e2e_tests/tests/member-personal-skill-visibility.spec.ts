@@ -1,10 +1,14 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
 import fs from "fs";
 import path from "path";
+import { authNewUserFile, runUser } from "../utils/config";
 
-const authState = path.resolve(import.meta.dirname, "../fixtures/auth.json");
-
-test.use({ storageState: authState });
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 function requireEnvironment(name: string, guidance: string): string {
   const value = process.env[name]?.trim();
@@ -50,7 +54,9 @@ test("personal skill repository is hidden from another organization member", asy
     "TEST_SKILL_REPOSITORY_SOURCE",
     "Provide a readable skill repository source such as github:owner/repo.",
   );
-  const secondaryAuthState = requireAuthState("SECONDARY_AUTH_STATE");
+  const secondaryAuthState = process.env.SECONDARY_AUTH_STATE
+    ? requireAuthState("SECONDARY_AUTH_STATE")
+    : authNewUserFile;
   const marketplaceName = `e2e-personal-skills-${Date.now()}`;
   let created = false;
   let secondaryContext: BrowserContext | undefined;
