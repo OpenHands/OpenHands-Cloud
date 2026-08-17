@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import {
   expect,
   test,
@@ -7,8 +6,14 @@ import {
   type Page,
   type Response,
 } from "@playwright/test";
+import { runUser } from "../utils/config";
 
-const authState = path.resolve(import.meta.dirname, "../fixtures/auth.json");
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 const providerLabels: Record<string, string> = {
   azure_devops: "Azure DevOps",
@@ -22,8 +27,6 @@ interface UserSettings {
   git_user_name?: string | null;
   git_user_email?: string | null;
 }
-
-test.use({ storageState: authState });
 
 function requireEnvironment(name: string, guidance: string): string {
   const value = process.env[name]?.trim();
