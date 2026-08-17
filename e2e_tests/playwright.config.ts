@@ -1,8 +1,17 @@
-import { defineConfig, devices } from "@playwright/test";
+import {
+  defineConfig,
+  devices,
+  type ReporterDescription,
+} from "@playwright/test";
 import dotenv from "dotenv";
 import path from "path";
 
-import { authReturningFile, authNewUserFile } from "./utils/config";
+import { getReportPortalReporter } from "./reportportal";
+import {
+  authReturningFile,
+  authNewUserFile,
+  isUserEnabled,
+} from "./utils/config";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
 
@@ -16,6 +25,35 @@ function getBaseURL(): string {
   return new URL(baseUrl).toString();
 }
 
+function getReporters(): ReporterDescription[] {
+  const reporters: ReporterDescription[] = [
+    ["html", { outputFolder: "playwright-report" }],
+    ["list"],
+  ];
+  if (process.env.CI) {
+    reporters.push(["github"]);
+  }
+
+  const reportPortalReporter = getReportPortalReporter();
+  if (reportPortalReporter) {
+    reporters.push(reportPortalReporter);
+  }
+  return reporters;
+}
+/**
+ * Each user role is opt-in via its `*_GITHUB_USERNAME` env var. When a role is
+ * disabled, its paired test projects match no specs (so they don't try to load
+ * a storage-state file that was never produced) and the corresponding setup
+ * project skips. This lets a run exercise a fresh cluster with no returning
+ * user, or vice versa.
+ */
+const hasReturningUser = isUserEnabled("returning");
+const hasNewUser = isUserEnabled("new-user");
+
+/** Match the given file pattern when the role is enabled; match nothing otherwise. */
+const matchFor = (enabled: boolean, pattern: RegExp) =>
+  enabled ? pattern : /$a/;
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
@@ -24,9 +62,7 @@ export default defineConfig({
   workers: 1,
 
   // Reporter configuration
-  reporter: process.env.CI
-    ? [["html", { outputFolder: "playwright-report" }], ["list"], ["github"]]
-    : [["html", { outputFolder: "playwright-report" }], ["list"]],
+  reporter: getReporters(),
 
   // Timeout configuration
   timeout: 120_000, // 2 minutes per test (agent operations can be slow)
@@ -80,23 +116,26 @@ export default defineConfig({
     // --- Setup projects -------------------------------------------------
 
     // Delete the New User from Keycloak so their next login creates a fresh
-    // account. Node-only (no browser).
+    // account. Node-only (no browser). Skipped entirely (no matched tests)
+    // when NEW_GITHUB_USERNAME is unset.
     {
       name: "keycloak-cleanup",
-      testMatch: /setup\/keycloak-cleanup\.ts/,
+      testMatch: matchFor(hasNewUser, /setup\/keycloak-cleanup\.ts/),
     },
 
-    // Authenticate the Returning User via GitHub.
+    // Authenticate the Returning User via GitHub. Matches no tests (so it
+    // doesn't launch a browser) when RETURNING_GITHUB_USERNAME is unset.
     {
       name: "setup:returning",
-      testMatch: /setup\/setup-returning\.ts/,
+      testMatch: matchFor(hasReturningUser, /setup\/setup-returning\.ts/),
     },
 
     // Authenticate the New User via GitHub. Depends on keycloak-cleanup so
-    // the account is gone before this login runs.
+    // the account is gone before this login runs. Matches no tests when
+    // NEW_GITHUB_USERNAME is unset.
     {
       name: "setup:new-user",
-      testMatch: /setup\/setup-new-user\.ts/,
+      testMatch: matchFor(hasNewUser, /setup\/setup-new-user\.ts/),
       dependencies: ["keycloak-cleanup"],
     },
 
@@ -110,7 +149,7 @@ export default defineConfig({
     // Chromium (primary browser)
     {
       name: "chromium:returning",
-      testMatch: /.*\.spec\.ts$/,
+      testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
       testIgnore: /setup\//,
       use: {
         ...devices["Desktop Chrome"],
@@ -121,7 +160,7 @@ export default defineConfig({
     },
     {
       name: "chromium:new-user",
-      testMatch: /.*\.spec\.ts$/,
+      testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
       testIgnore: /setup\//,
       use: {
         ...devices["Desktop Chrome"],
@@ -134,7 +173,7 @@ export default defineConfig({
     // Firefox (optional - run with --project=firefox:*)
     {
       name: "firefox:returning",
-      testMatch: /.*\.spec\.ts$/,
+      testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
       testIgnore: /setup\//,
       use: {
         ...devices["Desktop Firefox"],
@@ -145,7 +184,7 @@ export default defineConfig({
     },
     {
       name: "firefox:new-user",
-      testMatch: /.*\.spec\.ts$/,
+      testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
       testIgnore: /setup\//,
       use: {
         ...devices["Desktop Firefox"],
@@ -158,7 +197,7 @@ export default defineConfig({
     // WebKit (optional - run with --project=webkit:*)
     {
       name: "webkit:returning",
-      testMatch: /.*\.spec\.ts$/,
+      testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
       testIgnore: /setup\//,
       use: {
         ...devices["Desktop Safari"],
@@ -169,7 +208,7 @@ export default defineConfig({
     },
     {
       name: "webkit:new-user",
-      testMatch: /.*\.spec\.ts$/,
+      testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
       testIgnore: /setup\//,
       use: {
         ...devices["Desktop Safari"],

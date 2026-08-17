@@ -9,6 +9,8 @@ This directory contains the Playwright harness and release-level end-to-end test
 - An explicit non-production or intentionally selected release target
 - Three credential sets: Keycloak admin, Returning User (GitHub), and New User (GitHub) — or pre-generated Playwright storage states for the two user roles
 
+> **Opt-in roles:** Each user role is enabled by setting its `*_GITHUB_USERNAME` env var. Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
+
 ## Install
 
 ```bash
@@ -30,8 +32,33 @@ Useful checks:
 ```bash
 npm run lint
 BASE_URL=https://release-under-test.example.test \
-  npx playwright test tests/example.spec.ts --list
+  npx playwright test tests/home.spec.ts --list
 ```
+
+## ReportPortal
+
+ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
+is enabled, the harness keeps the existing Playwright reporters and also uploads
+test results, steps, traces, videos, screenshots, and other Playwright
+attachments through `@reportportal/agent-js-playwright`.
+
+Required variables:
+
+- `REPORTPORTAL_ENDPOINT`: the full ReportPortal API endpoint, preferably ending
+  in `/api/v2` for asynchronous reporting;
+- `REPORTPORTAL_PROJECT`: the destination project name;
+- `REPORTPORTAL_API_KEY`: the reporter credential, supplied only through a
+  secret; and
+- `REPORTPORTAL_ENVIRONMENT`: the release environment attached to each launch.
+
+Optional launch metadata:
+
+- `REPORTPORTAL_LAUNCH` defaults to `OpenHands Cloud E2E`;
+- `REPORTPORTAL_REVISION` identifies the exact tested release commit or tag; and
+- `REPORTPORTAL_WORKFLOW` identifies the Argo Workflow run.
+
+Do not pass Playwright's `--reporter` CLI option in Argo. That option replaces
+this configured reporter array and would silently disable ReportPortal uploads.
 
 ## Authentication
 
@@ -66,14 +93,14 @@ The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain wi
 
 Returning User (GitHub):
 
-- `RETURNING_GITHUB_USERNAME`
-- `RETURNING_GITHUB_PASSWORD`
+- `RETURNING_GITHUB_USERNAME` — **required to enable this role**; leave unset to skip the Returning User entirely.
+- `RETURNING_GITHUB_PASSWORD` — required when the role is enabled.
 - `RETURNING_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
 
 New User (GitHub):
 
-- `NEW_GITHUB_USERNAME`
-- `NEW_GITHUB_PASSWORD`
+- `NEW_GITHUB_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup) entirely.
+- `NEW_GITHUB_PASSWORD` — required when the role is enabled.
 - `NEW_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
 
 Test fixtures (optional overrides):
@@ -134,7 +161,8 @@ The release workflow is responsible for:
 2. Setting `BASE_URL` to the environment created from that release.
 3. Supplying all three credential sets (Keycloak admin, Returning User, New User) plus `KEYCLOAK_NEW_USER_EMAIL` and explicit `TEST_*` fixture values, without logging them.
 4. Running from `/workspace/e2e_tests` with locked dependencies.
-5. Persisting `playwright-report/` and `test-results/` outside Git.
+5. Supplying the ReportPortal settings and API-key Secret when reporting is
+   enabled. Argo retains failed pod logs for failures before Playwright starts.
 
 The harness intentionally does not infer a deployment from a branch name or default to a hosted environment.
 

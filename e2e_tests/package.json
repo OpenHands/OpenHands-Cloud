@@ -14,6 +14,7 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "test:ui": "playwright test --ui",
+    "test:dev": "playwright test --project=chromium:returning --ui",
     "setup:auth": "playwright test --project=setup:returning --project=setup:new-user",
     "setup:auth:returning": "playwright test --project=setup:returning",
     "setup:auth:new-user": "playwright test --project=setup:new-user",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
+    "@reportportal/agent-js-playwright": "5.4.2",
     "@types/node": "^22.0.0",
     "@types/otplib": "^7.0.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",

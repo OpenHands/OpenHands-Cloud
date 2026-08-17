@@ -61,6 +61,20 @@ export type RunUser = "returning" | "new-user";
 
 export const DEFAULT_KEYCLOAK_REALM = "allhands";
 
+/**
+ * True when a GitHub username is configured for the given user role.
+ *
+ * Each role is opt-in via its `*_GITHUB_USERNAME` env var, so a run can omit
+ * either user (e.g. a fresh cluster that has no existing users to exercise the
+ * "returning" path). When a role is disabled, its setup project skips and the
+ * paired test projects match no specs, so the run stays green without that
+ * role's credentials.
+ */
+export function isUserEnabled(user: RunUser): boolean {
+  const prefix = user === "returning" ? "RETURNING_GITHUB" : "NEW_GITHUB";
+  return Boolean(process.env[`${prefix}_USERNAME`]);
+}
+
 const fixturesDir = path.resolve(import.meta.dirname, "../fixtures");
 
 /** Storage-state file produced by the Returning User setup project. */
@@ -99,7 +113,13 @@ function required(varName: string): string {
   return value;
 }
 
-/** Resolve and validate the GitHub credentials for a given user role. */
+/**
+ * Resolve and validate the GitHub credentials for a given user role.
+ *
+ * Only call this for an enabled role (see `isUserEnabled`); it throws if the
+ * required env vars are missing, which is the intended failure mode when a run
+ * claims to exercise a role without supplying its credentials.
+ */
 export function githubCredentialsFor(user: RunUser): GitHubCredentials {
   const prefix = user === "returning" ? "RETURNING_GITHUB" : "NEW_GITHUB";
   const username = required(`${prefix}_USERNAME`);
