@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
-import path from "path";
+import { runUser } from "../utils/config";
 
-const authState = path.resolve(import.meta.dirname, "../fixtures/auth.json");
-
-test.use({ storageState: authState });
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 function requireEnvironment(name: string, guidance: string): string {
   const value = process.env[name]?.trim();
