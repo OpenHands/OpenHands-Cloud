@@ -1,10 +1,14 @@
 import { expect, test } from "@playwright/test";
-import path from "path";
+import { runUser } from "../utils/config";
 
-const authState = path.resolve(import.meta.dirname, "../fixtures/auth.json");
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 test.use({
-  storageState: authState,
   screenshot: "off",
   trace: "off",
   video: "off",
