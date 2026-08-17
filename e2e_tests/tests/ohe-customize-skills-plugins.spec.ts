@@ -1,8 +1,11 @@
 import { expect, test } from "@playwright/test";
-import path from "node:path";
+import { runUser } from "../utils/config";
 
-test.use({
-  storageState: path.resolve(import.meta.dirname, "../fixtures/auth.json"),
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
 });
 
 test("authenticated OHE member can navigate through Customize to Skills and Plugins", async ({
