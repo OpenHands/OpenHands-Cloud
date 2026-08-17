@@ -1,10 +1,13 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import fs from "fs";
-import path from "path";
+import { authNewUserFile, runUser } from "../utils/config";
 
-const AUTH_STATE = path.resolve(import.meta.dirname, "../fixtures/auth.json");
-
-test.use({ storageState: AUTH_STATE });
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 type Organization = {
   id: string;
@@ -18,12 +21,6 @@ type Member = {
 };
 
 async function requireOwnerOrganization(page: Page): Promise<Organization> {
-  if (!fs.existsSync(AUTH_STATE)) {
-    throw new Error(
-      `Missing owner authentication fixture: ${AUTH_STATE}. Create e2e_tests/fixtures/auth.json for an organization owner before running this test.`,
-    );
-  }
-
   const organizationsResponse = await page.request.get("/api/organizations");
   expect(organizationsResponse.ok()).toBe(true);
   const organizations = (await organizationsResponse.json()) as {
@@ -115,7 +112,8 @@ test("organization owner can add a user, change their role, and remove them", as
   baseURL,
 }) => {
   const organization = await requireOwnerOrganization(page);
-  const secondaryAuthState = process.env.SECONDARY_AUTH_STATE;
+  const secondaryAuthState =
+    process.env.SECONDARY_AUTH_STATE || authNewUserFile;
   const memberEmail = process.env.TEST_MEMBER_EMAIL;
 
   if (!secondaryAuthState) {
