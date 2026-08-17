@@ -1,11 +1,16 @@
 import { expect, test } from "@playwright/test";
 import fs from "fs";
 import path from "path";
+import { authNewUserFile, runUser } from "../utils/config";
 
-const authState = path.resolve(import.meta.dirname, "../fixtures/auth.json");
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 test.use({
-  storageState: authState,
   screenshot: "off",
   trace: "off",
   video: "off",
@@ -21,7 +26,8 @@ test("existing automation is visible to its owner but not another organization m
       "TEST_AUTOMATION_ID is required and must identify an automation owned by the primary member.",
     );
   }
-  const secondaryAuthState = process.env.SECONDARY_AUTH_STATE;
+  const secondaryAuthState =
+    process.env.SECONDARY_AUTH_STATE || authNewUserFile;
   if (!secondaryAuthState) {
     throw new Error(
       "SECONDARY_AUTH_STATE is required and must point to a second member's Playwright storage state.",
