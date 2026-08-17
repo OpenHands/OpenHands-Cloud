@@ -110,6 +110,27 @@ data:
       /tmp/allhands-realm-github-provider.json > /tmp/allhands-realm-with-sessions.json
     mv /tmp/allhands-realm-with-sessions.json /tmp/allhands-realm-github-provider.json
     REALM_JSON=/tmp/allhands-realm-github-provider.json
+    {{- if .Values.smtp.enabled }}
+    # Point the realm's outgoing email at the deployment's configured SMTP
+    # server instead of the template's built-in default, so installer-configured
+    # SMTP also drives Keycloak's account emails (verification, account linking,
+    # password reset). Applies on both the create and update paths below.
+    SMTP_AUTH="false"
+    if [ -n "$SMTP_USERNAME" ]; then
+      SMTP_AUTH="true"
+    fi
+    jq --arg host "$SMTP_HOST" --arg port "$SMTP_PORT" \
+       --arg from "$SMTP_FROM_EMAIL" --arg ssl "$SMTP_USE_SSL" \
+       --arg starttls "$SMTP_USE_TLS" --arg auth "$SMTP_AUTH" \
+       --arg user "${SMTP_USERNAME:-}" --arg password "${SMTP_PASSWORD:-}" \
+       '.smtpServer = {host: $host, port: $port, from: $from,
+         fromDisplayName: "", replyTo: "", replyToDisplayName: "",
+         envelopeFrom: "", ssl: $ssl, starttls: $starttls, auth: $auth,
+         user: $user, password: $password}' \
+       $REALM_JSON > /tmp/allhands-realm-with-smtp.json
+    mv /tmp/allhands-realm-with-smtp.json $REALM_JSON
+    echo "Applied deployment SMTP settings to realm smtpServer."
+    {{- end }}
 
     if [ "$ERROR_MESSAGE" = "Realm not found." ]; then
       echo "Creating allhands realm..."
