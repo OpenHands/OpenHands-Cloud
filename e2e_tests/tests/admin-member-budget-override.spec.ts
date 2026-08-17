@@ -1,10 +1,13 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import fs from "fs";
-import path from "path";
+import { authNewUserFile, runUser } from "../utils/config";
 
-const AUTH_STATE = path.resolve(import.meta.dirname, "../fixtures/auth.json");
-
-test.use({ storageState: AUTH_STATE });
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 type Organization = {
   id: string;
@@ -21,12 +24,6 @@ type BudgetUser = {
 };
 
 async function requireAdminOrganization(page: Page): Promise<Organization> {
-  if (!fs.existsSync(AUTH_STATE)) {
-    throw new Error(
-      `Missing admin authentication fixture: ${AUTH_STATE}. Create e2e_tests/fixtures/auth.json for an organization admin before running this test.`,
-    );
-  }
-
   const organizationsResponse = await page.request.get("/api/organizations");
   expect(organizationsResponse.ok()).toBe(true);
   const organizations = (await organizationsResponse.json()) as {
@@ -64,7 +61,8 @@ test("admin overrides one member budget and restores the prior state", async ({
 }) => {
   const organization = await requireAdminOrganization(page);
   const memberEmail = process.env.TEST_MEMBER_EMAIL;
-  const secondaryAuthState = process.env.SECONDARY_AUTH_STATE;
+  const secondaryAuthState =
+    process.env.SECONDARY_AUTH_STATE || authNewUserFile;
   if (!memberEmail) {
     throw new Error("TEST_MEMBER_EMAIL must identify an existing member.");
   }
