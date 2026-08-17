@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
+import { runUser } from "../utils/config";
+
+test.beforeEach(({ page: _page }, testInfo) => {
+  test.skip(
+    runUser(testInfo) !== "returning",
+    "Requires the stable returning-user fixture.",
+  );
+});
 
 const providerLabels: Record<string, string> = {
   azure_devops: "Azure DevOps",
@@ -9,10 +16,6 @@ const providerLabels: Record<string, string> = {
   github: "GitHub",
   gitlab: "GitLab",
 };
-
-test.use({
-  storageState: path.resolve(import.meta.dirname, "../fixtures/auth.json"),
-});
 
 test("authenticated OHE member can start a Canvas conversation with a repository", async ({
   page,
