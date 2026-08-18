@@ -101,16 +101,25 @@ export class ConversationPage extends BasePage {
 
     // Wait for agent to be ready by checking for "Waiting for task" text.
     // Note: using text search since data-testid is not yet deployed to staging.
+    //
+    // The error-banner branch is a sentinel: it only resolves when an error
+    // actually appears. On timeout it stays pending (never resolves), so it
+    // cannot short-circuit the race — the full timeout budget is left to the
+    // readyText branch. Previously both branches resolved on timeout, so the
+    // 5s error-budget branch always won the race after 5s and the readyText
+    // branch was abandoned with ~115s of budget unused.
     const readyText = this.page.getByText(/waiting for task/i);
     const outcome = await Promise.race([
       readyText
         .waitFor({ state: "visible", timeout })
         .then(() => "ready" as const)
         .catch(() => "timeout" as const),
-      this.errorBanner
-        .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
-        .then(() => "error" as const)
-        .catch(() => "timeout" as const),
+      new Promise<"error">((resolve) => {
+        this.errorBanner
+          .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
+          .then(() => resolve("error"))
+          .catch(() => {});
+      }),
     ]);
 
     if (outcome === "error") {
@@ -344,10 +353,12 @@ export class ConversationPage extends BasePage {
         .waitFor({ state: "visible", timeout })
         .then(() => "match" as const)
         .catch(() => "timeout" as const),
-      this.errorBanner
-        .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
-        .then(() => "error" as const)
-        .catch(() => "timeout" as const),
+      new Promise<"error">((resolve) => {
+        this.errorBanner
+          .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
+          .then(() => resolve("error"))
+          .catch(() => {});
+      }),
     ]);
 
     if (outcome === "error") {
