@@ -43,18 +43,29 @@ export class HomePage extends BasePage {
 
   /**
    * Navigate to the home page
+   *
+   * Bypasses BasePage.goto() (which waits on `networkidle` — a state that
+   * never fires for this SPA due to persistent WebSocket/SSE connections)
+   * and instead waits on `domcontentloaded` plus concrete page elements.
    */
   async goto(): Promise<void> {
-    await super.goto("/");
+    await this.page.goto("/");
+    await this.page.waitForLoadState("domcontentloaded");
     await this.waitForHomeScreen();
   }
 
   /**
    * Wait for the home screen to be fully loaded
+   *
+   * Waits for the home-screen container and the launch button to be visible
+   * and enabled, which signals the page has finished its data-loading phase.
+   * Replaces the previous `networkidle` wait that never resolved.
    */
   async waitForHomeScreen(): Promise<void> {
     await expect(this.homeScreen).toBeVisible({ timeout: 30_000 });
-    await this.waitForNetworkIdle();
+    const launchButton = this.page.getByTestId("launch-new-conversation-button");
+    await expect(launchButton).toBeVisible({ timeout: 30_000 });
+    await expect(launchButton).toBeEnabled({ timeout: 30_000 });
   }
 
   /**
