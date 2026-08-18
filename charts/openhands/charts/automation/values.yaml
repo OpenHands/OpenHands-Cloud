@@ -48,11 +48,12 @@ events:
   # Keep at least one events pod serving during voluntary disruptions (node
   # drains / rotations). Without this, a single node drain can evict every
   # replica at once and take /v1/events/* to zero healthy backends.
-  # Set either minAvailable or maxUnavailable (minAvailable wins if both set).
+  # Only rendered when deployment.replicas > 1 — at one replica the budget would
+  # make the pod unevictable and stall the drain instead. Set enabled=false on a
+  # single-node cluster, where an evicted pod has nowhere else to land.
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
-    maxUnavailable: ""
   # Spread replicas across nodes so a single node failure/drain cannot take out
   # the whole deployment. ScheduleAnyway keeps scheduling best-effort even when
   # a perfect spread is not possible (e.g. small clusters).
