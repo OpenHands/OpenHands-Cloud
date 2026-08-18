@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
+    "@reportportal/agent-js-playwright": "5.4.2",
     "@types/node": "^22.0.0",
     "@types/otplib": "^7.0.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
