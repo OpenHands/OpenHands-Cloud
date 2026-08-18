@@ -63,7 +63,9 @@ export class HomePage extends BasePage {
    */
   async waitForHomeScreen(): Promise<void> {
     await expect(this.homeScreen).toBeVisible({ timeout: 30_000 });
-    const launchButton = this.page.getByTestId("launch-new-conversation-button");
+    const launchButton = this.page.getByTestId(
+      "launch-new-conversation-button",
+    );
     await expect(launchButton).toBeVisible({ timeout: 30_000 });
     await expect(launchButton).toBeEnabled({ timeout: 30_000 });
   }
