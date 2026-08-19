@@ -1,7 +1,12 @@
-import { defineConfig, devices } from "@playwright/test";
+import {
+  defineConfig,
+  devices,
+  type ReporterDescription,
+} from "@playwright/test";
 import dotenv from "dotenv";
 import path from "path";
 
+import { getReportPortalReporter } from "./reportportal";
 import {
   authReturningFile,
   authNewUserFile,
@@ -20,6 +25,21 @@ function getBaseURL(): string {
   return new URL(baseUrl).toString();
 }
 
+function getReporters(): ReporterDescription[] {
+  const reporters: ReporterDescription[] = [
+    ["html", { outputFolder: "playwright-report" }],
+    ["list"],
+  ];
+  if (process.env.CI) {
+    reporters.push(["github"]);
+  }
+
+  const reportPortalReporter = getReportPortalReporter();
+  if (reportPortalReporter) {
+    reporters.push(reportPortalReporter);
+  }
+  return reporters;
+}
 /**
  * Each user role is opt-in via its `*_GITHUB_USERNAME` env var. When a role is
  * disabled, its paired test projects match no specs (so they don't try to load
@@ -42,9 +62,7 @@ export default defineConfig({
   workers: 1,
 
   // Reporter configuration
-  reporter: process.env.CI
-    ? [["html", { outputFolder: "playwright-report" }], ["list"], ["github"]]
-    : [["html", { outputFolder: "playwright-report" }], ["list"]],
+  reporter: getReporters(),
 
   // Timeout configuration
   timeout: 120_000, // 2 minutes per test (agent operations can be slow)
