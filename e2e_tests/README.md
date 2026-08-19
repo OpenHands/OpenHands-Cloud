@@ -37,7 +37,7 @@ BASE_URL=https://release-under-test.example.test \
 
 ## Budget maintenance incident regressions
 
-`tests/budgets.spec.ts` contains five serial regressions for organization cap drift, member allowance renewal, disabled-budget mutation, spend-source divergence, and Slack alert spend. The suite is intentionally opt-in because it updates organization budget settings, starts a billable conversation, directly seeds LiteLLM caps, and waits across the 15-minute maintenance schedule.
+`tests/budgets.spec.ts` contains six serial regressions for organization cap drift, member allowance renewal, existing-override reconciliation, disabled-budget mutation, spend-source divergence, and Slack alert spend. The override scenario applies a real individual limit, removes its LiteLLM member cap directly, and verifies that periodic maintenance restores the stable absolute cap. The suite is intentionally opt-in because it updates organization budget settings, starts a billable conversation, directly seeds LiteLLM caps, and waits across the 15-minute maintenance schedule.
 
 Run it only against a dedicated non-personal test organization whose name contains `budget`, `e2e`, or `test`:
 

@@ -31,12 +31,19 @@ interface BudgetEvidence {
   observedDisabledTeam: LiteLLMTeamState;
   seededDisabledMember: MemberFinancial;
   observedDisabledMember: MemberFinancial;
+  overrideLimit: number;
+  overrideExpectedCap: number;
+  overrideExpectedMember: MemberFinancial;
+  overrideClearedMember: MemberFinancial;
+  overrideReconciledMember: MemberFinancial;
+  overrideSyncBefore: string;
+  overrideSyncAfter: string | null;
   slackAlertSpend?: number;
   slackAlertText?: string;
 }
 
 const config = loadBudgetE2EConfig();
-const maintenanceCycles = config.slack ? 2 : 1;
+const maintenanceCycles = config.slack ? 3 : 2;
 const suiteTimeout =
   config.syncTimeoutMs * maintenanceCycles +
   config.disabledObservationMs +
@@ -217,6 +224,75 @@ test.describe("organization budget maintenance @budgets", () => {
     const teamAfterMaintenance = await getLiteLLMTeamState(config);
     const memberAfterMaintenance = await api.getMemberFinancial(userId);
 
+    if (memberBeforeSpend.max_budget === null) {
+      throw new Error(
+        "Default member cap was absent before override reconciliation",
+      );
+    }
+    const memberCycleBaseline =
+      memberBeforeSpend.max_budget - config.userMonthlyLimit;
+    const overrideLimit = Math.max(
+      Math.min(config.userMonthlyLimit / 2, config.monthlyLimit / 2),
+      0.01,
+    );
+    const overrideExpectedCap = memberCycleBaseline + overrideLimit;
+    await api.putOverride(userId, {
+      monthly_limit: overrideLimit,
+      is_disabled: false,
+    });
+    const overrideBudget = await api.getBudget();
+    requireSuccessfulSync(overrideBudget, "member override update");
+    const overrideSyncBefore = overrideBudget.litellm_last_sync_at;
+    if (!overrideSyncBefore) {
+      throw new Error(
+        "Override update did not record a LiteLLM sync timestamp",
+      );
+    }
+    const overrideExpectedMember = await pollUntil(
+      () => api!.getMemberFinancial(userId),
+      (member) =>
+        member.max_budget !== null &&
+        Math.abs(member.max_budget - overrideExpectedCap) < 0.005,
+      {
+        description: "the individual override cap to appear in LiteLLM",
+        timeoutMs: 60_000,
+        intervalMs: config.pollIntervalMs,
+      },
+    );
+
+    await updateLiteLLMMemberCap(config, userId, null);
+    const overrideClearedMember = await pollUntil(
+      () => api!.getMemberFinancial(userId),
+      (member) =>
+        member.max_budget === null ||
+        Math.abs(member.max_budget - overrideExpectedCap) >= 0.005,
+      {
+        description: "the individual override cap to be cleared directly",
+        timeoutMs: 60_000,
+        intervalMs: config.pollIntervalMs,
+      },
+    );
+
+    const overrideReconciledBudget = await pollUntil(
+      () => api!.getBudget(),
+      (budget) =>
+        Boolean(
+          budget.litellm_last_sync_at &&
+          new Date(budget.litellm_last_sync_at).getTime() >
+            new Date(overrideSyncBefore).getTime(),
+        ),
+      {
+        description: "maintenance to reconcile the existing member override",
+        timeoutMs: config.syncTimeoutMs,
+        intervalMs: config.pollIntervalMs,
+      },
+    );
+    requireSuccessfulSync(
+      overrideReconciledBudget,
+      "existing member override reconciliation",
+    );
+    const overrideReconciledMember = await api.getMemberFinancial(userId);
+
     let slackAlertSpend: number | undefined;
     let slackAlertText: string | undefined;
     if (config.slack) {
@@ -303,6 +379,13 @@ test.describe("organization budget maintenance @budgets", () => {
       observedDisabledTeam,
       seededDisabledMember,
       observedDisabledMember,
+      overrideLimit,
+      overrideExpectedCap,
+      overrideExpectedMember,
+      overrideClearedMember,
+      overrideReconciledMember,
+      overrideSyncBefore,
+      overrideSyncAfter: overrideReconciledBudget.litellm_last_sync_at,
       slackAlertSpend,
       slackAlertText,
     };
@@ -396,6 +479,37 @@ test.describe("organization budget maintenance @budgets", () => {
     expect(evidence!.memberAfterMaintenance.max_budget).toBeCloseTo(
       evidence!.memberBeforeMaintenance.max_budget!,
       closeToPrecision,
+    );
+  });
+
+  test("issue 6: existing override is reconciled to an individual LiteLLM cap", async () => {
+    expect(evidence).toBeDefined();
+    await attachEvidence("issue-6-override-reconciliation.json", {
+      overrideLimit: evidence!.overrideLimit,
+      expectedCap: evidence!.overrideExpectedCap,
+      initial: evidence!.overrideExpectedMember,
+      cleared: evidence!.overrideClearedMember,
+      reconciled: evidence!.overrideReconciledMember,
+      syncBefore: evidence!.overrideSyncBefore,
+      syncAfter: evidence!.overrideSyncAfter,
+    });
+    expect(evidence!.overrideExpectedMember.max_budget).toBeCloseTo(
+      evidence!.overrideExpectedCap,
+      closeToPrecision,
+    );
+    expect(
+      evidence!.overrideClearedMember.max_budget === null ||
+        Math.abs(
+          evidence!.overrideClearedMember.max_budget -
+            evidence!.overrideExpectedCap,
+        ) >= 0.005,
+    ).toBe(true);
+    expect(evidence!.overrideReconciledMember.max_budget).toBeCloseTo(
+      evidence!.overrideExpectedCap,
+      closeToPrecision,
+    );
+    expect(new Date(evidence!.overrideSyncAfter!).getTime()).toBeGreaterThan(
+      new Date(evidence!.overrideSyncBefore).getTime(),
     );
   });
 
