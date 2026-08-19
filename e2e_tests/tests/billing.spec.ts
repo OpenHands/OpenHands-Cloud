@@ -1,6 +1,8 @@
+import type { Page } from "@playwright/test";
+
 import { test, expect } from "../utils/billing";
 import { HomePage } from "../pages";
-import { runUser } from "../utils/config";
+import { runUser, type RunUser } from "../utils/config";
 
 /**
  * Billing specs.
@@ -27,6 +29,65 @@ const STRIPE_TEST_CARD = {
 
 const TOP_UP_AMOUNT = 10;
 
+type Organization = {
+  id: string;
+  is_personal?: boolean;
+  credits: number | null;
+  credits_available?: boolean;
+};
+
+type CreditState = {
+  credits: number | null;
+};
+
+async function currentOrganization(page: Page): Promise<Organization> {
+  const response = await page.request.get("/api/organizations");
+  expect(response.ok()).toBe(true);
+  const result = (await response.json()) as {
+    items: Organization[];
+    current_org_id: string | null;
+  };
+  const organization = result.items.find(
+    ({ id }) => id === result.current_org_id,
+  );
+  if (!organization) {
+    throw new Error("The active user has no current organization.");
+  }
+  return organization;
+}
+
+async function billingCredits(page: Page): Promise<CreditState> {
+  const response = await page.request.get("/api/billing/credits");
+  expect(response.ok()).toBe(true);
+  const result = (await response.json()) as { credits: string | number | null };
+  return {
+    credits: result.credits === null ? null : Number(result.credits),
+  };
+}
+
+async function verifyPersonalGovernanceExclusion(
+  page: Page,
+  user: RunUser,
+  organization: Organization,
+): Promise<void> {
+  if (user !== "new-user") {
+    return;
+  }
+
+  expect(
+    organization.is_personal,
+    "A freshly provisioned user should start in a personal organization.",
+  ).toBe(true);
+  const response = await page.request.get(
+    `/api/organizations/${organization.id}/budgets`,
+    { headers: { "X-Org-Id": organization.id } },
+  );
+  expect(response.status()).toBe(400);
+  await expect(response.json()).resolves.toMatchObject({
+    detail: "Organization budgets are not available for personal workspaces",
+  });
+}
+
 test.describe("Billing @billing", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -39,12 +100,15 @@ test.describe("Billing @billing", () => {
   test("should be able to purchase $10 credits via Stripe", async ({
     page,
   }, testInfo) => {
-    test.info().annotations.push({
-      type: "user",
-      description: runUser(testInfo),
-    });
+    const user = runUser(testInfo);
+    test.info().annotations.push({ type: "user", description: user });
 
-    // Navigate to home and open the user menu to reach Billing.
+    const initialOrganization = await currentOrganization(page);
+    await verifyPersonalGovernanceExclusion(page, user, initialOrganization);
+    const initialCredits = await billingCredits(page);
+    expect(initialOrganization.credits_available).toBe(true);
+    expect(initialOrganization.credits).toBe(initialCredits.credits);
+
     await homePage.goto();
     await homePage.openUserMenu();
 
@@ -57,14 +121,16 @@ test.describe("Billing @billing", () => {
       timeout: 10_000,
     });
 
-    // Capture the balance before purchasing so we can assert it grew by $10.
     const balanceElement = page.getByTestId("user-balance");
     await expect(balanceElement).toBeVisible({ timeout: 10_000 });
-    const initialBalanceText = await balanceElement.textContent();
-    const initialBalance = parseFloat(
-      initialBalanceText?.replace("$", "") || "0",
-    );
-    console.log(`Initial balance: $${initialBalance.toFixed(2)}`);
+    await expect(page.getByText("$NaN")).toHaveCount(0);
+    if (initialCredits.credits === null) {
+      await expect(balanceElement).toHaveText(/no budget limit/i);
+    } else {
+      await expect(balanceElement).toHaveText(
+        `$${initialCredits.credits.toFixed(2)}`,
+      );
+    }
 
     // Enter the top-up amount and submit.
     const topUpInput = page.getByTestId("top-up-input");
@@ -102,18 +168,23 @@ test.describe("Billing @billing", () => {
     await page.waitForURL(/\/settings\/billing/, { timeout: 60_000 });
     console.log("Returned to billing page after payment");
 
-    // The balance refresh is async; give it a moment before re-reading.
-    await page.waitForTimeout(2000);
+    const expectedCredits = (initialCredits.credits ?? 0) + TOP_UP_AMOUNT;
+    await expect
+      .poll(async () => (await billingCredits(page)).credits, {
+        timeout: 30_000,
+        intervals: [500, 1000, 2000],
+      })
+      .toBeCloseTo(expectedCredits, 2);
 
-    await expect(balanceElement).toBeVisible({ timeout: 10_000 });
-    const newBalanceText = await balanceElement.textContent();
-    const newBalance = parseFloat(newBalanceText?.replace("$", "") || "0");
-    console.log(`New balance: $${newBalance.toFixed(2)}`);
+    await expect(balanceElement).toHaveText(`$${expectedCredits.toFixed(2)}`, {
+      timeout: 10_000,
+    });
+    await expect(page.getByText("$NaN")).toHaveCount(0);
 
-    expect(newBalance).toBeCloseTo(initialBalance + TOP_UP_AMOUNT, 2);
-    console.log(
-      `Balance increased by $${TOP_UP_AMOUNT}: $${initialBalance.toFixed(2)} -> $${newBalance.toFixed(2)}`,
-    );
+    const updatedOrganization = await currentOrganization(page);
+    expect(updatedOrganization.id).toBe(initialOrganization.id);
+    expect(updatedOrganization.credits_available).toBe(true);
+    expect(updatedOrganization.credits).toBeCloseTo(expectedCredits, 2);
 
     await page.screenshot({
       path: "test-results/screenshots/billing-after-payment.png",
