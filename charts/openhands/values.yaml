@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.52.2
+  tag: 1.53.0
 
 autoscaling:
   enabled: false
@@ -32,6 +32,10 @@ appConfig:
   OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
+
+# Maximum conversations a user may start per UTC day. null leaves the
+# enterprise application default unlimited; set an integer to enforce a limit.
+dailyConversationLimit: null
 
 datadog:
   enabled: false

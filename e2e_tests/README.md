@@ -35,6 +35,31 @@ BASE_URL=https://release-under-test.example.test \
   npx playwright test tests/home.spec.ts --list
 ```
 
+## ReportPortal
+
+ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
+is enabled, the harness keeps the existing Playwright reporters and also uploads
+test results, steps, traces, videos, screenshots, and other Playwright
+attachments through `@reportportal/agent-js-playwright`.
+
+Required variables:
+
+- `REPORTPORTAL_ENDPOINT`: the full ReportPortal API endpoint, preferably ending
+  in `/api/v2` for asynchronous reporting;
+- `REPORTPORTAL_PROJECT`: the destination project name;
+- `REPORTPORTAL_API_KEY`: the reporter credential, supplied only through a
+  secret; and
+- `REPORTPORTAL_ENVIRONMENT`: the release environment attached to each launch.
+
+Optional launch metadata:
+
+- `REPORTPORTAL_LAUNCH` defaults to `OpenHands Cloud E2E`;
+- `REPORTPORTAL_REVISION` identifies the exact tested release commit or tag; and
+- `REPORTPORTAL_WORKFLOW` identifies the Argo Workflow run.
+
+Do not pass Playwright's `--reporter` CLI option in Argo. That option replaces
+this configured reporter array and would silently disable ReportPortal uploads.
+
 ## Authentication
 
 OpenHands Cloud uses Keycloak as its identity provider, federating identities from GitHub. The harness exercises the same spec suite under two user roles so both the "returning user" and "brand-new user" paths are covered in every run.
@@ -136,7 +161,8 @@ The release workflow is responsible for:
 2. Setting `BASE_URL` to the environment created from that release.
 3. Supplying all three credential sets (Keycloak admin, Returning User, New User) plus `KEYCLOAK_NEW_USER_EMAIL` and explicit `TEST_*` fixture values, without logging them.
 4. Running from `/workspace/e2e_tests` with locked dependencies.
-5. Persisting `playwright-report/` and `test-results/` outside Git.
+5. Supplying the ReportPortal settings and API-key Secret when reporting is
+   enabled. Argo retains failed pod logs for failures before Playwright starts.
 
 The harness intentionally does not infer a deployment from a branch name or default to a hosted environment.
 
