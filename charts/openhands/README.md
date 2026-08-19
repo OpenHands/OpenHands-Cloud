@@ -282,6 +282,27 @@ Bitbucket Data Center is the self-hosted version of Bitbucket. The setup is diff
      host: <your-bitbucket-data-center-host>
    ```
 
+#### Enterprise SSO (SAML)
+
+Enterprise SSO signs users in with a corporate SAML identity provider through the bundled Keycloak.
+
+1. Register Keycloak with your identity provider using these SAML values:
+
+   - ACS URL `https://auth.openhands.example.com/realms/allhands/broker/enterprise_sso/endpoint`
+   - Entity ID `https://auth.openhands.example.com/realms/allhands`
+
+2. Update site-values.yaml file:
+
+   ```yaml
+   enterpriseSso:
+     enabled: true
+     displayName: "Company SSO"          # optional, defaults to "Company SSO"
+     idpMetadataUrl: "<your-idp-metadata-url>"
+   # When idpMetadataUrl is provided, the chart automatically creates and keeps updated the
+   # enterprise_sso SAML identity provider in the bundled Keycloak on every pod start.
+   # Leave it empty to configure the provider manually in the Keycloak admin console instead.
+   ```
+
 ### LiteLLM configuration
 
 > [!IMPORTANT]

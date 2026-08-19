@@ -49,6 +49,14 @@
         "class": { "type": "string" }
       }
     },
+    "enterpriseSso": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "displayName": { "type": "string" },
+        "idpMetadataUrl": { "type": "string" }
+      }
+    },
     "sandbox": {
       "type": "object",
       "properties": {
