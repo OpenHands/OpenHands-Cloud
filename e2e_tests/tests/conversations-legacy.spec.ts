@@ -147,13 +147,15 @@ test.describe("legacy conversations @conversations", () => {
     );
     const fileChangesRefreshButton = tabTitleBar.getByRole("button");
 
-    await expect(readMe).toBeVisible({ timeout: 10_000 }).catch(async () => {
-      console.log(
-        "Changes panel empty after task completion; clicking refresh to refetch git changes",
-      );
-      await fileChangesRefreshButton.click().catch(() => {});
-      await page.waitForTimeout(1_000);
-    });
+    await expect(readMe)
+      .toBeVisible({ timeout: 10_000 })
+      .catch(async () => {
+        console.log(
+          "Changes panel empty after task completion; clicking refresh to refetch git changes",
+        );
+        await fileChangesRefreshButton.click().catch(() => {});
+        await page.waitForTimeout(1_000);
+      });
 
     await expect(readMe).toBeVisible();
     await readMe.click();
