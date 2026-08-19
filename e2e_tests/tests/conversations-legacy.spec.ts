@@ -137,15 +137,10 @@ test.describe("legacy conversations @conversations", () => {
     // false), the panel stays empty and no amount of waiting will repopulate
     // it. As a safety net, if the README hasn't appeared within the initial
     // budget, click the editor tab's refresh button (which calls refetch())
-    // once and re-wait. Legacy UI only — the refresh control has no
-    // data-testid, so it is located structurally: the tab title-bar div has
-    // text content exactly "Changes" (the label span) and contains the
-    // refresh button. Ancestor divs hold more text, and the tab-nav label
-    // lives inside a <button>, so this scoping avoids both.
-    const tabTitleBar = conversationPage.page.locator(
-      'div:text-is("Changes"):has(button)',
+    // once and re-wait.
+    const fileChangesRefreshButton = conversationPage.page.getByTestId(
+      "changes-refresh-button",
     );
-    const fileChangesRefreshButton = tabTitleBar.getByRole("button");
 
     await expect(readMe)
       .toBeVisible({ timeout: 10_000 })
