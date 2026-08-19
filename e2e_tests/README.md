@@ -35,6 +35,43 @@ BASE_URL=https://release-under-test.example.test \
   npx playwright test tests/home.spec.ts --list
 ```
 
+## Budget maintenance incident regressions
+
+`tests/budgets.spec.ts` contains five serial regressions for organization cap drift, member allowance renewal, disabled-budget mutation, spend-source divergence, and Slack alert spend. The suite is intentionally opt-in because it updates organization budget settings, starts a billable conversation, directly seeds LiteLLM caps, and waits across the 15-minute maintenance schedule.
+
+Run it only against a dedicated non-personal test organization whose name contains `budget`, `e2e`, or `test`:
+
+```bash
+BASE_URL=https://staging.all-hands.dev \
+AUTH_METHOD=skip \
+RETURNING_GITHUB_USERNAME=enabled \
+BUDGET_E2E_ORG_ID=<dedicated-org-uuid> \
+BUDGET_E2E_MUTATION_CONFIRMED=true \
+BUDGET_E2E_LITELLM_URL=<staging-litellm-url> \
+BUDGET_E2E_LITELLM_API_KEY=<staging-litellm-admin-key> \
+  npx playwright test tests/budgets.spec.ts --project=chromium:returning
+```
+
+The authenticated returning user must be an owner or admin of the test organization. The setup snapshots and restores budget settings, the current organization, the governed member override, and the directly observed LiteLLM caps. It refuses personal organizations and arbitrary organization names; `BUDGET_E2E_ALLOW_ANY_ORG=true` is an explicit emergency override for the name guard.
+
+Optional timing and workload variables:
+
+- `BUDGET_E2E_MONTHLY_LIMIT` (default `50`)
+- `BUDGET_E2E_USER_MONTHLY_LIMIT` (default `25`)
+- `BUDGET_E2E_PROMPT` (default `Reply with exactly: budget-e2e-ok`)
+- `BUDGET_E2E_POLL_INTERVAL_MS` (default `5000`)
+- `BUDGET_E2E_SYNC_TIMEOUT_MS` (default `1200000`, 20 minutes)
+- `BUDGET_E2E_DISABLED_OBSERVATION_MS` (default `1080000`, 18 minutes)
+
+Issue 5 also verifies the delivered Slack message. Supply all four variables together or omit all four to skip only that assertion:
+
+- `BUDGET_E2E_SLACK_BOT_TOKEN`
+- `BUDGET_E2E_SLACK_CHANNEL_ID`
+- `BUDGET_E2E_SLACK_CHANNEL_NAME` (including the leading `#`)
+- `BUDGET_E2E_SLACK_TEAM_ID`
+
+The Argo workflow that runs this spec must inject these values from Kubernetes Secrets. Never commit authentication state, LiteLLM keys, or Slack tokens.
+
 ## ReportPortal
 
 ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
