@@ -992,6 +992,16 @@ spec:
           when: 'repl{{ ConfigOptionEquals "gitlab_auth_enabled" "1" }}'
           required: true
 
+    - name: enterprise_sso_authentication
+      title: Enterprise SSO (SAML) Authentication
+      description: Let users sign in with a corporate SAML or OIDC identity provider through the bundled Keycloak. Requires an identity provider with alias enterprise_sso in the allhands Keycloak realm.
+      items:
+        - name: enterprise_sso_enabled
+          title: Enable Enterprise SSO Authentication
+          help_text: Show the Enterprise SSO button on the OpenHands login page. The button redirects users to the identity provider whose alias is enterprise_sso in the bundled Keycloak (realm allhands). Configure that identity provider before enabling this option, or users will land on the Keycloak login page instead.
+          type: bool
+          default: "0"
+
     - name: slack_configuration
       title: Enable Slack
       description: Enable Slack
