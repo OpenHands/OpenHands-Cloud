@@ -32,7 +32,7 @@ Useful checks:
 ```bash
 npm run lint
 BASE_URL=https://release-under-test.example.test \
-  npx playwright test tests/home.spec.ts --list
+  npx playwright test tests/001-home.spec.ts --list
 ```
 
 ## ReportPortal

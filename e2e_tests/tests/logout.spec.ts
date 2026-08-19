@@ -7,9 +7,11 @@ import { runUser } from "../utils/config";
  *
  * Ported from saas_deploy's `e2e_tests/tests/smoke.spec.ts` (the logout +
  * return-to-login flow). This spec destroys the authenticated session, so it
- * must run after every other spec in the project — naming the file
- * `logout.spec.ts` keeps it last under Playwright's default alphabetical file
- * ordering, so no other spec is left holding a torn-down session.
+ * must run after every other spec in the project. It intentionally keeps a
+ * letter-prefixed filename (`logout.spec.ts`, no number) rather than a numeric
+ * prefix like the others: ASCII digits sort before letters, so any numbered
+ * spec will always precede it — keeping logout last without ever needing to
+ * renumber it as new specs are added.
  *
  * As with the rest of the harness, each spec runs once per user role
  * (returning / new-user); the active role is read from project metadata via

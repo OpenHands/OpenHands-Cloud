@@ -14,6 +14,14 @@ import { runUser } from "../utils/config";
  * As with the rest of the harness, each spec runs once per user role
  * (returning / new-user); the active role is read from project metadata via
  * `runUser(testInfo)`.
+ *
+ * This file is prefixed `002-` so Playwright runs it before
+ * `004-api-keys.spec.ts` within a project (files run in filename order). The
+ * API keys spec requires the user to have credits — the "Refresh API Key"
+ * button only renders once the balance is non-zero — so for the new-user role
+ * the $10 top-up here must happen first. If billing is disabled the top-up is
+ * skipped and the API keys spec will fail for new-users regardless of order,
+ * since there is no other way to obtain credits.
  */
 
 const STRIPE_TEST_CARD = {
