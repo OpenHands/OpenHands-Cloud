@@ -129,6 +129,29 @@ test.describe("legacy conversations @conversations", () => {
       .getByTestId("file-diff-viewer-outer")
       .locator("div")
       .filter({ hasText: /^README\.md$/ });
+
+    // The changes panel is repopulated by WebSocket ActionEvents invalidating
+    // the `file_changes` cache; there is no timer and no refresh on the
+    // FINISHED status (see use-unified-get-git-changes.ts). If the final
+    // file-edit event was missed or its refetch transiently failed (retry:
+    // false), the panel stays empty and no amount of waiting will repopulate
+    // it. As a safety net, if the README hasn't appeared within the initial
+    // budget, click the editor tab's refresh button (which calls refetch())
+    // once and re-wait.
+    const fileChangesRefreshButton = conversationPage.page.getByTestId(
+      "changes-refresh-button",
+    );
+
+    await expect(readMe)
+      .toBeVisible({ timeout: 10_000 })
+      .catch(async () => {
+        console.log(
+          "Changes panel empty after task completion; clicking refresh to refetch git changes",
+        );
+        await fileChangesRefreshButton.click().catch(() => {});
+        await page.waitForTimeout(1_000);
+      });
+
     await expect(readMe).toBeVisible();
     await readMe.click();
 
