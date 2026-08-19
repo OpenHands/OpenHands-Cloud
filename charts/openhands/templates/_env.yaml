@@ -30,6 +30,10 @@
   value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
 - name: OPENHANDS_EXPERIMENT_MANAGER_CLS
   value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
+{{- if ne .Values.dailyConversationLimit nil }}
+- name: OH_DAILY_CONVERSATION_LIMIT
+  value: {{ .Values.dailyConversationLimit | quote }}
+{{- end }}
 - name: OH_RESOLVER_LABEL
   value: {{ get $integrations "resolverLabel" | default "openhands" | quote }}
 - name: LOG_JSON # Configure structured logging for Google Cloud

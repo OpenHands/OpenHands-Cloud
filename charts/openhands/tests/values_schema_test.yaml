@@ -20,6 +20,12 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "ingress/enabled.*want boolean"
+  - it: rejects a non-integer daily conversation limit
+    set:
+      dailyConversationLimit: "twenty"
+    asserts:
+      - failedTemplate:
+          errorPattern: "dailyConversationLimit"
   - it: rejects a storage backend the app does not support
     set:
       filestore.type: local
