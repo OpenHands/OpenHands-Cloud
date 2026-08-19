@@ -150,6 +150,23 @@ export class HomePage extends BasePage {
   }
 
   /**
+   * Log out via the user menu and wait for the login screen to appear.
+   *
+   * Clicks the "Logout" button exposed in the account settings menu (opened
+   * via openUserMenu) and waits for navigation to the Keycloak login page,
+   * where the "Log in with GitHub" option is rendered.
+   */
+  async logout(): Promise<void> {
+    await this.openUserMenu();
+
+    const logoutButton = this.page.getByRole("button", { name: /logout/i });
+    await logoutButton.click();
+
+    // Wait for navigation to the login screen.
+    await this.page.waitForURL(/\/login/, { timeout: 30_000 });
+  }
+
+  /**
    * Get list of recent conversations
    */
   async getRecentConversations(): Promise<string[]> {
