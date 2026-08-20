@@ -37,40 +37,42 @@ BASE_URL=https://release-under-test.example.test \
 
 ## Budget maintenance incident regressions
 
-`tests/budgets.spec.ts` contains six serial regressions for organization cap drift, member allowance renewal, existing-override reconciliation, disabled-budget mutation, spend-source divergence, and Slack alert spend. The override scenario applies a real individual limit, removes its LiteLLM member cap directly, and verifies that periodic maintenance restores the stable absolute cap. The suite is intentionally opt-in because it updates organization budget settings, starts a billable conversation, directly seeds LiteLLM caps, and waits across the 15-minute maintenance schedule.
+`tests/budgets.spec.ts` contains six serial regressions for organization cap drift, member allowance renewal, existing-override reconciliation, disabled-budget mutation, spend-source divergence, and Slack alert spend. It forces a stale billing cycle, queues real maintenance tasks, opens a fresh PostgreSQL connection for every persistence check, sends billable traffic directly through LiteLLM without creating an OpenHands conversation, and verifies the delivered Slack alert. The override scenario removes a real individual LiteLLM cap and proves maintenance restores the same cycle-anchored maximum.
 
-Run it only against a dedicated non-personal test organization whose name contains `budget`, `e2e`, or `test`:
+The suite is destructive and opt-in. Run it only against a dedicated non-personal organization whose name contains `budget`, `e2e`, or `test`:
 
 ```bash
 BASE_URL=https://staging.all-hands.dev \
-AUTH_METHOD=skip \
-RETURNING_GITHUB_USERNAME=enabled \
+RETURNING_GITHUB_USERNAME=<github-user> \
+RETURNING_GITHUB_PASSWORD=<github-password> \
 BUDGET_E2E_ORG_ID=<dedicated-org-uuid> \
 BUDGET_E2E_MUTATION_CONFIRMED=true \
+BUDGET_E2E_DATABASE_URL=<staging-postgres-url> \
 BUDGET_E2E_LITELLM_URL=<staging-litellm-url> \
 BUDGET_E2E_LITELLM_API_KEY=<staging-litellm-admin-key> \
+BUDGET_E2E_DIRECT_MODEL=<billable-litellm-model> \
+BUDGET_E2E_SLACK_BOT_TOKEN=<slack-history-token> \
+BUDGET_E2E_SLACK_CHANNEL_ID=<channel-id> \
+BUDGET_E2E_SLACK_CHANNEL_NAME=<#channel-name> \
+BUDGET_E2E_SLACK_TEAM_ID=<team-id> \
   npx playwright test tests/budgets.spec.ts --project=chromium:returning
 ```
 
-The authenticated returning user must be an owner or admin of the test organization. The setup snapshots and restores budget settings, the current organization, the governed member override, and the directly observed LiteLLM caps. It refuses personal organizations and arbitrary organization names; `BUDGET_E2E_ALLOW_ANY_ORG=true` is an explicit emergency override for the name guard.
+The authenticated user must be an owner or admin of the test organization. The PostgreSQL credential must be restricted to reading and updating that organization's `org_budget_settings` row and inserting, reading, and deleting test-created `maintenance_tasks`; do not supply a production superuser credential. A running maintenance worker must process the inserted tasks within `BUDGET_E2E_SYNC_TIMEOUT_MS`.
+
+The setup snapshots and restores budget settings, internal cycle state, the current organization, the governed member override, and directly observed LiteLLM caps. It creates a uniquely named temporary LiteLLM key and deletes it during cleanup. Cleanup operations run independently so one failure does not suppress the remaining restorations. The suite refuses personal organizations and arbitrary organization names; `BUDGET_E2E_ALLOW_ANY_ORG=true` is an explicit emergency override for the name guard.
 
 Optional timing and workload variables:
 
 - `BUDGET_E2E_MONTHLY_LIMIT` (default `50`)
 - `BUDGET_E2E_USER_MONTHLY_LIMIT` (default `25`)
-- `BUDGET_E2E_PROMPT` (default `Reply with exactly: budget-e2e-ok`)
+- `BUDGET_E2E_MINIMUM_SPEND_DELTA` (default `0.02`)
+- `BUDGET_E2E_DIRECT_PROMPT` (defaults to a long deterministic prompt)
+- `BUDGET_E2E_EXPECTED_LITELLM_VERSION` (default `1.94.1`; the suite fails before mutation on mismatch)
 - `BUDGET_E2E_POLL_INTERVAL_MS` (default `5000`)
-- `BUDGET_E2E_SYNC_TIMEOUT_MS` (default `1200000`, 20 minutes)
-- `BUDGET_E2E_DISABLED_OBSERVATION_MS` (default `1080000`, 18 minutes)
+- `BUDGET_E2E_SYNC_TIMEOUT_MS` (default `1200000`, 20 minutes per task)
 
-Issue 5 also verifies the delivered Slack message. Supply all four variables together or omit all four to skip only that assertion:
-
-- `BUDGET_E2E_SLACK_BOT_TOKEN`
-- `BUDGET_E2E_SLACK_CHANNEL_ID`
-- `BUDGET_E2E_SLACK_CHANNEL_NAME` (including the leading `#`)
-- `BUDGET_E2E_SLACK_TEAM_ID`
-
-The Argo workflow that runs this spec must inject these values from Kubernetes Secrets. Never commit authentication state, LiteLLM keys, or Slack tokens.
+`.github/workflows/budget-e2e.yml` runs the complete suite daily and on demand through the protected `budget-e2e-staging` environment. It fails before Playwright starts when any required variable or secret is absent, so certification runs cannot silently skip an incident. Configure the `BUDGET_E2E_*` values as environment variables/secrets and require environment approval if staging access is sensitive. Never commit authentication state, database URLs, LiteLLM keys, or Slack tokens.
 
 ## ReportPortal
 
@@ -105,11 +107,11 @@ OpenHands Cloud uses Keycloak as its identity provider, federating identities fr
 
 Three credential sets are required before any test run:
 
-| Role | Provider | Credentials | Purpose |
-| --- | --- | --- | --- |
-| Keycloak admin | Keycloak | username + password | Administers Keycloak; deletes the New User before each run |
-| Returning User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account already exists |
-| New User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
+| Role           | Provider | Credentials                                | Purpose                                                                                                                           |
+| -------------- | -------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Keycloak admin | Keycloak | username + password                        | Administers Keycloak; deletes the New User before each run                                                                        |
+| Returning User | GitHub   | username + password + optional TOTP secret | A user whose OpenHands account already exists                                                                                     |
+| New User       | GitHub   | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
 
 The New User's Keycloak account is identified by email. At the start of a run, the Keycloak admin logs in and deletes any existing user whose email matches `KEYCLOAK_NEW_USER_EMAIL`. The New User then logs in via GitHub and is provisioned from scratch, exercising the onboarding path.
 

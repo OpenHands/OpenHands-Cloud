@@ -25,6 +25,8 @@ export interface BudgetSettings {
   litellm_last_sync_at: string | null;
   litellm_last_sync_status: string | null;
   litellm_last_sync_error: string | null;
+  cycle_start_at: string;
+  cycle_end_at: string;
   current_spend: number;
   current_spend_percentage: number;
   thresholds: BudgetThreshold[];
@@ -65,6 +67,15 @@ export interface LiteLLMTeamState {
   spend: number;
 }
 
+interface OrgConversationPage {
+  total_items: number;
+}
+
+interface LiteLLMGeneratedKey {
+  key: string;
+  key_alias?: string;
+}
+
 export interface SlackAlert {
   text: string;
   spend: number;
@@ -82,10 +93,13 @@ export interface BudgetE2EConfig {
   orgId: string;
   monthlyLimit: number;
   userMonthlyLimit: number;
-  prompt: string;
+  minimumSpendDelta: number;
+  directPrompt: string;
+  directModel?: string;
+  expectedLiteLLMVersion: string;
   pollIntervalMs: number;
   syncTimeoutMs: number;
-  disabledObservationMs: number;
+  databaseUrl?: string;
   litellmUrl?: string;
   litellmApiKey?: string;
   slack?: SlackConfig;
@@ -103,8 +117,10 @@ const readPositiveNumber = (name: string, defaultValue: number): number => {
 
 export function loadBudgetE2EConfig(): BudgetE2EConfig {
   const orgId = process.env.BUDGET_E2E_ORG_ID?.trim() || "";
+  const databaseUrl = process.env.BUDGET_E2E_DATABASE_URL?.trim();
   const litellmUrl = process.env.BUDGET_E2E_LITELLM_URL?.trim();
   const litellmApiKey = process.env.BUDGET_E2E_LITELLM_API_KEY?.trim();
+  const directModel = process.env.BUDGET_E2E_DIRECT_MODEL?.trim();
   const slackValues = {
     botToken: process.env.BUDGET_E2E_SLACK_BOT_TOKEN?.trim(),
     channelId: process.env.BUDGET_E2E_SLACK_CHANNEL_ID?.trim(),
@@ -118,26 +134,46 @@ export function loadBudgetE2EConfig(): BudgetE2EConfig {
       "All BUDGET_E2E_SLACK_* variables are required when Slack verification is enabled",
     );
   }
+  const enabled =
+    Boolean(orgId) &&
+    process.env.BUDGET_E2E_MUTATION_CONFIRMED?.toLowerCase() === "true";
+  if (enabled && !databaseUrl) {
+    throw new Error(
+      "BUDGET_E2E_DATABASE_URL is required for maintenance fixtures",
+    );
+  }
+  if (enabled && !directModel) {
+    throw new Error(
+      "BUDGET_E2E_DIRECT_MODEL is required for direct LiteLLM traffic",
+    );
+  }
+  if (enabled && !hasAllSlackValues) {
+    throw new Error(
+      "All BUDGET_E2E_SLACK_* variables are required for budget certification",
+    );
+  }
 
   return {
-    enabled:
-      Boolean(orgId) &&
-      process.env.BUDGET_E2E_MUTATION_CONFIRMED?.toLowerCase() === "true",
+    enabled,
     orgId,
     monthlyLimit: readPositiveNumber("BUDGET_E2E_MONTHLY_LIMIT", 50),
     userMonthlyLimit: readPositiveNumber("BUDGET_E2E_USER_MONTHLY_LIMIT", 25),
-    prompt:
-      process.env.BUDGET_E2E_PROMPT?.trim() ||
-      "Reply with exactly: budget-e2e-ok",
+    minimumSpendDelta: readPositiveNumber(
+      "BUDGET_E2E_MINIMUM_SPEND_DELTA",
+      0.02,
+    ),
+    directPrompt:
+      process.env.BUDGET_E2E_DIRECT_PROMPT?.trim() ||
+      "Write a detailed 500-word explanation of idempotent billing synchronization.",
+    directModel,
+    expectedLiteLLMVersion:
+      process.env.BUDGET_E2E_EXPECTED_LITELLM_VERSION?.trim() || "1.94.1",
     pollIntervalMs: readPositiveNumber("BUDGET_E2E_POLL_INTERVAL_MS", 5_000),
     syncTimeoutMs: readPositiveNumber(
       "BUDGET_E2E_SYNC_TIMEOUT_MS",
       20 * 60_000,
     ),
-    disabledObservationMs: readPositiveNumber(
-      "BUDGET_E2E_DISABLED_OBSERVATION_MS",
-      18 * 60_000,
-    ),
+    databaseUrl,
     litellmUrl,
     litellmApiKey,
     slack: hasAllSlackValues
@@ -197,6 +233,17 @@ export class BudgetApi {
       }),
       "get organization member",
     );
+  }
+
+  async getConversationCount(): Promise<number> {
+    const page = await responseJson<OrgConversationPage>(
+      this.request.get(
+        `/api/organizations/${this.orgId}/conversations?page=1&per_page=1`,
+        { headers: this.headers },
+      ),
+      "get organization conversation count",
+    );
+    return page.total_items;
   }
 
   switchOrg(orgId: string): Promise<OrgDetails> {
@@ -287,6 +334,33 @@ export async function pollUntil<T>(
   );
 }
 
+export async function getLiteLLMVersion(
+  config: BudgetE2EConfig,
+): Promise<string> {
+  if (!config.litellmUrl || !config.litellmApiKey) {
+    throw new Error("LiteLLM E2E admin configuration is not available");
+  }
+  const url = new URL(
+    "health/readiness/details",
+    `${config.litellmUrl.replace(/\/$/, "")}/`,
+  );
+  const response = await fetch(url, {
+    headers: { "x-goog-api-key": config.litellmApiKey },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `get LiteLLM readiness details failed (${response.status} ${response.statusText})`,
+    );
+  }
+  const details = (await response.json()) as { litellm_version?: string };
+  if (!details.litellm_version) {
+    throw new Error(
+      "LiteLLM readiness details did not include litellm_version",
+    );
+  }
+  return details.litellm_version;
+}
+
 export async function getLiteLLMTeamState(
   config: BudgetE2EConfig,
 ): Promise<LiteLLMTeamState> {
@@ -358,6 +432,80 @@ export function updateLiteLLMMemberCap(
     user_id: userId,
     max_budget_in_team: maxBudget,
   });
+}
+
+export async function createLiteLLMTestKey(
+  config: BudgetE2EConfig,
+  userId: string,
+): Promise<LiteLLMGeneratedKey> {
+  if (!config.litellmUrl || !config.litellmApiKey || !config.directModel) {
+    throw new Error("LiteLLM direct-traffic configuration is not available");
+  }
+  const keyAlias = `budget-e2e-${config.orgId}-${userId}-${Date.now()}`;
+  const response = await fetch(
+    new URL("key/generate", `${config.litellmUrl.replace(/\/$/, "")}/`),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.litellmApiKey,
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        team_id: config.orgId,
+        key_alias: keyAlias,
+        models: [config.directModel],
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `generate LiteLLM test key failed (${response.status} ${response.statusText}): ${await response.text()}`,
+    );
+  }
+  const generated = (await response.json()) as LiteLLMGeneratedKey;
+  if (!generated.key) {
+    throw new Error("LiteLLM test key response did not contain a key");
+  }
+  return { key: generated.key, key_alias: keyAlias };
+}
+
+export function deleteLiteLLMTestKey(
+  config: BudgetE2EConfig,
+  keyAlias: string,
+): Promise<void> {
+  return updateLiteLLM(config, "key/delete", { key_aliases: [keyAlias] });
+}
+
+export async function generateDirectLiteLLMSpend(
+  config: BudgetE2EConfig,
+  key: string,
+): Promise<void> {
+  if (!config.litellmUrl || !config.litellmApiKey || !config.directModel) {
+    throw new Error("LiteLLM direct-traffic configuration is not available");
+  }
+  const response = await fetch(
+    new URL("chat/completions", `${config.litellmUrl.replace(/\/$/, "")}/`),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.litellmApiKey,
+      },
+      body: JSON.stringify({
+        model: config.directModel,
+        messages: [{ role: "user", content: config.directPrompt }],
+        max_tokens: 1024,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `direct LiteLLM completion failed (${response.status} ${response.statusText}): ${await response.text()}`,
+    );
+  }
+  await response.json();
 }
 
 export async function findSlackBudgetAlert(

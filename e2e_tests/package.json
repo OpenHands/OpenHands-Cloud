@@ -30,6 +30,7 @@
     "@reportportal/agent-js-playwright": "5.4.2",
     "@types/node": "^22.0.0",
     "@types/otplib": "^7.0.0",
+    "@types/pg": "8.15.6",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "dotenv": "^16.4.5",
@@ -40,6 +41,7 @@
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.2.1",
     "eslint-plugin-unused-imports": "^3.2.0",
+    "pg": "8.21.0",
     "prettier": "^3.4.2",
     "typescript": "5.5.4"
   },
