@@ -7,6 +7,11 @@ set -euo pipefail
 
 APP="${APP:-openhands}"
 : "${KOTS_BASE:?}" "${KOTS_PASSWORD:?}" "${KOTS_CURSOR:?}"
+# Whole-run budget in minutes; every wait loop below shares this one deadline.
+TIMEOUT_MINUTES="${TIMEOUT_MINUTES:-25}"
+DEADLINE=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+waiting() { [ "$(date +%s)" -lt "$DEADLINE" ]; }
+
 UP="$KOTS_BASE/api/v1/upgrade-service/app/$APP"
 JAR="$(mktemp)"; trap 'rm -f "$JAR"' EXIT
 
@@ -31,6 +36,7 @@ TARGET="$(api "$KOTS_BASE/api/v1/app/$APP/updates" \
   || fail "cursor $KOTS_CURSOR not deployable: $(jq -r '.nonDeployableCause // "unknown"' <<<"$TARGET")"
 
 FROM="$(api "$KOTS_BASE/api/v1/apps" | jq -r '.apps[0].downstream.currentVersion | "\(.versionLabel) @ \(.updateCursor)"')"
+echo "budget: ${TIMEOUT_MINUTES}m"
 echo "deploying: $FROM -> $(jq -r .versionLabel <<<"$TARGET") @ $KOTS_CURSOR"
 
 # --- boot the upgrade service -------------------------------------------
@@ -39,7 +45,8 @@ post --data "$(jq -c '{versionLabel, updateCursor, channelId}' <<<"$TARGET")" \
   || fail "start-upgrade-service rejected"
 
 # Task goes "starting" then EMPTY once up. Empty means ready, not pending.
-for _ in $(seq 1 60); do
+META=""
+while waiting; do
   [ "$(TMO=10 api "$KOTS_BASE/api/v1/app/$APP/task/upgrade-service" | jq -r '.status // ""')" = upgrade-failed ] \
     && fail "upgrade service failed to start"
   META="$(TMO=10 api "$UP" || true)"; ok <<<"$META" && break
@@ -57,12 +64,14 @@ fi
 # --- preflights ----------------------------------------------------------
 if [ "$(jq -r .hasPreflight <<<"$META")" = true ]; then
   TMO=60 post "$UP/preflight/run" >/dev/null
-  for _ in $(seq 1 60); do
+  R=""
+  while waiting; do
     R="$(api "$UP/preflight/result")"
     # .preflightResult.result is a JSON string, null until the run finishes.
     jq -e '.preflightResult.result' <<<"$R" >/dev/null 2>&1 && break
-    sleep 5
+    R=""; sleep 5
   done
+  [ -n "$R" ] || fail "timed out waiting for preflight results"
   BAD="$(jq -r .preflightResult.result <<<"$R" | jq -c '[.results[] | select(.isPass != true)]')"
   [ "$(jq -r .preflightResult.hasFailingStrictPreflights <<<"$R")" = true ] && fail "preflights failed: $BAD"
   echo "preflights ok (non-passing: $BAD)"
@@ -74,7 +83,7 @@ TMO=120 post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}
 
 # The task stays empty for the whole deploy; downstream currentVersion is the
 # only progress signal. An unreachable console means kotsadm is restarting.
-for _ in $(seq 1 240); do
+while waiting; do
   [ "$(TMO=10 api "$KOTS_BASE/api/v1/app/$APP/task/upgrade-service" 2>/dev/null | jq -r '.status // ""')" = upgrade-failed ] \
     && fail "upgrade-failed"
   CUR="$(TMO=10 api "$KOTS_BASE/api/v1/apps" 2>/dev/null | jq -c '.apps[0].downstream.currentVersion | {updateCursor, sequence, status}' || true)"
@@ -89,11 +98,13 @@ done
 
 # --- verify every statusInformer ----------------------------------------
 # Response key is "appstatus", all lowercase.
-for _ in $(seq 1 60); do
+S=""
+while waiting; do
   S="$(TMO=15 api "$KOTS_BASE/api/v1/app/$APP/status" 2>/dev/null || true)"
   [ "$(jq -r '.appstatus.state // ""' <<<"${S:-\{\}}")" = ready ] && break
   sleep 10
 done
+[ -n "$S" ] || fail "timed out waiting for the app to report ready"
 jq -c '.appstatus | {state, sequence, unhealthy: [.resourceStates[] | select(.state != "ready")]}' <<<"$S"
 [ "$(jq -r .appstatus.state <<<"$S")" = ready ] \
   || fail "deployed but unhealthy: $(jq -c '[.appstatus.resourceStates[] | select(.state != "ready")]' <<<"$S")"
