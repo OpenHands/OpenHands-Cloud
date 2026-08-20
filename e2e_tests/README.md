@@ -37,7 +37,7 @@ BASE_URL=https://release-under-test.example.test \
 
 ## Budget maintenance incident regressions
 
-`tests/budgets.spec.ts` contains six serial regressions for organization cap drift, member allowance renewal, existing-override reconciliation, disabled-budget mutation, spend-source divergence, and Slack alert spend. It forces a stale billing cycle, queues real maintenance tasks, opens a fresh PostgreSQL connection for every persistence check, sends billable traffic directly through LiteLLM without creating an OpenHands conversation, and verifies the delivered Slack alert. The override scenario removes a real individual LiteLLM cap and proves maintenance restores the same cycle-anchored maximum.
+`tests/005-budgets.spec.ts` contains six serial regressions for organization cap drift, member allowance renewal, existing-override reconciliation, disabled-budget mutation, spend-source divergence, and Slack alert spend. It forces a stale billing cycle, queues real maintenance tasks, opens a fresh PostgreSQL connection for every persistence check, sends billable traffic directly through LiteLLM without creating an OpenHands conversation, and verifies the delivered Slack alert. The override scenario removes a real individual LiteLLM cap and proves maintenance restores the same cycle-anchored maximum.
 
 The suite is destructive and opt-in. Run it only against a dedicated non-personal organization whose name contains `budget`, `e2e`, or `test`:
 
@@ -55,7 +55,7 @@ BUDGET_E2E_SLACK_BOT_TOKEN=<slack-history-token> \
 BUDGET_E2E_SLACK_CHANNEL_ID=<channel-id> \
 BUDGET_E2E_SLACK_CHANNEL_NAME=<#channel-name> \
 BUDGET_E2E_SLACK_TEAM_ID=<team-id> \
-  npx playwright test tests/budgets.spec.ts --project=chromium:returning
+  npx playwright test tests/005-budgets.spec.ts --project=chromium:returning
 ```
 
 The authenticated user must be an owner or admin of the test organization. The PostgreSQL credential must be restricted to reading and updating that organization's `org_budget_settings` row and inserting, reading, and deleting test-created `maintenance_tasks`; do not supply a production superuser credential. A running maintenance worker must process the inserted tasks within `BUDGET_E2E_SYNC_TIMEOUT_MS`.

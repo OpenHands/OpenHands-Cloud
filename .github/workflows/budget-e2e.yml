@@ -6,7 +6,7 @@ on:
       - ".github/workflows/budget-e2e.yml"
       - "e2e_tests/package.json"
       - "e2e_tests/package-lock.json"
-      - "e2e_tests/tests/budgets.spec.ts"
+      - "e2e_tests/tests/005-budgets.spec.ts"
       - "e2e_tests/utils/budget-database.ts"
       - "e2e_tests/utils/budgets.ts"
   workflow_dispatch:
@@ -86,7 +86,7 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run all budget incident regressions
-        run: npx playwright test tests/budgets.spec.ts --project=chromium:returning
+        run: npx playwright test tests/005-budgets.spec.ts --project=chromium:returning
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@v4
