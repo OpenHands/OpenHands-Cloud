@@ -611,20 +611,20 @@ spec:
     {{- end }}
     {{- if and (include "openhands.cache.backend" .) .Values.replicated.enabled .Values.replicated.redisPassword }}
     - redis:
-        checkName: "Redis Cache Health"
+        checkName: "Cache Health"
         collectorName: redis
         outcomes:
           - fail:
               when: "connected == false"
-              message: "Cannot connect to Redis server"
+              message: "Cannot connect to the cache server"
           - fail:
               when: "version == \"\""
-              message: "Redis version could not be determined"
+              message: "Cache server version could not be determined"
           - warn:
               when: "version < 6.0.0"
-              message: "Redis version is older than recommended (6.0.0+)"
+              message: "Cache server version is older than recommended (6.0.0+)"
           - pass:
               when: "connected == true"
-              message: "Redis server is healthy"
+              message: "Cache server is healthy"
     {{- end }}
 {{- end -}}
