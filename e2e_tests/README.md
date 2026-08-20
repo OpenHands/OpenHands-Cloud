@@ -45,6 +45,7 @@ names; do not copy credentials into the command or this repository.
 argo submit \
   --namespace <workflow-namespace> \
   --from workflowtemplate/<workflow-template-name> \
+  --generate-name <workflow-run-prefix> \
   --parameter target-url=https://release-under-test.example.test \
   --parameter keycloak-admin-secret=<keycloak-admin-secret-name> \
   --parameter test-path=tests/001-home.spec.ts \
@@ -53,6 +54,8 @@ argo submit \
 
 - `<workflow-namespace>` and `<workflow-template-name>` identify the
   preconfigured workflow in your Argo installation.
+- `<workflow-run-prefix>` controls the readable start of the Workflow name.
+  End it with `-`; Kubernetes appends a unique suffix to each run.
 - `target-url` must be the intentionally selected HTTPS release target.
 - `keycloak-admin-secret` is the **name** of a pre-provisioned Kubernetes
   Secret in the workflow namespace. Never pass Secret values as parameters.
