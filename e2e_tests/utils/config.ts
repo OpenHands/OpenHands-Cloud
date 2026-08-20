@@ -29,13 +29,14 @@ import path from "path";
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
  *  - KEYCLOAK_NEW_USER_EMAIL       email of the New User to delete.
  *
- *  - AUTH_BASE_URL                 (optional) explicit Keycloak server URL. When
- *                                  set it is used as-is; otherwise the URL is
- *                                  derived from BASE_URL by prefixing the host
- *                                  with "auth." (e.g. https://staging.all-hands.dev
- *                                  → https://auth.staging.all-hands.dev). Set it
- *                                  for targets served under a subdomain (e.g.
- *                                  "app."), where the derivation is wrong.
+ *  - AUTH_BASE_URL                 (optional) explicit HTTP(S) Keycloak server
+ *                                  URL. When non-empty it is validated and used;
+ *                                  otherwise the URL is derived from BASE_URL by
+ *                                  prefixing the host with "auth." (e.g.
+ *                                  https://staging.all-hands.dev →
+ *                                  https://auth.staging.all-hands.dev). Set it for
+ *                                  targets served under a subdomain (e.g. "app."),
+ *                                  where the derivation is wrong.
  *
  * Returning User (GitHub):
  *  - RETURNING_GITHUB_USERNAME
@@ -157,9 +158,19 @@ export function keycloakAdminConfig(): KeycloakAdminConfig {
  * targets set AUTH_BASE_URL to the correct host.
  */
 function keycloakUrlFromBaseUrl(): string {
-  const explicit = process.env.AUTH_BASE_URL;
+  const explicit = process.env.AUTH_BASE_URL?.trim();
   if (explicit) {
-    return explicit.replace(/\/$/, "");
+    try {
+      const url = new URL(explicit);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(`Unsupported protocol: ${url.protocol}`);
+      }
+      return url.toString().replace(/\/$/, "");
+    } catch (error) {
+      throw new Error("AUTH_BASE_URL must be a valid HTTP(S) URL.", {
+        cause: error,
+      });
+    }
   }
   const baseUrl = process.env.BASE_URL;
   if (!baseUrl) {
