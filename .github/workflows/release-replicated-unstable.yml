@@ -1,4 +1,4 @@
-name: Release to Replicated
+name: Release Replicated to Unstable
 
 on:
   push:
