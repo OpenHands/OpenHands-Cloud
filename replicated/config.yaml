@@ -1321,13 +1321,8 @@ spec:
         - name: sandbox_dedicated_nodes
           title: Run sandboxes on dedicated nodes
           help_text: >-
-            Confine sandboxes to the nodes joined with the `sandbox` role, and keep every
-            other workload (the app, runtime-api, database, Keycloak, LiteLLM) off those
-            nodes. Requires at least one sandbox-role node already joined and Ready:
-            with none, sandboxes have nowhere to schedule and conversations will not
-            start. Add nodes from Cluster Management and pick the `sandbox` role; the
-            role's labels are applied at join time only, so an already-joined node
-            cannot be converted.
+            Confine sandboxes to nodes joined with the sandbox role. Requires at least
+            1 sandbox node already joined.
           type: bool
           default: "0"
 
