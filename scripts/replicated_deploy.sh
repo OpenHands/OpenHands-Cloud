@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-# Deploy one KOTS release to a Replicated Embedded Cluster instance via the
-# admin console's upgrade-service API.
+# Deploy one KOTS release to a Replicated Embedded Cluster instance.
 #
 #   KOTS_BASE=https://admin.unstable.staging.all-hands-testing.dev:30000 \
 #   KOTS_PASSWORD=... KOTS_CURSOR=418 scripts/replicated_deploy.sh
-#
-# Thin on purpose: EC v3 replaces this with `openhands upgrade --headless`.
-# No retries, no recovery — it works or it fails loudly.
 set -euo pipefail
 
 APP="${APP:-openhands}"
@@ -26,8 +22,7 @@ CODE="$(curl -sS -k -c "$JAR" -o /dev/null -w '%{http_code}' --max-time 30 \
 [ "$CODE" = 200 ] || fail "login to $KOTS_BASE returned HTTP $CODE"
 
 # --- select --------------------------------------------------------------
-# KOTS_CURSOR is the channel sequence. versionLabel is not unique: it comes
-# from Chart.yaml, which Unstable republishes on every push to main.
+# KOTS_CURSOR is the channel sequence; versionLabel is not unique.
 TMO=180 post -d '{}' "$KOTS_BASE/api/v1/app/$APP/updatecheck" >/dev/null
 TARGET="$(api "$KOTS_BASE/api/v1/app/$APP/updates" \
   | jq -c --arg c "$KOTS_CURSOR" '.updates[] | select(.updateCursor == $c)')"
@@ -78,14 +73,16 @@ TMO=120 post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}
   || fail "deploy rejected"
 
 # The task stays empty for the whole deploy; downstream currentVersion is the
-# only progress signal. kotsadm restarts on an EC version bump, so an
-# unreachable console means keep waiting.
+# only progress signal. An unreachable console means kotsadm is restarting.
 for _ in $(seq 1 240); do
   [ "$(TMO=10 api "$KOTS_BASE/api/v1/app/$APP/task/upgrade-service" 2>/dev/null | jq -r '.status // ""')" = upgrade-failed ] \
     && fail "upgrade-failed"
   CUR="$(TMO=10 api "$KOTS_BASE/api/v1/apps" 2>/dev/null | jq -c '.apps[0].downstream.currentVersion | {updateCursor, sequence, status}' || true)"
   echo "  ${CUR:-<console unreachable, waiting>}"
-  [ "$(jq -r '"\(.updateCursor) \(.status)"' <<<"${CUR:-\{\}}" 2>/dev/null)" = "$KOTS_CURSOR deployed" ] && DONE=1 && break
+  case "$(jq -r '"\(.updateCursor) \(.status)"' <<<"${CUR:-\{\}}" 2>/dev/null)" in
+    "$KOTS_CURSOR deployed") DONE=1; break ;;
+    "$KOTS_CURSOR failed")   fail "instance reported the deploy failed — see the admin console version history" ;;
+  esac
   sleep 10
 done
 [ "${DONE:-}" ] || fail "timed out waiting for cursor $KOTS_CURSOR to deploy"
