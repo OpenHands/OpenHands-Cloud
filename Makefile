@@ -134,6 +134,12 @@ check-release-guard:
 		exit 1; \
 	fi
 
+# Echo the channel `release` publishes to, so CI can pin a deploy to it without
+# re-deriving the branch mapping.
+.PHONY: print-channel
+print-channel:
+	@echo $(CHANNEL)
+
 # Build everything, lint, then publish a release to the Replicated channel
 .PHONY: release
 release: check-release-guard clean $(RELEASE_FILES) check-duplicate-chart-entries lint

@@ -148,14 +148,19 @@ jobs:
           SEQUENCE: ${{ steps.release.outputs.sequence }}
         run: |
           # KOTS selects by channelSequence (404); the CLI's `sequence` is the
-          # app-level release sequence (1451). Join them to pin this build.
+          # app-level release sequence (1451). Join them to pin the deploy to
+          # this build -- a channel can gain releases while one is deploying.
+          # Channel comes from the Makefile, which derives it from the branch:
+          # a dispatch on a feature branch publishes to that branch's channel,
+          # not Beta.
           # Newest first, paginated; the release just created is on page 0.
-          CURSOR=$(replicated channel releases Beta --app "$REPLICATED_APP" --output json --page 0 --page-size 20 \
+          CHANNEL=$(make -s print-channel CHANNEL=Beta)
+          CURSOR=$(replicated channel releases "$CHANNEL" --app "$REPLICATED_APP" --output json --page 0 --page-size 20 \
             | jq -r --argjson rs "$SEQUENCE" \
                 'map(select(.sequence == $rs)) | max_by(.channelSequence) | .channelSequence // empty')
-          [ -n "$CURSOR" ] || { echo "::error::no channelSequence on Beta for release $SEQUENCE"; exit 1; }
+          [ -n "$CURSOR" ] || { echo "::error::no channelSequence on $CHANNEL for release $SEQUENCE"; exit 1; }
           echo "kots_cursor=${CURSOR}" >> "$GITHUB_OUTPUT"
-          echo "release ${SEQUENCE} is channelSequence ${CURSOR} on Beta"
+          echo "release ${SEQUENCE} is channelSequence ${CURSOR} on $CHANNEL"
 
   deploy:
     needs: beta
