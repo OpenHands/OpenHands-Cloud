@@ -6,9 +6,9 @@ name: Release Replicated to Beta
 # openhands and the replicated config are versioned together (see
 # release-please-config.openhands.json), so the openhands/<version> tag that
 # release-please creates on a release-PR merge is exactly the point at which a
-# matching Replicated release should go to Beta. The per-push "Release to
-# Replicated" workflow keeps publishing bleeding-edge main to Unstable; this adds
-# the Beta line, gated on an actual release.
+# matching Replicated release should go to Beta. The per-push "Release Replicated
+# to Unstable" workflow keeps publishing bleeding-edge main to Unstable; this
+# adds the Beta line, gated on an actual release.
 #
 # After promoting, we record the release sequence Replicated assigned by tagging
 # the same commit Replicated/Beta/<sequence>, linking each openhands release to
