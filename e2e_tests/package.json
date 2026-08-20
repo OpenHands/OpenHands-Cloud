@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:unit": "playwright test --config unit-tests/playwright.config.ts",
     "test:chromium": "playwright test --project=chromium:returning --project=chromium:new-user",
     "test:returning": "playwright test --project=chromium:returning --project=firefox:returning --project=webkit:returning",
     "test:new-user": "playwright test --project=chromium:new-user --project=firefox:new-user --project=webkit:new-user",
