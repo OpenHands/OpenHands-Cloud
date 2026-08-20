@@ -1,0 +1,76 @@
+name: Deploy Replicated
+
+# Deploys one release to the internal instance tracking that channel, by driving
+# the KOTS upgrade-service API (scripts/replicated_deploy.sh). Embedded Cluster
+# has no supported auto-update, so there is no lighter mechanism.
+#
+# Called as a `needs:` job rather than via workflow_run: the deploy must be
+# pinned to the release the caller built, and a failure has to turn that run red.
+
+on:
+  workflow_call:
+    inputs:
+      instance:
+        description: "Instance to deploy to (unstable | beta | stable)"
+        type: string
+        required: true
+      kots_cursor:
+        description: "KOTS updateCursor (= Replicated channelSequence) to deploy"
+        type: string
+        required: true
+    secrets:
+      kots_password:
+        required: true
+  workflow_dispatch:
+    inputs:
+      instance:
+        description: "Instance to deploy to"
+        type: choice
+        options: [unstable, beta, stable]
+        required: true
+      kots_cursor:
+        description: "KOTS updateCursor (= Replicated channelSequence) to deploy"
+        type: string
+        required: true
+
+# One run pending per instance; GitHub cancels older pending runs, so
+# intermediate releases are skipped and the newest still lands.
+concurrency:
+  group: replicated-deploy-${{ inputs.instance }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.instance }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        env:
+          # Public external IP + firewall rule on tcp:30000, so no tunnel or
+          # GCP credential is needed.
+          KOTS_BASE: https://admin.${{ inputs.instance }}.staging.all-hands-testing.dev:30000
+          # workflow_dispatch has no passed-in secret, so fall back to the repo one.
+          KOTS_PASSWORD: ${{ secrets.kots_password || secrets[format('KOTS_PASSWORD_{0}', inputs.instance)] }}
+          KOTS_CURSOR: ${{ inputs.kots_cursor }}
+        run: scripts/replicated_deploy.sh
+
+      - name: Summary
+        if: always()
+        env:
+          INSTANCE: ${{ inputs.instance }}
+          CURSOR: ${{ inputs.kots_cursor }}
+          RESULT: ${{ job.status }}
+        run: |
+          {
+            echo "### Replicated deploy: \`${INSTANCE}\` — ${RESULT}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Instance | ${INSTANCE} |"
+            echo "| KOTS cursor | ${CURSOR} |"
+            echo "| Admin console | https://admin.${INSTANCE}.staging.all-hands-testing.dev:30000 |"
+            echo "| App | https://app.${INSTANCE}.staging.all-hands-testing.dev |"
+          } >> "$GITHUB_STEP_SUMMARY"

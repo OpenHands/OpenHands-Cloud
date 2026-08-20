@@ -1,0 +1,49 @@
+name: Replicated deploy status
+
+# Visibility only, not a merge gate: reports whether the last Replicated deploy
+# on main succeeded, so a broken instance is visible before merging on top of it.
+#
+# To make it blocking, add the check context `last-deploy` to the `main` ruleset
+# under Settings -> Rules -> Rulesets. No change to this file needed.
+
+on:
+  pull_request:
+
+jobs:
+  last-deploy:
+    name: last-deploy
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Check the last deploy on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          RUN=$(gh api \
+            "repos/${REPO}/actions/workflows/release-replicated.yml/runs?branch=main&status=completed&per_page=1" \
+            --jq '.workflow_runs[0] | {id, conclusion, html_url, head_sha}')
+          if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
+            echo "No completed run to report on."
+            exit 0
+          fi
+          CONCLUSION=$(jq -r .conclusion <<<"$RUN")
+          URL=$(jq -r .html_url <<<"$RUN")
+          SHA=$(jq -r .head_sha <<<"$RUN")
+
+          {
+            echo "### Last Replicated deploy on \`main\`: ${CONCLUSION}"
+            echo ""
+            echo "- Commit: \`${SHA:0:8}\`"
+            echo "- Run: ${URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$CONCLUSION" = "success" ] && { echo "Last deploy on main succeeded."; exit 0; }
+
+          # Name the failing job: "release" and "deploy" are different problems.
+          gh api "repos/${REPO}/actions/runs/$(jq -r .id <<<"$RUN")/jobs" \
+            --jq '.jobs[] | select(.conclusion != "success" and .conclusion != null) | "  failed job: \(.name) (\(.conclusion))"'
+
+          echo "::error::Last Replicated deploy on main did not succeed (${CONCLUSION}): ${URL}"
+          exit 1
