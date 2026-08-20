@@ -10,6 +10,13 @@ metadata:
     {{- include "infra.labels" . | nindent 4 }}
     app.kubernetes.io/name: sysbox-installer
 handler: {{ .Values.sysbox.runtimeClassName }}
+{{- with .Values.sysbox.runtimeClassNodeSelector }}
+# Merged into every pod that requests this class and enforced at admission, so a
+# sandbox can only land on a node carrying these labels.
+scheduling:
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
 ---
 # Privileged DaemonSet that installs Sysbox onto every node and wires up the
 # sysbox containerd runtime via a k0s drop-in. The Sysbox binaries + systemd

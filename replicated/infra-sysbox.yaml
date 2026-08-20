@@ -38,6 +38,18 @@ spec:
       values:
         sysbox:
           enabled: true
+    # Confine sandboxes to the sandbox-role nodes at admission time: the
+    # apiserver merges the RuntimeClass nodeSelector into every pod requesting
+    # the class, which catches anything the scheduler-side selector misses. The
+    # same config option drives the runtime-api's RUNTIME_NODE_SELECTOR so the
+    # two selectors cannot diverge — a mismatch would make the apiserver reject
+    # every sandbox pod.
+    - when: '{{repl ConfigOptionEquals "sandbox_dedicated_nodes" "1" }}'
+      recursiveMerge: true
+      values:
+        sysbox:
+          runtimeClassNodeSelector:
+            openhands.dev/sandbox: "true"
     - when: '{{repl HasLocalRegistry }}'
       recursiveMerge: true
       values:
