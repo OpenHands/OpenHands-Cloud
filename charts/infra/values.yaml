@@ -144,12 +144,6 @@ sysbox:
   # runtime name in files/install-sysbox.sh and the runtime-api RUNTIME_CLASS
   # value (replicated/openhands.yaml).
   runtimeClassName: sysbox-runc
-  # Node labels stamped into the RuntimeClass's scheduling.nodeSelector. The
-  # apiserver merges these into every pod requesting the class and rejects the
-  # pod if its own nodeSelector conflicts, so this must agree with the
-  # runtime-api's RUNTIME_NODE_SELECTOR (replicated/openhands.yaml). Empty adds
-  # no constraint, leaving sandboxes schedulable on any node running Sysbox.
-  runtimeClassNodeSelector: {}
   image:
     # Official nestybox image that ships the Sysbox binaries under
     # /opt/sysbox/bin/generic and the systemd units under /opt/sysbox/systemd.
