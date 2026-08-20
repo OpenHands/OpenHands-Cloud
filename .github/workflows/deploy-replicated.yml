@@ -86,3 +86,10 @@ jobs:
             echo "| Admin console | https://admin.${INSTANCE}.staging.all-hands-testing.dev:30000 |"
             echo "| App | https://app.${INSTANCE}.staging.all-hands-testing.dev |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: E2E Replicated
+    needs: deploy
+    uses: ./.github/workflows/e2e-replicated.yml
+    with:
+      instance: ${{ inputs.instance }}
