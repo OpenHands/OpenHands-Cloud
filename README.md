@@ -1,6 +1,6 @@
 # OpenHands Cloud
 
-[![Replicated Unstable Deploy](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated.yml/badge.svg?branch=main)](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated.yml)
+[![Replicated Unstable Deploy](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-unstable.yml/badge.svg?branch=main)](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-unstable.yml)
 [![Replicated Beta Deploy](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-beta.yml/badge.svg)](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-beta.yml)
 
 > [!WARNING]
