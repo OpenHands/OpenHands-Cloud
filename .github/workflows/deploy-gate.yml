@@ -19,7 +19,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      # Repo idiom: release-replicated.yml installs yq the same way.
+      # Repo idiom: release-replicated-unstable.yml installs yq the same way.
       - name: Install yq
         uses: mikefarah/yq@v4
 
@@ -59,15 +59,15 @@ jobs:
             FAILED=1
           }
 
-          # Read the trigger paths from release-replicated.yml on main -- that
+          # Read the trigger paths from release-replicated-unstable.yml on main -- that
           # workflow is the single definition. Read via yq, not python/PyYAML:
           # YAML 1.1 parses a bare `on:` key as the boolean True.
-          gh api "repos/${REPO}/contents/.github/workflows/release-replicated.yml?ref=main" \
-            -H "Accept: application/vnd.github.raw" > /tmp/release-replicated.yml
+          gh api "repos/${REPO}/contents/.github/workflows/release-replicated-unstable.yml?ref=main" \
+            -H "Accept: application/vnd.github.raw" > /tmp/release-replicated-unstable.yml
           # `replicated/**` -> `replicated`: the commits API takes a path prefix,
           # not a glob. A surviving `*` would silently match nothing.
-          PATHS=$(yq -r '.on.push.paths[]' /tmp/release-replicated.yml | sed -E 's#/\*+$##; s#^\./##')
-          [ -n "$PATHS" ] || { echo "::error::could not read on.push.paths from release-replicated.yml"; exit 1; }
+          PATHS=$(yq -r '.on.push.paths[]' /tmp/release-replicated-unstable.yml | sed -E 's#/\*+$##; s#^\./##')
+          [ -n "$PATHS" ] || { echo "::error::could not read on.push.paths from release-replicated-unstable.yml"; exit 1; }
           case "$PATHS" in
             *'*'*) echo "::error::unsupported glob in on.push.paths: $PATHS"; exit 1 ;;
           esac
@@ -79,7 +79,7 @@ jobs:
           done | sort -r | head -1)
           U_SHA=${NEWEST##*$'\t'}
           if [ -n "$U_SHA" ]; then
-            check unstable release-replicated.yml "branch=main&head_sha=${U_SHA}" "commit \`${U_SHA:0:8}\`"
+            check unstable release-replicated-unstable.yml "branch=main&head_sha=${U_SHA}" "commit \`${U_SHA:0:8}\`"
           else
             echo "| unstable | no commit under $(echo $PATHS) | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
           fi
