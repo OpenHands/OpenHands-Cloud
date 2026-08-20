@@ -21,14 +21,11 @@ jobs:
         env:
           ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_E2E_TOKEN }}
           INSTANCE: ${{ inputs.instance }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           payload=$(jq -n \
             --arg instance "$INSTANCE" \
-            --arg run_url "$RUN_URL" \
             '{
-              instance: $instance,
-              run_url: $run_url
+              instance: $instance
             }')
           curl --fail-with-body --silent --show-error \
             --retry 3 --retry-all-errors --max-time 20 \

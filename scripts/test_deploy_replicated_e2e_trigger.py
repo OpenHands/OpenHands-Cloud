@@ -36,16 +36,12 @@ def test_e2e_workflow_uses_its_environment_token_and_argo_owned_target():
     assert trigger["env"] == {
         "ARGO_TOKEN": "${{ secrets.ARGO_WORKFLOWS_E2E_TOKEN }}",
         "INSTANCE": "${{ inputs.instance }}",
-        "RUN_URL": (
-            "${{ github.server_url }}/${{ github.repository }}/actions/runs/"
-            "${{ github.run_id }}"
-        ),
     }
 
     command = trigger["run"]
     assert "jq -n" in command
     assert "instance: $instance" in command
-    assert "run_url: $run_url" in command
+    assert "run_url" not in command
     assert "target-url" not in command
     assert "test_revision" not in command
     assert "all-hands-testing.dev" not in command
