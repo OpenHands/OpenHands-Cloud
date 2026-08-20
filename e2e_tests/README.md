@@ -35,6 +35,36 @@ BASE_URL=https://release-under-test.example.test \
   npx playwright test tests/001-home.spec.ts --list
 ```
 
+### Run through an Argo WorkflowTemplate
+
+Operators with access to an Argo installation can submit the test harness from
+a preconfigured `WorkflowTemplate`. Use placeholders for deployment-specific
+names; do not copy credentials into the command or this repository.
+
+```bash
+argo submit \
+  --namespace <workflow-namespace> \
+  --from workflowtemplate/<workflow-template-name> \
+  --parameter target-url=https://release-under-test.example.test \
+  --parameter keycloak-admin-secret=<keycloak-admin-secret-name> \
+  --parameter test-path=tests/001-home.spec.ts \
+  --watch
+```
+
+- `<workflow-namespace>` and `<workflow-template-name>` identify the
+  preconfigured workflow in your Argo installation.
+- `target-url` must be the intentionally selected HTTPS release target.
+- `keycloak-admin-secret` is the **name** of a pre-provisioned Kubernetes
+  Secret in the workflow namespace. Never pass Secret values as parameters.
+- `test-path` limits the run to a spec while the workflow retains required
+  authentication setup. Omit this parameter to run the full suite.
+- `--watch` keeps the CLI attached until the workflow reaches a terminal state.
+
+The WorkflowTemplate is responsible for supplying shared test-account and
+reporting credentials through Kubernetes Secret references. Confirm the target,
+namespace, and Secret name through your private operator documentation before
+submitting a run.
+
 ## ReportPortal
 
 ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
