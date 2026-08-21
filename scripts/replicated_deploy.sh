@@ -41,16 +41,21 @@ done
 # cache, so re-issue the check rather than trusting the first read. `// []`
 # keeps an absent key from failing the pipe under pipefail, which would exit
 # before the message below.
+# Capped at 3m, not the whole budget: a cursor absent this long is a real
+# problem, not a restart settling. TMO=60 so the cap allows several tries.
 TARGET=""
-while waiting; do
-  TMO=180 post -d '{}' "$KOTS_BASE/api/v1/app/$APP/updatecheck" >/dev/null || true
+SELECT_DEADLINE=$(( $(date +%s) + 180 ))
+while :; do
+  TMO=60 post -d '{}' "$KOTS_BASE/api/v1/app/$APP/updatecheck" >/dev/null || true
   TARGET="$( (api "$KOTS_BASE/api/v1/app/$APP/updates" || true) \
     | jq -c --arg c "$KOTS_CURSOR" '(.updates // [])[] | select(.updateCursor == $c)' || true)"
   [ -n "$TARGET" ] && break
+  if [ "$(date +%s)" -ge "$SELECT_DEADLINE" ] || ! waiting; then
+    fail "cursor $KOTS_CURSOR never became an available update for $APP"
+  fi
   echo "  cursor $KOTS_CURSOR not in the update list yet, rechecking"
   sleep 15
 done
-[ -n "$TARGET" ] || fail "cursor $KOTS_CURSOR never became an available update for $APP"
 [ "$(jq -r .isDeployable <<<"$TARGET")" = true ] \
   || fail "cursor $KOTS_CURSOR not deployable: $(jq -r '.nonDeployableCause // "unknown"' <<<"$TARGET")"
 
