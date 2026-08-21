@@ -1,0 +1,99 @@
+name: Budget Incident E2E
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/budget-e2e.yml"
+      - "e2e_tests/package.json"
+      - "e2e_tests/package-lock.json"
+      - "e2e_tests/tests/005-budgets.spec.ts"
+      - "e2e_tests/utils/budget-database.ts"
+      - "e2e_tests/utils/budgets.ts"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budget-incident-e2e-staging
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment: budget-e2e-staging
+    defaults:
+      run:
+        working-directory: e2e_tests
+    env:
+      BASE_URL: ${{ vars.BUDGET_E2E_BASE_URL }}
+      RETURNING_GITHUB_USERNAME: ${{ secrets.BUDGET_E2E_GITHUB_USERNAME }}
+      RETURNING_GITHUB_PASSWORD: ${{ secrets.BUDGET_E2E_GITHUB_PASSWORD }}
+      RETURNING_GITHUB_TOTP_SECRET: ${{ secrets.BUDGET_E2E_GITHUB_TOTP_SECRET }}
+      BUDGET_E2E_ORG_ID: ${{ vars.BUDGET_E2E_ORG_ID }}
+      BUDGET_E2E_MUTATION_CONFIRMED: "true"
+      BUDGET_E2E_DATABASE_URL: ${{ secrets.BUDGET_E2E_DATABASE_URL }}
+      BUDGET_E2E_LITELLM_URL: ${{ vars.BUDGET_E2E_LITELLM_URL }}
+      BUDGET_E2E_LITELLM_API_KEY: ${{ secrets.BUDGET_E2E_LITELLM_API_KEY }}
+      BUDGET_E2E_DIRECT_MODEL: ${{ vars.BUDGET_E2E_DIRECT_MODEL }}
+      BUDGET_E2E_EXPECTED_LITELLM_VERSION: ${{ vars.BUDGET_E2E_EXPECTED_LITELLM_VERSION }}
+      BUDGET_E2E_SLACK_BOT_TOKEN: ${{ secrets.BUDGET_E2E_SLACK_BOT_TOKEN }}
+      BUDGET_E2E_SLACK_CHANNEL_ID: ${{ vars.BUDGET_E2E_SLACK_CHANNEL_ID }}
+      BUDGET_E2E_SLACK_CHANNEL_NAME: ${{ vars.BUDGET_E2E_SLACK_CHANNEL_NAME }}
+      BUDGET_E2E_SLACK_TEAM_ID: ${{ vars.BUDGET_E2E_SLACK_TEAM_ID }}
+      REPORTPORTAL_ENABLED: ${{ vars.REPORTPORTAL_ENABLED }}
+      REPORTPORTAL_ENDPOINT: ${{ vars.REPORTPORTAL_ENDPOINT }}
+      REPORTPORTAL_PROJECT: ${{ vars.REPORTPORTAL_PROJECT }}
+      REPORTPORTAL_API_KEY: ${{ secrets.REPORTPORTAL_API_KEY }}
+      REPORTPORTAL_ENVIRONMENT: staging
+      REPORTPORTAL_REVISION: ${{ github.sha }}
+      REPORTPORTAL_WORKFLOW: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e_tests/package-lock.json
+      - name: Require complete certification configuration
+        shell: bash
+        run: |
+          required=(
+            BASE_URL
+            RETURNING_GITHUB_USERNAME
+            RETURNING_GITHUB_PASSWORD
+            BUDGET_E2E_ORG_ID
+            BUDGET_E2E_DATABASE_URL
+            BUDGET_E2E_LITELLM_URL
+            BUDGET_E2E_LITELLM_API_KEY
+            BUDGET_E2E_DIRECT_MODEL
+            BUDGET_E2E_SLACK_BOT_TOKEN
+            BUDGET_E2E_SLACK_CHANNEL_ID
+            BUDGET_E2E_SLACK_CHANNEL_NAME
+            BUDGET_E2E_SLACK_TEAM_ID
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required budget certification setting: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run all budget incident regressions
+        run: npx playwright test tests/005-budgets.spec.ts --project=chromium:returning
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: budget-incident-e2e-${{ github.run_id }}
+          path: |
+            e2e_tests/playwright-report
+            e2e_tests/test-results
+          if-no-files-found: warn
+          retention-days: 14
