@@ -78,6 +78,9 @@ spec:
                 fi
 
                 echo "Applying ${retention_days} day TTL to system.${table} using ${ttl_column}"
-                "${client[@]}" --query "ALTER TABLE system.${table} MODIFY TTL ${ttl_column} + INTERVAL ${retention_days} DAY DELETE"
+                # materialize_ttl_after_modify=0 avoids rewriting all existing parts at once,
+                # which exceeds ClickHouse's memory limit on tables with many parts; the TTL
+                # is enforced during normal background merges instead.
+                "${client[@]}" --materialize_ttl_after_modify=0 --query "ALTER TABLE system.${table} MODIFY TTL ${ttl_column} + INTERVAL ${retention_days} DAY DELETE"
               done
 {{- end }}
