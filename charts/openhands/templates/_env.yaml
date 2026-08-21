@@ -52,11 +52,12 @@
 - name: SANDBOX_CLOSE_DELAY
   value: "1800"
 {{- if eq .Values.filestore.type "s3" }}
-{{- /* Empty endpoint targets the bundled MinIO when it is deployed, otherwise
-       real AWS (boto3 uses the regional endpoint). */}}
+{{- /* Empty endpoint targets the bundled object store (MinIO or RustFS) when
+       one is deployed, otherwise real AWS (boto3 uses the regional endpoint).
+       See templates/_objectstore.tpl for backend selection. */}}
 {{- $endpoint := .Values.filestore.endpoint }}
-{{- if and (not $endpoint) .Values.minio.enabled }}
-{{- $endpoint = printf "http://%s-minio:9000" $.Release.Name }}
+{{- if and (not $endpoint) (include "openhands.objectStore.backend" .) }}
+{{- $endpoint = include "openhands.objectStore.endpoint" . }}
 {{- end }}
 - name: FILE_STORE
   value: s3
@@ -89,13 +90,14 @@
   value: {{ .Values.filestore.accessKey | quote }}
 - name: AWS_SECRET_ACCESS_KEY
   value: {{ .Values.filestore.secretKey | quote }}
-{{- else if .Values.minio.enabled }}
-# Bundled MinIO service-account creds — the default when the chart deploys its
-# own MinIO and no explicit credentials are configured.
+{{- else if include "openhands.objectStore.backend" . }}
+# Bundled store service-account creds — the default when the chart deploys its
+# own object store (MinIO or RustFS) and no explicit credentials are configured.
+# Both backends answer to the same pair (see templates/_objectstore.tpl).
 - name: AWS_ACCESS_KEY_ID
-  value: {{ (index .Values.minio.svcaccts 0).accessKey }}
+  value: {{ include "openhands.objectStore.accessKey" . }}
 - name: AWS_SECRET_ACCESS_KEY
-  value: {{ (index .Values.minio.svcaccts 0).secretKey }}
+  value: {{ include "openhands.objectStore.secretKey" . }}
 {{- end }}
 {{- /* No credential env at all: ambient AWS identity (IRSA / Pod Identity /
        instance profile). */}}

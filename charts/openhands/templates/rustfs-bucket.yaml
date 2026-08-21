@@ -1,0 +1,84 @@
+{{- if .Values.rustfs.enabled }}
+{{- /*
+Creates the session bucket in RustFS. The upstream RustFS chart ships no bucket
+provisioning of its own (unlike the MinIO chart), so this is ours.
+
+Uses the rustfs image, which carries curl, so nothing extra has to be proxied or
+put in an airgap bundle. A signed PUT is retried until it succeeds: RustFS answers
+403 on /minio/health/live and /health, so there is no usable readiness gate to
+wait on. HTTP 200 means created and 409 means it already exists — both are
+success.
+
+There is deliberately NO delete path here. The bundled MinIO bucket job once
+shipped with purge enabled and erased conversation data on every upgrade; bucket
+provisioning in this chart is create-or-409 only.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-rustfs-bucket
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs-bucket
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.labels" . | nindent 8 }}
+        app.kubernetes.io/component: rustfs-bucket
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.rustfs.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+      containers:
+        - name: create-bucket
+          image: "{{ .Values.rustfs.image.rustfs.repository }}:{{ .Values.rustfs.image.rustfs.tag }}"
+          imagePullPolicy: {{ .Values.rustfs.image.rustfs.pullPolicy | default "IfNotPresent" }}
+          env:
+            - name: ENDPOINT
+              value: {{ printf "http://%s-rustfs-svc:9000" .Release.Name | quote }}
+            - name: BUCKET
+              value: {{ .Values.filestore.bucket | quote }}
+            - name: AK
+              value: {{ include "openhands.objectStore.accessKey" . | quote }}
+            - name: SK
+              value: {{ include "openhands.objectStore.secretKey" . | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              for i in $(seq 1 60); do
+                code=$(curl -s -o /tmp/out -w '%{http_code}' \
+                  --aws-sigv4 "aws:amz:us-east-1:s3" --user "$AK:$SK" \
+                  -X PUT "$ENDPOINT/$BUCKET" || echo 000)
+                case "$code" in
+                  200|409)
+                    echo "bucket '$BUCKET' ready (HTTP $code)"
+                    exit 0
+                    ;;
+                esac
+                echo "attempt $i: HTTP $code, retrying"
+                cat /tmp/out 2>/dev/null || true
+                sleep 5
+              done
+              echo "bucket '$BUCKET' could not be created" >&2
+              exit 1
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+{{- end }}
