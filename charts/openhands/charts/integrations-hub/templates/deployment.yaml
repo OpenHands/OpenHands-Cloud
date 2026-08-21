@@ -25,6 +25,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with (include "integrations-hub.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
       initContainers:
       {{- with .Values.extraInitContainers }}
       {{- tpl (toYaml .) $ | nindent 6 }}
