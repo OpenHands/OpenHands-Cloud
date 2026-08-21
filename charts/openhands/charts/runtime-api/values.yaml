@@ -261,7 +261,7 @@ warmRuntimes:
   configsByName:
     default:
       # image omitted -> defaults to global.agentServerImage (repo:tag).
-      working_dir: "/workspace"
+      working_dir: "/workspace/project"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
         LMNR_BASE_URL: ""

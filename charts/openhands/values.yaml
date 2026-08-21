@@ -930,7 +930,8 @@ runtime-api:
     configsByName:
       default:
         # image omitted -> defaults to global.agentServerImage (repo:tag).
-        working_dir: "/workspace"
+        # Must match the app's sandbox spec working_dir, or no warm pod is ever claimable.
+        working_dir: "/workspace/project"
         environment:
           # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
           LMNR_BASE_URL: ""

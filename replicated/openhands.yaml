@@ -381,7 +381,7 @@ spec:
             # image omitted -> inherits global.agentServerImage. Proxy by
             # default; when custom_sandbox_image_enabled / HasLocalRegistry are
             # active, the optionalValues blocks below override the global instead.
-            working_dir: "/workspace"
+            working_dir: "/workspace/project"
             environment:
               LOG_JSON: "1"
               LOG_JSON_LEVEL_KEY: "severity"
