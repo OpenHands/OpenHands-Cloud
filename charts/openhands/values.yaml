@@ -1013,6 +1013,7 @@ device-plugin:
 
 jira:
   enabled: false
+  linkMethod: oauth
 
 jiraDc:
   enabled: false

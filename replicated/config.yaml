@@ -887,6 +887,22 @@ spec:
           when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
 
+    - name: jira_cloud_integration
+      title: Jira Cloud Integration
+      description: Enable the Jira Cloud issue integration. An organization admin finishes setup inside OpenHands and registers the webhook in Jira Cloud.
+      items:
+        - name: jira_cloud_enabled
+          title: Enable Jira Cloud Integration
+          help_text: >-
+            Enable the Jira Cloud issue integration. Users are linked by matching their
+            Jira email to their OpenHands email (their Atlassian profile email visibility
+            must be set to Anyone). After enabling, an organization admin opens Settings > Integrations
+            > Jira in OpenHands to enter the Jira service account email, API token, and a
+            webhook secret, then registers the displayed events URL as a webhook in Jira
+            Cloud using that secret.
+          type: bool
+          default: "0"
+
     - name: github_authentication
       title: GitHub Authentication
       description: Configure GitHub App integration for user authentication. Note that this is a GitHub App and NOT a GitHub OAuth app.
