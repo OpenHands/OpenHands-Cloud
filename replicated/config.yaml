@@ -1045,6 +1045,49 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
 
+    - name: keycloak_smtp_configuration
+      title: Keycloak Email Delivery
+      description: Configure SMTP for Keycloak email services (forgot password, email verification)
+      items:
+        - name: keycloak_smtp_host
+          title: Keycloak SMTP Host
+          help_text: Hostname of the SMTP server used by Keycloak for password reset emails
+          type: text
+          default: "smtp.resend.com"
+          required: true
+        - name: keycloak_smtp_port
+          title: Keycloak SMTP Port
+          help_text: Port for the SMTP server (465 for SSL, 587 for STARTTLS)
+          type: text
+          default: "465"
+          required: true
+        - name: keycloak_smtp_from
+          title: Keycloak From Email
+          help_text: Sender address for Keycloak outgoing email
+          type: text
+          default: "admin@all-hands.dev"
+          required: true
+        - name: keycloak_smtp_from_display_name
+          title: Keycloak From Display Name
+          help_text: Display name for the sender address
+          type: text
+          default: "All Hands AI"
+        - name: keycloak_smtp_user
+          title: Keycloak SMTP Username
+          help_text: Username for SMTP authentication
+          type: text
+          default: "resend"
+        - name: keycloak_smtp_use_ssl
+          title: Use Keycloak SMTP SSL
+          help_text: Use SMTPS (SSL) for the connection (typically port 465)
+          type: bool
+          default: "1"
+        - name: keycloak_smtp_use_starttls
+          title: Use Keycloak SMTP STARTTLS
+          help_text: Enable STARTTLS after connecting (typically port 587)
+          type: bool
+          default: "0"
+
     - name: database_configuration
       title: Database Configuration
       description: Configure PostgreSQL database settings
