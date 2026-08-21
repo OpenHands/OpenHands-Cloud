@@ -8,9 +8,6 @@ dependencies:
 - name: litellm-helm
   repository: oci://ghcr.io/berriai
   version: 0.1.831
-- name: minio
-  repository: https://charts.min.io/
-  version: 5.0.10
 - name: postgresql
   repository: https://charts.bitnami.com/bitnami
   version: 15.5.38
@@ -47,5 +44,5 @@ dependencies:
 - name: device-plugin
   repository: ""
   version: '*'
-digest: sha256:0ad41488e887e41253f880752ce1c70e3479600eaeea2ceecbf561be35d69415
-generated: "2026-08-04T10:48:38.125056-04:00"
+digest: sha256:9adef24db161d0502cbc0dd468226de7c9c8f07bb3c0dbd758a71a4df783778a
+generated: "2026-08-05T09:50:00.280134-05:00"

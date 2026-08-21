@@ -32,12 +32,6 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "filestore/type"
-  - it: rejects a non-boolean minio.enabled
-    set:
-      minio.enabled: "yes"
-    asserts:
-      - failedTemplate:
-          errorPattern: "minio/enabled.*want boolean"
   - it: rejects a non-string filestore.region
     set:
       filestore.region: true
