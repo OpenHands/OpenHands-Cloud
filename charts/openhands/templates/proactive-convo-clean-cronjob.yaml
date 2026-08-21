@@ -32,6 +32,10 @@ spec:
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with (include "openhands.affinity" .) }}
+          affinity:
+            {{- . | nindent 12 }}
+          {{- end }}
           containers:
             - name: {{ .Release.Name }}-proactive-convo-clean
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"

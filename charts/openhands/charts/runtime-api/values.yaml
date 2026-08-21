@@ -112,6 +112,10 @@ jobSettings:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 2
 
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
 securityContext: {}
 
 # The KVM device plugin that used to live here (smarter-device-manager,
@@ -326,3 +330,8 @@ global:
   # proxy vars, CA paths). Mirrored into each warm-runtime entry's env so
   # runtime-api's exact-env matching can claim warm pods.
   agentServerEnv: {}
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}
