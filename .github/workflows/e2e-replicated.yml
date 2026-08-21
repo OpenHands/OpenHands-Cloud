@@ -1,0 +1,36 @@
+name: E2E Replicated
+
+on:
+  workflow_call:
+    inputs:
+      instance:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-e2e:
+    environment: e2e-replicated
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Trigger Replicated E2E
+        shell: bash
+        env:
+          ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_E2E_TOKEN }}
+          INSTANCE: ${{ inputs.instance }}
+        run: |
+          payload=$(jq -n \
+            --arg instance "$INSTANCE" \
+            '{
+              instance: $instance
+            }')
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-all-errors --max-time 20 \
+            --request POST \
+            --header "Authorization: Bearer ${ARGO_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            https://workflows.dev.all-hands.dev/api/v1/events/openhands-e2e/replicated-deploy
