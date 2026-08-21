@@ -21,17 +21,36 @@ post() { api -H 'Content-Type: application/json' -X POST "$@"; }
 ok()   { jq -e '.success == true' >/dev/null 2>&1; }
 
 # A 401 still sets a cookie, so a non-empty jar proves nothing.
-CODE="$(curl -sS -k -c "$JAR" -o /dev/null -w '%{http_code}' --max-time 30 \
-  -X POST "$KOTS_BASE/api/v1/login" -H 'Content-Type: application/json' \
-  --data "$(jq -nc --arg p "$KOTS_PASSWORD" '{password:$p}')")"
-[ "$CODE" = 200 ] || fail "login to $KOTS_BASE returned HTTP $CODE"
+# Retried: kotsadm is often mid-restart when a release lands back-to-back with
+# the previous one, and a refused connect must not read as a bad password.
+BODY="$(jq -nc --arg p "$KOTS_PASSWORD" '{password:$p}')"
+LOGIN_DEADLINE=$(( $(date +%s) + 120 ))
+while :; do
+  CODE="$(curl -sS -k -c "$JAR" -o /dev/null -w '%{http_code}' --max-time 30 \
+    -X POST "$KOTS_BASE/api/v1/login" -H 'Content-Type: application/json' \
+    --data "$BODY" || echo 000)"
+  [ "$CODE" = 200 ] && break
+  [ "$(date +%s)" -lt "$LOGIN_DEADLINE" ] || fail "login to $KOTS_BASE returned HTTP $CODE"
+  echo "  login returned $CODE, retrying"
+  sleep 10
+done
 
 # --- select --------------------------------------------------------------
 # KOTS_CURSOR is the channel sequence; versionLabel is not unique.
-TMO=180 post -d '{}' "$KOTS_BASE/api/v1/app/$APP/updatecheck" >/dev/null
-TARGET="$(api "$KOTS_BASE/api/v1/app/$APP/updates" \
-  | jq -c --arg c "$KOTS_CURSOR" '.updates[] | select(.updateCursor == $c)')"
-[ -n "$TARGET" ] || fail "cursor $KOTS_CURSOR is not an available update for $APP"
+# A restarted kotsadm serves `updates: null` until a check repopulates its
+# cache, so re-issue the check rather than trusting the first read. `// []`
+# keeps an absent key from failing the pipe under pipefail, which would exit
+# before the message below.
+TARGET=""
+while waiting; do
+  TMO=180 post -d '{}' "$KOTS_BASE/api/v1/app/$APP/updatecheck" >/dev/null || true
+  TARGET="$( (api "$KOTS_BASE/api/v1/app/$APP/updates" || true) \
+    | jq -c --arg c "$KOTS_CURSOR" '(.updates // [])[] | select(.updateCursor == $c)' || true)"
+  [ -n "$TARGET" ] && break
+  echo "  cursor $KOTS_CURSOR not in the update list yet, rechecking"
+  sleep 15
+done
+[ -n "$TARGET" ] || fail "cursor $KOTS_CURSOR never became an available update for $APP"
 [ "$(jq -r .isDeployable <<<"$TARGET")" = true ] \
   || fail "cursor $KOTS_CURSOR not deployable: $(jq -r '.nonDeployableCause // "unknown"' <<<"$TARGET")"
 
