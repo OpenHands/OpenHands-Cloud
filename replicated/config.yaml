@@ -895,8 +895,8 @@ spec:
           title: Enable Jira Cloud Integration
           help_text: >-
             Enable the Jira Cloud issue integration. Users are linked by matching their
-            Jira email to their OpenHands email (their Atlassian profile email must be
-            visible). After enabling, an organization admin opens Settings > Integrations
+            Jira email to their OpenHands email (their Atlassian profile email visibility
+            must be set to Anyone). After enabling, an organization admin opens Settings > Integrations
             > Jira in OpenHands to enter the Jira service account email, API token, and a
             webhook secret, then registers the displayed events URL as a webhook in Jira
             Cloud using that secret.
