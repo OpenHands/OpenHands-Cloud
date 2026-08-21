@@ -740,6 +740,16 @@ spec:
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
 
+    - name: authentication_security
+      title: Authentication Security
+      description: Configure safeguards applied when users sign in.
+      items:
+        - name: duplicate_email_check
+          title: Prevent Duplicate Base Emails
+          help_text: Reject sign-ins when another user has the same base email after removing a plus-address suffix (for example, name+test@example.com matches name@example.com).
+          type: bool
+          default: "1"
+
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
       description: Configure Bitbucket Data Center OAuth for user authentication

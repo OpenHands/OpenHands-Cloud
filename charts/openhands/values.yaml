@@ -37,6 +37,10 @@ appConfig:
 # enterprise application default unlimited; set an integer to enforce a limit.
 dailyConversationLimit: null
 
+# Reject sign-ins when another identity has the same base email after removing
+# a plus-address suffix (for example, name+test@example.com and name@example.com).
+duplicateEmailCheck: true
+
 datadog:
   enabled: false
   env: "dev" # Default environment, can be overridden

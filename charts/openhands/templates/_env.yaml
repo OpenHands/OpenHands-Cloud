@@ -34,6 +34,8 @@
 - name: OH_DAILY_CONVERSATION_LIMIT
   value: {{ .Values.dailyConversationLimit | quote }}
 {{- end }}
+- name: DUPLICATE_EMAIL_CHECK
+  value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
   value: {{ get $integrations "resolverLabel" | default "openhands" | quote }}
 - name: LOG_JSON # Configure structured logging for Google Cloud

@@ -39,6 +39,8 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
+
     env:
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
