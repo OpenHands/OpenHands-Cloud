@@ -72,6 +72,7 @@ spec:
       # example.com, so this has to be set explicitly. The path-routing block
       # further down replaces it with the <base>/{runtime_id} form.
       RUNTIME_URL_PATTERN: 'https://{runtime_id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}'
+      OH_SANDBOX_MAX_NUM_SANDBOXES: 'repl{{ ConfigOption "sandbox_max_num_sandboxes" }}'
       # OH_AGENT_SERVER_ENV is assembled by the chart from
       # spec.values.global.agentServerEnv, not hand-written here.
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'

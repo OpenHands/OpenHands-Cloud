@@ -996,11 +996,11 @@ spec:
 
     - name: smtp_configuration
       title: SMTP Email Delivery
-      description: Configure SMTP for OpenHands email notifications
+      description: Configure SMTP for OpenHands email notifications and Keycloak sign-in emails (email verification, account linking, password reset)
       items:
         - name: smtp_enabled
           title: Enable SMTP
-          help_text: Enable SMTP email delivery for budget alerts and admin notifications
+          help_text: Enable SMTP email delivery for budget alerts and admin notifications, and for Keycloak account emails (email verification, account linking, password reset)
           type: bool
           default: "0"
         - name: smtp_host
@@ -1036,7 +1036,7 @@ spec:
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_username
           title: SMTP Username
-          help_text: Username for SMTP authentication
+          help_text: Username for SMTP authentication. Leave blank if your SMTP server does not require authentication.
           type: text
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_password
@@ -1239,6 +1239,20 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: sandbox_max_num_sandboxes
+          title: Max Concurrent Sandboxes
+          help_text: >-
+            Maximum number of concurrent sandboxes the app will start across the
+            cluster. Set to 0 (default) for no cap. Use this to bound resource
+            consumption on shared or memory-constrained clusters; once the cap is
+            reached, new conversations wait for an existing sandbox to be freed
+            rather than spawning a new one.
+          type: text
+          default: "0"
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.
@@ -1252,9 +1266,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.39.1-python
+          help_text: Image tag, e.g. 1.41.0-python
           type: text
-          default: "1.39.1-python"
+          default: "1.41.0-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server

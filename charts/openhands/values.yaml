@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.49.1
+  tag: 1.54.0
 
 autoscaling:
   enabled: false
@@ -32,6 +32,10 @@ appConfig:
   OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
+
+# Maximum conversations a user may start per UTC day. null leaves the
+# enterprise application default unlimited; set an integer to enforce a limit.
+dailyConversationLimit: null
 
 datadog:
   enabled: false
@@ -88,6 +92,11 @@ env:
   # each sandbox ingress. The default nests sandboxes under the runtime base,
   # matching the runtime-api's own "." separator.
   RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
+  # Maximum number of concurrent sandboxes the app will start (0 = no cap).
+  # The Replicated installer exposes this as the sandbox_max_num_sandboxes
+  # ConfigOption; leave at 0 here so non-Replicated installs are uncapped by
+  # default and operators opt in to a limit.
+  OH_SANDBOX_MAX_NUM_SANDBOXES: "0"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
@@ -878,9 +887,7 @@ maintenanceTasks:
       cpu: "500m"
 
 budgetMaintenance:
-  # Disabled until a published enterprise-server image includes
-  # https://github.com/OpenHands/enterprise/pull/80.
-  enabled: false
+  enabled: true
   schedule: "*/15 * * * *" # Run every 15 minutes
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
@@ -1148,6 +1155,24 @@ automation:
           cpu: 500m
     uvicorn:
       workers: 2
+    # Keep at least one events pod serving during voluntary disruptions (node
+    # drains / rotations). Only rendered when deployment.replicas > 1 — at one
+    # replica the budget would make the pod unevictable and stall the drain.
+    # Set enabled=false on a single-node cluster, where an evicted pod has
+    # nowhere else to land.
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    # Spread replicas across nodes so a single node failure/drain cannot take
+    # out the whole deployment. ScheduleAnyway keeps scheduling best-effort when
+    # a perfect spread is not possible (e.g. small clusters).
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: automation-events
   
   securityContext:
     runAsUser: 42420
@@ -1276,7 +1301,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.39.1-python
+    tag: 1.41.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

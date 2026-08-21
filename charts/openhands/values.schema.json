@@ -6,6 +6,7 @@
   "required": ["image"],
   "properties": {
     "enabled": { "type": "boolean" },
+    "dailyConversationLimit": { "type": ["integer", "null"] },
     "image": {
       "type": "object",
       "required": ["repository", "tag"],
