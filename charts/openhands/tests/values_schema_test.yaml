@@ -26,6 +26,12 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "dailyConversationLimit"
+  - it: rejects a non-boolean duplicate email check
+    set:
+      duplicateEmailCheck: "yes"
+    asserts:
+      - failedTemplate:
+          errorPattern: "duplicateEmailCheck.*want boolean"
   - it: rejects a storage backend the app does not support
     set:
       filestore.type: local
