@@ -222,7 +222,7 @@ runtimeFileArchive:
   # not create it; provision it and grant the cleanup identity write access.
   bucket: ""
   prefix: workspace-archives # Key prefix within the bucket.
-  path: /workspace/project # Source path to archive (git repo root).
+  path: /workspace # Source path to archive; must match the sandbox working dir.
   # Safe default: capture BOTH the compact git-delta and a self-contained
   # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
   # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.

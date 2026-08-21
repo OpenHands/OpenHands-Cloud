@@ -39,7 +39,7 @@
 - name: RUNTIME_FILE_ARCHIVE_PREFIX
   value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
 - name: RUNTIME_FILE_ARCHIVE_PATH
-  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace" | quote }}
 - name: RUNTIME_FILE_ARCHIVE_FORMAT
   value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
 {{- if eq $archiveStore "s3" }}
