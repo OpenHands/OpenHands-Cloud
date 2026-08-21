@@ -80,6 +80,11 @@ deployment:
     limits:
       memory: 3Gi
 
+# Affinity for the pods this chart owns directly (the app, integrations and MCP
+# Deployments, and the maintenance CronJobs). Overrides
+# global.scheduling.affinity for those pods; leave empty to inherit it.
+affinity: {}
+
 # Security context settings for all pods
 securityContext:
   runAsUser: 42420
@@ -1310,6 +1315,14 @@ global:
   # runtime-api claims warm pods by exact env match, so a key present here but
   # absent from the warm env would make the pool unclaimable.
   agentServerEnv: {}
+  scheduling:
+    # Affinity applied to every pod this chart and its OpenHands subcharts own
+    # (Deployments, Jobs and CronJobs alike). Node-level DaemonSets are exempt
+    # so they keep covering every node — the KVM device plugin and the sysbox
+    # installer in charts/infra must run on sandbox nodes too. Vendored
+    # third-party subcharts cannot read this; set each one's own `affinity`
+    # value alongside it. A chart-level `affinity` value wins over this.
+    affinity: {}
 
 # Trust-manager Bundle that fans a CA bundle (public CAs + an optional
 # operator-supplied CA certificate) out as a ConfigMap into the release

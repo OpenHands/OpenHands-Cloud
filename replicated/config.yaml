@@ -1344,6 +1344,13 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_dedicated_nodes
+          title: Run sandboxes on dedicated nodes
+          help_text: >-
+            Confine sandboxes to nodes joined with the sandbox role. Requires at least
+            1 sandbox node already joined.
+          type: bool
+          default: "0"
 
     - name: proxy_configuration
       title: Proxy Configuration

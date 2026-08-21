@@ -1,0 +1,55 @@
+suite: dedicated sandbox nodes preflight
+# secrets.yaml includes the troubleshoot.preflights and troubleshoot.supportBundle
+# defines, which live in these two templates. Neither is an underscore partial,
+# so both have to be listed here or the includes fail to resolve; each test
+# scopes its asserts to secrets.yaml.
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+tests:
+  - it: adds the sandbox-node analyzer when sandboxes are confined to sandbox-role nodes
+    template: troubleshoot/secrets.yaml
+    set:
+      runtime-api:
+        env:
+          RUNTIME_NODE_SELECTOR: '{"openhands.dev/sandbox":"true"}'
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "Sandbox nodes: at least one node carries the sandbox role"
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'fileName: cluster-resources/nodes\.json'
+      # Absence of the label is a warning, not a hard gate: the operator may
+      # enable this in the same config pass that precedes joining the node.
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'warn:\n\s+when: "false"\n\s+message: "No node carries the sandbox role'
+
+  - it: omits the sandbox-node analyzer by default
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "Sandbox nodes"
+
+  - it: omits the sandbox-node analyzer when the selector targets some other label
+    template: troubleshoot/secrets.yaml
+    set:
+      runtime-api:
+        env:
+          RUNTIME_NODE_SELECTOR: '{"pool":"my-pool"}'
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "Sandbox nodes"
