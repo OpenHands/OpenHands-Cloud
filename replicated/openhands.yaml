@@ -60,6 +60,11 @@ spec:
       # ignored, so the flag falls back to the model default (false) and the Jira DC
       # integration card never renders. Mirror jira_data_center_enabled here.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA_DC: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+      # ENABLE_ENTERPRISE_SSO is only presence-checked by the app server and the
+      # web-client config injector: any non-empty value (even the string "false")
+      # turns the login button on. Render "true" when enabled and nothing when
+      # disabled so the button stays hidden.
+      ENABLE_ENTERPRISE_SSO: 'repl{{ if ConfigOptionEquals "enterprise_sso_enabled" "1" }}truerepl{{ end }}'
       LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
       # The chart's fallback for LAMINAR_WEB_HOST is laminar.<ingress.host>, but
       # Replicated installs expose Laminar at the analytics hostname. Set it
@@ -95,6 +100,15 @@ spec:
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
+
+    # Enterprise SSO auto-configuration. When the toggle is on and a metadata URL
+    # is provided, the chart's keycloak-config init container upserts the
+    # enterprise_sso SAML identity provider in Keycloak on every pod start.
+    # Leave idpMetadataUrl empty to manage the provider manually.
+    enterpriseSso:
+      enabled: repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}
+      displayName: 'repl{{ ConfigOption "enterprise_sso_display_name" }}'
+      idpMetadataUrl: 'repl{{ ConfigOption "enterprise_sso_idp_metadata_url" }}'
 
     ingress:
       enabled: true

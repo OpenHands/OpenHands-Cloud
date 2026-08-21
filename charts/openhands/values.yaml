@@ -110,6 +110,15 @@ agentServerEnv: {}
 integrations:
   resolverLabel: "openhands"
 
+# Enterprise SSO (SAML) automatic Keycloak setup: when enabled and
+# idpMetadataUrl is set, the keycloak-config init container upserts the
+# enterprise_sso SAML identity provider on every pod start (idempotent).
+# Leave idpMetadataUrl empty to manage the provider manually.
+enterpriseSso:
+  enabled: false
+  displayName: ""
+  idpMetadataUrl: ""
+
 # Object storage for conversation/session files. Always a durable object
 # store: any S3-compatible store (AWS S3, the bundled MinIO, R2, ...) or GCS.
 # To use the bundled MinIO, set minio.enabled: true and type: s3 — with no
