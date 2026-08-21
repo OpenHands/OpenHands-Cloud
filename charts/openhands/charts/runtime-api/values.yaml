@@ -222,7 +222,7 @@ runtimeFileArchive:
   # not create it; provision it and grant the cleanup identity write access.
   bucket: ""
   prefix: workspace-archives # Key prefix within the bucket.
-  path: /workspace # Source path to archive; must match the sandbox working dir.
+  path: /workspace/project # Source path to archive (git repo root).
   # Safe default: capture BOTH the compact git-delta and a self-contained
   # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
   # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
@@ -261,7 +261,7 @@ warmRuntimes:
   configsByName:
     default:
       # image omitted -> defaults to global.agentServerImage (repo:tag).
-      working_dir: "/workspace"
+      working_dir: "/workspace/project"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
         LMNR_BASE_URL: ""
