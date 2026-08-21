@@ -7,6 +7,22 @@ spec:
   domains:
     proxyRegistryDomain: "images.r9.all-hands.dev"
     replicatedAppDomain: "updates.r9.all-hands.dev"
+  # Node roles offered in the Admin Console's add-node picker. Declaring any
+  # custom role turns that page into a role selector listing every role name,
+  # the controller role's included — hence "app" rather than the default
+  # "controller". A node that does not select "app" joins as a plain k0s worker
+  # with no control plane, carrying the sandbox label that sandbox pod
+  # scheduling keys on. Labels are stamped at join time only and are never
+  # applied retroactively to an already-joined node.
+  roles:
+    controller:
+      name: app
+      labels:
+        openhands.dev/app: "true"
+    custom:
+      - name: sandbox
+        labels:
+          openhands.dev/sandbox: "true"
   extensions:
     helm:
       repositories:
