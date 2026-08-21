@@ -53,8 +53,9 @@ jobs:
   deploy:
     name: Deploy to ${{ inputs.instance }}
     runs-on: ubuntu-latest
-    # +5 so the script's own timeout error lands before the runner kills the job.
-    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) + 5 }}
+    # See timeout set in replicated release actions, this timeout should exceed
+    # by ~5 mins
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

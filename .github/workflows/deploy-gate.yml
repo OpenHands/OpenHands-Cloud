@@ -71,7 +71,7 @@ jobs:
           case "$PATHS" in
             *'*'*) echo "::error::unsupported glob in on.push.paths: $PATHS"; exit 1 ;;
           esac
-          echo "trigger paths: $(echo $PATHS)"
+          echo "trigger paths: ${PATHS//$'\n'/ }"
 
           NEWEST=$(for P in $PATHS; do
             gh api "repos/${REPO}/commits?sha=main&path=${P}&per_page=1" \
@@ -81,7 +81,7 @@ jobs:
           if [ -n "$U_SHA" ]; then
             check unstable release-replicated-unstable.yml "branch=main&head_sha=${U_SHA}" "commit \`${U_SHA:0:8}\`"
           else
-            echo "| unstable | no commit under $(echo $PATHS) | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| unstable | no commit under ${PATHS//$'\n'/ } | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # Beta fires on the openhands/* tag release-please creates. Tag refs sort
