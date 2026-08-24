@@ -129,7 +129,7 @@ chromium:new-user  ──▶ setup:new-user
 
 Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
 
-Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. The New User starts with a zero balance, so the credit top-up in `002-billing.spec.ts` has to run before anything that needs credits. Keep the prefixes when adding a spec.
+Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
 
 ### Auth behavior: `AUTH_METHOD`
 

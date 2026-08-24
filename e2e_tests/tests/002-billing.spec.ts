@@ -14,6 +14,9 @@ import { runUser } from "../utils/config";
  * As with the rest of the harness, each spec runs once per user role
  * (returning / new-user); the active role is read from project metadata via
  * `runUser(testInfo)`.
+ *
+ * The New User starts with a zero balance, so the top-up below has to run
+ * before anything that needs credits — hence the low `002-` prefix.
  */
 
 const STRIPE_TEST_CARD = {
