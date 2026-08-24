@@ -13,6 +13,13 @@ def load_workflow(path: Path):
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+def trigger_step():
+    job = load_workflow(E2E_WORKFLOW)["jobs"]["trigger-e2e"]
+    return next(
+        step for step in job["steps"] if step.get("name") == "Trigger Replicated E2E"
+    )
+
+
 def test_e2e_workflow_can_only_be_called_by_another_workflow():
     workflow = load_workflow(E2E_WORKFLOW)
     triggers = workflow[True]
@@ -38,6 +45,8 @@ def test_e2e_workflow_uses_its_environment_token_and_argo_owned_target():
         "INSTANCE": "${{ inputs.instance }}",
     }
 
+    assert workflow["env"]["ARGO_SERVER"] == "https://workflows.dev.all-hands.dev"
+
     command = trigger["run"]
     assert "jq -n" in command
     assert "instance: $instance" in command
@@ -47,10 +56,30 @@ def test_e2e_workflow_uses_its_environment_token_and_argo_owned_target():
     assert "all-hands-testing.dev" not in command
     assert "curl --fail-with-body" in command
     assert (
-        "https://workflows.dev.all-hands.dev/api/v1/events/"
-        "openhands-e2e/replicated-deploy" in command
+        "${ARGO_SERVER}/api/v1/events/openhands-e2e/replicated-deploy" in command
     )
     assert 'Authorization: Bearer ${ARGO_TOKEN}' in command
+
+
+def test_e2e_workflow_rejects_an_instance_no_binding_serves():
+    """A caller typo would otherwise dispatch, match nothing, and pass."""
+    command = trigger_step()["run"]
+    assert "unstable|beta|stable" in command
+
+
+def test_e2e_workflow_confirms_a_run_started():
+    """Argo answers 200 {} whether or not a binding matched, so the status code
+    alone cannot distinguish a dispatched run from a silent no-op."""
+    command = trigger_step()["run"]
+    assert "${ARGO_SERVER}/api/v1/workflows/openhands-e2e" in command
+    assert 'openhands-e2e-${INSTANCE}-' in command
+    assert "no openhands-e2e-${INSTANCE}-* workflow was created" in command
+    assert "exit 1" in command
+
+
+def test_e2e_workflow_never_retries_the_dispatch():
+    """A retry whose first attempt already landed starts a second suite."""
+    assert "--retry" not in trigger_step()["run"]
 
 
 def test_deploy_replicated_calls_e2e_only_after_a_successful_deploy():

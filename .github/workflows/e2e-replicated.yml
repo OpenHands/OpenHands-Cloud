@@ -7,14 +7,16 @@ on:
         type: string
         required: true
 
-permissions:
-  contents: read
+permissions: {}
+
+env:
+  ARGO_SERVER: https://workflows.dev.all-hands.dev
 
 jobs:
   trigger-e2e:
     environment: e2e-replicated
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
       - name: Trigger Replicated E2E
         shell: bash
@@ -22,15 +24,60 @@ jobs:
           ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_E2E_TOKEN }}
           INSTANCE: ${{ inputs.instance }}
         run: |
+          # workflow_call takes a free-form string, so a caller typo would
+          # otherwise reach Argo, match no binding, and pass silently.
+          case "$INSTANCE" in
+            unstable|beta|stable) ;;
+            *) echo "::error::unknown instance \"$INSTANCE\"" ; exit 1 ;;
+          esac
+
+          # Clock skew between runner and cluster would otherwise hide a run
+          # created a second "before" the dispatch.
+          since=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)
+
           payload=$(jq -n \
             --arg instance "$INSTANCE" \
             '{
               instance: $instance
             }')
-          curl --fail-with-body --silent --show-error \
-            --retry 3 --retry-all-errors --max-time 20 \
+          # Deliberately not retried: a second attempt whose first already landed
+          # starts a duplicate suite, and the check below catches a lost POST.
+          curl --fail-with-body --silent --show-error --max-time 20 \
             --request POST \
             --header "Authorization: Bearer ${ARGO_TOKEN}" \
             --header "Content-Type: application/json" \
             --data "$payload" \
-            https://workflows.dev.all-hands.dev/api/v1/events/openhands-e2e/replicated-deploy
+            "${ARGO_SERVER}/api/v1/events/openhands-e2e/replicated-deploy"
+
+          # An event matching no binding answers 200 {} exactly like a dispatched
+          # one, so the status code alone cannot tell a run from a no-op. Look
+          # for the workflow the binding names after this instance.
+          name=""
+          for _ in $(seq 12); do
+            name=$(curl --fail-with-body --silent --show-error --max-time 20 \
+              --header "Authorization: Bearer ${ARGO_TOKEN}" \
+              "${ARGO_SERVER}/api/v1/workflows/openhands-e2e?fields=items.metadata.name,items.metadata.creationTimestamp" \
+              | jq -r \
+                  --arg prefix "openhands-e2e-${INSTANCE}-" \
+                  --arg since "$since" '
+                  [ .items[]?
+                    | select(.metadata.name | startswith($prefix))
+                    | select(.metadata.creationTimestamp >= $since) ]
+                  | sort_by(.metadata.creationTimestamp)
+                  | last
+                  | .metadata.name // empty
+                ')
+            if [ -n "$name" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ -z "$name" ]; then
+            echo "::error::event accepted but no openhands-e2e-${INSTANCE}-* workflow was created"
+            exit 1
+          fi
+
+          url="${ARGO_SERVER}/workflows/openhands-e2e/${name}"
+          echo "Started ${name}"
+          echo "[${name}](${url})" >> "$GITHUB_STEP_SUMMARY"
