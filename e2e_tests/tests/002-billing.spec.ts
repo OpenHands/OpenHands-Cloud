@@ -14,8 +14,6 @@ import { runUser } from "../utils/config";
  * As with the rest of the harness, each spec runs once per user role
  * (returning / new-user); the active role is read from project metadata via
  * `runUser(testInfo)`.
- *
- * Spec files are numbered because Playwright runs them in filename order.
  */
 
 const STRIPE_TEST_CARD = {
