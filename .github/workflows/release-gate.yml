@@ -1,0 +1,179 @@
+name: Release gate (unstable E2E)
+
+# Blocks the openhands release-please PR (unstable -> beta promotion) when the
+# latest unstable E2E run is not green. Every other PR passes untouched, so this
+# check can be made required repo-wide without blocking normal development.
+#
+# Modeled on deploy-gate.yml ("last-deploy"): it reads the conclusion of the
+# most recent unstable E2E run from the GitHub Actions API and fails the check
+# when that run failed, never ran, or is stale. It does NOT run the E2E suite
+# itself -- the suite runs against the deployed unstable instance out of
+# release-replicated-unstable.yml, and Phase 1 makes that job's conclusion
+# reflect the real Argo/ReportPortal result.
+#
+# Scope: only the openhands chart release PR promotes unstable -> beta (its merge
+# cuts the openhands/<version> tag that release-replicated-beta.yml consumes), so
+# the gate keys off release-please's own label, "autorelease: openhands pending".
+#
+# Escape hatch: apply the `override-e2e-gate` label. The gate then passes but
+# records who applied it (and when) in the step summary and a PR comment. The
+# applier must have write/admin permission on the repo; an override applied by
+# anyone else fails the check.
+#
+# To make it blocking, add the check context `release-gate` to the `main` ruleset
+# under Settings -> Rules -> Rulesets. No change to this file needed.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions: {}
+
+env:
+  # release-please applies this to the openhands chart's release PR (see
+  # release-please-config.openhands.json `label`). It is the single signal that
+  # a PR is the unstable -> beta promotion.
+  RELEASE_PR_LABEL: "autorelease: openhands pending"
+  # Auditable escape hatch. Applying it lets the release PR merge on red, but the
+  # applier must have write/admin on the repo and the override is recorded.
+  OVERRIDE_LABEL: "override-e2e-gate"
+  # The workflow that deploys to unstable and runs the E2E suite as a job. Its
+  # E2E job conclusion is the source of truth this gate reads.
+  E2E_WORKFLOW: "release-replicated-unstable.yml"
+  # Name of the E2E job within that workflow's runs (jobs[].name).
+  E2E_JOB_NAME: "E2E Replicated"
+  # A green E2E result older than this is treated as stale (cadence broken) and
+  # blocks, mirroring deploy-gate's "no run" guard. Cadence target is 2-3x/day.
+  E2E_MAX_AGE_HOURS: "24"
+
+jobs:
+  release-gate:
+    name: release-gate
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read      # read E2E workflow runs/jobs
+      contents: read
+      pull-requests: write  # post the override audit comment
+    steps:
+      - name: Evaluate release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Release gate (unstable E2E)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # --- Scope: is this the openhands release-please PR? -----------------
+          # Read labels from the API rather than the event payload so the answer
+          # is correct on synchronize events too.
+          labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
+          has_label() { grep -Fxq "$1" <<<"$labels"; }
+
+          if ! has_label "$RELEASE_PR_LABEL"; then
+            echo "Not the openhands release PR (no \`$RELEASE_PR_LABEL\` label) — gate not applicable." \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "Not a release PR; passing."
+            exit 0
+          fi
+          echo "This is the openhands release PR — evaluating the unstable E2E gate."
+
+          # --- Escape hatch: override label -----------------------------------
+          if has_label "$OVERRIDE_LABEL"; then
+            # Find who applied the override label, and when, from the issue
+            # timeline. Newest matching 'labeled' event wins.
+            applier_when=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/events?per_page=100" --paginate \
+              --jq "[.[] | select(.event==\"labeled\" and .label.name==\"$OVERRIDE_LABEL\")] | last | \"\(.actor.login)\t\(.created_at)\"" \
+              2>/dev/null || echo "")
+            applier=${applier_when%%$'\t'*}
+            when=${applier_when##*$'\t'}
+
+            if [ -z "$applier" ] || [ "$applier" = "null" ]; then
+              # Label present but no event record (e.g. applied via import). Treat
+              # as unauthorized: an override must be attributable.
+              echo "::error::\`$OVERRIDE_LABEL\` is present but no 'labeled' event records who applied it — refusing to honor an unattributable override."
+              echo "| Override | present but **unattributable** — blocked |" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            perm=$(gh api "repos/${REPO}/collaborators/${applier}/permission" --jq '.permission' 2>/dev/null || echo "none")
+            case "$perm" in
+              admin|write|maintain)
+                {
+                  echo "> [!WARNING]"
+                  echo "> **E2E release gate overridden.**"
+                  echo ">"
+                  echo "> Applied by \`${applier}\` (\`${perm}\`) at ${when}."
+                } >> "$GITHUB_STEP_SUMMARY"
+                # Comment once, on the event that applied the label, so repeated
+                # synchronize runs do not spam the PR.
+                if [ "$EVENT_ACTION" = "labeled" ]; then
+                  body=$(printf '%s\n\n%s' \
+                    "🟡 **E2E release gate overridden** by \`${applier}\` (\`${perm}\` permission) at ${when} via the \`${OVERRIDE_LABEL}\` label. The unstable → beta promotion is being allowed to merge without a green unstable E2E result." \
+                    "_Posted automatically by the release-gate workflow (an AI-assisted automation) on behalf of the OpenHands-Cloud maintainers._")
+                  gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body" \
+                    || echo "::warning::could not post override audit comment"
+                fi
+                echo "Override honored (applied by ${applier}, ${perm})."
+                exit 0
+                ;;
+              *)
+                echo "::error::\`$OVERRIDE_LABEL\` was applied by ${applier}, who lacks write/admin permission (${perm}) — override not honored."
+                echo "| Override | applied by \`${applier}\` (\`${perm}\`) — **unauthorized** |" >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+                ;;
+            esac
+          fi
+
+          # --- Signal: latest unstable E2E result -----------------------------
+          # Newest run of the unstable workflow on main. The E2E job runs inside
+          # this run (reusable-workflow jobs do not get their own workflow_runs
+          # entry), so we read jobs[].conclusion for the E2E job by name.
+          runs=$(gh api "repos/${REPO}/actions/workflows/${E2E_WORKFLOW}/runs?branch=main&per_page=20")
+
+          run_id=""; run_url=""; run_created=""
+          # Walk newest-first for the first run whose E2E job has a terminal
+          # conclusion, so an in-flight newest run does not mask the last result.
+          while read -r id url created; do
+            [ -n "$id" ] || continue
+            concl=$(gh api "repos/${REPO}/actions/runs/${id}/jobs" \
+              --jq "(.jobs[] | select(.name==\"$E2E_JOB_NAME\") | .conclusion) // empty" | head -1)
+            if [ -n "$concl" ] && [ "$concl" != "null" ]; then
+              run_id=$id; run_url=$url; run_created=$created; E2E_CONCLUSION=$concl
+              break
+            fi
+          done < <(jq -r '.workflow_runs[] | "\(.id)\t\(.html_url)\t\(.created_at)"' <<<"$runs" | tr '\t' ' ')
+
+          if [ -z "$run_id" ]; then
+            echo "::error::no completed \"${E2E_JOB_NAME}\" job found in recent ${E2E_WORKFLOW} runs on main — the unstable E2E signal is missing."
+            echo "| E2E result | **no run** — blocked |" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          # Staleness: a stale green is not a current green.
+          now=$(date -u +%s)
+          then=$(date -u -d "$run_created" +%s)
+          age_h=$(( (now - then) / 3600 ))
+          {
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Latest E2E conclusion | \`${E2E_CONCLUSION}\` |"
+            echo "| Run | ${run_url} |"
+            echo "| Age | ${age_h}h (max ${E2E_MAX_AGE_HOURS}h) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$E2E_CONCLUSION" != "success" ]; then
+            echo "::error::latest unstable E2E concluded \"${E2E_CONCLUSION}\" — blocking the release PR. ${run_url}"
+            exit 1
+          fi
+          if [ "$age_h" -gt "$E2E_MAX_AGE_HOURS" ]; then
+            echo "::error::latest unstable E2E passed but is ${age_h}h old (> ${E2E_MAX_AGE_HOURS}h) — treating as stale and blocking. Trigger a fresh unstable E2E run."
+            exit 1
+          fi
+
+          echo "Latest unstable E2E is green and fresh (${age_h}h old) — release PR may merge."
