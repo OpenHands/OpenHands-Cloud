@@ -1,14 +1,6 @@
 name: Budget Incident E2E
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/budget-e2e.yml"
-      - "e2e_tests/package.json"
-      - "e2e_tests/package-lock.json"
-      - "e2e_tests/tests/005-budgets.spec.ts"
-      - "e2e_tests/utils/budget-database.ts"
-      - "e2e_tests/utils/budgets.ts"
   workflow_dispatch:
   schedule:
     - cron: "0 10 * * *"

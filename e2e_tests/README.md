@@ -72,7 +72,7 @@ Optional timing and workload variables:
 - `BUDGET_E2E_POLL_INTERVAL_MS` (default `5000`)
 - `BUDGET_E2E_SYNC_TIMEOUT_MS` (default `1200000`, 20 minutes per task)
 
-`.github/workflows/budget-e2e.yml` runs the complete suite daily and on demand through the protected `budget-e2e-staging` environment. It fails before Playwright starts when any required variable or secret is absent, so certification runs cannot silently skip an incident. Configure the `BUDGET_E2E_*` values as environment variables/secrets and require environment approval if staging access is sensitive. Never commit authentication state, database URLs, LiteLLM keys, or Slack tokens.
+`.github/workflows/budget-e2e.yml` runs the complete suite daily and on demand through the protected `budget-e2e-staging` environment. Pull requests use `.github/workflows/e2e-static.yml` for linting, type-checking, and test discovery; destructive staging certification does not execute pull-request code. Runtime certification fails before Playwright starts when any required variable or secret is absent, so scheduled and manually dispatched runs cannot silently skip an incident. Configure the `BUDGET_E2E_*` values as environment variables/secrets and require environment approval if staging access is sensitive. Never commit authentication state, database URLs, LiteLLM keys, or Slack tokens.
 
 ## ReportPortal
 
