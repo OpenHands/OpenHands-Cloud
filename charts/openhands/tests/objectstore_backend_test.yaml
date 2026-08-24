@@ -1,0 +1,188 @@
+suite: bundled object-store backend selection
+templates:
+  - templates/deployment.yaml
+  - templates/rustfs-bucket.yaml
+  - templates/validations.yaml
+  - templates/_objectstore.tpl
+  - templates/_env.yaml
+  - templates/_helpers.tpl
+  # deployment.yaml includes this by path; helm-unittest only resolves templates
+  # the suite lists.
+  - templates/litellm-config-script.yaml
+tests:
+  # --- endpoint selection -------------------------------------------------
+  - it: points the app at the bundled MinIO by default
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+
+  - it: points the app at RustFS when it is the only bundled store
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: false
+      rustfs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-rustfs-svc:9000
+
+  - it: keeps MinIO precedence when both are enabled, so deploying RustFS does not repoint
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+      rustfs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+
+  - it: hands the app one credential pair regardless of which store is active
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+      rustfs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: default
+
+  # --- bucket provisioning ------------------------------------------------
+  - it: provisions the RustFS bucket, since the upstream chart does not
+    template: templates/rustfs-bucket.yaml
+    set:
+      rustfs.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+
+  - it: never gives the bucket job a delete path
+    template: templates/rustfs-bucket.yaml
+    set:
+      rustfs.enabled: true
+    asserts:
+      - notMatchRegexRaw:
+          pattern: (DELETE|rm -r|--force)
+
+  - it: renders no bucket job when RustFS is off
+    template: templates/rustfs-bucket.yaml
+    set:
+      rustfs.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- external store is untouched ---------------------------------------
+  - it: renders no bundled-store bucket for an external S3/GCS install
+    template: templates/rustfs-bucket.yaml
+    set:
+      minio.enabled: false
+      rustfs.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- guards -------------------------------------------------------------
+  - it: fails when the RustFS credentials do not match the MinIO pair
+    template: templates/validations.yaml
+    set:
+      minio.enabled: true
+      rustfs.enabled: true
+      rustfs.secret.rustfs.access_key: something-else
+    asserts:
+      - failedTemplate:
+          errorMessage: "rustfs.secret.rustfs credentials must match minio.svcaccts[0]. The app is given one credential pair for whichever bundled store is active, so a mismatch breaks object access the moment consumers switch to RustFS. Set rustfs.secret.rustfs.access_key/secret_key to the same values as minio.svcaccts[0].accessKey/secretKey."
+
+  - it: does not fire the credential guard when only RustFS is deployed
+    template: templates/validations.yaml
+    set:
+      minio.enabled: false
+      rustfs.enabled: true
+      rustfs.secret.rustfs.access_key: something-else
+    asserts:
+      - notFailedTemplate: {}
+
+  # --- migration repoint --------------------------------------------------
+  - it: repoints the app at RustFS once the migration switch is on, MinIO still deployed
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-rustfs-svc:9000
+
+  - it: the migration switch is inert without RustFS deployed, so precedence stays MinIO
+    documentSelector:
+      path: metadata.name
+      value: openhands
+    template: templates/deployment.yaml
+    set:
+      enabled: true
+      filestore.type: s3
+      minio.enabled: true
+      rustfs.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_S3_ENDPOINT
+            value: http://RELEASE-NAME-minio:9000
+
+  # --- migration guards ---------------------------------------------------
+  - it: fails the migration when RustFS is not deployed as the destination
+    template: templates/validations.yaml
+    set:
+      minio.enabled: true
+      rustfs.enabled: false
+      filestore.migration.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.migration.enabled is true but rustfs.enabled is false, so there is no destination to copy into. Set rustfs.enabled=true."
+
+  - it: fails the migration when MinIO is not deployed as the source
+    template: templates/validations.yaml
+    set:
+      minio.enabled: false
+      rustfs.enabled: true
+      filestore.migration.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "filestore.migration.enabled is true but the bundled MinIO is not deployed, so there is no source to copy from. Leave minio.enabled=true until the migration has completed, then retire MinIO in a later release."
+
+  - it: does not guard the migration when the switch is off
+    template: templates/validations.yaml
+    set:
+      minio.enabled: true
+      rustfs.enabled: true
+      filestore.migration.enabled: false
+    asserts:
+      - notFailedTemplate: {}
