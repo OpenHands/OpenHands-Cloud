@@ -112,6 +112,10 @@ jobSettings:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 2
 
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
 securityContext: {}
 
 # The KVM device plugin that used to live here (smarter-device-manager,
@@ -257,7 +261,7 @@ warmRuntimes:
   configsByName:
     default:
       # image omitted -> defaults to global.agentServerImage (repo:tag).
-      working_dir: "/workspace"
+      working_dir: "/workspace/project"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
         LMNR_BASE_URL: ""
@@ -326,3 +330,8 @@ global:
   # proxy vars, CA paths). Mirrored into each warm-runtime entry's env so
   # runtime-api's exact-env matching can claim warm pods.
   agentServerEnv: {}
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}
