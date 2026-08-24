@@ -16,10 +16,6 @@ dependencies:
     repository: oci://ghcr.io/berriai
     version: 0.1.831
     condition: litellm-helm.enabled
-  - name: minio
-    version: 5.0.10
-    condition: minio.enabled
-    repository: https://charts.min.io/
   - name: postgresql
     version: 15.x.x
     repository: https://charts.bitnami.com/bitnami

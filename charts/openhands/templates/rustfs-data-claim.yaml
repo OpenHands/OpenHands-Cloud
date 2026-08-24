@@ -1,28 +1,19 @@
 {{- if .Values.rustfs.enabled }}
 {{/*
-RustFS's data claim. The gate below is load-bearing: Helm snapshots a release's
-resources before hooks run, so a claim that first appears in a pre-upgrade hook
-fails the apply with `no PersistentVolumeClaim "..." found` — after the hook has
-frozen writers, leaving the app down.
-
-So a migrating upgrade renders nothing here and the migration hook creates and owns
-the claim (RustFS mounts it by name via existingClaim); Helm adopts it on the next
-non-migrating upgrade, when the claim already predates the upgrade. A fresh install
-renders it here, since the hook is pre-upgrade only. Same approach as
-templates/postgres-cnpg-migration.yaml (#986).
-
-resource-policy keep makes the claim outlive `helm uninstall` so it never takes the
-conversation data with it.
+RustFS's data claim. On installs that migrated from MinIO the claim already exists
+— a prior migrate release's pre-upgrade hook created it with the managed-by label
+below — and Helm adopts it here; on a fresh install Helm creates it. resource-policy
+keep makes it outlive `helm uninstall` so neither path takes the conversation data
+with it.
 */}}
-{{- if or .Release.IsInstall (not .Values.filestore.migration.enabled) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ .Values.rustfs.mode.standalone.existingClaim.dataClaim }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- /* Carries app.kubernetes.io/managed-by, without which Helm refuses to
-           adopt the object the orchestrator created. */}}
+    {{- /* Carries app.kubernetes.io/managed-by, without which Helm would error on
+           the claim a prior migrate release's hook created instead of adopting it. */}}
     {{- include "openhands.labels" . | nindent 4 }}
   annotations:
     "helm.sh/resource-policy": keep
@@ -35,5 +26,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.rustfs.storageclass.dataStorageSize }}
-{{- end }}
 {{- end }}

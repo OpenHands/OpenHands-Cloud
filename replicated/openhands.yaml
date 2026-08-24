@@ -8,9 +8,9 @@ spec:
   releaseName: openhands
   namespace: openhands
   weight: 10
-  # 1800s, not 600s: --timeout bounds each hook Job, and the object-store
-  # migration hook (freeze, copy, verify) runs inside it. Size the maintenance
-  # window against the object count — the copy is bound by it, not by bytes.
+  # 1800s, not 600s: --timeout bounds each hook Job, and the CNPG database
+  # migration runs inside one. Kept at 1800s after the object-store migration
+  # was retired, since that bound is the database copy's, not the object store's.
   helmUpgradeFlags: ["--wait", "--timeout", "1800s", "--force-conflicts"]
   values:
     global:
@@ -464,43 +464,13 @@ spec:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
       auth:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
-    # Conversation/session files live on the bundled object store, durable here
-    # (persistence below). With no endpoint or credentials configured, the app
-    # targets the active bundled backend automatically (see templates/_objectstore.tpl).
+    # Conversation/session files live on the bundled RustFS, which is durable
+    # here (persistence below). With no endpoint or credentials configured,
+    # the app targets the bundled instance automatically.
     filestore:
       type: s3
-      # Switches for the bundled object store: they select the backend and run the
-      # one-time MinIO->RustFS migration (see templates/_objectstore.tpl). Enabling
-      # rustfs + migration copies MinIO into RustFS and repoints consumers, with
-      # MinIO kept as the rollback source; turning minio off afterwards retires it
-      # and Helm adopts the claim. Move the automation endpoint (below) in lock-step.
-      migration:
-        enabled: true
-        images:
-          kubectl:
-            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
-          mc:
-            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/mc'
-        imagePullSecrets:
-          - name: '{{repl ImagePullSecretName }}'
-    minio:
-      enabled: true
-      persistence:
-        enabled: true
-      resources:
-        requests:
-          cpu: "1"
-          memory: 512Mi
-        limits:
-          cpu: "2"
-          memory: 2Gi
-      image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
-      imagePullSecrets:
-        - name: '{{repl ImagePullSecretName }}'
-    # RustFS becomes the backend once the migration flips precedence to it
-    # (templates/_objectstore.tpl); deployed alone it changes nothing, since MinIO
-    # keeps precedence until the migration runs.
+    # RustFS is the only bundled object-store backend. MinIO and the migration
+    # that copied its data across were retired once every install had run it.
     rustfs:
       enabled: true
       image:
@@ -512,12 +482,12 @@ spec:
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       storageclass:
-        # 500Gi matches the bundled MinIO PVC that RustFS is migrated from (the
-        # minio subchart default, which this overlay never overrode). The target
-        # must never be smaller than the source it copies, and RustFS only ever
-        # holds what MinIO held, so this is both the floor and the ceiling.
-        # Applied at volume creation only — a PVC can't shrink and only grows
-        # where the storage class allows — so it isn't exposed as a config option.
+        # 500Gi matches the MinIO PVC RustFS was migrated from (the minio
+        # subchart default of 500Gi in the migrate release). The target must
+        # never be smaller than the source it copied, and RustFS only ever holds
+        # what MinIO held, so this is both the floor and the ceiling. Applied at
+        # volume creation only — a PVC can't shrink and only grows where the
+        # storage class allows — so it isn't exposed as a config option.
         dataStorageSize: 500Gi
     # sha256 of every secret (password) config value. Changing any secret in the
     # KOTS config changes this hash, which changes the openhands pod-template
@@ -726,22 +696,17 @@ spec:
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           # Uploaded automation packages must survive pod replacement, so store
-          # them on the bundled object store instead of the pod filesystem. The
-          # parent chart cannot template a subchart's values, so this endpoint is
-          # set here and must be kept in lock-step with the object-store lifecycle
-          # switches under filestore/minio/rustfs above (the app follows those via
-          # templates/_objectstore.tpl; automation cannot). MinIO at baseline;
-          # switch to http://openhands-rustfs-svc:9000 in the migrate release (the
-          # migration copies the automation-data bucket across) and leave it there
-          # through retirement. Never point it at a store those switches leave
-          # undeployed.
+          # them on the bundled object store instead of the pod filesystem. (The
+          # parent chart cannot template a subchart's values, so automation is
+          # pointed here rather than through the object-store helper the app
+          # uses.)
           filestore:
             type: s3
             endpoint: http://openhands-rustfs-svc:9000
             # The bundled store's bucket job only creates the parent chart's
             # session bucket, so the service provisions its own on startup.
             createBucket: true
-            # Matches the parent chart's minio.svcaccts credentials.
+            # Matches the parent chart's rustfs.secret.rustfs credentials.
             accessKey: default
             secretKey: notasecret
           database:
@@ -793,22 +758,12 @@ spec:
         redis:
           image:
             repository: '{{repl LocalRegistryNamespace }}/redis'
-        minio:
-          image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
         rustfs:
           image:
             rustfs:
               repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/rustfs'
             initImage:
               repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/busybox'
-        filestore:
-          migration:
-            images:
-              kubectl:
-                repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/k8s'
-              mc:
-                repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/mc'
         litellm-helm:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/litellm-database'
@@ -840,7 +795,7 @@ spec:
         {{repl $runtimeApiDomain := ConfigOption "computed_runtime_api_hostname" }}
         {{repl $runtimeBaseDomain := ConfigOption "computed_runtime_base_hostname" }}
         {{repl $runtimeSeparator := ConfigOption "computed_runtime_hostname_separator" }}
-        {{repl $computedNoProxy := "127.0.0.1,cluster.local,keycloak,keycloak-headless,kubernetes,localhost,oh-main-lite-llm,oh-main-runtime-api,openhands-integrations-service,openhands-litellm,openhands-mcp-service,openhands-minio,openhands-runtime-api,openhands-service,svc" }}
+        {{repl $computedNoProxy := "127.0.0.1,cluster.local,keycloak,keycloak-headless,kubernetes,localhost,oh-main-lite-llm,oh-main-runtime-api,openhands-integrations-service,openhands-litellm,openhands-mcp-service,openhands-runtime-api,openhands-service,svc" }}
         {{repl if ne $bd "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $bd }}{{repl end }}
         {{repl if ne $appDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $appDomain }}{{repl end }}
         {{repl if ne $authDomain "" }}{{repl $computedNoProxy = printf "%s,%s" $computedNoProxy $authDomain }}{{repl end }}
@@ -1354,15 +1309,8 @@ spec:
       enabled: true
     litellm-helm:
       enabled: true
-    minio:
-      enabled: true
     rustfs:
       enabled: true
-    # Render the object-store migration hook at build time so its kubectl and mc
-    # images land in the airgap bundle.
-    filestore:
-      migration:
-        enabled: true
     postgresql:
       enabled: true
     redis:
