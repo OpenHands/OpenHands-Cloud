@@ -107,3 +107,14 @@ jobs:
       kots_cursor: ${{ needs.release.outputs.kots_cursor }}
     secrets:
       kots_password: ${{ secrets.KOTS_PASSWORD_UNSTABLE }}
+
+  e2e:
+    name: E2E Replicated
+    needs: deploy
+    uses: ./.github/workflows/e2e-replicated.yml
+    with:
+      instance: unstable
+    # A called workflow gets no secrets unless the call site passes them, and
+    # they reach only the workflow called directly. Nesting this under the
+    # deploy workflow left the environment's Argo token empty at dispatch.
+    secrets: inherit

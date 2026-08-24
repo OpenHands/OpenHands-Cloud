@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -7,6 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-replicated.yml"
 E2E_WORKFLOW = ROOT / ".github/workflows/e2e-replicated.yml"
 TEST_WORKFLOW = ROOT / ".github/workflows/test-scripts.yml"
+RELEASE_WORKFLOWS = {
+    "unstable": ROOT / ".github/workflows/release-replicated-unstable.yml",
+    "beta": ROOT / ".github/workflows/release-replicated-beta.yml",
+}
 
 
 def load_workflow(path: Path):
@@ -71,16 +76,26 @@ def test_e2e_workflow_never_retries_the_dispatch():
     assert "--retry" not in trigger_step()["run"]
 
 
-def test_deploy_replicated_calls_e2e_only_after_a_successful_deploy():
-    workflow = load_workflow(DEPLOY_WORKFLOW)
-    e2e = workflow["jobs"]["e2e"]
+@pytest.mark.parametrize("instance", sorted(RELEASE_WORKFLOWS))
+def test_each_release_calls_e2e_only_after_a_successful_deploy(instance):
+    """Called directly by the release workflow, not nested under the deploy.
 
-    assert e2e == {
+    Secrets reach only the workflow a call site names, so a job nested one
+    level further down saw an empty token however the environment was set up.
+    """
+    workflow = load_workflow(RELEASE_WORKFLOWS[instance])
+
+    assert workflow["jobs"]["e2e"] == {
         "name": "E2E Replicated",
         "needs": "deploy",
         "uses": "./.github/workflows/e2e-replicated.yml",
-        "with": {"instance": "${{ inputs.instance }}"},
+        "with": {"instance": instance},
+        "secrets": "inherit",
     }
+
+
+def test_deploy_replicated_does_not_call_e2e():
+    assert "e2e" not in load_workflow(DEPLOY_WORKFLOW)["jobs"]
 
 
 def test_workflow_contract_runs_when_either_workflow_changes():
