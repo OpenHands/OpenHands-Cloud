@@ -1,0 +1,68 @@
+suite: Enterprise SSO wiring
+# The deployment checksums both Keycloak ConfigMaps and always references the
+# LiteLLM script, so all four templates participate in these render tests.
+templates:
+  - deployment.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: advertises and auto-configures Enterprise SSO from metadata
+    set:
+      enabled: true
+      keycloak.enabled: true
+      enterpriseSSO.enabled: true
+      enterpriseSSO.displayName: Company SSO
+      enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_WEB_CLIENT_PROVIDERS_CONFIGURED
+            value: '["enterprise_sso"]'
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'Content-Type: application/json'
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'validateSignature.*true'
+      - template: keycloak-config-script.yaml
+        notMatchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'validateSignatures'
+
+  - it: advertises Enterprise SSO without managing Keycloak when metadata is blank
+    set:
+      enabled: true
+      keycloak.enabled: true
+      enterpriseSSO.enabled: true
+      enterpriseSSO.idpMetadataUrl: ""
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_WEB_CLIENT_PROVIDERS_CONFIGURED
+            value: '["enterprise_sso"]'
+      - template: keycloak-config-script.yaml
+        notMatchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'ENTERPRISE_SSO_IDP_METADATA_URL'
+
+  - it: disables a managed provider when the feature toggle is off
+    set:
+      enabled: true
+      keycloak.enabled: true
+      enterpriseSSO.enabled: false
+      enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OH_WEB_CLIENT_PROVIDERS_CONFIGURED")]
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'Disabled managed identity provider: enterprise_sso'

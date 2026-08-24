@@ -62,6 +62,13 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "filestore/region.*want string"
+  - it: rejects an insecure Enterprise SSO metadata URL
+    set:
+      enterpriseSSO.idpMetadataUrl: http://idp.example.com/metadata
+    asserts:
+      - failedTemplate:
+          errorPattern: "enterpriseSSO/idpMetadataUrl"
+
   - it: accepts valid values
     set:
       uvicorn.workers: 4
@@ -73,6 +80,7 @@ tests:
       filestore.endpoint: https://minio.example.com
       filestore.existingSecret: s3-creds
       filestore.accessKeyIdKey: access-key
+      enterpriseSSO.idpMetadataUrl: https://idp.example.com/metadata
       filestore.secretAccessKeyKey: secret-key
       laminar.clickhouse.diagnostics.retentionDays: 2
     asserts:

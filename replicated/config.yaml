@@ -994,11 +994,11 @@ spec:
 
     - name: enterprise_sso_authentication
       title: Enterprise SSO (SAML) Authentication
-      description: Let users sign in with a corporate SAML identity provider through the bundled Keycloak. Requires an identity provider with alias enterprise_sso in the allhands Keycloak realm.
+      description: Let users sign in with a corporate SAML identity provider through the bundled Keycloak. Provide a metadata URL below for automatic setup, or manually configure an identity provider with alias enterprise_sso in the allhands realm.
       items:
         - name: enterprise_sso_enabled
           title: Enable Enterprise SSO Authentication
-          help_text: Show the Enterprise SSO button on the OpenHands login page. The button redirects users to the identity provider whose alias is enterprise_sso in the bundled Keycloak (realm allhands). Configure that identity provider before enabling this option, or users will land on the Keycloak login page instead.
+          help_text: Show the Enterprise SSO button on the OpenHands login page. The button redirects users to the identity provider whose alias is enterprise_sso in the bundled Keycloak (realm allhands). Provide a metadata URL below for automatic setup, or configure that identity provider manually before enabling this option.
           type: bool
           default: "0"
         - name: enterprise_sso_display_name
@@ -1009,7 +1009,7 @@ spec:
         - name: enterprise_sso_idp_metadata_url
           title: SAML Metadata URL
           help_text: >-
-            Public URL of your identity provider's SAML metadata. For example,
+            HTTPS URL of your identity provider's SAML metadata. For example,
             https://login.microsoftonline.com/<tenant-id>/federationmetadata/2007-06/federationmetadata.xml
             (Microsoft Entra ID) or https://<okta-domain>/app/<app-id>/sso/saml/metadata (Okta).
             When provided, the installer automatically creates and keeps up to date the
@@ -1019,6 +1019,10 @@ spec:
             provider manually in the Keycloak admin console.
           type: text
           when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: '^$|^https://[^[:space:]]+$'
+              message: 'Must be blank or an HTTPS metadata URL.'
 
     - name: slack_configuration
       title: Enable Slack

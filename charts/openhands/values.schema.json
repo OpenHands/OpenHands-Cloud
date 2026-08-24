@@ -49,12 +49,15 @@
         "class": { "type": "string" }
       }
     },
-    "enterpriseSso": {
+    "enterpriseSSO": {
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
         "displayName": { "type": "string" },
-        "idpMetadataUrl": { "type": "string" }
+        "idpMetadataUrl": {
+          "type": "string",
+          "pattern": "^$|^https://"
+        }
       }
     },
     "sandbox": {

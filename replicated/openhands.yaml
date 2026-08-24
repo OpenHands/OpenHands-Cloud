@@ -108,10 +108,10 @@ spec:
     # is provided, the chart's keycloak-config init container upserts the
     # enterprise_sso SAML identity provider in Keycloak on every pod start.
     # Leave idpMetadataUrl empty to manage the provider manually.
-    enterpriseSso:
+    enterpriseSSO:
       enabled: repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}
-      displayName: 'repl{{ ConfigOption "enterprise_sso_display_name" }}'
-      idpMetadataUrl: 'repl{{ ConfigOption "enterprise_sso_idp_metadata_url" }}'
+      displayName: repl{{ ConfigOption "enterprise_sso_display_name" | mustToJson }}
+      idpMetadataUrl: repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}
 
     ingress:
       enabled: true
