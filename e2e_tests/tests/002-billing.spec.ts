@@ -16,10 +16,6 @@ import { runUser } from "../utils/config";
  * `runUser(testInfo)`.
  *
  * Spec files are numbered because Playwright runs them in filename order.
- *
- * The BYOR "Refresh API Key" check belongs here, not with the other API key
- * specs: the top-up below is the only way the harness obtains the credits that
- * make the button render.
  */
 
 const STRIPE_TEST_CARD = {

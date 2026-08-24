@@ -9,10 +9,6 @@ import { runUser } from "../utils/config";
  * creation + API access flow). As with the rest of the harness, each spec runs
  * once per user role (returning / new-user); the active role is read from
  * project metadata via `runUser(testInfo)`.
- *
- * Nothing here needs credits, so this runs on billing-disabled deployments
- * too; the credit-gated BYOR "Refresh API Key" check lives in
- * `002-billing.spec.ts`.
  */
 
 const API_KEY_NAME = "Integration Test Key";
