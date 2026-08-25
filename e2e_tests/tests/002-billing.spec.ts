@@ -14,6 +14,9 @@ import { runUser } from "../utils/config";
  * As with the rest of the harness, each spec runs once per user role
  * (returning / new-user); the active role is read from project metadata via
  * `runUser(testInfo)`.
+ *
+ * The New User starts with a zero balance, so the top-up below has to run
+ * before anything that needs credits — hence the low `002-` prefix.
  */
 
 const STRIPE_TEST_CARD = {
@@ -118,5 +121,27 @@ test.describe("Billing @billing", () => {
     await page.screenshot({
       path: "test-results/screenshots/billing-after-payment.png",
     });
+  });
+
+  test("should show the LLM API key refresh button once credits exist", async ({
+    page,
+  }, testInfo) => {
+    test.info().annotations.push({
+      type: "user",
+      description: runUser(testInfo),
+    });
+
+    await homePage.goto();
+    await homePage.openUserMenu();
+
+    const apiKeysLink = page.getByRole("link", { name: /api keys/i });
+    await apiKeysLink.click();
+
+    await page.waitForURL(/\/settings\/api-keys/, { timeout: 30_000 });
+
+    // The button appears only once `GET /api/keys/llm/byor` stops answering
+    // 402, which needs a non-zero balance.
+    const refreshApiKeyButton = page.getByRole("button", { name: /refresh/i });
+    await expect(refreshApiKeyButton).toBeVisible({ timeout: 10_000 });
   });
 });

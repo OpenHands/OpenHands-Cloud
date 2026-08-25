@@ -30,6 +30,12 @@
   value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
 - name: OPENHANDS_EXPERIMENT_MANAGER_CLS
   value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
+{{- if ne .Values.dailyConversationLimit nil }}
+- name: OH_DAILY_CONVERSATION_LIMIT
+  value: {{ .Values.dailyConversationLimit | quote }}
+{{- end }}
+- name: DUPLICATE_EMAIL_CHECK
+  value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
   value: {{ get $integrations "resolverLabel" | default "openhands" | quote }}
 - name: LOG_JSON # Configure structured logging for Google Cloud
@@ -580,6 +586,9 @@
 {{- if .Values.jira.enabled }}
 - name: ENABLE_JIRA
   value: "true"
+{{- if eq .Values.jira.linkMethod "oauth" }}
+- name: JIRA_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -590,6 +599,14 @@
     secretKeyRef:
       name: jira-app
       key: client-secret
+{{- else }}
+{{- /* Email match: no Atlassian OAuth app; admins configure the workspace in
+the app UI and webhook users are matched by email. */}}
+- name: JIRA_ENABLE_OAUTH
+  value: "0"
+- name: JIRA_WEBHOOKS_ENABLED
+  value: "1"
+{{- end }}
 {{- end }}
 
 {{- if .Values.jiraDc.enabled }}

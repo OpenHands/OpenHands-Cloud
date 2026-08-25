@@ -32,8 +32,66 @@ Useful checks:
 ```bash
 npm run lint
 BASE_URL=https://release-under-test.example.test \
-  npx playwright test tests/home.spec.ts --list
+  npx playwright test tests/001-home.spec.ts --list
 ```
+
+### Run through an Argo WorkflowTemplate
+
+Operators with access to an Argo installation can submit the test harness from
+a preconfigured `WorkflowTemplate`. Use placeholders for deployment-specific
+names; do not copy credentials into the command or this repository.
+
+```bash
+argo submit \
+  --namespace <workflow-namespace> \
+  --from workflowtemplate/<workflow-template-name> \
+  --generate-name <workflow-run-prefix> \
+  --parameter target-url=https://release-under-test.example.test \
+  --parameter keycloak-admin-secret=<keycloak-admin-secret-name> \
+  --parameter test-path=tests/001-home.spec.ts \
+  --watch
+```
+
+- `<workflow-namespace>` and `<workflow-template-name>` identify the
+  preconfigured workflow in your Argo installation.
+- `<workflow-run-prefix>` controls the readable start of the Workflow name.
+  End it with `-`; Kubernetes appends a unique suffix to each run.
+- `target-url` must be the intentionally selected HTTPS release target.
+- `keycloak-admin-secret` is the **name** of a pre-provisioned Kubernetes
+  Secret in the workflow namespace. Never pass Secret values as parameters.
+- `test-path` limits the run to a spec while the workflow retains required
+  authentication setup. Omit this parameter to run the full suite.
+- `--watch` keeps the CLI attached until the workflow reaches a terminal state.
+
+The WorkflowTemplate is responsible for supplying shared test-account and
+reporting credentials through Kubernetes Secret references. Confirm the target,
+namespace, and Secret name through your private operator documentation before
+submitting a run.
+
+## ReportPortal
+
+ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
+is enabled, the harness keeps the existing Playwright reporters and also uploads
+test results, steps, traces, videos, screenshots, and other Playwright
+attachments through `@reportportal/agent-js-playwright`.
+
+Required variables:
+
+- `REPORTPORTAL_ENDPOINT`: the full ReportPortal API endpoint, preferably ending
+  in `/api/v2` for asynchronous reporting;
+- `REPORTPORTAL_PROJECT`: the destination project name;
+- `REPORTPORTAL_API_KEY`: the reporter credential, supplied only through a
+  secret; and
+- `REPORTPORTAL_ENVIRONMENT`: the release environment attached to each launch.
+
+Optional launch metadata:
+
+- `REPORTPORTAL_LAUNCH` defaults to `OpenHands Cloud E2E`;
+- `REPORTPORTAL_REVISION` identifies the exact tested release commit or tag; and
+- `REPORTPORTAL_WORKFLOW` identifies the Argo Workflow run.
+
+Do not pass Playwright's `--reporter` CLI option in Argo. That option replaces
+this configured reporter array and would silently disable ReportPortal uploads.
 
 ## Authentication
 
@@ -46,6 +104,7 @@ Three credential sets are required before any test run:
 | Role | Provider | Credentials | Purpose |
 | --- | --- | --- | --- |
 | Keycloak admin | Keycloak | username + password | Administers Keycloak; deletes the New User before each run |
+| Super admin | API key | unbound superadmin API key | Creates orgs and provisions users via the REST API (org-management specs) |
 | Returning User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account already exists |
 | New User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
 
@@ -65,6 +124,10 @@ Keycloak admin (cleanup):
 - `KEYCLOAK_NEW_USER_EMAIL` — email of the New User to delete.
 
 The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
+
+Super admin (org management):
+
+- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by the org-management specs (`006-org-management.spec.ts`) to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
 
 Returning User (GitHub):
 
@@ -104,6 +167,8 @@ chromium:new-user  ──▶ setup:new-user
 
 Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
 
+Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
+
 ### Auth behavior: `AUTH_METHOD`
 
 - Default — each setup project logs in fresh and overwrites its storage-state file.
@@ -136,7 +201,8 @@ The release workflow is responsible for:
 2. Setting `BASE_URL` to the environment created from that release.
 3. Supplying all three credential sets (Keycloak admin, Returning User, New User) plus `KEYCLOAK_NEW_USER_EMAIL` and explicit `TEST_*` fixture values, without logging them.
 4. Running from `/workspace/e2e_tests` with locked dependencies.
-5. Persisting `playwright-report/` and `test-results/` outside Git.
+5. Supplying the ReportPortal settings and API-key Secret when reporting is
+   enabled. Argo retains failed pod logs for failures before Playwright starts.
 
 The harness intentionally does not infer a deployment from a branch name or default to a hosted environment.
 

@@ -740,6 +740,16 @@ spec:
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
 
+    - name: authentication_security
+      title: Authentication Security
+      description: Configure safeguards applied when users sign in.
+      items:
+        - name: duplicate_email_check
+          title: Prevent Duplicate Base Emails
+          help_text: Reject sign-ins when another user has the same base email after removing a plus-address suffix (for example, name+test@example.com matches name@example.com).
+          type: bool
+          default: "1"
+
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
       description: Configure Bitbucket Data Center OAuth for user authentication
@@ -886,6 +896,22 @@ spec:
           type: password
           when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
+
+    - name: jira_cloud_integration
+      title: Jira Cloud Integration
+      description: Enable the Jira Cloud issue integration. An organization admin finishes setup inside OpenHands and registers the webhook in Jira Cloud.
+      items:
+        - name: jira_cloud_enabled
+          title: Enable Jira Cloud Integration
+          help_text: >-
+            Enable the Jira Cloud issue integration. Users are linked by matching their
+            Jira email to their OpenHands email (their Atlassian profile email visibility
+            must be set to Anyone). After enabling, an organization admin opens Settings > Integrations
+            > Jira in OpenHands to enter the Jira service account email, API token, and a
+            webhook secret, then registers the displayed events URL as a webhook in Jira
+            Cloud using that secret.
+          type: bool
+          default: "0"
 
     - name: github_authentication
       title: GitHub Authentication
@@ -1318,6 +1344,13 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_dedicated_nodes
+          title: Run sandboxes on dedicated nodes
+          help_text: >-
+            Confine sandboxes to nodes joined with the sandbox role. Requires at least
+            1 sandbox node already joined.
+          type: bool
+          default: "0"
 
     - name: proxy_configuration
       title: Proxy Configuration
@@ -1401,6 +1434,19 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
+        - name: clickhouse_diagnostic_log_retention_days
+          title: ClickHouse Diagnostic Log Retention
+          help_text: Retain Laminar ClickHouse system diagnostic tables such as trace_log, query_log, text_log, metric_log, and part_log for this many days. These logs are useful for recent support investigations but can grow quickly on busy installations.
+          type: select_one
+          default: "3"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
+          items:
+            - name: "1"
+              title: "1 day"
+            - name: "2"
+              title: "2 days"
+            - name: "3"
+              title: "3 days (default)"
 
     - name: automations_configuration
       title: Automations
