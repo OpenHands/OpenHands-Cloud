@@ -78,7 +78,7 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run all budget incident regressions
-        run: npx playwright test tests/005-budgets.spec.ts --project=chromium:returning
+        run: npx playwright test tests/007-budgets.spec.ts --project=chromium:returning
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@v4
