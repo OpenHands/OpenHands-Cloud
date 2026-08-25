@@ -35,6 +35,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with (include "runtime-api.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
       {{- if or .Values.warmRuntimes.enabled .Values.ingressBase.enabled .Values.caBundle.enabled }}
       volumes:
         {{- if .Values.warmRuntimes.enabled }}

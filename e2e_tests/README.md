@@ -35,44 +35,38 @@ BASE_URL=https://release-under-test.example.test \
   npx playwright test tests/001-home.spec.ts --list
 ```
 
-## Budget maintenance incident regressions
+### Run through an Argo WorkflowTemplate
 
-`tests/005-budgets.spec.ts` contains six serial regressions for organization cap drift, member allowance renewal, existing-override reconciliation, disabled-budget mutation, spend-source divergence, and Slack alert spend. It forces a stale billing cycle, queues real maintenance tasks, opens a fresh PostgreSQL connection for every persistence check, sends billable traffic directly through LiteLLM without creating an OpenHands conversation, and verifies the delivered Slack alert. The override scenario removes a real individual LiteLLM cap and proves maintenance restores the same cycle-anchored maximum.
-
-The suite is destructive and opt-in. Run it only against a dedicated non-personal organization whose name contains `budget`, `e2e`, or `test`:
+Operators with access to an Argo installation can submit the test harness from
+a preconfigured `WorkflowTemplate`. Use placeholders for deployment-specific
+names; do not copy credentials into the command or this repository.
 
 ```bash
-BASE_URL=https://staging.all-hands.dev \
-RETURNING_GITHUB_USERNAME=<github-user> \
-RETURNING_GITHUB_PASSWORD=<github-password> \
-BUDGET_E2E_ORG_ID=<dedicated-org-uuid> \
-BUDGET_E2E_MUTATION_CONFIRMED=true \
-BUDGET_E2E_DATABASE_URL=<staging-postgres-url> \
-BUDGET_E2E_LITELLM_URL=<staging-litellm-url> \
-BUDGET_E2E_LITELLM_API_KEY=<staging-litellm-admin-key> \
-BUDGET_E2E_DIRECT_MODEL=<billable-litellm-model> \
-BUDGET_E2E_SLACK_BOT_TOKEN=<slack-history-token> \
-BUDGET_E2E_SLACK_CHANNEL_ID=<channel-id> \
-BUDGET_E2E_SLACK_CHANNEL_NAME=<#channel-name> \
-BUDGET_E2E_SLACK_TEAM_ID=<team-id> \
-  npx playwright test tests/005-budgets.spec.ts --project=chromium:returning
+argo submit \
+  --namespace <workflow-namespace> \
+  --from workflowtemplate/<workflow-template-name> \
+  --generate-name <workflow-run-prefix> \
+  --parameter target-url=https://release-under-test.example.test \
+  --parameter keycloak-admin-secret=<keycloak-admin-secret-name> \
+  --parameter test-path=tests/001-home.spec.ts \
+  --watch
 ```
 
-The authenticated user must be an owner or admin of the test organization. The PostgreSQL credential must be restricted to reading and updating that organization's `org_budget_settings` row and inserting, reading, and deleting test-created `maintenance_tasks`; do not supply a production superuser credential. A running maintenance worker must process the inserted tasks within `BUDGET_E2E_SYNC_TIMEOUT_MS`.
+- `<workflow-namespace>` and `<workflow-template-name>` identify the
+  preconfigured workflow in your Argo installation.
+- `<workflow-run-prefix>` controls the readable start of the Workflow name.
+  End it with `-`; Kubernetes appends a unique suffix to each run.
+- `target-url` must be the intentionally selected HTTPS release target.
+- `keycloak-admin-secret` is the **name** of a pre-provisioned Kubernetes
+  Secret in the workflow namespace. Never pass Secret values as parameters.
+- `test-path` limits the run to a spec while the workflow retains required
+  authentication setup. Omit this parameter to run the full suite.
+- `--watch` keeps the CLI attached until the workflow reaches a terminal state.
 
-The setup snapshots and restores budget settings, internal cycle state, the current organization, the governed member override, and directly observed LiteLLM caps. It creates a uniquely named temporary LiteLLM key and deletes it during cleanup. Cleanup operations run independently so one failure does not suppress the remaining restorations. The suite refuses personal organizations and arbitrary organization names; `BUDGET_E2E_ALLOW_ANY_ORG=true` is an explicit emergency override for the name guard.
-
-Optional timing and workload variables:
-
-- `BUDGET_E2E_MONTHLY_LIMIT` (default `50`)
-- `BUDGET_E2E_USER_MONTHLY_LIMIT` (default `25`)
-- `BUDGET_E2E_MINIMUM_SPEND_DELTA` (default `0.02`)
-- `BUDGET_E2E_DIRECT_PROMPT` (defaults to a long deterministic prompt)
-- `BUDGET_E2E_EXPECTED_LITELLM_VERSION` (default `1.94.1`; the suite fails before mutation on mismatch)
-- `BUDGET_E2E_POLL_INTERVAL_MS` (default `5000`)
-- `BUDGET_E2E_SYNC_TIMEOUT_MS` (default `1200000`, 20 minutes per task)
-
-`.github/workflows/budget-e2e.yml` runs the complete suite daily and on demand through the protected `budget-e2e-staging` environment. Pull requests use `.github/workflows/e2e-static.yml` for linting, type-checking, and test discovery; destructive staging certification does not execute pull-request code. Runtime certification fails before Playwright starts when any required variable or secret is absent, so scheduled and manually dispatched runs cannot silently skip an incident. Configure the `BUDGET_E2E_*` values as environment variables/secrets and require environment approval if staging access is sensitive. Never commit authentication state, database URLs, LiteLLM keys, or Slack tokens.
+The WorkflowTemplate is responsible for supplying shared test-account and
+reporting credentials through Kubernetes Secret references. Confirm the target,
+namespace, and Secret name through your private operator documentation before
+submitting a run.
 
 ## ReportPortal
 
@@ -167,6 +161,8 @@ chromium:new-user  ──▶ setup:new-user
 ```
 
 Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
+
+Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
 
 ### Auth behavior: `AUTH_METHOD`
 

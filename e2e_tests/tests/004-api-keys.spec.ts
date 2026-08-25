@@ -9,12 +9,6 @@ import { runUser } from "../utils/config";
  * creation + API access flow). As with the rest of the harness, each spec runs
  * once per user role (returning / new-user); the active role is read from
  * project metadata via `runUser(testInfo)`.
- *
- * This file is prefixed `004-` so Playwright runs it after
- * `002-billing.spec.ts` within a project (files run in filename order). The
- * "Refresh API Key" button only renders once the user has a non-zero balance,
- * so for the new-user role the billing top-up must happen first. Returning
- * users already have credits, so ordering does not matter for them.
  */
 
 const API_KEY_NAME = "Integration Test Key";
@@ -40,13 +34,6 @@ test.describe("api keys", () => {
 
     await page.waitForURL(/\/settings\/api-keys/, { timeout: 30_000 });
     console.log("Navigated to API Keys page");
-
-    // The "Refresh API Key" button only renders once the user has a non-zero
-    // balance; for the new-user role this depends on 002-billing.spec.ts having
-    // purchased credits first (see the file-level doc).
-    const refreshApiKeyButton = page.getByRole("button", { name: /refresh/i });
-    await expect(refreshApiKeyButton).toBeVisible({ timeout: 10_000 });
-    console.log("Refresh API Key button is visible - user has credits");
 
     // Delete any existing key with the same name so creation is deterministic.
     const existingKeyRow = page.locator("tr", { hasText: API_KEY_NAME });

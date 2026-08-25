@@ -1,0 +1,94 @@
+suite: pod scheduling affinity
+# deployment.yaml checksums litellm-config-script.yaml into a pod annotation, so
+# that template has to be listed here for the include to resolve. Each test sets
+# `template:` to scope its assertions to one template.
+templates:
+  - budget-maintenance-cronjob.yaml
+  - deployment.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: the openhands Deployment renders global.scheduling.affinity
+    template: deployment.yaml
+    set:
+      enabled: true
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+      global.scheduling.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+              - matchExpressions:
+                  - key: openhands.dev/app
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms
+          value:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+            - matchExpressions:
+                - key: openhands.dev/app
+                  operator: Exists
+
+  - it: the chart-level affinity value wins over global.scheduling.affinity
+    template: deployment.yaml
+    set:
+      enabled: true
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+      global.scheduling.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: openhands.dev/app
+                    operator: Exists
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: chart.example.com/override
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: chart.example.com/override
+
+  - it: the openhands Deployment renders no affinity key by default
+    template: deployment.yaml
+    set:
+      enabled: true
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity
+
+  - it: the budget-maintenance CronJob renders global.scheduling.affinity
+    template: budget-maintenance-cronjob.yaml
+    set:
+      enabled: true
+      global.scheduling.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: node-role.kubernetes.io/control-plane
+
+  - it: the budget-maintenance CronJob renders no affinity key by default
+    template: budget-maintenance-cronjob.yaml
+    set:
+      enabled: true
+    asserts:
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.affinity

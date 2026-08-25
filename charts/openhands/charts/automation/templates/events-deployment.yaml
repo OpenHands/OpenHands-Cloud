@@ -32,6 +32,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with (include "automation.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
       {{- if .Values.caBundle.enabled }}
       volumes:
         - name: openhands-ca-bundle
