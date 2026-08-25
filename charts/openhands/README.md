@@ -22,6 +22,15 @@ Make sure to update all values marked with "REQUIRED" comments.
 
 To enable organization invitation emails via Resend, set `resend.enabled: true` and create a Kubernetes secret named `resend-api-key` with key `resend-api-key` containing your Resend API key. The secret name can be overridden with `resend.auth.existingSecret`.
 
+### Laminar ClickHouse diagnostics
+
+When Laminar analytics is enabled, the chart applies bounded retention to
+high-volume ClickHouse diagnostic tables such as `system.trace_log`. Replicated
+installs expose this as **Analytics Configuration → ClickHouse Diagnostic Log
+Retention**, defaulting to 3 days. See
+[ClickHouse diagnostic log retention](../../docs/clickhouse-diagnostic-log-retention.md)
+for cleanup commands and support-bundle details.
+
 ### TLS and Certificate Configuration
 
 The chart supports two methods for TLS configuration:
