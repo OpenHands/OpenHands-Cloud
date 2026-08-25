@@ -103,6 +103,9 @@ config:
   # Automation secrets
   automation_service_key: ""
   automation_webhook_secret: ""
+  # Empty falls back to postgres_password; only set when the automations role
+  # was provisioned outside the installer.
+  automations_db_password: ""
 
   # TLS certificates
   tls_certificate: ""

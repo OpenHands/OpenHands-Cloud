@@ -69,6 +69,10 @@ spec:
           - sh
           - -c
           - |
+            # Without this the script reaches `exit 0` even when a psql call
+            # failed, so a denied CREATE DATABASE surfaces two containers later
+            # as an opaque alembic error instead of here, with the real message.
+            set -e
             echo "Waiting for PostgreSQL at $DB_HOST to be available..."
             for i in $(seq 1 60); do
               if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
