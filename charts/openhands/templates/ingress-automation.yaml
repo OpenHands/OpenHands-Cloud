@@ -49,11 +49,9 @@ spec:
             name: automation
             port:
               number: 80
-      - path: /automations
-        pathType: Prefix
-        backend:
-          service:
-            name: automation
-            port:
-              number: 80
+      {{/*
+      No /automations rule. The Automations UI is served by the app, which the
+      root ingress already covers; the automation service has no such route and
+      answers 404. A rule here would win on specificity and break the page.
+      */}}
 {{- end }}
