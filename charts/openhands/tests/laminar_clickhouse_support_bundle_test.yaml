@@ -1,0 +1,26 @@
+suite: laminar clickhouse support bundle diagnostics
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: reads table TTLs from engine metadata without matching column comments
+    set:
+      laminar.enabled: true
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "position\\(engine_full, 'TTL '\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "position\\(create_table_query, 'TTL'\\)"
