@@ -28,6 +28,18 @@ import path from "path";
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
  *  - KEYCLOAK_NEW_USER_EMAIL       email of the New User to delete.
+ *  - AUTH_BASE_URL                 (optional) explicit HTTP(S) Keycloak server
+ *                                  URL. When non-empty it is validated and used;
+ *                                  otherwise the URL is derived from BASE_URL by
+ *                                  prefixing the host with "auth." (e.g.
+ *                                  https://staging.all-hands.dev →
+ *                                  https://auth.staging.all-hands.dev). Set it for
+ *                                  targets served under a subdomain (e.g. "app."),
+ *                                  where the derivation is wrong.
+ *
+ *  The Keycloak server URL is derived from BASE_URL by prefixing the subdomain
+ *  with "auth." (e.g. https://staging.all-hands.dev →
+ *  https://auth.staging.all-hands.dev).
  *
  * Super admin (org management):
  *  - SUPER_ADMIN_API_KEY           API key of an instance-level superadmin,
@@ -37,10 +49,6 @@ import path from "path";
  *                                  key must be unbound (no org binding) so the
  *                                  superadmin can target any org via the
  *                                  ``X-Org-Id`` header.
- *
- *  The Keycloak server URL is derived from BASE_URL by prefixing the subdomain
- *  with "auth." (e.g. https://staging.all-hands.dev →
- *  https://auth.staging.all-hands.dev).
  *
  * Returning User (GitHub):
  *  - RETURNING_GITHUB_USERNAME
@@ -164,10 +172,33 @@ export function keycloakAdminConfig(): KeycloakAdminConfig {
 }
 
 /**
- * Derive the Keycloak URL from BASE_URL by prefixing the subdomain with "auth.".
- * e.g. https://staging.all-hands.dev → https://auth.staging.all-hands.dev
+ * Resolve the Keycloak server URL.
+ *
+ * Prefers an explicit AUTH_BASE_URL (the target's real auth host, e.g. resolved
+ * from its published web-client config), falling back to deriving it from
+ * BASE_URL by prefixing the host with "auth.".
+ *
+ * The derivation only holds when the app is served at the environment apex
+ * (e.g. https://staging.all-hands.dev → https://auth.staging.all-hands.dev). It
+ * is wrong when the app is served under a subdomain such as "app.", where the
+ * auth host drops that label rather than gaining an "auth." prefix; for those
+ * targets set AUTH_BASE_URL to the correct host.
  */
 function keycloakUrlFromBaseUrl(): string {
+  const explicit = process.env.AUTH_BASE_URL?.trim();
+  if (explicit) {
+    try {
+      const url = new URL(explicit);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(`Unsupported protocol: ${url.protocol}`);
+      }
+      return url.toString().replace(/\/$/, "");
+    } catch (error) {
+      throw new Error("AUTH_BASE_URL must be a valid HTTP(S) URL.", {
+        cause: error,
+      });
+    }
+  }
   const baseUrl = process.env.BASE_URL;
   if (!baseUrl) {
     throw new Error("BASE_URL is required to derive the Keycloak URL.");

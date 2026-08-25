@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.54.0
+  tag: 1.55.0
 
 autoscaling:
   enabled: false
@@ -36,6 +36,10 @@ appConfig:
 # Maximum conversations a user may start per UTC day. null leaves the
 # enterprise application default unlimited; set an integer to enforce a limit.
 dailyConversationLimit: null
+
+# Reject sign-ins when another identity has the same base email after removing
+# a plus-address suffix (for example, name+test@example.com and name@example.com).
+duplicateEmailCheck: true
 
 datadog:
   enabled: false
@@ -75,6 +79,11 @@ deployment:
       cpu: 100m
     limits:
       memory: 3Gi
+
+# Affinity for the pods this chart owns directly (the app, integrations and MCP
+# Deployments, and the maintenance CronJobs). Overrides
+# global.scheduling.affinity for those pods; leave empty to inherit it.
+affinity: {}
 
 # Security context settings for all pods
 securityContext:
@@ -925,7 +934,8 @@ runtime-api:
     configsByName:
       default:
         # image omitted -> defaults to global.agentServerImage (repo:tag).
-        working_dir: "/workspace"
+        # Must match the app's sandbox spec working_dir, or no warm pod is ever claimable.
+        working_dir: "/workspace/project"
         environment:
           # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
           LMNR_BASE_URL: ""
@@ -1013,6 +1023,7 @@ device-plugin:
 
 jira:
   enabled: false
+  linkMethod: oauth
 
 jiraDc:
   enabled: false
@@ -1305,6 +1316,14 @@ global:
   # runtime-api claims warm pods by exact env match, so a key present here but
   # absent from the warm env would make the pool unclaimable.
   agentServerEnv: {}
+  scheduling:
+    # Affinity applied to every pod this chart and its OpenHands subcharts own
+    # (Deployments, Jobs and CronJobs alike). Node-level DaemonSets are exempt
+    # so they keep covering every node — the KVM device plugin and the sysbox
+    # installer in charts/infra must run on sandbox nodes too. Vendored
+    # third-party subcharts cannot read this; set each one's own `affinity`
+    # value alongside it. A chart-level `affinity` value wins over this.
+    affinity: {}
 
 # Trust-manager Bundle that fans a CA bundle (public CAs + an optional
 # operator-supplied CA certificate) out as a ConfigMap into the release

@@ -13,7 +13,7 @@ image:
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "1.14.0"
+  tag: "1.15.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -66,6 +66,10 @@ staticServer:
     - /redoc
     - /openapi.json
 
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
 # Pod-level security context
 securityContext:
   runAsUser: 42420
@@ -94,3 +98,10 @@ probes:
 
 # Extra environment variables to pass to the container.
 env: {}
+
+global:
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}
