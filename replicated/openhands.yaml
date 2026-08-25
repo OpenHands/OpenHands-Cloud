@@ -702,7 +702,10 @@ spec:
           database:
             # With automatic database creation off, no bootstrap container
             # renders, so the automations database and role must already exist.
-            createDatabaseUser: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOptionEquals "external_postgres_create_databases" "1"}}{{repl else}}true{{repl end}}'
+            # Unquoted, like the createDatabases lines above, so this reaches the
+            # chart as a boolean. Quoted, it arrives as the string "false", which
+            # a template `if` treats as true and the container renders anyway.
+            createDatabaseUser: repl{{ or (not (ConfigOptionEquals "postgres_type" "external_postgres")) (ConfigOptionEquals "external_postgres_create_databases" "1") }}
             name: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_automations_database"}}{{repl else}}automations{{repl end}}'
             user: '{{repl if and (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0")}}{{repl ConfigOption "automations_db_username"}}{{repl else}}automation_user{{repl end}}'
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'
