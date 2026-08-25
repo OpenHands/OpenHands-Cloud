@@ -28,7 +28,6 @@ import path from "path";
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
  *  - KEYCLOAK_NEW_USER_EMAIL       email of the New User to delete.
- *
  *  - AUTH_BASE_URL                 (optional) explicit HTTP(S) Keycloak server
  *                                  URL. When non-empty it is validated and used;
  *                                  otherwise the URL is derived from BASE_URL by
@@ -37,6 +36,19 @@ import path from "path";
  *                                  https://auth.staging.all-hands.dev). Set it for
  *                                  targets served under a subdomain (e.g. "app."),
  *                                  where the derivation is wrong.
+ *
+ *  The Keycloak server URL is derived from BASE_URL by prefixing the subdomain
+ *  with "auth." (e.g. https://staging.all-hands.dev →
+ *  https://auth.staging.all-hands.dev).
+ *
+ * Super admin (org management):
+ *  - SUPER_ADMIN_API_KEY           API key of an instance-level superadmin,
+ *                                  used by the org-management specs to create
+ *                                  organizations and provision users directly
+ *                                  via the REST API (outside the browser). The
+ *                                  key must be unbound (no org binding) so the
+ *                                  superadmin can target any org via the
+ *                                  ``X-Org-Id`` header.
  *
  * Returning User (GitHub):
  *  - RETURNING_GITHUB_USERNAME
@@ -131,6 +143,21 @@ export function githubCredentialsFor(user: RunUser): GitHubCredentials {
   const password = required(`${prefix}_PASSWORD`);
   const totpSecret = process.env[`${prefix}_TOTP_SECRET`] || undefined;
   return { username, password, totpSecret };
+}
+
+/**
+ * Resolve and validate the super-admin API key used by the org-management
+ * specs to drive the REST API directly (outside the browser). The key must
+ * belong to an instance-level superadmin and be unbound so it can target any
+ * org via the ``X-Org-Id`` header.
+ */
+export function superAdminApiKey(): string {
+  return required("SUPER_ADMIN_API_KEY");
+}
+
+/** Email of the New User (used by org-management to provision them into an org). */
+export function newUserEmail(): string {
+  return required("KEYCLOAK_NEW_USER_EMAIL");
 }
 
 /** Resolve and validate the Keycloak admin config used for New User cleanup. */

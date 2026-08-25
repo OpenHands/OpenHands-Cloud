@@ -104,6 +104,7 @@ Three credential sets are required before any test run:
 | Role | Provider | Credentials | Purpose |
 | --- | --- | --- | --- |
 | Keycloak admin | Keycloak | username + password | Administers Keycloak; deletes the New User before each run |
+| Super admin | API key | unbound superadmin API key | Creates orgs and provisions users via the REST API (org-management specs) |
 | Returning User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account already exists |
 | New User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
 
@@ -123,6 +124,10 @@ Keycloak admin (cleanup):
 - `KEYCLOAK_NEW_USER_EMAIL` — email of the New User to delete.
 
 The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
+
+Super admin (org management):
+
+- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by the org-management specs (`006-org-management.spec.ts`) to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
 
 Returning User (GitHub):
 
