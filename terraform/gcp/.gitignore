@@ -1,7 +1,6 @@
 .terraform/
 .terraform.lock.hcl
 terraform.tfstate*
-certs/
 ssh/
 *.pem
 *.tfvars

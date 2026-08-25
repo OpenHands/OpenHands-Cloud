@@ -185,14 +185,24 @@ def render_config_values(
     tls_certificate: Path,
     tls_private_key: Path,
     tls_ca_certificate: Path | None = None,
+    hostname_layout: str = "legacy",
     llm_provider: str = "custom",
     custom_base_url: str = "http://localhost:4000/v1",
     custom_models: str = "openai/preview-smoke-test-model",
     custom_api_key: str | None = None,
+    github_client_id: str | None = None,
+    github_client_secret: str | None = None,
+    github_app_id: str | None = None,
+    github_app_slug: str | None = None,
+    github_webhook_secret: str | None = None,
+    github_private_key: Path | None = None,
     automations_enabled: bool = False,
     agent_canvas_enabled: bool = True,
     analytics_enabled: bool = False,
 ) -> str:
+    if hostname_layout not in {"legacy", "flat"}:
+        raise ValueError("hostname layout must be legacy or flat")
+
     values: list[tuple[str, str, str]] = [
         ("hostname_mode", "value", "derive"),
         ("base_domain", "value", base_domain),
@@ -203,6 +213,18 @@ def render_config_values(
         ("agent_canvas_enabled", "value", "1" if agent_canvas_enabled else "0"),
         ("analytics_enabled", "value", "1" if analytics_enabled else "0"),
     ]
+    if hostname_layout == "flat":
+        values = [
+            ("hostname_mode", "value", "custom"),
+            ("app_hostname", "value", f"app-{base_domain}"),
+            ("analytics_hostname", "value", f"analytics-{base_domain}"),
+            ("auth_hostname", "value", f"auth-{base_domain}"),
+            ("llm_proxy_hostname", "value", f"llm-proxy-{base_domain}"),
+            ("runtime_api_hostname", "value", f"runtime-api-{base_domain}"),
+            ("runtime_base_hostname", "value", f"runtime-{base_domain}"),
+            ("runtime_routing_mode", "value", "path"),
+            *values[2:],
+        ]
     if tls_ca_certificate:
         values.append(("tls_ca_certificate", "value", _file_value(tls_ca_certificate)))
     if llm_provider == "custom":
@@ -214,6 +236,24 @@ def render_config_values(
         )
         if custom_api_key:
             values.append(("custom_api_key", "valuePlaintext", custom_api_key))
+
+    github_values = [
+        ("github_oauth_client_id", "value", github_client_id),
+        ("github_oauth_client_secret", "valuePlaintext", github_client_secret),
+        ("github_app_id", "value", github_app_id),
+        ("github_app_slug", "value", github_app_slug),
+        ("github_app_webhook_secret", "valuePlaintext", github_webhook_secret),
+    ]
+    if any(value for _, _, value in github_values) or github_private_key:
+        if not all(value for _, _, value in github_values) or not github_private_key:
+            raise ValueError(
+                "all GitHub App credentials are required when GitHub auth is enabled"
+            )
+        values.append(("github_auth_enabled", "value", "1"))
+        values.extend(github_values)
+        values.append(
+            ("github_app_private_key", "value", _file_value(github_private_key))
+        )
 
     rendered = [
         "apiVersion: kots.io/v1beta1\n",
@@ -251,6 +291,7 @@ def render_tfvars(
         f"base_domain = {_yaml_scalar(base_domain)}\n",
         f"route53_zone_id = {_yaml_scalar(route53_zone_id)}\n",
         f"acme_email = {_yaml_scalar(acme_email)}\n",
+        'hostname_mode = "legacy"\n',
         "provision_cert = true\n",
         f"allowed_cidrs = {json.dumps(cidrs)}\n",
     ]
@@ -276,7 +317,6 @@ def render_gcp_tfvars(
     network: str,
     subnetwork: str,
     dns_managed_zone: str,
-    acme_email: str,
     machine_type: str = "c3d-standard-8",
     boot_disk_size_gb: int = 200,
     allowed_admin_cidrs: Sequence[str] = (),
@@ -293,7 +333,6 @@ def render_gcp_tfvars(
         f"network = {_yaml_scalar(network)}\n",
         f"subnetwork = {_yaml_scalar(subnetwork)}\n",
         f"dns_managed_zone = {_yaml_scalar(dns_managed_zone)}\n",
-        f"acme_email = {_yaml_scalar(acme_email)}\n",
         f"machine_type = {_yaml_scalar(machine_type)}\n",
         f"boot_disk_size_gb = {boot_disk_size_gb}\n",
         f"allowed_admin_cidrs = {json.dumps(cidrs)}\n",
@@ -356,10 +395,19 @@ def command_write_config_values(args: argparse.Namespace) -> int:
             tls_ca_certificate=Path(args.tls_ca_certificate)
             if args.tls_ca_certificate
             else None,
+            hostname_layout=args.hostname_layout,
             llm_provider=args.llm_provider,
             custom_base_url=args.custom_base_url,
             custom_models=args.custom_models,
             custom_api_key=args.custom_api_key,
+            github_client_id=args.github_client_id,
+            github_client_secret=args.github_client_secret,
+            github_app_id=args.github_app_id,
+            github_app_slug=args.github_app_slug,
+            github_webhook_secret=args.github_webhook_secret,
+            github_private_key=Path(args.github_private_key)
+            if args.github_private_key
+            else None,
             automations_enabled=args.automations_enabled,
             agent_canvas_enabled=not args.disable_agent_canvas,
             analytics_enabled=args.analytics_enabled,
@@ -412,7 +460,6 @@ def command_write_gcp_tfvars(args: argparse.Namespace) -> int:
             network=args.network,
             subnetwork=args.subnetwork,
             dns_managed_zone=args.dns_managed_zone,
-            acme_email=args.acme_email,
             machine_type=args.machine_type,
             boot_disk_size_gb=args.boot_disk_size_gb,
             allowed_admin_cidrs=args.allowed_admin_cidr,
@@ -457,10 +504,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     config.add_argument("--tls-certificate", required=True)
     config.add_argument("--tls-private-key", required=True)
     config.add_argument("--tls-ca-certificate", default="")
+    config.add_argument(
+        "--hostname-layout", choices=("legacy", "flat"), default="legacy"
+    )
     config.add_argument("--llm-provider", default="custom")
     config.add_argument("--custom-base-url", default="http://localhost:4000/v1")
     config.add_argument("--custom-models", default="openai/preview-smoke-test-model")
     config.add_argument("--custom-api-key", default="")
+    config.add_argument("--github-client-id", default="")
+    config.add_argument("--github-client-secret", default="")
+    config.add_argument("--github-app-id", default="")
+    config.add_argument("--github-app-slug", default="")
+    config.add_argument("--github-webhook-secret", default="")
+    config.add_argument("--github-private-key", default="")
     config.add_argument("--automations-enabled", action="store_true")
     config.add_argument("--analytics-enabled", action="store_true")
     config.add_argument("--disable-agent-canvas", action="store_true")
@@ -492,7 +548,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     gcp_tfvars.add_argument("--network", required=True)
     gcp_tfvars.add_argument("--subnetwork", required=True)
     gcp_tfvars.add_argument("--dns-managed-zone", required=True)
-    gcp_tfvars.add_argument("--acme-email", required=True)
     gcp_tfvars.add_argument("--machine-type", default="c3d-standard-8")
     gcp_tfvars.add_argument("--boot-disk-size-gb", type=int, default=200)
     gcp_tfvars.add_argument("--allowed-admin-cidr", action="append", default=[])

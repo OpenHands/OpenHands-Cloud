@@ -26,9 +26,6 @@ on:
         type: choice
         options: [none, gcp, aws]
         default: none
-      ttl_hours:
-        description: Human-readable TTL included in summaries and customer expiry.
-        default: "48"
   repository_dispatch:
     types: [enterprise-replicated-preview]
 
@@ -38,6 +35,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   preview:
@@ -49,7 +47,10 @@ jobs:
     env:
       REPLICATED_APP: ${{ secrets.REPLICATED_APP || 'openhands' }}
       REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
-      PREVIEW_DOMAIN_SUFFIX: ${{ secrets.ENTERPRISE_PREVIEW_DOMAIN_SUFFIX || 'replicated.staging.all-hands.dev' }}
+      PREVIEW_DOMAIN_SUFFIX: ${{ secrets.ENTERPRISE_PREVIEW_DOMAIN_SUFFIX || 'staging.all-hands-testing.dev' }}
+      PREVIEW_TLS_CERTIFICATE: ${{ secrets.ENTERPRISE_PREVIEW_TLS_CERTIFICATE }}
+      PREVIEW_TLS_PRIVATE_KEY: ${{ secrets.ENTERPRISE_PREVIEW_TLS_PRIVATE_KEY }}
+      PREVIEW_TLS_CA_CERTIFICATE: ${{ secrets.ENTERPRISE_PREVIEW_TLS_CA_CERTIFICATE }}
       PREVIEW_ACME_EMAIL: ${{ secrets.ENTERPRISE_PREVIEW_ACME_EMAIL }}
       PREVIEW_ALLOWED_CIDR: ${{ secrets.ENTERPRISE_PREVIEW_ALLOWED_CIDR }}
       PREVIEW_GCP_PROJECT_ID: ${{ secrets.ENTERPRISE_PREVIEW_GCP_PROJECT_ID || 'staging-092324' }}
@@ -57,10 +58,16 @@ jobs:
       PREVIEW_GCP_ZONE: ${{ vars.ENTERPRISE_PREVIEW_GCP_ZONE || 'us-central1-a' }}
       PREVIEW_GCP_NETWORK: ${{ vars.ENTERPRISE_PREVIEW_GCP_NETWORK || 'staging-core-app' }}
       PREVIEW_GCP_SUBNETWORK: ${{ vars.ENTERPRISE_PREVIEW_GCP_SUBNETWORK || 'staging-core-app' }}
-      PREVIEW_GCP_DNS_ZONE: ${{ vars.ENTERPRISE_PREVIEW_GCP_DNS_ZONE || 'staging-all-hands-dot-dev' }}
+      PREVIEW_GCP_DNS_ZONE: ${{ vars.ENTERPRISE_PREVIEW_GCP_DNS_ZONE || 'staging-all-hands-testing-dot-dev' }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       PREVIEW_GCP_TF_STATE_BUCKET: ${{ secrets.ENTERPRISE_PREVIEW_GCP_TF_STATE_BUCKET }}
+      PREVIEW_GITHUB_CLIENT_ID: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_CLIENT_ID }}
+      PREVIEW_GITHUB_CLIENT_SECRET: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_CLIENT_SECRET }}
+      PREVIEW_GITHUB_APP_ID: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_APP_ID }}
+      PREVIEW_GITHUB_APP_SLUG: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_APP_SLUG }}
+      PREVIEW_GITHUB_WEBHOOK_SECRET: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_WEBHOOK_SECRET }}
+      PREVIEW_GITHUB_PRIVATE_KEY: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_PRIVATE_KEY }}
       PREVIEW_AWS_REGION: ${{ vars.ENTERPRISE_PREVIEW_AWS_REGION || 'us-east-1' }}
       PREVIEW_ROUTE53_ZONE_ID: ${{ secrets.ENTERPRISE_PREVIEW_ROUTE53_ZONE_ID }}
       PREVIEW_VPC_ID: ${{ secrets.ENTERPRISE_PREVIEW_VPC_ID }}
@@ -82,14 +89,12 @@ jobs:
           PAYLOAD_DRY_RUN: ${{ github.event.client_payload.dry_run }}
           PAYLOAD_PROVIDER: ${{ github.event.client_payload.deploy_infrastructure_provider }}
           PAYLOAD_DEPLOY_INFRA: ${{ github.event.client_payload.deploy_infrastructure }}
-          PAYLOAD_TTL_HOURS: ${{ github.event.client_payload.ttl_hours }}
           INPUT_ACTION: ${{ inputs.action }}
           INPUT_PR: ${{ inputs.enterprise_pr_number }}
           INPUT_SHA: ${{ inputs.enterprise_sha }}
           INPUT_TAG: ${{ inputs.enterprise_image_tag }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_PROVIDER: ${{ inputs.deploy_infrastructure_provider }}
-          INPUT_TTL_HOURS: ${{ inputs.ttl_hours }}
         run: |
           action="${PAYLOAD_ACTION:-${INPUT_ACTION:-deploy}}"
           pr="${PAYLOAD_PR:-${INPUT_PR:-}}"
@@ -98,7 +103,6 @@ jobs:
           dry_run="${PAYLOAD_DRY_RUN:-${INPUT_DRY_RUN:-true}}"
           provider="${PAYLOAD_PROVIDER:-${INPUT_PROVIDER:-none}}"
           legacy_deploy_infra="${PAYLOAD_DEPLOY_INFRA:-false}"
-          ttl_hours="${PAYLOAD_TTL_HOURS:-${INPUT_TTL_HOURS:-48}}"
 
           if [[ -z "$provider" || "$provider" == "false" ]]; then
             provider="none"
@@ -132,7 +136,6 @@ jobs:
             echo "dry_run=$dry_run"
             echo "deploy_infrastructure=$deploy_infra"
             echo "deploy_infrastructure_provider=$provider"
-            echo "ttl_hours=$ttl_hours"
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout
@@ -175,26 +178,42 @@ jobs:
         if: steps.request.outputs.dry_run != 'true'
         run: |
           missing=()
+          action="${{ steps.request.outputs.action }}"
           provider="${{ steps.request.outputs.deploy_infrastructure_provider }}"
           [[ -n "$REPLICATED_API_TOKEN" ]] || missing+=(REPLICATED_API_TOKEN)
           if [[ "$provider" != "none" ]]; then
             [[ -n "$PREVIEW_DOMAIN_SUFFIX" ]] || missing+=(ENTERPRISE_PREVIEW_DOMAIN_SUFFIX)
-            [[ -n "$PREVIEW_ACME_EMAIL" ]] || missing+=(ENTERPRISE_PREVIEW_ACME_EMAIL)
+          fi
+          if [[ "$action" == "deploy" && "$provider" != "none" ]]; then
+            [[ -n "$PREVIEW_GITHUB_CLIENT_ID" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_CLIENT_ID)
+            [[ -n "$PREVIEW_GITHUB_CLIENT_SECRET" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_CLIENT_SECRET)
+            [[ -n "$PREVIEW_GITHUB_APP_ID" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_APP_ID)
+            [[ -n "$PREVIEW_GITHUB_APP_SLUG" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_APP_SLUG)
+            [[ -n "$PREVIEW_GITHUB_WEBHOOK_SECRET" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_WEBHOOK_SECRET)
+            [[ -n "$PREVIEW_GITHUB_PRIVATE_KEY" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_PRIVATE_KEY)
           fi
           if [[ "$provider" == "gcp" ]]; then
             [[ -n "$GCP_WORKLOAD_IDENTITY_PROVIDER" ]] || missing+=(GCP_WORKLOAD_IDENTITY_PROVIDER)
             [[ -n "$GCP_SERVICE_ACCOUNT" ]] || missing+=(GCP_SERVICE_ACCOUNT)
             [[ -n "$PREVIEW_GCP_PROJECT_ID" ]] || missing+=(ENTERPRISE_PREVIEW_GCP_PROJECT_ID)
             [[ -n "$PREVIEW_GCP_DNS_ZONE" ]] || missing+=(ENTERPRISE_PREVIEW_GCP_DNS_ZONE)
+            [[ -n "$PREVIEW_GCP_TF_STATE_BUCKET" ]] || missing+=(ENTERPRISE_PREVIEW_GCP_TF_STATE_BUCKET)
+            if [[ "$action" == "deploy" ]]; then
+              [[ -n "$PREVIEW_TLS_CERTIFICATE" ]] || missing+=(ENTERPRISE_PREVIEW_TLS_CERTIFICATE)
+              [[ -n "$PREVIEW_TLS_PRIVATE_KEY" ]] || missing+=(ENTERPRISE_PREVIEW_TLS_PRIVATE_KEY)
+            fi
           elif [[ "$provider" == "aws" ]]; then
             [[ -n "$PREVIEW_ROUTE53_ZONE_ID" ]] || missing+=(ENTERPRISE_PREVIEW_ROUTE53_ZONE_ID)
+            if [[ "$action" == "deploy" ]]; then
+              [[ -n "$PREVIEW_ACME_EMAIL" ]] || missing+=(ENTERPRISE_PREVIEW_ACME_EMAIL)
+            fi
           fi
           if (( ${#missing[@]} > 0 )); then
             printf 'Missing required secrets: %s\n' "${missing[*]}" >&2
             exit 1
           fi
 
-      - name: Set up Helm
+      - name: Set up Helm for Replicated chart packaging
         if: steps.request.outputs.action == 'deploy'
         uses: azure/setup-helm@v3
         with:
@@ -266,8 +285,6 @@ jobs:
 
       - name: Create temporary Replicated customer and license
         if: steps.request.outputs.action == 'deploy' && steps.request.outputs.dry_run != 'true'
-        env:
-          TTL_HOURS: ${{ steps.request.outputs.ttl_hours }}
         run: |
           replicated customer create \
             --app "$REPLICATED_APP" \
@@ -275,7 +292,6 @@ jobs:
             --channel "$PREVIEW_CHANNEL" \
             --type dev \
             --embedded-cluster-download \
-            --expires-in "${TTL_HOURS}h" \
             --ensure-channel \
             --output json > customer.json
           customer_id=$(jq -r '.id // .customer.id // empty' customer.json)
@@ -359,6 +375,9 @@ jobs:
           cert_file=$(terraform -chdir=terraform/aws output -raw certificate_file)
           key_file=$(terraform -chdir=terraform/aws output -raw private_key_file)
           ca_file=$(terraform -chdir=terraform/aws output -raw ca_file)
+          install -m 700 -d preview-secrets
+          printf '%s\n' "$PREVIEW_GITHUB_PRIVATE_KEY" > preview-secrets/github-app.pem
+          chmod 600 preview-secrets/github-app.pem
           python3 scripts/enterprise_replicated_preview.py write-config-values \
             --output preview-config-values.yaml \
             --base-domain "$PREVIEW_BASE_DOMAIN" \
@@ -367,7 +386,13 @@ jobs:
             --tls-ca-certificate "$ca_file" \
             --custom-base-url "${PREVIEW_CUSTOM_LLM_BASE_URL:-http://openhands-litellm:4000/v1}" \
             --custom-api-key "$PREVIEW_CUSTOM_LLM_API_KEY" \
-            --custom-models "$PREVIEW_CUSTOM_LLM_MODELS"
+            --custom-models "$PREVIEW_CUSTOM_LLM_MODELS" \
+            --github-client-id "$PREVIEW_GITHUB_CLIENT_ID" \
+            --github-client-secret "$PREVIEW_GITHUB_CLIENT_SECRET" \
+            --github-app-id "$PREVIEW_GITHUB_APP_ID" \
+            --github-app-slug "$PREVIEW_GITHUB_APP_SLUG" \
+            --github-webhook-secret "$PREVIEW_GITHUB_WEBHOOK_SECRET" \
+            --github-private-key preview-secrets/github-app.pem
 
           ssh_key=$(terraform -chdir=terraform/aws output -raw ssh_key_file)
           host=$(terraform -chdir=terraform/aws output -raw instance_public_ip)
@@ -410,35 +435,44 @@ jobs:
             --network "$PREVIEW_GCP_NETWORK" \
             --subnetwork "$PREVIEW_GCP_SUBNETWORK" \
             --dns-managed-zone "$PREVIEW_GCP_DNS_ZONE" \
-            --acme-email "$PREVIEW_ACME_EMAIL" \
             "${allowed_cidr_args[@]}"
 
-          if [[ -n "$PREVIEW_GCP_TF_STATE_BUCKET" ]]; then
-            cat > terraform/gcp/zz_preview_backend.tf <<'EOF'
+          cat > terraform/gcp/zz_preview_backend.tf <<'EOF'
           terraform {
             backend "gcs" {}
           }
           EOF
-            terraform -chdir=terraform/gcp init \
-              -backend-config="bucket=$PREVIEW_GCP_TF_STATE_BUCKET" \
-              -backend-config="prefix=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER"
-          else
-            terraform -chdir=terraform/gcp init
-          fi
+          terraform -chdir=terraform/gcp init \
+            -backend-config="bucket=$PREVIEW_GCP_TF_STATE_BUCKET" \
+            -backend-config="prefix=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER"
           terraform -chdir=terraform/gcp apply -auto-approve -var-file=preview.auto.tfvars
 
-          cert_file=$(terraform -chdir=terraform/gcp output -raw certificate_file)
-          key_file=$(terraform -chdir=terraform/gcp output -raw private_key_file)
-          ca_file=$(terraform -chdir=terraform/gcp output -raw ca_file)
+          install -m 700 -d preview-secrets
+          printf '%s\n' "$PREVIEW_TLS_CERTIFICATE" > preview-secrets/certificate.pem
+          printf '%s\n' "$PREVIEW_TLS_PRIVATE_KEY" > preview-secrets/private-key.pem
+          printf '%s\n' "$PREVIEW_GITHUB_PRIVATE_KEY" > preview-secrets/github-app.pem
+          chmod 600 preview-secrets/private-key.pem preview-secrets/github-app.pem
+          tls_ca_args=()
+          if [[ -n "$PREVIEW_TLS_CA_CERTIFICATE" ]]; then
+            printf '%s\n' "$PREVIEW_TLS_CA_CERTIFICATE" > preview-secrets/ca.pem
+            tls_ca_args+=(--tls-ca-certificate preview-secrets/ca.pem)
+          fi
           python3 scripts/enterprise_replicated_preview.py write-config-values \
             --output preview-config-values.yaml \
             --base-domain "$PREVIEW_BASE_DOMAIN" \
-            --tls-certificate "$cert_file" \
-            --tls-private-key "$key_file" \
-            --tls-ca-certificate "$ca_file" \
+            --hostname-layout flat \
+            --tls-certificate preview-secrets/certificate.pem \
+            --tls-private-key preview-secrets/private-key.pem \
+            "${tls_ca_args[@]}" \
             --custom-base-url "${PREVIEW_CUSTOM_LLM_BASE_URL:-http://openhands-litellm:4000/v1}" \
             --custom-api-key "$PREVIEW_CUSTOM_LLM_API_KEY" \
-            --custom-models "$PREVIEW_CUSTOM_LLM_MODELS"
+            --custom-models "$PREVIEW_CUSTOM_LLM_MODELS" \
+            --github-client-id "$PREVIEW_GITHUB_CLIENT_ID" \
+            --github-client-secret "$PREVIEW_GITHUB_CLIENT_SECRET" \
+            --github-app-id "$PREVIEW_GITHUB_APP_ID" \
+            --github-app-slug "$PREVIEW_GITHUB_APP_SLUG" \
+            --github-webhook-secret "$PREVIEW_GITHUB_WEBHOOK_SECRET" \
+            --github-private-key preview-secrets/github-app.pem
 
           ssh_key=$(terraform -chdir=terraform/gcp output -raw ssh_key_file)
           host=$(terraform -chdir=terraform/gcp output -raw instance_public_ip)
@@ -482,21 +516,16 @@ jobs:
               --network "$PREVIEW_GCP_NETWORK" \
               --subnetwork "$PREVIEW_GCP_SUBNETWORK" \
               --dns-managed-zone "$PREVIEW_GCP_DNS_ZONE" \
-              --acme-email "$PREVIEW_ACME_EMAIL" \
               "${allowed_cidr_args[@]}"
-            if [[ -n "$PREVIEW_GCP_TF_STATE_BUCKET" ]]; then
-              cat > terraform/gcp/zz_preview_backend.tf <<'EOF'
+            cat > terraform/gcp/zz_preview_backend.tf <<'EOF'
           terraform {
             backend "gcs" {}
           }
           EOF
-              terraform -chdir=terraform/gcp init \
-                -backend-config="bucket=$PREVIEW_GCP_TF_STATE_BUCKET" \
-                -backend-config="prefix=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER"
-              terraform -chdir=terraform/gcp destroy -auto-approve -var-file=preview.auto.tfvars || true
-            else
-              echo "Skipping GCP Terraform destroy because no remote state bucket is configured."
-            fi
+            terraform -chdir=terraform/gcp init \
+              -backend-config="bucket=$PREVIEW_GCP_TF_STATE_BUCKET" \
+              -backend-config="prefix=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER"
+            terraform -chdir=terraform/gcp destroy -auto-approve -var-file=preview.auto.tfvars
           elif [[ "$provider" == "aws" ]]; then
             if [[ -n "$PREVIEW_TF_STATE_BUCKET" && -n "$PREVIEW_BASE_DOMAIN" ]]; then
               cat > terraform/aws/zz_preview_backend.tf <<'EOF'
@@ -540,7 +569,11 @@ jobs:
         run: |
           app_url=""
           if [[ -n "${PREVIEW_BASE_DOMAIN:-}" ]]; then
-            app_url="https://app.${PREVIEW_BASE_DOMAIN}"
+            if [[ "$DEPLOY_PROVIDER" == "gcp" ]]; then
+              app_url="https://app-${PREVIEW_BASE_DOMAIN}"
+            else
+              app_url="https://app.${PREVIEW_BASE_DOMAIN}"
+            fi
           fi
           {
             echo "| Preview channel | \`${PREVIEW_CHANNEL:-unknown}\` |"

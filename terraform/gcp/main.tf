@@ -63,8 +63,12 @@ resource "google_compute_instance" "openhands" {
 
   metadata_startup_script = <<-SCRIPT
     #!/usr/bin/env bash
+    set -e
     apt-get update
-    apt-get install -y curl jq tar gzip ca-certificates
+    apt-get install -y curl wget jq tar gzip ca-certificates
+    wget -q https://github.com/derailed/k9s/releases/latest/download/k9s_linux_amd64.deb -O /tmp/k9s.deb
+    apt-get install -y /tmp/k9s.deb
+    rm /tmp/k9s.deb
   SCRIPT
 
   service_account {

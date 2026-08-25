@@ -105,6 +105,61 @@ def test_render_config_values_encodes_file_fields_and_custom_llm(tmp_path):
     assert 'automations_enabled:\n      value: "1"' in rendered
 
 
+def test_render_config_values_supports_shared_tls_and_github_auth(tmp_path):
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    github_key = tmp_path / "github.pem"
+    cert.write_text("shared certificate")
+    key.write_text("shared private key")
+    github_key.write_text("github private key")
+
+    rendered = preview.render_config_values(
+        base_domain="pr-92.staging.all-hands-testing.dev",
+        tls_certificate=cert,
+        tls_private_key=key,
+        hostname_layout="flat",
+        github_client_id="Iv1.preview",
+        github_client_secret="client-secret",
+        github_app_id="1234",
+        github_app_slug="openhands-preview",
+        github_webhook_secret="webhook-secret",
+        github_private_key=github_key,
+    )
+
+    assert 'hostname_mode:\n      value: "custom"' in rendered
+    assert (
+        'app_hostname:\n      value: "app-pr-92.staging.all-hands-testing.dev"'
+        in rendered
+    )
+    assert (
+        'auth_hostname:\n      value: "auth-pr-92.staging.all-hands-testing.dev"'
+        in rendered
+    )
+    assert 'runtime_routing_mode:\n      value: "path"' in rendered
+    assert 'github_auth_enabled:\n      value: "1"' in rendered
+    assert 'github_oauth_client_id:\n      value: "Iv1.preview"' in rendered
+    assert (
+        'github_oauth_client_secret:\n      valuePlaintext: "client-secret"'
+        in rendered
+    )
+    assert base64.b64encode(github_key.read_bytes()).decode("ascii") in rendered
+
+
+def test_render_config_values_requires_complete_github_credentials(tmp_path):
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("certificate")
+    key.write_text("private key")
+
+    with pytest.raises(ValueError, match="all GitHub App credentials"):
+        preview.render_config_values(
+            base_domain="pr-92.staging.all-hands-testing.dev",
+            tls_certificate=cert,
+            tls_private_key=key,
+            github_client_id="Iv1.preview",
+        )
+
+
 def test_render_tfvars_includes_preview_tags_and_optional_network():
     rendered = preview.render_tfvars(
         instance_name="oh-ent-pr-92-c23c797",
@@ -120,6 +175,7 @@ def test_render_tfvars_includes_preview_tags_and_optional_network():
 
     assert 'instance_name = "oh-ent-pr-92-c23c797"' in rendered
     assert 'base_domain = "pr-92.preview.example.com"' in rendered
+    assert 'hostname_mode = "legacy"' in rendered
     assert 'allowed_cidrs = ["203.0.113.4/32"]' in rendered
     assert 'vpc_id = "vpc-123"' in rendered
     assert '"EnterprisePR" = "92"' in rendered
@@ -128,14 +184,13 @@ def test_render_tfvars_includes_preview_tags_and_optional_network():
 def test_render_gcp_tfvars_matches_staging_preview_conventions():
     rendered = preview.render_gcp_tfvars(
         instance_name="oh-ent-pr-92-c23c797",
-        base_domain="pr-92.replicated.staging.all-hands.dev",
+        base_domain="pr-92.staging.all-hands-testing.dev",
         project_id="staging-092324",
         region="us-central1",
         zone="us-central1-a",
         network="staging-core-app",
         subnetwork="staging-core-app",
-        dns_managed_zone="staging-all-hands-dot-dev",
-        acme_email="ops@example.com",
+        dns_managed_zone="staging-all-hands-testing-dot-dev",
         allowed_admin_cidrs=["203.0.113.4/32"],
         labels={"enterprise-pr": "92", "preview-kind": "enterprise-replicated"},
     )
@@ -143,7 +198,8 @@ def test_render_gcp_tfvars_matches_staging_preview_conventions():
     assert 'project_id = "staging-092324"' in rendered
     assert 'region = "us-central1"' in rendered
     assert 'network = "staging-core-app"' in rendered
-    assert 'dns_managed_zone = "staging-all-hands-dot-dev"' in rendered
+    assert 'dns_managed_zone = "staging-all-hands-testing-dot-dev"' in rendered
     assert 'allowed_admin_cidrs = ["203.0.113.4/32"]' in rendered
     assert '"enterprise-pr" = "92"' in rendered
+    assert "acme_email" not in rendered
 

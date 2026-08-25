@@ -1,12 +1,12 @@
 locals {
   dns_records = {
-    base         = var.base_domain
-    app          = "app.${var.base_domain}"
-    analytics    = "analytics.app.${var.base_domain}"
-    auth         = "auth.app.${var.base_domain}"
-    llm_proxy    = "llm-proxy.${var.base_domain}"
-    runtime_api  = "runtime-api.${var.base_domain}"
-    runtime_wild = "*.runtime.${var.base_domain}"
+    admin       = "admin-${var.base_domain}"
+    app         = "app-${var.base_domain}"
+    analytics   = "analytics-${var.base_domain}"
+    auth        = "auth-${var.base_domain}"
+    llm_proxy   = "llm-proxy-${var.base_domain}"
+    runtime_api = "runtime-api-${var.base_domain}"
+    runtime     = "runtime-${var.base_domain}"
   }
 }
 

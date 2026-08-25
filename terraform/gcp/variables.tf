@@ -43,7 +43,7 @@ variable "subnetwork" {
 }
 
 variable "base_domain" {
-  description = "Base domain for the Replicated install, e.g. replicated-pr-92.staging.all-hands.dev."
+  description = "Preview identifier plus shared suffix, e.g. pr-92.staging.all-hands-testing.dev. Service names are prepended with a dash so one shared wildcard certificate covers every preview."
   type        = string
 }
 
@@ -62,17 +62,6 @@ variable "allowed_admin_cidrs" {
   description = "CIDR ranges allowed to reach SSH and the Replicated admin console."
   type        = list(string)
   default     = ["0.0.0.0/0"]
-}
-
-variable "acme_email" {
-  description = "Email address for ACME registration."
-  type        = string
-}
-
-variable "acme_server" {
-  description = "ACME directory URL."
-  type        = string
-  default     = "https://acme-v02.api.letsencrypt.org/directory"
 }
 
 variable "labels" {
