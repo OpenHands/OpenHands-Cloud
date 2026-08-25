@@ -1102,6 +1102,8 @@ spec:
           global:
             cloudProvider: "aws"
           clickhouse:
+            diagnostics:
+              retentionDays: repl{{ ConfigOption "clickhouse_diagnostic_log_retention_days" }}
             persistence:
               storageClass: "openebs-hostpath" # default storage class for the k0s embededed cluster
             s3:
