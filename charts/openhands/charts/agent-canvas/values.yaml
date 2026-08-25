@@ -53,10 +53,6 @@ staticServer:
   # static-server.mjs reads to inject window.__AGENT_CANVAS_DO_NOT_TRACK__ so
   # the pre-built frontend disables all PostHog product telemetry (including the
   # anonymous install event) at runtime.
-  # Delivered as an env var (not a CLI flag) on purpose: an image that predates
-  # this option ignores an unknown env var and starts normally — telemetry just
-  # stays at the image's default — whereas an unknown CLI flag would crash the
-  # container. That makes the chart and image safe to roll out in any order.
   # Defaults to true because this chart targets self-hosted deployments (e.g.
   # OHE), which ship with telemetry off. A SaaS deployment that wants telemetry
   # can override this to false.

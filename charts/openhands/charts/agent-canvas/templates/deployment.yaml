@@ -67,10 +67,8 @@ spec:
           {{- if or .Values.staticServer.disableTelemetry .Values.env }}
           env:
             {{- if .Values.staticServer.disableTelemetry }}
-            # Passed as an env var (not a --disable-telemetry CLI flag) so an
-            # image that predates this option ignores it and starts normally,
-            # instead of crash-looping on an unknown flag. static-server.mjs
-            # reads it and injects window.__AGENT_CANVAS_DO_NOT_TRACK__.
+            # static-server.mjs reads this and injects
+            # window.__AGENT_CANVAS_DO_NOT_TRACK__ to disable product telemetry.
             - name: AGENT_CANVAS_DISABLE_TELEMETRY
               value: "1"
             {{- end }}
