@@ -1548,3 +1548,7 @@ agent-canvas:
 
   staticServer:
     basePath: /canvas
+    # Disable PostHog product telemetry in the pre-built canvas frontend at
+    # runtime (injects window.__AGENT_CANVAS_DO_NOT_TRACK__). Defaults to true
+    # for self-hosted deployments; a SaaS deployment can override to false.
+    disableTelemetry: true

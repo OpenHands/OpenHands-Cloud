@@ -52,6 +52,9 @@ spec:
             {{- if .Values.staticServer.authRequired }}
             - --auth-required
             {{- end }}
+            {{- if .Values.staticServer.disableTelemetry }}
+            - --disable-telemetry
+            {{- end }}
             {{- with .Values.staticServer.lockToCloud }}
             - --lock-to-cloud
             - {{ . | quote }}
