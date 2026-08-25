@@ -700,11 +700,8 @@ spec:
             accessKey: default
             secretKey: notasecret
           database:
-            # Honour the operator's "create databases for me" choice, the way
-            # every other database here does. With it off, no bootstrap
-            # container is rendered at all and the automations database and
-            # role must already exist -- the config screen requires their
-            # name and password in that case.
+            # With automatic database creation off, no bootstrap container
+            # renders, so the automations database and role must already exist.
             createDatabaseUser: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOptionEquals "external_postgres_create_databases" "1"}}{{repl else}}true{{repl end}}'
             name: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_automations_database"}}{{repl else}}automations{{repl end}}'
             user: '{{repl if and (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0")}}{{repl ConfigOption "automations_db_username"}}{{repl else}}automation_user{{repl end}}'

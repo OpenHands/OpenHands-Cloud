@@ -1461,22 +1461,15 @@ spec:
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
-          # Deliberately `value:` rather than `default:`, for the reason spelled
-          # out on hostname_mode above: KOTS re-renders `default:` on every
-          # config change, so turning this on via a default would switch
-          # automations on for every existing install at its next upgrade --
-          # creating a database and a role on an external PostgreSQL server
-          # nobody asked us to touch. A `value:` is written to ConfigValues the
-          # first time it renders and is never overwritten, and Sequence is 0
-          # only on a fresh install, so new installs get automations and
-          # upgrades keep whatever they had. Note this pins the item for good:
-          # no later release can move a stored value, so enabling automations
-          # on an existing install is an operator action.
+          # `value:` not `default:`, for the reason given on hostname_mode above.
+          # Changing a default here would switch automations on for every
+          # existing install at its next upgrade, creating a database and a role
+          # on an external server. A value, once written, is never overwritten,
+          # so turning automations on for an existing install is something an
+          # operator does and a later release cannot.
           value: '{{repl if eq Sequence 0 }}1{{repl else }}0{{repl end }}'
-        # Shown only when the operator has told us not to create databases, so
-        # they must have provisioned the automations database and role
-        # themselves. Nobody else sees these: with automatic creation on, the
-        # bootstrap makes `automation_user` with the admin password, as before.
+        # With automatic creation off the database and role must already exist,
+        # so the operator has to tell us what they named them.
         - name: automations_db_username
           title: Automations Database User
           help_text: PostgreSQL role that Automations connects as. Create this role yourself, with access to the Automations database, before deploying.
@@ -1485,7 +1478,7 @@ spec:
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
         - name: automations_db_password
           title: Automations Database Password
-          help_text: Password for the Automations database role above. Required, because with automatic database creation disabled there is no value we can derive that would work.
+          help_text: The password you gave the Automations database role. Required, because the installer has no way to know a password set outside it.
           type: password
           required: true
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'

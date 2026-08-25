@@ -69,9 +69,10 @@ spec:
           - sh
           - -c
           - |
-            # Without this the script reaches `exit 0` even when a psql call
-            # failed, so a denied CREATE DATABASE surfaces two containers later
-            # as an opaque alembic error instead of here, with the real message.
+            # Without this the script exits 0 even when CREATE DATABASE was
+            # denied. The automations database is then missing, but this
+            # container looks successful, so the failure appears in the
+            # migration container and the permission error is easy to miss.
             set -e
             echo "Waiting for PostgreSQL at $DB_HOST to be available..."
             for i in $(seq 1 60); do
