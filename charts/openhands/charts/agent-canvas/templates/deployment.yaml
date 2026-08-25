@@ -52,9 +52,6 @@ spec:
             {{- if .Values.staticServer.authRequired }}
             - --auth-required
             {{- end }}
-            {{- if .Values.staticServer.disableTelemetry }}
-            - --disable-telemetry
-            {{- end }}
             {{- with .Values.staticServer.lockToCloud }}
             - --lock-to-cloud
             - {{ . | quote }}
@@ -67,9 +64,17 @@ spec:
             - name: http
               containerPort: {{ $port }}
               protocol: TCP
-          {{- with .Values.env }}
+          {{- if or .Values.staticServer.disableTelemetry .Values.env }}
           env:
-            {{- range $k, $v := . }}
+            {{- if .Values.staticServer.disableTelemetry }}
+            # Passed as an env var (not a --disable-telemetry CLI flag) so an
+            # image that predates this option ignores it and starts normally,
+            # instead of crash-looping on an unknown flag. static-server.mjs
+            # reads it and injects window.__AGENT_CANVAS_DO_NOT_TRACK__.
+            - name: AGENT_CANVAS_DISABLE_TELEMETRY
+              value: "1"
+            {{- end }}
+            {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
