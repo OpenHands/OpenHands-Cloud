@@ -19,6 +19,32 @@ data:
         exit 1
       fi
     }
+
+    refresh_access_token() {
+      ACCESS_TOKEN=$(curl -sS -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "client_id=admin-cli" \
+        -d "grant_type=password" \
+        -d "username=admin" \
+        -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token // empty')
+      if [ -z "$ACCESS_TOKEN" ]; then
+        echo "ERROR: could not refresh the Keycloak admin access token." >&2
+        return 1
+      fi
+    }
+
+    keycloak_get_optional() {
+      URL=$1
+      STATUS=$(curl -sS -o /tmp/keycloak-get-response.json -w '%{http_code}' "$URL" \
+        -H "Authorization: Bearer $ACCESS_TOKEN")
+      RESPONSE=$(cat /tmp/keycloak-get-response.json)
+      case "$STATUS" in
+        200) return 0 ;;
+        404) RESPONSE=""; return 0 ;;
+        *) echo "ERROR: Keycloak GET $URL returned HTTP $STATUS: $RESPONSE" >&2; return 1 ;;
+      esac
+    }
+
     echo "Waiting for Keycloak to be ready..."
     until curl --output /dev/null --silent --head --fail $KEYCLOAK_SERVER_URL; do
         echo '.'
@@ -240,6 +266,7 @@ data:
     # failure here (e.g. an unreachable metadata URL) warns but never blocks the
     # app from starting.
     (
+      refresh_access_token
       KC_REALM="$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME"
       AUTH="-H \"Authorization: Bearer $ACCESS_TOKEN\""
       CT="-H \"Content-Type: application/json\""
@@ -247,7 +274,6 @@ data:
       echo "Importing enterprise SSO IdP metadata from the configured URL..."
       IMPORT_REQUEST=$(jq -n --arg from_url "$ENTERPRISE_SSO_IDP_METADATA_URL" '{
         providerId: "saml",
-        alias: "enterprise_sso",
         fromUrl: $from_url
       }')
       IMPORT_RESPONSE=$(curl -sS -X POST "$KC_REALM/identity-provider/import-config" \
@@ -255,9 +281,9 @@ data:
         -H "Content-Type: application/json" \
         --data "$IMPORT_REQUEST")
       if ! echo "$IMPORT_RESPONSE" | jq -e \
-        'type == "object" and has("idpEntityId") and has("singleSignOnServiceUrl")' \
+        'type == "object" and has("idpEntityId") and has("singleSignOnServiceUrl") and has("signingCertificate")' \
         >/dev/null 2>&1; then
-        echo "ERROR: could not import IdP metadata: $IMPORT_RESPONSE" >&2
+        echo "ERROR: IdP metadata must include an entity ID, SSO service URL, and signing certificate: $IMPORT_RESPONSE" >&2
         echo "The enterprise_sso identity provider was not configured. Fix the metadata URL and redeploy to retry." >&2
         exit 1
       fi
@@ -268,7 +294,7 @@ data:
           alias: "enterprise_sso",
           providerId: "saml",
           enabled: true,
-          displayName: (if $display == "" then "Company SSO" else $display end),
+          displayName: $display,
           updateProfileFirstLoginMode: "on",
           trustEmail: true,
           storeToken: false,
@@ -279,8 +305,8 @@ data:
           config: (. + {"syncMode": "IMPORT", "validateSignature": "true"})
         }' > /tmp/idp-enterprise-sso.json
 
-      EXISTING_IDP=$(curl -s "$KC_REALM/identity-provider/instances/enterprise_sso" \
-        -H "Authorization: Bearer $ACCESS_TOKEN")
+      keycloak_get_optional "$KC_REALM/identity-provider/instances/enterprise_sso"
+      EXISTING_IDP=$RESPONSE
       if echo "$EXISTING_IDP" | jq -e '.internalId or .id' >/dev/null 2>&1; then
         keycloak_api_call "curl -s -X PUT \"$KC_REALM/identity-provider/instances/enterprise_sso\" $AUTH $CT --data \"@/tmp/idp-enterprise-sso.json\""
         echo "  Updated identity provider: enterprise_sso"
@@ -299,8 +325,8 @@ data:
           syncMode: "FORCE"
         }
       }' > /tmp/mapper-enterprise-sso.json
-      EXISTING_MAPPER_ID=$(curl -s "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" \
-        -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r \
+      keycloak_api_call "curl -s \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers\" $AUTH"
+      EXISTING_MAPPER_ID=$(echo "$RESPONSE" | jq -r \
         '.[] | objects | select(.name == "identity-provider") | .id // empty')
       if [ -n "$EXISTING_MAPPER_ID" ]; then
         jq --arg id "$EXISTING_MAPPER_ID" '. + {id: $id}' /tmp/mapper-enterprise-sso.json > /tmp/mapper-enterprise-sso-update.json
@@ -317,11 +343,12 @@ data:
     # when the feature toggle is turned off so direct kc_idp_hint requests cannot
     # bypass the hidden login button.
     (
+      refresh_access_token
       KC_REALM="$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME"
       AUTH="-H \"Authorization: Bearer $ACCESS_TOKEN\""
       CT="-H \"Content-Type: application/json\""
-      EXISTING_IDP=$(curl -s "$KC_REALM/identity-provider/instances/enterprise_sso" \
-        -H "Authorization: Bearer $ACCESS_TOKEN")
+      keycloak_get_optional "$KC_REALM/identity-provider/instances/enterprise_sso"
+      EXISTING_IDP=$RESPONSE
       if echo "$EXISTING_IDP" | jq -e '.internalId or .id' >/dev/null 2>&1; then
         echo "$EXISTING_IDP" | jq '.enabled = false' > /tmp/idp-enterprise-sso-disabled.json
         keycloak_api_call "curl -s -X PUT \"$KC_REALM/identity-provider/instances/enterprise_sso\" $AUTH $CT --data \"@/tmp/idp-enterprise-sso-disabled.json\""

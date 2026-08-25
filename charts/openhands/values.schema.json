@@ -56,7 +56,7 @@
         "displayName": { "type": "string" },
         "idpMetadataUrl": {
           "type": "string",
-          "pattern": "^$|^https://"
+          "pattern": "^$|^https://[^\\s]+$"
         }
       }
     },

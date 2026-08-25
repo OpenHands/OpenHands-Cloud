@@ -76,7 +76,7 @@ spec:
         {{- include "openhands.env" . | nindent 8 }}
         {{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
         - name: ENTERPRISE_SSO_DISPLAY_NAME
-          value: {{ .Values.enterpriseSSO.displayName | quote }}
+          value: {{ .Values.enterpriseSSO.displayName | default "Company SSO" | quote }}
         - name: ENTERPRISE_SSO_IDP_METADATA_URL
           value: {{ .Values.enterpriseSSO.idpMetadataUrl | quote }}
         {{- end }}

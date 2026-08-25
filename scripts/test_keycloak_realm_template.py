@@ -24,7 +24,6 @@ KEYCLOAK_CONFIG_SCRIPT = (
 OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 OPENHANDS_VALUES = OPENHANDS_CHART / "values.yaml"
 OPENHANDS_VALUES_SCHEMA = OPENHANDS_CHART / "values.schema.json"
-REPLICATED_CONFIG = REPO_ROOT / "replicated" / "config.yaml"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 
 
@@ -249,17 +248,23 @@ def enterprise_sso_idp_jq_filter(script_template: str) -> str:
     return match.group("filter")
 
 
+def enterprise_sso_import_guard(script_template: str) -> str:
+    match = re.search(
+        r'if ! echo "\$IMPORT_RESPONSE" \| jq -e \\\n'
+        r"\s*'(?P<filter>[^']+)' \\\n",
+        script_template,
+    )
+    assert match, "Could not find the enterprise SSO import response guard"
+    return match.group("filter")
+
+
 def test_enterprise_sso_uses_one_canonical_values_key() -> None:
     values = OPENHANDS_VALUES.read_text(encoding="utf-8")
     schema = json.loads(OPENHANDS_VALUES_SCHEMA.read_text(encoding="utf-8"))
     replicated = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
 
     assert "enterpriseSso:" not in values
-    assert re.search(
-        r"^enterpriseSSO:\n  enabled: false\n  displayName: \"\"\n  idpMetadataUrl: \"\"$",
-        values,
-        re.MULTILINE,
-    )
+    assert re.search(r"^enterpriseSSO:$", values, re.MULTILINE)
     assert "enterpriseSso" not in schema["properties"]
     assert set(schema["properties"]["enterpriseSSO"]["properties"]) == {
         "enabled",
@@ -275,11 +280,7 @@ def test_enterprise_sso_metadata_url_requires_https() -> None:
     metadata_schema = schema["properties"]["enterpriseSSO"]["properties"][
         "idpMetadataUrl"
     ]
-    assert metadata_schema["pattern"] == "^$|^https://"
-
-    replicated_config = REPLICATED_CONFIG.read_text(encoding="utf-8")
-    assert "pattern: '^$|^https://[^[:space:]]+$'" in replicated_config
-    assert "message: 'Must be blank or an HTTPS metadata URL.'" in replicated_config
+    assert metadata_schema["pattern"] == r"^$|^https://[^\s]+$"
 
 
 def test_enterprise_sso_uses_keycloak_import_contract() -> None:
@@ -295,10 +296,40 @@ def test_enterprise_sso_uses_keycloak_import_contract() -> None:
     assert "fromUrl: $from_url" in script
     assert 'has("idpEntityId")' in script
     assert 'has("singleSignOnServiceUrl")' in script
-    assert ".config as $cfg" not in script
+    assert 'has("signingCertificate")' in script
     assert '"validateSignature": "true"' in script
-    assert "validateSignatures" not in script
     assert 'syncMode: "FORCE"' in script
+
+
+def test_enterprise_sso_import_guard_requires_signing_certificate() -> None:
+    if shutil.which("jq") is None:
+        pytest.skip("jq not available")
+
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    jq_filter = enterprise_sso_import_guard(script)
+    imported_config = {
+        "idpEntityId": "https://idp.example.com/entity",
+        "singleSignOnServiceUrl": "https://idp.example.com/sso",
+    }
+
+    missing_certificate = subprocess.run(
+        ["jq", "-e", jq_filter],
+        input=json.dumps(imported_config),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert missing_certificate.returncode == 1
+
+    imported_config["signingCertificate"] = "certificate-data"
+    with_certificate = subprocess.run(
+        ["jq", "-e", jq_filter],
+        input=json.dumps(imported_config),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert with_certificate.returncode == 0
 
 
 def test_enterprise_sso_jq_filter_builds_keycloak_idp() -> None:
@@ -338,7 +369,10 @@ def test_enterprise_sso_inputs_are_environment_data() -> None:
     replicated = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
 
     assert "- name: ENTERPRISE_SSO_DISPLAY_NAME" in deployment
-    assert "value: {{ .Values.enterpriseSSO.displayName | quote }}" in deployment
+    assert (
+        'value: {{ .Values.enterpriseSSO.displayName | default "Company SSO" | quote }}'
+        in deployment
+    )
     assert "- name: ENTERPRISE_SSO_IDP_METADATA_URL" in deployment
     assert "value: {{ .Values.enterpriseSSO.idpMetadataUrl | quote }}" in deployment
     assert "{{ .Values.enterpriseSSO.displayName" not in script

@@ -300,9 +300,12 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
      idpMetadataUrl: "https://idp.example.com/saml/metadata"
    # When idpMetadataUrl is provided, the chart automatically creates and keeps updated the
    # enterprise_sso SAML identity provider in the bundled Keycloak on every pod start.
-   # Leave it empty to configure the provider manually in the Keycloak admin console instead.
-   # When disabling chart-managed SSO, retain idpMetadataUrl for that rollout so the chart
-   # also disables the managed Keycloak provider.
+   # The managed provider validates SAML signatures and trusts the assertion email for
+   # account linking, so only use metadata from an identity provider you trust.
+   # Leave idpMetadataUrl empty to configure the provider manually in the Keycloak admin
+   # console instead. When disabling chart-managed SSO, retain idpMetadataUrl for that
+   # rollout so the chart can distinguish and disable the provider it manages without
+   # modifying a manually managed provider.
    ```
 
 ### LiteLLM configuration

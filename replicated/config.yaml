@@ -1003,8 +1003,9 @@ spec:
           default: "0"
         - name: enterprise_sso_display_name
           title: Identity Provider Display Name
-          help_text: Name shown for this identity provider in Keycloak. Defaults to "Company SSO" when left blank.
+          help_text: Name shown for this identity provider in Keycloak.
           type: text
+          default: "Company SSO"
           when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
         - name: enterprise_sso_idp_metadata_url
           title: SAML Metadata URL

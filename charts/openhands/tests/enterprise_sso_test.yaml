@@ -11,6 +11,9 @@ tests:
     set:
       enabled: true
       keycloak.enabled: true
+      databaseMigrations.waitForDatabase: false
+      databaseMigrations.createDatabases: false
+      databaseMigrations.migrate: false
       enterpriseSSO.enabled: true
       enterpriseSSO.displayName: Company SSO
       enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
@@ -21,6 +24,28 @@ tests:
           content:
             name: OH_WEB_CLIENT_PROVIDERS_CONFIGURED
             value: '["enterprise_sso"]'
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_ENTERPRISE_SSO
+            value: "true"
+      - template: deployment.yaml
+        equal:
+          path: spec.template.spec.initContainers[0].name
+          value: keycloak-config
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: ENTERPRISE_SSO_DISPLAY_NAME
+            value: Company SSO
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: ENTERPRISE_SSO_IDP_METADATA_URL
+            value: https://idp.example.com/saml/metadata
       - template: keycloak-config-script.yaml
         matchRegex:
           path: data["keycloak-config.sh"]

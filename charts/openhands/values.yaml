@@ -226,7 +226,7 @@ bitbucket:
 # enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
-  displayName: ""
+  displayName: "Company SSO"
   idpMetadataUrl: ""
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any

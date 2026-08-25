@@ -68,6 +68,18 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "enterpriseSSO/idpMetadataUrl"
+  - it: rejects a bare HTTPS Enterprise SSO metadata URL
+    set:
+      enterpriseSSO.idpMetadataUrl: https://
+    asserts:
+      - failedTemplate:
+          errorPattern: "enterpriseSSO/idpMetadataUrl"
+  - it: rejects whitespace in an Enterprise SSO metadata URL
+    set:
+      enterpriseSSO.idpMetadataUrl: "https://idp.example.com/saml metadata"
+    asserts:
+      - failedTemplate:
+          errorPattern: "enterpriseSSO/idpMetadataUrl"
 
   - it: accepts valid values
     set:
