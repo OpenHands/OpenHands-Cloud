@@ -21,9 +21,9 @@ spec:
     metadata:
       labels:
         {{- include "runtime-api.selectorLabels" . | nindent 8 }}
-        {{- /* Distinguishes API pods from the kvm-device-plugin DaemonSet and
-        warm-runtimes CronJob pods that share the selectorLabels; lets the
-        Service selector be tightened to component=api in a later release. */}}
+        {{- /* Distinguishes API pods from the warm-runtimes CronJob pods
+        that share the selectorLabels; lets the Service selector be
+        tightened to component=api in a later release. */}}
         app.kubernetes.io/component: api
     spec:
       {{- with .Values.securityContext }}
@@ -34,6 +34,10 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "runtime-api.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
       {{- end }}
       {{- if or .Values.warmRuntimes.enabled .Values.ingressBase.enabled .Values.caBundle.enabled }}
       volumes:

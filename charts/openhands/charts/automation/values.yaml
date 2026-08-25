@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/automation
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.5.0
+  tag: 1.8.0
 
 imagePullSecrets: []
 
@@ -45,6 +45,29 @@ events:
         cpu: 500m
   uvicorn:
     workers: 2
+  # Keep at least one events pod serving during voluntary disruptions (node
+  # drains / rotations). Without this, a single node drain can evict every
+  # replica at once and take /v1/events/* to zero healthy backends.
+  # Only rendered when deployment.replicas > 1 — at one replica the budget would
+  # make the pod unevictable and stall the drain instead. Set enabled=false on a
+  # single-node cluster, where an evicted pod has nowhere else to land.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # Spread replicas across nodes so a single node failure/drain cannot take out
+  # the whole deployment. ScheduleAnyway keeps scheduling best-effort even when
+  # a perfect spread is not possible (e.g. small clusters).
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: automation-events
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
 
 securityContext:
   runAsUser: 42420
@@ -110,41 +133,37 @@ gcp:
   project: ""
   region: ""
 
-# File storage configuration (aligned with openhands chart pattern)
-# Supports multiple backends: gcs, s3, or in-cluster minio for ephemeral environments
+# Object storage for uploaded automation packages. Packages must outlive the
+# pod, so this is always a durable object store: any S3-compatible store
+# (AWS S3, MinIO, ...) or GCS.
 filestore:
-  # When true, uses S3-compatible storage (minio) for ephemeral/feature environments
-  # When false, uses cloud storage specified by 'type' (for production)
-  ephemeral: false
-  # Bucket name for storing automation data
-  bucket: automation-data
-  # Storage type when ephemeral=false (e.g., gcs, s3)
+  # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
+  # template renders whichever spelling the service natively reads.
   type: gcs
 
-# Minio configuration for ephemeral storage (filestore.ephemeral=true)
-#
-# Two deployment modes:
-# 1. Standalone: Set minio.enabled=true to deploy minio as a subchart
-# 2. Subchart of openhands: Set minio.enabled=false and configure minio.external
-#    to use the parent chart's minio instance
-minio:
-  # When true, point the app at the release's minio service
-  # (http://<release>-minio:9000) using the first svcaccts credentials below.
-  # Set to false when deployed as subchart of openhands (uses parent's minio)
-  enabled: false
+  # Bucket to store packages in (both backends).
+  bucket: automation-data
 
-  # External minio configuration (used when enabled=false but filestore.ephemeral=true)
-  # Configure this to point to an existing minio instance (e.g., parent chart's minio)
-  external:
-    endpoint: "http://minio:9000"
-    accessKey: "default"
-    secretKey: "notasecret"
+  # s3 only. Leave empty for AWS (boto3 targets the regional endpoint); set
+  # for other S3-compatible stores, e.g. an in-cluster MinIO:
+  # http://<release>-minio:9000. TLS is inferred from the URL scheme — an
+  # http:// endpoint renders AWS_S3_SECURE=false.
+  endpoint: ""
+  region: ""
 
-  # Credentials used when enabled=true (only the first entry is read)
-  svcaccts:
-    - accessKey: "automationkey"
-      secretKey: "automationsecret"
-      user: root
+  # s3 only. Create the bucket at startup if nothing else provisions it.
+  createBucket: false
+
+  # s3 credentials — first match wins:
+  #   1. existingSecret: Secret holding the access key pair (key names below)
+  #   2. accessKey/secretKey: inline, for throwaway/dev environments only
+  #   3. neither: ambient AWS identity (IRSA, instance profile)
+  # gcs always uses ambient identity (Workload Identity / ADC).
+  existingSecret: ""
+  accessKeyIdKey: AWS_ACCESS_KEY_ID
+  secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  accessKey: ""
+  secretKey: ""
 
 # Service key from K8s secret (for staging/production)
 # Used by OpenHands SaaS to authenticate requests to the automation service
@@ -175,3 +194,8 @@ global:
   security:
     # This allows using the bitnamilegacy image repo
     allowInsecureImages: true
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

@@ -6,6 +6,8 @@
   "required": ["image"],
   "properties": {
     "enabled": { "type": "boolean" },
+    "dailyConversationLimit": { "type": ["integer", "null"] },
+    "duplicateEmailCheck": { "type": "boolean" },
     "image": {
       "type": "object",
       "required": ["repository", "tag"],
@@ -84,16 +86,39 @@
     "filestore": {
       "type": "object",
       "properties": {
-        "ephemeral": { "type": "boolean" },
         "bucket": { "type": "string" },
-        "type": { "type": "string" },
+        "type": { "type": "string", "enum": ["s3", "gcs", "google_cloud"] },
         "provider": { "type": "string" },
         "region": { "type": "string" },
         "endpoint": { "type": "string" },
-        "secure": { "type": "boolean" },
         "existingSecret": { "type": "string" },
         "accessKeyIdKey": { "type": "string" },
-        "secretAccessKeyKey": { "type": "string" }
+        "secretAccessKeyKey": { "type": "string" },
+        "accessKey": { "type": "string" },
+        "secretKey": { "type": "string" }
+      }
+    },
+    "minio": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "laminar": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clickhouse": {
+          "type": "object",
+          "properties": {
+            "diagnostics": {
+              "type": "object",
+              "properties": {
+                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }
+              }
+            }
+          }
+        }
       }
     }
   }

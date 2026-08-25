@@ -106,6 +106,9 @@ runtime-api:
     # cert-manager.io/cluster-issuer: letsencrypt
   env:
     RUNTIME_BASE_URL: "runtime.example.com"
+    # Sandboxes nest under RUNTIME_BASE_URL as {id}.runtime.example.com, so this
+    # needs a *.runtime.example.com wildcard. Set RUNTIME_URL_SEPARATOR to "-"
+    # for {id}-runtime.example.com instead, covered by *.example.com.
     # Set to storage class you want to use.
     STORAGE_CLASS: "gp2"
 

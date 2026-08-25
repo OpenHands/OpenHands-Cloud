@@ -30,8 +30,7 @@ def test_replicated_enables_laminar_api_ingress_on_analytics_host() -> None:
 
     assert "apiIngress:" in values
     assert "enabled: true" in values
-    assert "analytics.app.{{repl ConfigOption \"base_domain\"}}" in values
-    assert "{{repl ConfigOption \"analytics_hostname\"}}" in values
+    assert "hostname: '{{repl ConfigOption \"computed_analytics_hostname\" }}'" in values
     assert "appServer:\n            loadBalancer:\n              enabled: false" in values
     assert "appServer:\n            loadBalancer:\n              enabled: false\n            ingress:" not in values
 

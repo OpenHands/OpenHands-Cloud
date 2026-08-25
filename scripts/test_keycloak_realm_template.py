@@ -21,6 +21,7 @@ KEYCLOAK_CONFIG_SCRIPT = (
     REPO_ROOT / "charts" / "openhands" / "templates" / "keycloak-config-script.yaml"
 )
 OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
+REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 
 
 def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
@@ -224,4 +225,14 @@ def test_keycloak_identity_provider_socket_timeout() -> None:
         r"name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS"
         r"\s+value: [\"']15000[\"']",
         result.stdout,
+    )
+
+
+def test_replicated_keycloak_identity_provider_socket_timeout() -> None:
+    replicated_values = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
+
+    assert re.search(
+        r"name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS"
+        r"\s+value: [\"']15000[\"']",
+        replicated_values,
     )

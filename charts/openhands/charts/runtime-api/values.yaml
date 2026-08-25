@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.7.0
+  tag: 0.8.2
   pullPolicy: Always
 
 nameOverride: ""
@@ -112,39 +112,17 @@ jobSettings:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 2
 
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
 securityContext: {}
 
-# KVM device plugin (OSS SANDBOX_KVM_ENABLED parity). When enabled, runs a
-# smarter-device-manager DaemonSet that advertises /dev/kvm as an extended
-# resource (smarter-devices/kvm) so sandbox pods can use hardware-accelerated
-# QEMU WITHOUT being privileged. The node must expose /dev/kvm (bare-metal or a
-# nested-virt-capable VM). The plugin DaemonSet itself runs privileged, like
-# other device plugins; the sandbox pods do not.
-kvm:
-  enabled: false
-  image:
-    repository: ghcr.io/smarter-project/smarter-device-manager
-    tag: v1.20.11
-    pullPolicy: IfNotPresent
-  maxDevices: 20
-  # The device plugin advertises /dev/kvm but the node's default 0660 root:kvm
-  # perms still block the non-root sandbox UID from opening it. An init container
-  # relaxes /dev/kvm to 0666 so unprivileged sandboxes can use it. Disable only if
-  # you grant access another way (e.g. a node udev rule or supplementalGroups).
-  relaxDevicePermissions: true
-  initImage:
-    repository: busybox
-    tag: "1.36"
-    pullPolicy: IfNotPresent
-  resources:
-    limits:
-      cpu: 100m
-      memory: 64Mi
-    requests:
-      cpu: 10m
-      memory: 16Mi
-  nodeSelector: {}
-  tolerations: []
+# The KVM device plugin that used to live here (smarter-device-manager,
+# .kvm.*) moved to the sibling device-plugin subchart, which advertises
+# /dev/kvm via squat/generic-device-plugin as <domain>/kvm (squat.ai/kvm
+# with the subchart defaults). Point the runtime-api's KVM_DEVICE_RESOURCE
+# env var at that resource name when enabling SANDBOX_KVM_ENABLED.
 
 postgresql:
   enabled: false
@@ -239,7 +217,7 @@ cleanup:
 # (endpoint defaults to http://<release>-minio:9000) or any S3-compatible store.
 runtimeFileArchive:
   enabled: false
-  storeType: google_cloud # google_cloud | s3
+  storeType: google_cloud # s3 | gcs (alias: google_cloud)
   # Existing object-storage bucket that receives the archives. The chart does
   # not create it; provision it and grant the cleanup identity write access.
   bucket: ""
@@ -251,17 +229,20 @@ runtimeFileArchive:
   format: both # both, git-delta (compact), or tar.gz.
   # S3-compatible connection — only used when storeType=s3.
   s3:
-    # Empty endpoint -> bundled in-cluster minio (http://<release>-minio:9000),
-    # UNLESS region or existingSecret is set (external S3), in which case the
-    # endpoint is left unset so boto3 targets the AWS regional endpoint.
+    # Leave empty for AWS (boto3 targets the regional endpoint); set for any
+    # other S3-compatible store, e.g. the parent chart's bundled MinIO:
+    # http://<release>-minio:9000. TLS is inferred from the URL scheme.
     endpoint: ""
-    region: "" # Set for external (non-minio) S3; also drops the minio endpoint default.
-    secure: false # true for HTTPS endpoints (external S3).
-    # Defaults to the bundled minio dev creds (match minio.svcaccts). Override
-    # for an external store, or use existingSecret below.
-    accessKeyId: "default"
-    secretAccessKey: "notasecret"
-    existingSecret: "" # Optional secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY.
+    region: "" # AWS region of the bucket; required for real AWS S3.
+    # Credentials — first match wins: existingSecret, inline
+    # accessKeyId/secretAccessKey, else the pod's ambient AWS identity
+    # (IRSA / Pod Identity / instance profile). For the bundled MinIO, set the
+    # inline pair to the parent chart's minio.svcaccts credentials.
+    existingSecret: "" # Secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY keys.
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKeyId: ""
+    secretAccessKey: ""
 
 warmRuntimes:
   enabled: false
@@ -273,10 +254,14 @@ warmRuntimes:
   # Canonical map form. Each key is the config's name (promoted to "name" in the
   # rendered JSON). Maps merge cleanly across values layers, so consumers can
   # override one field of one entry without re-declaring every entry.
+  # Set `fuse_s3_mount: true` on an entry for fusey warm pods: dormant startup,
+  # /workspace FUSE-mounted from object storage instead of a PVC. Needs the
+  # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
+  # device-plugin subchart).
   configsByName:
     default:
       # image omitted -> defaults to global.agentServerImage (repo:tag).
-      working_dir: "/workspace"
+      working_dir: "/workspace/project"
       environment:
         # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
         LMNR_BASE_URL: ""
@@ -336,7 +321,7 @@ global:
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.39.1-python
+    tag: 1.41.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -345,3 +330,8 @@ global:
   # proxy vars, CA paths). Mirrored into each warm-runtime entry's env so
   # runtime-api's exact-env matching can claim warm pods.
   agentServerEnv: {}
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

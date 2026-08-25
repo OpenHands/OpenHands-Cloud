@@ -1,0 +1,2 @@
+# This file ensures the fixtures directory is tracked by git
+# The auth.json file will be generated during test setup

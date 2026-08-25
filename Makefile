@@ -70,8 +70,17 @@ $(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.
 	@# Rewrite any dependency that points to a remote registry but exists as a
 	@# sibling chart to use a local file:// reference instead. This lets
 	@# `helm package -u` resolve unpublished chart versions during local builds.
-	@cp $(CHARTDIR)/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml.bak
-	@trap 'mv $(CHARTDIR)/$1/Chart.yaml.bak $(CHARTDIR)/$1/Chart.yaml' EXIT; \
+	@# The copy lives outside the chart directory. Held inside it, `helm package`
+	@# picks it up and every released chart ships a Chart.yaml.bak alongside the
+	@# real one, because the restore only runs after packaging.
+	@# Chart.lock is restored for the same reason: `helm package -u` regenerates it
+	@# to match the rewritten repositories, and a lock describing a Chart.yaml that
+	@# no longer exists fails `helm dependency build` with an out-of-sync error.
+	@mkdir -p $(BUILDDIR)/.chartbak/$1
+	@cp $(CHARTDIR)/$1/Chart.yaml $(BUILDDIR)/.chartbak/$1/Chart.yaml
+	@if [ -f $(CHARTDIR)/$1/Chart.lock ]; then cp $(CHARTDIR)/$1/Chart.lock $(BUILDDIR)/.chartbak/$1/Chart.lock; fi
+	@trap 'mv $(BUILDDIR)/.chartbak/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml; \
+		if [ -f $(BUILDDIR)/.chartbak/$1/Chart.lock ]; then mv $(BUILDDIR)/.chartbak/$1/Chart.lock $(CHARTDIR)/$1/Chart.lock; fi' EXIT; \
 	for dep in $$$$(yq -r '.dependencies[].name // ""' $(CHARTDIR)/$1/Chart.yaml); do \
 		if [ -d $(CHARTDIR)/$$$$dep ]; then \
 			yq -i "(.dependencies[] | select(.name == \"$$$$dep\")).repository = \"file://../$$$$dep\"" $(CHARTDIR)/$1/Chart.yaml; \
@@ -124,6 +133,12 @@ check-release-guard:
 		echo "       This is reserved for CI. If you really mean to do this, re-run with ALLOW_MAIN_RELEASE=1."; \
 		exit 1; \
 	fi
+
+# Echo the channel `release` publishes to, so CI can pin a deploy to it without
+# re-deriving the branch mapping.
+.PHONY: print-channel
+print-channel:
+	@echo $(CHANNEL)
 
 # Build everything, lint, then publish a release to the Replicated channel
 .PHONY: release

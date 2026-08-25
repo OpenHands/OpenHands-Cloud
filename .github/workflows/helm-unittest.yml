@@ -22,6 +22,8 @@ jobs:
       - name: Run chart unit tests
         run: |
           helm unittest charts/openhands
+          helm unittest charts/openhands/charts/automation
+          helm unittest charts/openhands/charts/device-plugin
           helm unittest charts/openhands/charts/integrations-hub
           helm unittest charts/openhands/charts/runtime-api
           helm unittest charts/openhands-secrets

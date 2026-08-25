@@ -1,0 +1,53 @@
+{
+  "name": "openhands-cloud-e2e-tests",
+  "version": "1.0.0",
+  "description": "Release end-to-end tests for OpenHands Cloud using Playwright",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:unit": "playwright test --config unit-tests/playwright.config.ts",
+    "test:chromium": "playwright test --project=chromium:returning --project=chromium:new-user",
+    "test:returning": "playwright test --project=chromium:returning --project=firefox:returning --project=webkit:returning",
+    "test:new-user": "playwright test --project=chromium:new-user --project=firefox:new-user --project=webkit:new-user",
+    "test:chromium:returning": "playwright test --project=chromium:returning",
+    "test:chromium:new-user": "playwright test --project=chromium:new-user",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:dev": "playwright test --project=chromium:returning --ui",
+    "setup:auth": "playwright test --project=setup:returning --project=setup:new-user",
+    "setup:auth:returning": "playwright test --project=setup:returning",
+    "setup:auth:new-user": "playwright test --project=setup:new-user",
+    "keycloak:cleanup": "playwright test --project=keycloak-cleanup",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen",
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck && eslint . --ext .ts && prettier --check \"**/*.ts\"",
+    "lint:fix": "eslint . --ext .ts --fix && prettier --write \"**/*.ts\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@reportportal/agent-js-playwright": "5.4.2",
+    "@types/node": "^22.0.0",
+    "@types/otplib": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "dotenv": "^16.4.5",
+    "eslint": "^8.57.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-airbnb-typescript": "^18.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "eslint-plugin-unused-imports": "^3.2.0",
+    "prettier": "^3.4.2",
+    "typescript": "5.5.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "otplib": "^13.4.0"
+  }
+}

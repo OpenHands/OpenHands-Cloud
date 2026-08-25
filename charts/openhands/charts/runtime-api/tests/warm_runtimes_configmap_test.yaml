@@ -1,0 +1,23 @@
+suite: warm runtimes configmap
+templates:
+  - templates/warm-runtimes-configmap.yaml
+tests:
+  - it: passes fuse_s3_mount through to the rendered config JSON
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.configsByName.fusey.fuse_s3_mount: true
+      warmRuntimes.configsByName.fusey.working_dir: /workspace
+      warmRuntimes.configsByName.fusey.command:
+        - /usr/local/bin/openhands-agent-server
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"fuse_s3_mount": true'
+
+  - it: omits fuse_s3_mount for configs that do not set it
+    set:
+      warmRuntimes.enabled: true
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: fuse_s3_mount

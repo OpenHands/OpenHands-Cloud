@@ -22,6 +22,15 @@ Make sure to update all values marked with "REQUIRED" comments.
 
 To enable organization invitation emails via Resend, set `resend.enabled: true` and create a Kubernetes secret named `resend-api-key` with key `resend-api-key` containing your Resend API key. The secret name can be overridden with `resend.auth.existingSecret`.
 
+### Laminar ClickHouse diagnostics
+
+When Laminar analytics is enabled, the chart applies bounded retention to
+high-volume ClickHouse diagnostic tables such as `system.trace_log`. Replicated
+installs expose this as **Analytics Configuration → ClickHouse Diagnostic Log
+Retention**, defaulting to 3 days. See
+[ClickHouse diagnostic log retention](../../docs/clickhouse-diagnostic-log-retention.md)
+for cleanup commands and support-bundle details.
+
 ### TLS and Certificate Configuration
 
 The chart supports two methods for TLS configuration:
@@ -455,16 +464,17 @@ To use an external PostgreSQL database instead of deploying one with the chart:
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,
-disable the ephemeral filestore and configure the connection:
+disable the bundled MinIO and configure the connection:
 
 ```yaml
+minio:
+  enabled: false            # stops deploying the in-cluster MinIO
 filestore:
-  ephemeral: false          # stops deploying the in-cluster MinIO
   type: s3
   bucket: your-bucket-name
   region: your-s3-region
   # endpoint: https://your-s3-endpoint   # only for S3-compatible stores (MinIO/R2/…); omit for AWS S3
-  # secure: false                        # only for a plain-HTTP endpoint
+  #                                      # TLS is inferred from the URL scheme
   existingSecret: s3-credentials         # omit to use IRSA / Pod Identity instead
 ```
 
@@ -502,6 +512,45 @@ To use an external Redis instance:
    # kubectl create secret generic redis \
    #   --from-literal=redis-password=<your-redis-password>
    ```
+
+### Switching the Bundled Cache to Valkey
+
+The bundled cache is Redis by default. Bitnami's license change froze the free
+Redis chart and images, so they receive no further CVE patches, and the
+replacement is the official Valkey chart. It ships with this chart but is off
+until you turn it on.
+
+Cut over by disabling Redis and enabling Valkey in the same upgrade:
+
+```yaml
+redis:
+  enabled: false
+valkey:
+  enabled: true
+```
+
+Redis remains the active cache while both are enabled, so enabling Valkey on its
+own deploys it without moving anything.
+
+The cache is discarded at cutover. Conversations continue, and sign-in sessions
+are unaffected because they do not live in the cache. Rate limiting briefly
+allows requests it would otherwise have counted.
+
+**Nothing else changes.** The app still reads `REDIS_HOST`, `REDIS_PORT` and
+`REDIS_PASSWORD`, and the password still comes from the existing `redis` Secret's
+`redis-password` key, so no secret has to be created before upgrading or kept in
+order to revert. To revert, restore the two values above.
+
+If you pin cache resources or persistence, translate the keys you set — a
+leftover `redis:` block is not read once Redis is disabled, and its sizing will
+not be applied:
+
+| Redis key | Valkey key |
+|---|---|
+| `redis.master.resources` | `valkey.resources` |
+| `redis.master.persistence.enabled` | `valkey.dataStorage.enabled` |
+| `redis.replica.replicaCount: 0` | `valkey.replica.enabled: false` |
+| `redis.auth.existingSecret` | `valkey.auth.usersExistingSecret` |
 
 ### Storage Class Configuration
 

@@ -56,6 +56,22 @@ database:
   createDatabaseUser: true
 ```
 
+Three specific tests, each learned the hard way (the `filestore.ephemeral`
+layout that caused OHE-3033 failed all three):
+
+- **Name the effect, not the scenario.** A consumer who has never seen our
+  infrastructure must be able to predict what a key does from its name alone.
+  Keys named for an internal workflow or environment type (`ephemeral`,
+  `poc`, `saasMode`) fail even with a good comment — the comment doesn't
+  travel with the key into consumer values files.
+- **Booleans must stay truthful in every value combination.** Enumerate the
+  combinations a flag can coexist with. `ephemeral: true` alongside
+  `persistence.enabled: true` described a durable store as ephemeral.
+- **One knob, one effect.** A value that toggles a bundled dependency AND
+  selects env wiring AND drives another feature's default is three knobs
+  sharing a name. Deploying an optional bundled dependency is always spelled
+  `<dependency>.enabled`, never inferred from a mode flag.
+
 ### 3. Explicit Over Implicit
 
 Let consumers set values directly rather than constructing them via conditional template logic. Avoid building hostnames or connection strings from internal naming conventions.
@@ -102,7 +118,33 @@ Our own dev/staging/prod environments are scaled much more, and are generally us
 
 **Treat with suspicion** any PR that justifies changing a default by referencing our dev/staging/prod environment (e.g., "we need this in prod", "this matches our staging config"). That is a signal the change belongs in our environment's overrides, not in the shipped defaults. Ask whether the new value is genuinely better for self-hosted users; if it is only better for our scaled-up environment, the default should stay put and the value should be overridden on our side.
 
+### 8. Data Outlives the Pod
+
+Any data a service persists must survive pod replacement (upgrade, reschedule,
+restart). This is the root cause of OHE-3033: the automation service was
+configured with a local file store, so uploaded automation packages lived on
+the pod filesystem while their database records survived — every pod
+replacement left enabled automations pointing at deleted files.
+
+- Trace every storage-backend selection the templates render (`FILE_STORE`,
+  `*_STORAGE_PATH`, local paths): where does written data actually land?
+- Data that outlives a request but lives on the pod filesystem (container fs,
+  `emptyDir`, `/tmp`) with no PVC is a bug unless the PR can state why the
+  data is disposable. `FILE_STORE=local`, `LOCAL_STORAGE_PATH`, and `emptyDir`
+  on a data-bearing path are automatic red flags — question every one.
+- Stores must have matching lifetimes: a database that survives upgrades must
+  not hold references to objects in a file store that doesn't.
+
 ## Helm Chart-Specific Checks
+
+### Storage & State
+- Cross-cutting concerns (object storage, database, credentials, CA bundles)
+  use one values shape and one vocabulary across the parent chart and every
+  subchart. A subchart introducing its own bespoke storage block is a
+  regression, not a pattern.
+- Service-internal vocabulary stays internal: when two services natively
+  spell the same backend differently (`gcs` vs `google_cloud`), the templates
+  normalize, and the values interface exposes a single spelling.
 
 ### Environment Variables
 - **De-duplication**: Follow the openhands chart's env var de-duplication pattern so consumers can override defaults
