@@ -1478,7 +1478,7 @@ spec:
         # so the operator has to tell us what they named them.
         - name: automations_db_username
           title: Automations Database User
-          help_text: PostgreSQL role that Automations connects as. Create this role yourself, with access to the Automations database, before deploying.
+          help_text: PostgreSQL role that Automations connects as. Create it and the Automations database yourself before deploying, since automatic creation is off. If neither exists, Automations fails to start with a password authentication error.
           type: text
           default: "automation_user"
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
