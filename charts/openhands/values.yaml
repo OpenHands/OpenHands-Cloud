@@ -571,6 +571,13 @@ laminar:
   # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
   httpPort: null
 
+  clickhouse:
+    diagnostics:
+      # Retention, in days, for high-volume ClickHouse system diagnostic tables
+      # used by Laminar. The chart applies this with a Helm install/upgrade hook
+      # so it survives Replicated/KOTS reconciliation and upgrades.
+      retentionDays: 3
+
   frontend:
     ingress:
       enabled: true          # required gate in 0.1.8; must be true for any frontend ingress to render

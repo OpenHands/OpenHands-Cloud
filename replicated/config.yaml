@@ -1434,6 +1434,19 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
+        - name: clickhouse_diagnostic_log_retention_days
+          title: ClickHouse Diagnostic Log Retention
+          help_text: Retain Laminar ClickHouse system diagnostic tables such as trace_log, query_log, text_log, metric_log, and part_log for this many days. These logs are useful for recent support investigations but can grow quickly on busy installations.
+          type: select_one
+          default: "3"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
+          items:
+            - name: "1"
+              title: "1 day"
+            - name: "2"
+              title: "2 days"
+            - name: "3"
+              title: "3 days (default)"
 
     - name: automations_configuration
       title: Automations

@@ -1,0 +1,86 @@
+{{- if .Values.laminar.enabled }}
+{{- $retentionDays := int (default 3 .Values.laminar.clickhouse.diagnostics.retentionDays) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openhands.fullname" . }}-laminar-clickhouse-diagnostic-retention
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: laminar-clickhouse-diagnostics
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: 900
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: laminar-clickhouse-diagnostics
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: apply-retention
+          image: {{ dig "images" "clickhouse" "repository" "clickhouse/clickhouse-server" .Values.laminar }}:{{ dig "images" "clickhouse" "tag" "25.10" .Values.laminar }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: laminar-app-secrets
+          env:
+            - name: CLICKHOUSE_HOST
+              value: laminar-clickhouse-service
+            - name: CLICKHOUSE_PORT
+              value: "9000"
+            - name: CLICKHOUSE_DIAGNOSTIC_RETENTION_DAYS
+              value: {{ $retentionDays | quote }}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              client=(clickhouse-client --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT}" --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}")
+
+              until "${client[@]}" --query "SELECT 1" >/dev/null; do
+                echo "ClickHouse is unavailable - sleeping 5s"
+                sleep 5
+              done
+
+              retention_days="${CLICKHOUSE_DIAGNOSTIC_RETENTION_DAYS}"
+              tables=(
+                asynchronous_metric_log
+                metric_log
+                query_log
+                query_thread_log
+                query_views_log
+                part_log
+                session_log
+                text_log
+                trace_log
+                crash_log
+                opentelemetry_span_log
+                zookeeper_log
+                blob_storage_log
+                processors_profile_log
+              )
+
+              for table in "${tables[@]}"; do
+                exists=$("${client[@]}" --query "SELECT count() FROM system.tables WHERE database = 'system' AND name = '${table}'")
+                if [ "${exists}" != "1" ]; then
+                  echo "Skipping system.${table}: table does not exist"
+                  continue
+                fi
+
+                ttl_column=$("${client[@]}" --query "SELECT name FROM system.columns WHERE database = 'system' AND table = '${table}' AND name IN ('event_time', 'event_time_microseconds', 'event_date') ORDER BY transform(name, ['event_time', 'event_time_microseconds', 'event_date'], [1, 2, 3], 4) LIMIT 1")
+                if [ -z "${ttl_column}" ]; then
+                  echo "Skipping system.${table}: no supported event time/date column"
+                  continue
+                fi
+
+                echo "Applying ${retention_days} day TTL to system.${table} using ${ttl_column}"
+                # materialize_ttl_after_modify=0 avoids rewriting all existing parts at once,
+                # which exceeds ClickHouse's memory limit on tables with many parts; the TTL
+                # is enforced during normal background merges instead.
+                "${client[@]}" --materialize_ttl_after_modify=0 --query "ALTER TABLE system.${table} MODIFY TTL ${ttl_column} + INTERVAL ${retention_days} DAY DELETE"
+              done
+{{- end }}
