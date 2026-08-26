@@ -1,0 +1,69 @@
+name: Check agent-server sync
+
+# Blocking check on release-please PRs: the agent-server image tag the charts
+# pin must match the software-agent-sdk version the pinned enterprise-server
+# release was built against.
+#
+# The enterprise server imports openhands-agent-server (published from
+# OpenHands/software-agent-sdk) as a client and talks to the agent-server image
+# over HTTP in every sandbox. Client and server are the same codebase, so a
+# version split is a protocol split. Nothing links the two pins, so a bump to
+# either one alone silently ships that split -- this catches it at the release
+# PR, the last point before the chart is published.
+#
+# See scripts/check_agent_server_sync.py for the pins it reads.
+
+on:
+  # Deliberately unfiltered by path. A release PR for a chart that does not
+  # touch charts/openhands (openhands-secrets, crd-check) still publishes the
+  # release line this invariant covers, and an always-triggered workflow can be
+  # a required check without leaving skipped PRs pending forever.
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-agent-server-sync:
+    name: Check agent-server sync
+    # release-please parks each chart's pending release PR on its own
+    # `release-please--branches--<base>--components--<chart>` branch, so the
+    # head ref identifies them across every release line (main and the
+    # release/X.Y maintenance branches alike). On any other PR the job skips,
+    # which reports as success.
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        startsWith(github.head_ref, 'release-please--')
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      # OpenHands/enterprise is public, so the job's own read-only GITHUB_TOKEN
+      # can read its tags and pyproject.toml. It is passed only to raise the
+      # API rate limit above the unauthenticated one.
+      - name: Compare chart agent-server tag against the enterprise SDK pin
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=0
+          uv run scripts/check_agent_server_sync.py > report.txt 2>&1 || status=$?
+          cat report.txt
+          {
+            echo '### Agent-server / software-agent-sdk pin sync'
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
