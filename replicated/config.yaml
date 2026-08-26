@@ -1476,11 +1476,15 @@ spec:
           type: text
           default: "automation_user"
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        # Deliberately not required. Leaving it blank falls back to the external
+        # PostgreSQL password, which is the password an earlier install would
+        # have given this role, so an operator who never chose one is not asked
+        # to invent it. Making this required would stall those upgrades on a
+        # value only the installer knows.
         - name: automations_db_password
           title: Automations Database Password
-          help_text: The password you gave the Automations database role. Required, because the installer has no way to know a password set outside it.
+          help_text: Password for the Automations database role. Leave blank unless you created that role yourself with a different password, in which case enter it here. Note that changing this does not change the password in PostgreSQL.
           type: password
-          required: true
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
 
     - name: agent_canvas_configuration
