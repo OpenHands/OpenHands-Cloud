@@ -43,13 +43,8 @@ runtime-api:
     RUNTIME_DISABLE_SSL: "false"
     STORAGE_CLASS: standard
 
-# Conversation/session files + shared event store. The chart selects the
-# backend from filestore.type (default "gcs"); it must be "s3" to use the
-# bundled MinIO, otherwise the app runs with FILE_STORE=google_cloud and
-# crashes (DefaultCredentialsError) on the first conversation/event access
-# without GCP credentials. minio.enabled defaults to false in the chart, so
-# the bundled MinIO has to be turned on explicitly; persistence keeps its data
-# across pod restarts.
+# Chart defaults filestore.type to gcs (needs GCP creds this cluster lacks) and
+# ships minio disabled; s3 + bundled MinIO give the file/event store a local target.
 filestore:
   type: s3
 minio:
