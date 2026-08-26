@@ -832,6 +832,12 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
           required: true
+        - name: azure_devops_webhook_secret
+          title: Azure DevOps Webhook Secret
+          help_text: Shared secret used to verify Azure DevOps service hooks for the resolver. Generated automatically.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
@@ -1297,9 +1303,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.41.0-python
+          help_text: Image tag, e.g. 1.43.1-python
           type: text
-          default: "1.41.0-python"
+          default: "1.43.1-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
