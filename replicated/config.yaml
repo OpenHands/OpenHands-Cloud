@@ -1017,7 +1017,9 @@ spec:
             enterprise_sso SAML identity provider in the bundled Keycloak (realm allhands),
             with signature validation and trust-email on and the attribute mapper OpenHands
             uses to recognize SAML logins. Leave blank to create and manage the identity
-            provider manually in the Keycloak admin console.
+            provider manually in the Keycloak admin console. Manual setup must also add a
+            mapper named identity-provider with type hardcoded-attribute-idp-mapper,
+            attribute identity_provider, value enterprise_sso:saml, and sync mode FORCE.
           type: text
           when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
           validation:

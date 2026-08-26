@@ -91,3 +91,26 @@ tests:
         matchRegex:
           path: data["keycloak-config.sh"]
           pattern: 'Disabled managed identity provider: enterprise_sso'
+
+  - it: gives operator env overrides precedence without duplicates
+    set:
+      enabled: true
+      keycloak.enabled: true
+      databaseMigrations.waitForDatabase: false
+      databaseMigrations.createDatabases: false
+      databaseMigrations.migrate: false
+      enterpriseSSO.enabled: true
+      enterpriseSSO.displayName: Company SSO
+      enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
+      env:
+        ENTERPRISE_SSO_DISPLAY_NAME: Operator SSO
+        ENTERPRISE_SSO_IDP_METADATA_URL: https://operator.example.com/saml/metadata
+    asserts:
+      - template: deployment.yaml
+        equal:
+          path: spec.template.spec.initContainers[0].env[?(@.name=="ENTERPRISE_SSO_DISPLAY_NAME")].value
+          value: Operator SSO
+      - template: deployment.yaml
+        equal:
+          path: spec.template.spec.initContainers[0].env[?(@.name=="ENTERPRISE_SSO_IDP_METADATA_URL")].value
+          value: https://operator.example.com/saml/metadata

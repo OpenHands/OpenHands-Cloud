@@ -308,6 +308,14 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
    # modifying a manually managed provider.
    ```
 
+   For manual setup, also add this identity-provider mapper to `enterprise_sso`:
+
+   - Name: `identity-provider`
+   - Mapper type: `hardcoded-attribute-idp-mapper`
+   - Attribute: `identity_provider`
+   - Value: `enterprise_sso:saml`
+   - Sync mode: `FORCE`
+
 ### LiteLLM configuration
 
 > [!IMPORTANT]

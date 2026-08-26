@@ -25,6 +25,8 @@ OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 OPENHANDS_VALUES = OPENHANDS_CHART / "values.yaml"
 OPENHANDS_VALUES_SCHEMA = OPENHANDS_CHART / "values.schema.json"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
+REPLICATED_CONFIG = REPO_ROOT / "replicated" / "config.yaml"
+OPENHANDS_README = OPENHANDS_CHART / "README.md"
 
 
 def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
@@ -101,6 +103,26 @@ def test_keycloak_api_call_extraction_is_not_tied_to_yaml_indent() -> None:
 """
 
     assert "errorMessage" in keycloak_api_call_body(script_template)
+
+
+def test_keycloak_api_call_propagates_transport_failure() -> None:
+    if shutil.which("jq") is None:
+        pytest.skip("jq not available")
+
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    helper = keycloak_api_call_body(script_template)
+    result = subprocess.run(
+        [
+            "sh",
+            "-c",
+            f"keycloak_api_call() {{\n{helper}}}\nkeycloak_api_call false",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
 
 
 def sso_session_jq_filter(script_template: str) -> str:
@@ -389,9 +411,77 @@ def test_enterprise_sso_inputs_are_environment_data() -> None:
     )
 
 
+def test_enterprise_sso_env_overrides_render_once_for_keycloak_init() -> None:
+    display_name = "Operator SSO"
+    metadata_url = "https://operator.example.com/saml/metadata"
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "test",
+            str(OPENHANDS_CHART),
+            "--show-only",
+            "templates/deployment.yaml",
+            "--set",
+            "enabled=true",
+            "--set",
+            "keycloak.enabled=true",
+            "--set",
+            "databaseMigrations.waitForDatabase=false",
+            "--set",
+            "databaseMigrations.createDatabases=false",
+            "--set",
+            "databaseMigrations.migrate=false",
+            "--set",
+            "enterpriseSSO.enabled=true",
+            "--set-string",
+            "enterpriseSSO.idpMetadataUrl=https://idp.example.com/saml/metadata",
+            "--set-string",
+            f"env.ENTERPRISE_SSO_DISPLAY_NAME={display_name}",
+            "--set-string",
+            f"env.ENTERPRISE_SSO_IDP_METADATA_URL={metadata_url}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    keycloak_init = re.search(
+        r"(?ms)^      - name: keycloak-config\n(?P<body>.*?)(?=^      - name: litellm-config\n)",
+        result.stdout,
+    )
+    assert keycloak_init, "Could not find the rendered keycloak-config init container"
+    rendered = keycloak_init.group("body")
+
+    assert rendered.count("name: ENTERPRISE_SSO_DISPLAY_NAME") == 1
+    assert re.search(
+        rf"name: ENTERPRISE_SSO_DISPLAY_NAME\s+value: {re.escape(display_name)}",
+        rendered,
+    )
+    assert rendered.count("name: ENTERPRISE_SSO_IDP_METADATA_URL") == 1
+    assert re.search(
+        rf"name: ENTERPRISE_SSO_IDP_METADATA_URL\s+value: {re.escape(metadata_url)}",
+        rendered,
+    )
+
+
 def test_enterprise_sso_disable_path_reconciles_managed_provider() -> None:
     script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
 
     assert "else if .Values.enterpriseSSO.idpMetadataUrl" in script
     assert "jq '.enabled = false'" in script
     assert "Disabled managed identity provider: enterprise_sso" in script
+
+
+def test_manual_enterprise_sso_guidance_documents_required_mapper() -> None:
+    required_mapper_settings = (
+        "identity-provider",
+        "hardcoded-attribute-idp-mapper",
+        "identity_provider",
+        "enterprise_sso:saml",
+        "FORCE",
+    )
+
+    for guidance_path in (OPENHANDS_README, REPLICATED_CONFIG):
+        guidance = guidance_path.read_text(encoding="utf-8")
+        for setting in required_mapper_settings:
+            assert setting in guidance, f"{guidance_path} must document {setting}"
