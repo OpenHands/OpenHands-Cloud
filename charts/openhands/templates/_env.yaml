@@ -330,6 +330,14 @@
       name: {{ .Values.azureDevOps.auth.existingSecret }}
       key: webhook-secret
       optional: true
+- name: AZURE_DEVOPS_BOT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: bot-token
+      optional: true
+- name: AZURE_DEVOPS_BOT_USERNAME
+  value: {{ .Values.azureDevOps.botUsername | quote }}
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL

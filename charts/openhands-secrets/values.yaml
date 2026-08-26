@@ -71,6 +71,7 @@ config:
   azure_devops_client_id: ""
   azure_devops_client_secret: ""
   azure_devops_webhook_secret: ""
+  azure_devops_bot_token: ""
 
   # Jira Data Center credentials (OAuth, optional)
   jira_data_center_base_url: ""

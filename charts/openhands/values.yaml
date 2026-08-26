@@ -241,6 +241,8 @@ azureDevOps:
   enabled: false
   tenantId: ""
   organization: ""
+  # Optional service account the resolver posts as (token in auth.existingSecret/bot-token).
+  botUsername: ""
   auth:
     existingSecret: azure-devops-app
 
