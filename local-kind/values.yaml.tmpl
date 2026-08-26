@@ -43,9 +43,12 @@ runtime-api:
     RUNTIME_DISABLE_SSL: "false"
     STORAGE_CLASS: standard
 
+# Chart defaults filestore.type to gcs (needs GCP creds this cluster lacks) and
+# ships minio disabled; s3 + bundled MinIO give the file/event store a local target.
 filestore:
-  ephemeral: true
+  type: s3
 minio:
+  enabled: true
   persistence:
     enabled: true
 
