@@ -6,6 +6,8 @@ import json
 import re
 import shutil
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -38,14 +40,18 @@ def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
     return missing_pkce_method
 
 
-def keycloak_api_call_body(script_template: str) -> str:
+def shell_function_body(script_template: str, function_name: str) -> str:
     match = re.search(
-        r"(?ms)^(?P<indent>[ \t]*)keycloak_api_call\(\) \{\n"
+        rf"(?ms)^(?P<indent>[ \t]*){re.escape(function_name)}\(\) \{{\n"
         r"(?P<body>.*?)^(?P=indent)\}",
         script_template,
     )
-    assert match, "Could not find keycloak_api_call() in keycloak-config-script.yaml"
+    assert match, f"Could not find {function_name}() in keycloak-config-script.yaml"
     return match.group("body")
+
+
+def keycloak_api_call_body(script_template: str) -> str:
+    return shell_function_body(script_template, "keycloak_api_call")
 
 
 def assert_pkce_enabled_providers_set_method(realm: dict) -> None:
@@ -123,6 +129,66 @@ def test_keycloak_api_call_propagates_transport_failure() -> None:
     )
 
     assert result.returncode != 0
+
+
+def test_keycloak_write_checks_empty_response_http_status(tmp_path: Path) -> None:
+    class StatusHandler(BaseHTTPRequestHandler):
+        status = 204
+
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.send_response(self.status)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    helper = shell_function_body(script_template, "keycloak_write")
+    command = f"keycloak_write() {{\n{helper}}}\nACCESS_TOKEN=test keycloak_write POST \"$1\" \"$2\""
+    payload = tmp_path / "payload.json"
+    payload.write_text("{}", encoding="utf-8")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), StatusHandler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/resource"
+
+    try:
+        success = subprocess.run(
+            ["sh", "-c", command, "sh", url, str(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert success.returncode == 0
+
+        StatusHandler.status = 403
+        failure = subprocess.run(
+            ["sh", "-c", command, "sh", url, str(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert failure.returncode != 0
+        assert "HTTP 403" in failure.stderr
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_enterprise_sso_writes_use_status_checked_helper() -> None:
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+
+    provider_path = '"$KC_REALM/identity-provider/instances/enterprise_sso'
+    instances_path = '"$KC_REALM/identity-provider/instances'
+    assert script.count(f"keycloak_write PUT {provider_path}") == 3
+    assert script.count(f"keycloak_write POST {instances_path}") == 2
+    assert not re.search(
+        r'keycloak_api_call "curl -s -X (?:POST|PUT) [^\n]*enterprise_sso',
+        script,
+    )
 
 
 def sso_session_jq_filter(script_template: str) -> str:
@@ -391,10 +457,7 @@ def test_enterprise_sso_inputs_are_environment_data() -> None:
     replicated = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
 
     assert "- name: ENTERPRISE_SSO_DISPLAY_NAME" in deployment
-    assert (
-        'value: {{ .Values.enterpriseSSO.displayName | default "Company SSO" | quote }}'
-        in deployment
-    )
+    assert "value: {{ .Values.enterpriseSSO.displayName | quote }}" in deployment
     assert "- name: ENTERPRISE_SSO_IDP_METADATA_URL" in deployment
     assert "value: {{ .Values.enterpriseSSO.idpMetadataUrl | quote }}" in deployment
     assert "{{ .Values.enterpriseSSO.displayName" not in script
@@ -467,7 +530,9 @@ def test_enterprise_sso_env_overrides_render_once_for_keycloak_init() -> None:
 def test_enterprise_sso_disable_path_reconciles_managed_provider() -> None:
     script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
 
-    assert "else if .Values.enterpriseSSO.idpMetadataUrl" in script
+    assert '"openhandsManaged": "true"' in script
+    assert "else if .Values.enterpriseSSO.idpMetadataUrl" not in script
+    assert '.config.openhandsManaged == "true"' in script
     assert "jq '.enabled = false'" in script
     assert "Disabled managed identity provider: enterprise_sso" in script
 

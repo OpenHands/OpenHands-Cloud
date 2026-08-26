@@ -58,6 +58,10 @@ tests:
         notMatchRegex:
           path: data["keycloak-config.sh"]
           pattern: 'validateSignatures'
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'openhandsManaged.*true'
 
   - it: advertises Enterprise SSO without managing Keycloak when metadata is blank
     set:
@@ -76,13 +80,17 @@ tests:
         notMatchRegex:
           path: data["keycloak-config.sh"]
           pattern: 'ENTERPRISE_SSO_IDP_METADATA_URL'
+      - template: keycloak-config-script.yaml
+        notMatchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'Disabled managed identity provider: enterprise_sso'
 
-  - it: disables a managed provider when the feature toggle is off
+  - it: disables a marked managed provider after the metadata URL is cleared
     set:
       enabled: true
       keycloak.enabled: true
       enterpriseSSO.enabled: false
-      enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
+      enterpriseSSO.idpMetadataUrl: ""
     asserts:
       - template: deployment.yaml
         notExists:

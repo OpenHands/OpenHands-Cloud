@@ -65,6 +65,28 @@ data:
       esac
     }
 
+    keycloak_write() {
+      METHOD=$1
+      URL=$2
+      DATA_FILE=$3
+      if ! STATUS=$(curl -sS -o /tmp/keycloak-write-response.json -w '%{http_code}' \
+        -X "$METHOD" "$URL" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "@$DATA_FILE"); then
+        echo "ERROR: Keycloak $METHOD $URL failed." >&2
+        return 1
+      fi
+      if ! RESPONSE=$(cat /tmp/keycloak-write-response.json); then
+        echo "ERROR: could not read the Keycloak $METHOD response for $URL." >&2
+        return 1
+      fi
+      case "$STATUS" in
+        2??) return 0 ;;
+        *) echo "ERROR: Keycloak $METHOD $URL returned HTTP $STATUS: $RESPONSE" >&2; return 1 ;;
+      esac
+    }
+
     echo "Waiting for Keycloak to be ready..."
     until curl --output /dev/null --silent --head --fail $KEYCLOAK_SERVER_URL; do
         echo '.'
@@ -290,7 +312,6 @@ data:
       refresh_access_token || exit 1
       KC_REALM="$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME"
       AUTH="-H \"Authorization: Bearer $ACCESS_TOKEN\""
-      CT="-H \"Content-Type: application/json\""
 
       echo "Importing enterprise SSO IdP metadata from the configured URL..."
       IMPORT_REQUEST=$(jq -n --arg from_url "$ENTERPRISE_SSO_IDP_METADATA_URL" '{
@@ -323,16 +344,20 @@ data:
           authenticateByDefault: false,
           linkOnly: false,
           hideOnLogin: true,
-          config: (. + {"syncMode": "IMPORT", "validateSignature": "true"})
+          config: (. + {
+            "syncMode": "IMPORT",
+            "validateSignature": "true",
+            "openhandsManaged": "true"
+          })
         }' > /tmp/idp-enterprise-sso.json || exit 1
 
       keycloak_get_optional "$KC_REALM/identity-provider/instances/enterprise_sso" || exit 1
       EXISTING_IDP=$RESPONSE
       if echo "$EXISTING_IDP" | jq -e '.internalId or .id' >/dev/null 2>&1; then
-        keycloak_api_call "curl -s -X PUT \"$KC_REALM/identity-provider/instances/enterprise_sso\" $AUTH $CT --data \"@/tmp/idp-enterprise-sso.json\"" || exit 1
+        keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso" /tmp/idp-enterprise-sso.json || exit 1
         echo "  Updated identity provider: enterprise_sso"
       else
-        keycloak_api_call "curl -s -X POST \"$KC_REALM/identity-provider/instances\" $AUTH $CT --data \"@/tmp/idp-enterprise-sso.json\"" || exit 1
+        keycloak_write POST "$KC_REALM/identity-provider/instances" /tmp/idp-enterprise-sso.json || exit 1
         echo "  Created identity provider: enterprise_sso"
       fi
 
@@ -351,28 +376,25 @@ data:
         '.[] | objects | select(.name == "identity-provider") | .id // empty') || exit 1
       if [ -n "$EXISTING_MAPPER_ID" ]; then
         jq --arg id "$EXISTING_MAPPER_ID" '. + {id: $id}' /tmp/mapper-enterprise-sso.json > /tmp/mapper-enterprise-sso-update.json || exit 1
-        keycloak_api_call "curl -s -X PUT \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers/$EXISTING_MAPPER_ID\" $AUTH $CT --data \"@/tmp/mapper-enterprise-sso-update.json\"" || exit 1
+        keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso/mappers/$EXISTING_MAPPER_ID" /tmp/mapper-enterprise-sso-update.json || exit 1
         echo "  Updated mapper: enterprise_sso/identity-provider"
       else
-        keycloak_api_call "curl -s -X POST \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers\" $AUTH $CT --data \"@/tmp/mapper-enterprise-sso.json\"" || exit 1
+        keycloak_write POST "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" /tmp/mapper-enterprise-sso.json || exit 1
         echo "  Created mapper: enterprise_sso/identity-provider"
       fi
       echo "enterprise_sso SAML identity provider configured."
     ) || echo "WARNING: enterprise_sso auto-configuration failed (details above). Fix the SAML metadata URL and redeploy to retry; continuing startup." >&2
-    {{- else if .Values.enterpriseSSO.idpMetadataUrl }}
-    # A retained metadata URL marks this provider as chart-managed. Disable it
-    # when the feature toggle is turned off so direct kc_idp_hint requests cannot
-    # bypass the hidden login button.
+    {{- else if not .Values.enterpriseSSO.enabled }}
+    # Reconcile on every toggle-off rollout, but only modify a provider stamped
+    # as chart-managed by the auto-configuration path.
     (
       refresh_access_token || exit 1
       KC_REALM="$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME"
-      AUTH="-H \"Authorization: Bearer $ACCESS_TOKEN\""
-      CT="-H \"Content-Type: application/json\""
       keycloak_get_optional "$KC_REALM/identity-provider/instances/enterprise_sso" || exit 1
       EXISTING_IDP=$RESPONSE
-      if echo "$EXISTING_IDP" | jq -e '.internalId or .id' >/dev/null 2>&1; then
+      if echo "$EXISTING_IDP" | jq -e '.config.openhandsManaged == "true"' >/dev/null 2>&1; then
         echo "$EXISTING_IDP" | jq '.enabled = false' > /tmp/idp-enterprise-sso-disabled.json || exit 1
-        keycloak_api_call "curl -s -X PUT \"$KC_REALM/identity-provider/instances/enterprise_sso\" $AUTH $CT --data \"@/tmp/idp-enterprise-sso-disabled.json\"" || exit 1
+        keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso" /tmp/idp-enterprise-sso-disabled.json || exit 1
         echo "Disabled managed identity provider: enterprise_sso"
       fi
     ) || echo "WARNING: could not disable the managed enterprise_sso identity provider; continuing startup." >&2

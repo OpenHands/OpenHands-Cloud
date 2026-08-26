@@ -75,9 +75,10 @@ spec:
         env:
         {{- include "openhands.env" . | nindent 8 }}
         {{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
+        {{- /* Keep these init-only; openhands.env already emits .Values.env overrides. */}}
         {{- if not (hasKey (.Values.env | default dict) "ENTERPRISE_SSO_DISPLAY_NAME") }}
         - name: ENTERPRISE_SSO_DISPLAY_NAME
-          value: {{ .Values.enterpriseSSO.displayName | default "Company SSO" | quote }}
+          value: {{ .Values.enterpriseSSO.displayName | quote }}
         {{- end }}
         {{- if not (hasKey (.Values.env | default dict) "ENTERPRISE_SSO_IDP_METADATA_URL") }}
         - name: ENTERPRISE_SSO_IDP_METADATA_URL
