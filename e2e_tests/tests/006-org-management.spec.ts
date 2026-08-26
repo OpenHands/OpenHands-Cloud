@@ -69,9 +69,14 @@ test.describe.serial("org management", () => {
     // 2. Provision the New User into the new org. The endpoint is idempotent:
     //    if the user already exists (e.g. from a prior GitHub login), this
     //    only ensures org membership and returns the existing API key.
+    // Admin role so the new user can exercise org-management UI (e.g. the
+    // org-rename spec 008). The endpoint is idempotent: if the user already
+    // exists, this only ensures org membership and returns the existing API
+    // key. The role is only set on first add; an existing member's role is
+    // left untouched, so the org must be freshly created by the prior step.
     provisioned = await provisionUser(baseURL || "", apiKey, org.id, {
       email,
-      role: "member",
+      role: "admin",
     });
 
     console.log(
