@@ -838,6 +838,16 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: azure_devops_bot_token
+          title: Azure DevOps Bot Personal Access Token
+          help_text: Optional. PAT of a dedicated Azure DevOps service account. When set, OpenHands posts resolver replies as this account instead of the mentioning user. Needs Code (Read & write) and Work Items (Read & write) scopes.
+          type: password
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
+        - name: azure_devops_bot_username
+          title: Azure DevOps Bot Username
+          help_text: Sign-in address of the bot account above (e.g. openhands-bot@contoso.com). Used to ignore the bot's own comments so its replies don't re-trigger jobs.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
