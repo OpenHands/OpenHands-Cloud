@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/automation
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.7.0
+  tag: 1.8.0
 
 imagePullSecrets: []
 
@@ -45,6 +45,29 @@ events:
         cpu: 500m
   uvicorn:
     workers: 2
+  # Keep at least one events pod serving during voluntary disruptions (node
+  # drains / rotations). Without this, a single node drain can evict every
+  # replica at once and take /v1/events/* to zero healthy backends.
+  # Only rendered when deployment.replicas > 1 — at one replica the budget would
+  # make the pod unevictable and stall the drain instead. Set enabled=false on a
+  # single-node cluster, where an evicted pod has nowhere else to land.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # Spread replicas across nodes so a single node failure/drain cannot take out
+  # the whole deployment. ScheduleAnyway keeps scheduling best-effort even when
+  # a perfect spread is not possible (e.g. small clusters).
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: automation-events
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
 
 securityContext:
   runAsUser: 42420
@@ -171,3 +194,8 @@ global:
   security:
     # This allows using the bitnamilegacy image repo
     allowInsecureImages: true
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

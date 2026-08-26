@@ -50,3 +50,16 @@ Selector labels
 app.kubernetes.io/name: {{ include "plugin-directory.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Pod affinity. Renders the affinity map as YAML, or nothing when no affinity is
+configured, so callers can wrap the include in a `with` and omit the key
+entirely. A chart-level `affinity` value wins over the umbrella-wide
+`global.scheduling.affinity`.
+*/}}
+{{- define "plugin-directory.affinity" -}}
+{{- $affinity := .Values.affinity | default (dig "scheduling" "affinity" (dict) (.Values.global | default (dict))) -}}
+{{- with $affinity -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}

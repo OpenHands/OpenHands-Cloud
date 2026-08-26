@@ -9,6 +9,8 @@ on:
       # not only when the test itself is edited.
       - 'charts/**'
       - 'replicated/**'
+      - '.github/workflows/deploy-replicated.yml'
+      - '.github/workflows/e2e-replicated.yml'
       - '.github/workflows/publish-release-charts.yml'
       - '.github/workflows/test-scripts.yml'
 

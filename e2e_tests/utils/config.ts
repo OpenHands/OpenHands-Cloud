@@ -28,10 +28,27 @@ import path from "path";
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
  *  - KEYCLOAK_NEW_USER_EMAIL       email of the New User to delete.
+ *  - AUTH_BASE_URL                 (optional) explicit HTTP(S) Keycloak server
+ *                                  URL. When non-empty it is validated and used;
+ *                                  otherwise the URL is derived from BASE_URL by
+ *                                  prefixing the host with "auth." (e.g.
+ *                                  https://staging.all-hands.dev →
+ *                                  https://auth.staging.all-hands.dev). Set it for
+ *                                  targets served under a subdomain (e.g. "app."),
+ *                                  where the derivation is wrong.
  *
  *  The Keycloak server URL is derived from BASE_URL by prefixing the subdomain
  *  with "auth." (e.g. https://staging.all-hands.dev →
  *  https://auth.staging.all-hands.dev).
+ *
+ * Super admin (org management):
+ *  - SUPER_ADMIN_API_KEY           API key of an instance-level superadmin,
+ *                                  used by the org-management specs to create
+ *                                  organizations and provision users directly
+ *                                  via the REST API (outside the browser). The
+ *                                  key must be unbound (no org binding) so the
+ *                                  superadmin can target any org via the
+ *                                  ``X-Org-Id`` header.
  *
  * Returning User (GitHub):
  *  - RETURNING_GITHUB_USERNAME
@@ -128,6 +145,21 @@ export function githubCredentialsFor(user: RunUser): GitHubCredentials {
   return { username, password, totpSecret };
 }
 
+/**
+ * Resolve and validate the super-admin API key used by the org-management
+ * specs to drive the REST API directly (outside the browser). The key must
+ * belong to an instance-level superadmin and be unbound so it can target any
+ * org via the ``X-Org-Id`` header.
+ */
+export function superAdminApiKey(): string {
+  return required("SUPER_ADMIN_API_KEY");
+}
+
+/** Email of the New User (used by org-management to provision them into an org). */
+export function newUserEmail(): string {
+  return required("KEYCLOAK_NEW_USER_EMAIL");
+}
+
 /** Resolve and validate the Keycloak admin config used for New User cleanup. */
 export function keycloakAdminConfig(): KeycloakAdminConfig {
   return {
@@ -140,10 +172,33 @@ export function keycloakAdminConfig(): KeycloakAdminConfig {
 }
 
 /**
- * Derive the Keycloak URL from BASE_URL by prefixing the subdomain with "auth.".
- * e.g. https://staging.all-hands.dev → https://auth.staging.all-hands.dev
+ * Resolve the Keycloak server URL.
+ *
+ * Prefers an explicit AUTH_BASE_URL (the target's real auth host, e.g. resolved
+ * from its published web-client config), falling back to deriving it from
+ * BASE_URL by prefixing the host with "auth.".
+ *
+ * The derivation only holds when the app is served at the environment apex
+ * (e.g. https://staging.all-hands.dev → https://auth.staging.all-hands.dev). It
+ * is wrong when the app is served under a subdomain such as "app.", where the
+ * auth host drops that label rather than gaining an "auth." prefix; for those
+ * targets set AUTH_BASE_URL to the correct host.
  */
 function keycloakUrlFromBaseUrl(): string {
+  const explicit = process.env.AUTH_BASE_URL?.trim();
+  if (explicit) {
+    try {
+      const url = new URL(explicit);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(`Unsupported protocol: ${url.protocol}`);
+      }
+      return url.toString().replace(/\/$/, "");
+    } catch (error) {
+      throw new Error("AUTH_BASE_URL must be a valid HTTP(S) URL.", {
+        cause: error,
+      });
+    }
+  }
   const baseUrl = process.env.BASE_URL;
   if (!baseUrl) {
     throw new Error("BASE_URL is required to derive the Keycloak URL.");

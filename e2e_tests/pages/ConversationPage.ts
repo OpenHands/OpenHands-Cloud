@@ -2,6 +2,16 @@ import { Page, Locator, expect } from "@playwright/test";
 import { BasePage } from "./BasePage";
 
 /**
+ * Budget given to the error-banner watch inside the readiness/message races.
+ *
+ * On a genuinely failed conversation the error banner appears quickly, so a
+ * short fixed budget is enough to fail fast. Keeping this small also stops the
+ * losing branch of Promise.race from polling for the full readiness timeout
+ * (which otherwise leaves a ~60s dangling wait in the trace even on success).
+ */
+const ERROR_BANNER_WAIT_MS = 5_000;
+
+/**
  * Agent states that can be observed during conversation
  */
 export enum AgentState {
@@ -91,16 +101,25 @@ export class ConversationPage extends BasePage {
 
     // Wait for agent to be ready by checking for "Waiting for task" text.
     // Note: using text search since data-testid is not yet deployed to staging.
+    //
+    // The error-banner branch is a sentinel: it only resolves when an error
+    // actually appears. On timeout it stays pending (never resolves), so it
+    // cannot short-circuit the race — the full timeout budget is left to the
+    // readyText branch. Previously both branches resolved on timeout, so the
+    // 5s error-budget branch always won the race after 5s and the readyText
+    // branch was abandoned with ~115s of budget unused.
     const readyText = this.page.getByText(/waiting for task/i);
     const outcome = await Promise.race([
       readyText
         .waitFor({ state: "visible", timeout })
         .then(() => "ready" as const)
         .catch(() => "timeout" as const),
-      this.errorBanner
-        .waitFor({ state: "visible", timeout })
-        .then(() => "error" as const)
-        .catch(() => "timeout" as const),
+      new Promise<"error">((resolve) => {
+        this.errorBanner
+          .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
+          .then(() => resolve("error"))
+          .catch(() => {});
+      }),
     ]);
 
     if (outcome === "error") {
@@ -334,10 +353,12 @@ export class ConversationPage extends BasePage {
         .waitFor({ state: "visible", timeout })
         .then(() => "match" as const)
         .catch(() => "timeout" as const),
-      this.errorBanner
-        .waitFor({ state: "visible", timeout })
-        .then(() => "error" as const)
-        .catch(() => "timeout" as const),
+      new Promise<"error">((resolve) => {
+        this.errorBanner
+          .waitFor({ state: "visible", timeout: ERROR_BANNER_WAIT_MS })
+          .then(() => resolve("error"))
+          .catch(() => {});
+      }),
     ]);
 
     if (outcome === "error") {

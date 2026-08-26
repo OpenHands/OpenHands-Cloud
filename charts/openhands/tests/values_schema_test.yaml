@@ -20,6 +20,18 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "ingress/enabled.*want boolean"
+  - it: rejects a non-integer daily conversation limit
+    set:
+      dailyConversationLimit: "twenty"
+    asserts:
+      - failedTemplate:
+          errorPattern: "dailyConversationLimit"
+  - it: rejects a non-boolean duplicate email check
+    set:
+      duplicateEmailCheck: "yes"
+    asserts:
+      - failedTemplate:
+          errorPattern: "duplicateEmailCheck.*want boolean"
   - it: rejects a storage backend the app does not support
     set:
       filestore.type: local
@@ -32,6 +44,18 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "minio/enabled.*want boolean"
+  - it: rejects ClickHouse diagnostic retention above the supported bound
+    set:
+      laminar.clickhouse.diagnostics.retentionDays: 4
+    asserts:
+      - failedTemplate:
+          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*maximum: got 4, want 3"
+  - it: rejects ClickHouse diagnostic retention below the supported bound
+    set:
+      laminar.clickhouse.diagnostics.retentionDays: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*minimum: got 0, want 1"
   - it: rejects a non-string filestore.region
     set:
       filestore.region: true
@@ -50,5 +74,6 @@ tests:
       filestore.existingSecret: s3-creds
       filestore.accessKeyIdKey: access-key
       filestore.secretAccessKeyKey: secret-key
+      laminar.clickhouse.diagnostics.retentionDays: 2
     asserts:
       - notFailedTemplate: {}

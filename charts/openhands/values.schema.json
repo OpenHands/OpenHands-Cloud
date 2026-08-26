@@ -6,6 +6,8 @@
   "required": ["image"],
   "properties": {
     "enabled": { "type": "boolean" },
+    "dailyConversationLimit": { "type": ["integer", "null"] },
+    "duplicateEmailCheck": { "type": "boolean" },
     "image": {
       "type": "object",
       "required": ["repository", "tag"],
@@ -100,6 +102,23 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" }
+      }
+    },
+    "laminar": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clickhouse": {
+          "type": "object",
+          "properties": {
+            "diagnostics": {
+              "type": "object",
+              "properties": {
+                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }
+              }
+            }
+          }
+        }
       }
     }
   }
