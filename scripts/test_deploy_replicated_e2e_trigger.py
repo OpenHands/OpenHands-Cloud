@@ -7,6 +7,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-replicated.yml"
 E2E_WORKFLOW = ROOT / ".github/workflows/e2e-replicated.yml"
+RELEASE_GATE_WORKFLOW = ROOT / ".github/workflows/release-gate.yml"
 TEST_WORKFLOW = ROOT / ".github/workflows/test-scripts.yml"
 RELEASE_WORKFLOWS = {
     "unstable": ROOT / ".github/workflows/release-replicated-unstable.yml",
@@ -98,7 +99,57 @@ def test_deploy_replicated_does_not_call_e2e():
     assert "e2e" not in load_workflow(DEPLOY_WORKFLOW)["jobs"]
 
 
-def test_workflow_contract_runs_when_either_workflow_changes():
+def release_gate_command():
+    workflow = load_workflow(RELEASE_GATE_WORKFLOW)
+    return workflow["jobs"]["release-gate"]["steps"][0]["run"]
+
+
+def test_release_gate_scopes_the_release_please_branch():
+    workflow = load_workflow(RELEASE_GATE_WORKFLOW)
+    job = workflow["jobs"]["release-gate"]
+
+    assert "github.event.pull_request.head.ref" in str(job)
+    assert "github.event.pull_request.base.ref" in str(job)
+    assert "github.event.pull_request.head.repo.full_name" in str(job)
+    assert "autorelease: openhands pending" not in release_gate_command()
+
+
+def test_release_gate_reads_the_reusable_e2e_job_completion():
+    command = release_gate_command()
+
+    assert 'startswith($name + " /")' in command
+    assert ".completed_at" in command
+    assert 'select(.name=="$E2E_JOB_NAME")' not in command
+
+
+def test_release_gate_refreshes_after_unstable_e2e_completes():
+    workflow = load_workflow(RELEASE_GATE_WORKFLOW)
+    triggers = workflow[True]
+
+    assert triggers["workflow_run"] == {
+        "workflows": ["Release Replicated to Unstable"],
+        "types": ["completed"],
+    }
+    refresh = workflow["jobs"]["refresh-release-gate"]
+    assert refresh["permissions"] == {
+        "actions": "write",
+        "contents": "read",
+        "pull-requests": "read",
+    }
+    assert "/rerun" in refresh["steps"][0]["run"]
+
+
+def test_release_gate_override_must_postdate_the_e2e_signal():
+    command = release_gate_command()
+
+    assert "override_epoch" in command
+    assert "signal_epoch" in command
+    assert 'override_epoch" -le "$signal_epoch' in command
+
+
+
+def test_workflow_contract_runs_when_related_workflows_change():
     text = TEST_WORKFLOW.read_text(encoding="utf-8")
     assert "- '.github/workflows/deploy-replicated.yml'" in text
     assert "- '.github/workflows/e2e-replicated.yml'" in text
+    assert "- '.github/workflows/release-gate.yml'" in text
