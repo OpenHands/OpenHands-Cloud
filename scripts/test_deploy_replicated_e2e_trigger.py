@@ -49,12 +49,15 @@ def test_e2e_workflow_uses_its_environment_token_and_argo_owned_target():
     assert trigger["env"] == {
         "ARGO_TOKEN": "${{ secrets.ARGO_WORKFLOWS_E2E_TOKEN }}",
         "INSTANCE": "${{ inputs.instance }}",
+        "RUN_ATTEMPT": "${{ github.run_attempt }}",
+        "RUN_ID": "${{ github.run_id }}",
     }
 
     command = trigger["run"]
     assert "jq -n" in command
     assert "instance: $instance" in command
-    assert "run_url" not in command
+    assert "run_id: $run_id" in command
+    assert "run_attempt: $run_attempt" in command
     assert "target-url" not in command
     assert "test_revision" not in command
     assert "all-hands-testing.dev" not in command
@@ -75,6 +78,63 @@ def test_e2e_workflow_rejects_an_instance_no_binding_serves():
 def test_e2e_workflow_never_retries_the_dispatch():
     """A retry whose first attempt already landed starts a second suite."""
     assert "--retry" not in trigger_step()["run"]
+
+
+def test_e2e_workflow_polls_only_its_exact_argo_workflow():
+    workflow = load_workflow(E2E_WORKFLOW)
+    job = workflow["jobs"]["trigger-e2e"]
+    assert job["timeout-minutes"] >= 50
+
+    wait = next(
+        step for step in job["steps"] if step.get("name") == "Wait for Replicated E2E"
+    )
+    command = wait["run"]
+    assert "openhands-e2e-${INSTANCE}-gh-${RUN_ID}-${RUN_ATTEMPT}" in command
+    assert "/api/v1/workflows/openhands-e2e/${WORKFLOW_NAME}" in command
+    assert "/api/v1/workflows/openhands-e2e?" not in command
+    for phase in ("Succeeded", "Failed", "Error"):
+        assert f'"$phase" == "{phase}"' in command
+
+
+def test_incident_io_receives_only_unstable_real_results():
+    workflow = load_workflow(E2E_WORKFLOW)
+    job = workflow["jobs"]["trigger-e2e"]
+    report = next(
+        step for step in job["steps"] if step.get("name") == "Report to incident.io"
+    )
+
+    assert "always()" in report["if"]
+    assert "inputs.instance == 'unstable'" in report["if"]
+    assert report["env"] == {
+        "INCIDENT_IO_SOURCE_ID": (
+            "${{ vars.INCIDENT_IO_UNSTABLE_E2E_SOURCE_ID }}"
+        ),
+        "INCIDENT_IO_TOKEN": (
+            "${{ secrets.INCIDENT_IO_UNSTABLE_E2E_TOKEN }}"
+        ),
+        "E2E_PHASE": "${{ steps.wait-for-e2e.outputs.phase }}",
+        "WORKFLOW_NAME": "${{ steps.trigger-e2e.outputs.workflow-name }}",
+    }
+    command = report["run"]
+    assert 'status="resolved"' in command
+    assert 'status="firing"' in command
+    assert 'deduplication_key: "openhands-cloud:replicated-e2e:unstable"' in command
+    assert "api.incident.io/v2/alert_events/http/${INCIDENT_IO_SOURCE_ID}" in command
+    assert "Authorization: Bearer ${INCIDENT_IO_TOKEN}" in command
+
+
+def test_real_argo_result_controls_the_reusable_workflow_conclusion():
+    workflow = load_workflow(E2E_WORKFLOW)
+    steps = workflow["jobs"]["trigger-e2e"]["steps"]
+    enforce = next(
+        step for step in steps if step.get("name") == "Enforce Replicated E2E result"
+    )
+
+    assert "always()" in enforce["if"]
+    assert enforce["env"] == {
+        "E2E_PHASE": "${{ steps.wait-for-e2e.outputs.phase }}"
+    }
+    assert '"$E2E_PHASE" = "Succeeded"' in enforce["run"]
 
 
 @pytest.mark.parametrize("instance", sorted(RELEASE_WORKFLOWS))
