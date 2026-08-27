@@ -64,9 +64,12 @@ $(foreach element,$(MANIFESTS),$(eval $(call make-manifest-target,$(element))))
 # ── Chart targets ───────────────────────────────────────────────────
 # For each Helm chart, package it into a versioned .tgz in build/.
 # Dependencies include all yaml/tpl/schema files so changes trigger a rebuild.
+# *.sh is in the list because the infra chart's node installers live under
+# files/ and reach the host through .Files.Get; without it, editing an installer
+# leaves the packaged chart on the previous copy.
 define make-chart-target
 $(eval VER := $(shell yq .version $(CHARTDIR)/$1/Chart.yaml))
-$(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.yaml' -o -name '*.yml' -o -name "*.tpl" -o -name "NOTES.txt" -o -name "values.schema.json") | $$(BUILDDIR)
+$(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.yaml' -o -name '*.yml' -o -name "*.tpl" -o -name "*.sh" -o -name "NOTES.txt" -o -name "values.schema.json") | $$(BUILDDIR)
 	@# Rewrite any dependency that points to a remote registry but exists as a
 	@# sibling chart to use a local file:// reference instead. This lets
 	@# `helm package -u` resolve unpublished chart versions during local builds.

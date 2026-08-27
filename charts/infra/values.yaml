@@ -176,3 +176,87 @@ sysbox:
       memory: 100Mi
     limits:
       memory: 512Mi
+
+# Kubelet ECR credential provider installer. When enabled, a privileged
+# DaemonSet installs the kubelet credential provider plugin for Amazon ECR on
+# every node and points the kubelet at it, so pulls from ECR authenticate with
+# the node's own IAM identity. Nothing on the cluster holds an ECR authorization
+# token, so nothing has to be re-entered when one expires after 12 hours.
+#
+# EC2 only. The plugin resolves credentials through the AWS SDK chain running as
+# the kubelet's user, which on an Embedded Cluster node means the instance
+# profile via IMDS. A node outside EC2 has no credential source and every ECR
+# pull on it will fail.
+#
+# Enabling this reconfigures the kubelet. Embedded Cluster bakes kubelet's
+# arguments into the k0s systemd unit and offers no supported override, so the
+# installer edits that unit and restarts k0s once per node. See
+# files/install-ecr-credential-provider.sh for what that costs and why nothing
+# lighter works.
+ecrCredentialProvider:
+  enabled: false
+  # Plugin release to install. These are the upstream cloud-provider-aws
+  # binaries rebuilt and published by dntosas/ecr-credential-provider:
+  # kubernetes/cloud-provider-aws itself publishes no release binary and its
+  # registry.k8s.io repository carries no tags, so there is nothing first-party
+  # to pull. The download is checksum-pinned, so the release host only has to be
+  # reachable, not trusted. Point releaseBaseUrl at an internal mirror that
+  # serves the same layout to install without reaching GitHub.
+  version: v1.2.0
+  releaseBaseUrl: https://github.com/dntosas/ecr-credential-provider/releases/download
+  # sha256 of ecr-credential-provider-linux-<arch> for .version. Update both
+  # whenever .version moves; the installer refuses a binary that does not match.
+  checksums:
+    amd64: 6b9c0b8ba9c4b2ab1b3eb093044c9b4500eb2916b6b9f792a8923d91789cd1a4
+    arm64: 9652fd710dccab8f62f0ab29b374d3845c746e7490e6004a01edf84a42d36726
+  # Host directory holding the plugin binary and the kubelet's
+  # CredentialProviderConfig. kubelet execs every file in the bin directory, so
+  # this stays a directory of ours rather than a shared one like /usr/local/bin.
+  installDir: /opt/openhands/image-credential-provider
+  # Registries the plugin is consulted for. Each glob matches a single subdomain
+  # segment, so the two wildcards below stand for the account ID and the region.
+  # Covers the commercial, FIPS, China and US government partitions plus ECR
+  # Public; images outside this list are pulled the normal way.
+  matchImages:
+    - "*.dkr.ecr.*.amazonaws.com"
+    - "*.dkr.ecr-fips.*.amazonaws.com"
+    - "*.dkr.ecr.*.amazonaws.com.cn"
+    - "*.dkr.ecr.*.on.aws"
+    - "*.dkr.ecr.*.c2s.ic.gov"
+    - "*.dkr.ecr.*.sc2s.sgov.gov"
+    - "public.ecr.aws"
+  # Environment for the plugin process, written into the CredentialProviderConfig
+  # as NAME: VALUE. kubelet appends these after its own environment and exec
+  # keeps the last duplicate, so they win over whatever kubelet inherited. This
+  # is how proxy settings reach the plugin; see the Replicated manifest, which
+  # fills it in and keeps IMDS off the proxy.
+  providerEnv: {}
+  # Image reference the installer uses to prove, on each node, that the plugin
+  # can really mint an ECR token there. Same binary, same credential chain, same
+  # user kubelet will use, so a pass means the next pull authenticates. Empty
+  # skips the check; the Replicated manifest points it at the sandbox image.
+  selfTestImage: ""
+  # Shortest interval, in seconds, between two k0s restarts driven by the
+  # installer. Stops a node that never comes back configured from turning a pod
+  # restart loop into a k0s restart loop.
+  restartCooldownSeconds: 900
+  image:
+    # Only needed for a modern nsenter (util-linux >= 2.38) to enter the host
+    # namespaces and run files/install-ecr-credential-provider.sh. Nothing from
+    # this image is installed on the node, and the download happens on the host,
+    # so the node's own curl and trust store are what talk to the release host.
+    repository: docker.io/library/debian
+    tag: bookworm-slim
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Run on every Linux node, tolerating all taints (incl. control-plane).
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 128Mi

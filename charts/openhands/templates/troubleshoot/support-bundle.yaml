@@ -472,6 +472,18 @@ spec:
         namespace: ingress-nginx
         limits:
           maxAge: 336h
+    # ECR credential provider installer logs. This is where an ECR pull failure
+    # gets explained: the installer logs the plugin install, the kubelet flags it
+    # set, and the result of the per-node check that the instance profile can
+    # actually mint an ECR token. Collected unconditionally — the selector simply
+    # matches nothing when the feature is off.
+    - logs:
+        name: kube-system/ecr-credential-provider-installer/logs
+        selector:
+          - app.kubernetes.io/name=ecr-credential-provider-installer
+        namespace: kube-system
+        limits:
+          maxAge: 336h
     {{- if and .Values.postgresql.enabled .Values.replicated.enabled .Values.replicated.postgresPassword }}
     - postgresql:
         collectorName: postgresql

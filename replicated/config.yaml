@@ -1307,8 +1307,9 @@ spec:
           title: Registry Server
           help_text: |
             Host (and optional port) of the registry, e.g. my-registry.example.com.
-            Leave blank if the registry is public, or if your cluster authenticates
-            via a credential provider (EKS IRSA, GKE Workload Identity, AKS managed
+            Leave blank if the registry is public, if you enabled "Authenticate to
+            Amazon ECR with Node IAM" below, or if your cluster authenticates via a
+            credential provider (EKS IRSA, GKE Workload Identity, AKS managed
             identity).
           type: text
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
@@ -1332,6 +1333,28 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: false
+        - name: ecr_credential_provider_enabled
+          title: Authenticate to Amazon ECR with Node IAM
+          help_text: |
+            Pull images from Amazon ECR using each node's own IAM role. Nothing in
+            the cluster holds an ECR authorization token, so there is nothing to
+            re-enter when one expires after 12 hours. Leave Registry Username and
+            Registry Password blank when this is on.
+
+            Your nodes must be EC2 instances whose instance profile grants
+            ecr:GetAuthorizationToken, plus ecr:BatchGetImage and
+            ecr:GetDownloadUrlForLayer on the repository. A node outside EC2 has no
+            credentials to fall back on and every ECR pull on it fails.
+
+            Turning this on reconfigures the kubelet, so k0s restarts once on each
+            node. The cluster API is briefly unavailable the first time you deploy
+            with it enabled, and again on each node that joins afterwards. Running
+            workloads are not restarted, and later deploys leave the nodes alone.
+
+            Each node downloads the credential provider from GitHub, so this does
+            not work on an air-gapped install.
+          type: bool
+          default: "0"
         - name: sandbox_additional_host_paths
           title: Additional Host Path Mounts
           help_text: >-
