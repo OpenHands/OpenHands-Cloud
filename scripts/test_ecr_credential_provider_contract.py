@@ -223,3 +223,26 @@ def test_rendered_install_script_is_byte_identical_to_the_source() -> None:
         for entry in daemonset["spec"]["template"]["spec"]["containers"][0]["env"]
     }
     assert env["INSTALL_SCRIPT"] == INSTALL_SCRIPT.read_text()
+
+
+def test_no_when_conditional_survives_yaml_loading_with_a_newline() -> None:
+    """A block-scalar `when:` breaks every install of the release, not just this feature.
+
+    KOTS runs strconv.ParseBool over the rendered `when`, and it evaluates every
+    HelmChart's conditionals at app-pull time regardless of config. A `when: |`
+    keeps its newlines, so the value arrives as "\\n\\nfalse\\n" and ParseBool
+    rejects it, failing the install even with the feature switched off. Folded
+    (`>-`) and single-line scalars both load without newlines and are fine.
+    """
+    offenders = []
+    for manifest in sorted((REPO_ROOT / "replicated").glob("*.yaml")):
+        doc = load_yaml(manifest)
+        if not isinstance(doc, dict) or doc.get("kind") != "HelmChart":
+            continue
+        for index, entry in enumerate(doc.get("spec", {}).get("optionalValues") or []):
+            when = entry.get("when", "")
+            if "\n" in when:
+                offenders.append(f"{manifest.name}[{index}]: {when!r}")
+    assert not offenders, "block-scalar `when:` found (must load as a single line): " + "; ".join(
+        offenders
+    )
