@@ -1,0 +1,14 @@
+name: Validate OHE-3134 integration
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  e2e:
+    name: Unstable E2E integration
+    uses: ./.github/workflows/e2e-replicated.yml
+    with:
+      instance: unstable
+    secrets: inherit
