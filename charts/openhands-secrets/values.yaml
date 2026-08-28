@@ -104,6 +104,7 @@ config:
   # Automation secrets
   automation_service_key: ""
   automation_webhook_secret: ""
+  automations_db_password: ""
 
   # TLS certificates
   tls_certificate: ""

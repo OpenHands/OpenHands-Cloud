@@ -69,6 +69,11 @@ spec:
           - sh
           - -c
           - |
+            # Without this the script exits 0 even when CREATE DATABASE was
+            # denied. The automations database is then missing, but this
+            # container looks successful, so the failure appears in the
+            # migration container and the permission error is easy to miss.
+            set -e
             echo "Waiting for PostgreSQL at $DB_HOST to be available..."
             for i in $(seq 1 60); do
               if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d postgres -c "SELECT 1;" > /dev/null 2>&1; then

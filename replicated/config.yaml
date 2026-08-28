@@ -1160,6 +1160,11 @@ spec:
           help_text: Database name for the Runtime API
           type: text
           default: "runtime_api_db"
+        - name: external_postgres_automations_database
+          title: Automations Database
+          help_text: Database name for Automations
+          type: text
+          default: "automations"
 
     - name: sandbox_configuration
       title: Sandbox Configuration
@@ -1462,7 +1467,31 @@ spec:
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
-          default: "0"
+          # `value:` not `default:`, for the reason given on hostname_mode above.
+          # Changing a default here would switch automations on for every
+          # existing install at its next upgrade, creating a database and a role
+          # on an external server. A value, once written, is never overwritten,
+          # so turning automations on for an existing install is something an
+          # operator does and a later release cannot.
+          value: '{{repl if eq Sequence 0 }}1{{repl else }}0{{repl end }}'
+        # With automatic creation off the database and role must already exist,
+        # so the operator has to tell us what they named them.
+        - name: automations_db_username
+          title: Automations Database User
+          help_text: PostgreSQL role that Automations connects as. Create it and the Automations database yourself before deploying, if Create Databases Automatically is off. If neither exists, Automations fails to start with a password authentication error.
+          type: text
+          default: "automation_user"
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        # Deliberately not required. Leaving it blank falls back to the external
+        # PostgreSQL password, which is the password an earlier install would
+        # have given this role, so an operator who never chose one is not asked
+        # to invent it. Making this required would stall those upgrades on a
+        # value only the installer knows.
+        - name: automations_db_password
+          title: Automations Database Password
+          help_text: Password for the Automations database role. Leave blank unless you created that role yourself with a different password, in which case enter it here. Note that changing this does not change the password in PostgreSQL.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
 
     - name: agent_canvas_configuration
       title: Agent Canvas
