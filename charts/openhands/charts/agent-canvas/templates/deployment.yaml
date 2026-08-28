@@ -64,9 +64,15 @@ spec:
             - name: http
               containerPort: {{ $port }}
               protocol: TCP
-          {{- with .Values.env }}
+          {{- if or .Values.staticServer.disableTelemetry .Values.env }}
           env:
-            {{- range $k, $v := . }}
+            {{- if .Values.staticServer.disableTelemetry }}
+            # static-server.mjs reads this and injects
+            # window.__AGENT_CANVAS_DO_NOT_TRACK__ to disable product telemetry.
+            - name: AGENT_CANVAS_DISABLE_TELEMETRY
+              value: "1"
+            {{- end }}
+            {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
