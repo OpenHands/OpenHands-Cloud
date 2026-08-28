@@ -19,6 +19,8 @@ fail() { echo "::error::$*"; exit 1; }
 api()  { curl -sS -k --max-time "${TMO:-30}" -b "$JAR" -c "$JAR" "$@"; }
 post() { api -H 'Content-Type: application/json' -X POST "$@"; }
 ok()   { jq -e '.success == true' >/dev/null 2>&1; }
+# KOTS returns its rejection reason in .error; print that, not just "rejected".
+why()  { local b; b="$(cat)"; jq -re '.error // empty' <<<"$b" 2>/dev/null || printf '%s' "${b:-<empty response>}"; }
 
 # A 401 still sets a cookie, so a non-empty jar proves nothing.
 # Retried: kotsadm is often mid-restart when a release lands back-to-back with
@@ -37,20 +39,24 @@ done
 
 # --- select --------------------------------------------------------------
 # KOTS_CURSOR is the channel sequence; versionLabel is not unique.
-# A restarted kotsadm serves `updates: null` until a check repopulates its
-# cache, so re-issue the check rather than trusting the first read. `// []`
-# keeps an absent key from failing the pipe under pipefail, which would exit
-# before the message below.
-# Capped at 3m, not the whole budget: a cursor absent this long is a real
-# problem, not a restart settling. TMO=60 so the cap allows several tries.
+# Never POST /updatecheck here: on embedded cluster it downloads the pending
+# release, which advances the store's update cursor to the target, after which
+# start-upgrade-service can no longer find it upstream. GET /updates fetches
+# live from replicated.app, so there is no cache a check would populate.
+# `// []` keeps an absent key from failing the pipe under pipefail.
+# Capped at 3m: a cursor absent this long is a real problem, not a settling restart.
 TARGET=""
 SELECT_DEADLINE=$(( $(date +%s) + 180 ))
 while :; do
-  TMO=60 post -d '{}' "$KOTS_BASE/api/v1/app/$APP/updatecheck" >/dev/null || true
   TARGET="$( (api "$KOTS_BASE/api/v1/app/$APP/updates" || true) \
     | jq -c --arg c "$KOTS_CURSOR" '(.updates // [])[] | select(.updateCursor == $c)' || true)"
   [ -n "$TARGET" ] && break
   if [ "$(date +%s)" -ge "$SELECT_DEADLINE" ] || ! waiting; then
+    # A downloaded cursor is a pending version and no longer an upstream update;
+    # no wait recovers it. Deploying it needs the console (skips cluster upgrade).
+    SEQ="$( (api "$KOTS_BASE/api/v1/apps" || true) | jq -r --arg c "$KOTS_CURSOR" \
+      '.apps[0].downstream.pendingVersions[]? | select(.updateCursor == $c) | .sequence' | head -1)"
+    [ -n "$SEQ" ] && fail "cursor $KOTS_CURSOR was already downloaded as pending sequence $SEQ, so it is no longer an upstream update — deploy that version from the admin console"
     fail "cursor $KOTS_CURSOR never became an available update for $APP"
   fi
   echo "  cursor $KOTS_CURSOR not in the update list yet, rechecking"
@@ -64,9 +70,15 @@ echo "budget: ${TIMEOUT_MINUTES}m"
 echo "deploying: $FROM -> $(jq -r .versionLabel <<<"$TARGET") @ $KOTS_CURSOR"
 
 # --- boot the upgrade service -------------------------------------------
-post --data "$(jq -c '{versionLabel, updateCursor, channelId}' <<<"$TARGET")" \
-  "$KOTS_BASE/api/v1/app/$APP/start-upgrade-service" | ok \
-  || fail "start-upgrade-service rejected"
+R="$(post --data "$(jq -c '{versionLabel, updateCursor, channelId}' <<<"$TARGET")" \
+  "$KOTS_BASE/api/v1/app/$APP/start-upgrade-service" || true)"
+if ! ok <<<"$R"; then
+  # The reason is a cursor or license-channel mismatch; show both sides.
+  L="$(TMO=30 api "$KOTS_BASE/api/v1/app/$APP/license" || true)"
+  echo "  license: $(jq -c '.license | {channelName, licenseSequence, lastSyncedAt}' <<<"${L:-\{\}}" 2>/dev/null)"
+  echo "  release: $(jq -c '{versionLabel, updateCursor, channelId}' <<<"$TARGET")"
+  fail "start-upgrade-service rejected: $(why <<<"$R")"
+fi
 
 # Task goes "starting" then EMPTY once up. Empty means ready, not pending.
 META=""
@@ -81,8 +93,8 @@ done
 # --- config: read values, write them straight back -----------------------
 if [ "$(jq -r .isConfigurable <<<"$META")" = true ]; then
   TMO=60 api "$UP/config" | jq -c '{configGroups}' >/tmp/cfg.json
-  TMO=60 api -H 'Content-Type: application/json' -X PUT --data-binary @/tmp/cfg.json "$UP/config" | ok \
-    || fail "config rejected — new release likely added a required item with no default"
+  R="$(TMO=60 api -H 'Content-Type: application/json' -X PUT --data-binary @/tmp/cfg.json "$UP/config" || true)"
+  ok <<<"$R" || fail "config rejected: $(why <<<"$R") — new release likely added a required item with no default"
 fi
 
 # --- preflights ----------------------------------------------------------
@@ -102,8 +114,8 @@ if [ "$(jq -r .hasPreflight <<<"$META")" = true ]; then
 fi
 
 # --- deploy --------------------------------------------------------------
-TMO=120 post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}' "$UP/deploy" | ok \
-  || fail "deploy rejected"
+R="$(TMO=120 post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}' "$UP/deploy" || true)"
+ok <<<"$R" || fail "deploy rejected: $(why <<<"$R")"
 
 # The task stays empty for the whole deploy; downstream currentVersion is the
 # only progress signal. An unreachable console means kotsadm is restarting.
