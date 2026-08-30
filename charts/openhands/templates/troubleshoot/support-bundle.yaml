@@ -4,7 +4,10 @@ kind: SupportBundle
 metadata:
   name: {{ .Release.Name }}-support-bundle
 spec:
+  runHostCollectorsInPod: true
   collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
+    # Point-in-time kubelet stats include node and pod memory usage.
+    - nodeMetrics: {}
     {{- /* Presence of admin-configured/optional secrets: a key renders only when its KOTS
     value is set, so includeValue:false keyExists ⇔ value-set -- presence only, never the value.
     Always-generated internal secrets are omitted; they'd read "set" unconditionally. */}}
@@ -486,6 +489,18 @@ spec:
         collectorName: redis
         uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ include "openhands.cache.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379
     {{- end }}
+  hostCollectors:
+    # Preserve host-level OOM evidence after the affected pod is deleted.
+    - journald:
+        collectorName: kernel-messages
+        system: true
+        dmesg: true
+        since: "14 days ago"
+        output: short-iso-precise
+        lines: 50000
+        reverse: true
+        utc: true
+        timeout: 1m
   analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
     - deploymentStatus:
         name: openhands
