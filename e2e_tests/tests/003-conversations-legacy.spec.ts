@@ -226,28 +226,28 @@ test.describe("legacy conversations @conversations", () => {
       description: runUser(testInfo),
     });
 
-    // External search can be slow, so lift the timeout to give the 180s waits
-    // room to apply.
+    // Sandbox cold-start plus an external search outlast the 120s default cap.
     test.setTimeout(240_000);
 
     await homePage.goto();
 
-    await homePage.clickFirstConversation();
+    await homePage.startNewConversation("launch-new-conversation-button");
 
+    await page.waitForTimeout(2000);
     conversationPage = new ConversationPage(page);
 
-    await conversationPage.waitForTaskCompleteMessage();
+    await conversationPage.waitForConversationReady();
 
     const prompt =
       "Using Tavily search, please tell me who is the prime minister of Ireland.";
     console.log(`Sending prompt: "${prompt}"`);
-    await conversationPage.executePrompt(prompt, 180_000);
+    await conversationPage.executePrompt(prompt, 120_000);
 
     // Match the name with a regex so accent ("Micheál" vs "Micheal") and casing
     // variants in the agent's response don't cause spurious failures.
     const message = await conversationPage.waitForMessageContaining(
       /miche[aá]l martin/i,
-      180_000,
+      120_000,
     );
     console.log(
       `Found expected response containing 'Micheál Martin': "${message.substring(0, 100)}..."`,
