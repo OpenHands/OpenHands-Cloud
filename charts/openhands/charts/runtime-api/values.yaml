@@ -291,7 +291,8 @@ warmRuntimes:
   # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
   # device-plugin subchart).
   configsByName:
-    default:
+    # Entry name must match the app's OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME.
+    v1_current:
       # image omitted -> defaults to global.agentServerImage (repo:tag).
       working_dir: "/workspace/project"
       environment:
