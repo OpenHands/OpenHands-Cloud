@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.8.2
+  tag: 0.9.0
   pullPolicy: Always
 
 nameOverride: ""
@@ -202,9 +202,39 @@ autoscaling:
 
 cleanup:
   enabled: true
-  schedule: "*/5 * * * *"
+  schedule: "*/5 * * * *" # legacy: used by run_cleanup() if cleanup.jobs is absent
   idle_seconds: 1200 # Default to 20 minutes
   dead_seconds: 5184000 # Default to 60 days (stopgap until workspace archiving ships; runtime-api#624)
+  # Split per-phase CronJobs. Each phase runs in its own pod so a problem in
+  # one can't starve the others, and each gets its own schedule, deadline and
+  # concurrency policy. The phases map 1:1 to the run_* entrypoints in
+  # cleanup.py and are invoked as `python cleanup.py <phase>`.
+  #
+  # reaper       — pause/stop/remove idle runtimes. Highest urgency, tight cadence.
+  # k8s-garbage  — reap pods stuck terminating, then their stuck PVCs (serial:
+  #                pods before PVCs, a mounted PVC can't finish deleting).
+  # snapshotter  — snapshot + delete PVCs for long-paused runtimes. Own deadline.
+  # retention    — delete dead runtimes + expired fuse workspaces. Hourly.
+  #
+  # Stagger the two K8s-list-heavy jobs (reaper, k8s-garbage) to avoid
+  # simultaneous full namespace pod/PVC lists against the apiserver.
+  jobs:
+    reaper:
+      enabled: true
+      schedule: "*/5 * * * *"
+      activeDeadlineSeconds: 900 # 15 min; reaper must stay responsive
+    k8s-garbage:
+      enabled: true
+      schedule: "2-59/5 * * * *" # offset ~2 min from the reaper to stagger apiserver lists
+      activeDeadlineSeconds: 600 # 10 min; light, fast K8s reaps
+    snapshotter:
+      enabled: true
+      schedule: "*/10 * * * *" # slower than the reaper; snapshots lag pause by design
+      activeDeadlineSeconds: 1200 # 20 min; must exceed SNAPSHOT_WAIT_DEADLINE_SECONDS (300)
+    retention:
+      enabled: true
+      schedule: "0 */1 * * *" # hourly; long-horizon sweeps
+      activeDeadlineSeconds: 1800 # 30 min; DB + object-storage heavy
 
 # Workspace archiving (primary, pause/reap path): before the cleanup CronJob
 # pauses/stops a runtime — while its pod is still reachable — copy the workspace
@@ -223,6 +253,8 @@ runtimeFileArchive:
   bucket: ""
   prefix: workspace-archives # Key prefix within the bucket.
   path: /workspace/project # Source path to archive (git repo root).
+  tmpDir: /archive-tmp # Mount path for the archive scratch volume (reaper phase only).
+  tmpSizeLimit: 10Gi # Size limit for the archive scratch emptyDir.
   # Safe default: capture BOTH the compact git-delta and a self-contained
   # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
   # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.

@@ -49,6 +49,14 @@ ingress:
 staticServer:
   authRequired: true
   basePath: /canvas
+  # When true, sets AGENT_CANVAS_DISABLE_TELEMETRY=1 on the container, which
+  # static-server.mjs reads to inject window.__AGENT_CANVAS_DO_NOT_TRACK__ so
+  # the pre-built frontend disables all PostHog product telemetry (including the
+  # anonymous install event) at runtime.
+  # Defaults to true because this chart targets self-hosted deployments (e.g.
+  # OHE), which ship with telemetry off. A SaaS deployment that wants telemetry
+  # can override this to false.
+  disableTelemetry: true
   # When set, passes `--lock-to-cloud <url>` to static-server.mjs, which
   # injects window.__AGENT_CANVAS_LOCK_TO_CLOUD__ so the UI locks backend
   # setup to a single OpenHands Cloud host (e.g.
