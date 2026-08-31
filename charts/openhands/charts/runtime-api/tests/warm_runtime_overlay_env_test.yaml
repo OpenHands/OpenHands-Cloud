@@ -43,3 +43,20 @@ tests:
           content:
             name: WARM_RUNTIME_CONFIG_OVERLAY
             value: "1"
+
+  - it: preserves an explicit overlay opt-out in the reconciler CronJob
+    template: templates/warm-runtimes-cronjob.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.WARM_RUNTIME_CONFIG_OVERLAY: "0"
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: WARM_RUNTIME_CONFIG_OVERLAY
+            value: "0"
+      - notContains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: WARM_RUNTIME_CONFIG_OVERLAY
+            value: "1"
