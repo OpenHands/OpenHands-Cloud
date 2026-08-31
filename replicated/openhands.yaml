@@ -379,7 +379,9 @@ spec:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configsByName:
+          # Keep this key aligned with the chart values for Helm merging.
           default:
+            name: v1_current
             # image omitted -> inherits global.agentServerImage. Proxy by
             # default; when custom_sandbox_image_enabled / HasLocalRegistry are
             # active, the optionalValues blocks below override the global instead.
