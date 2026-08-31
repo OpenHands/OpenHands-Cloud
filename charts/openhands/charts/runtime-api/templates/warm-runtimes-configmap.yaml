@@ -10,7 +10,11 @@
 {{- if not $configs }}
 {{- $configs = list }}
 {{- range $name, $config := .Values.warmRuntimes.configsByName }}
-{{- $configs = append $configs (merge (dict "name" $name) $config) }}
+{{- $entry := deepCopy $config }}
+{{- if not (hasKey $entry "name") }}
+{{- $_ := set $entry "name" $name }}
+{{- end }}
+{{- $configs = append $configs $entry }}
 {{- end }}
 {{- end }}
 {{- /* Default image for any entry that omits one: the global agent-server image. */ -}}
