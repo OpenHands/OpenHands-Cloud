@@ -293,6 +293,10 @@ spec:
       replicaCount: 1
       autoscaling:
         enabled: false
+      # ADMIN_PASSWORD comes from a secretKeyRef, so a password change needs a
+      # rollout to take effect (same pattern as checksum/litellm-credentials).
+      podAnnotations:
+        checksum/admin-password: 'repl{{ sha256sum (ConfigOption "admin_password") }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
         # Do not override the image tag here. Pin to a stable version in the chart.
@@ -338,7 +342,7 @@ spec:
         # it; "." nests it under the runtime base. The path-routing block below
         # overrides this to "/", which the runtime-api reads as path mode.
         RUNTIME_URL_SEPARATOR: '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
-        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_base_hostname" }}'
+        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_api_hostname" }}'
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
