@@ -1,0 +1,24 @@
+suite: warm runtime overlay environment
+templates:
+  - templates/deployment.yaml
+  - templates/warm-runtimes-cronjob.yaml
+tests:
+  - it: enables overlay mode in the API deployment
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WARM_RUNTIME_CONFIG_OVERLAY
+            value: "1"
+
+  - it: enables overlay mode in the reconciler CronJob
+    template: templates/warm-runtimes-cronjob.yaml
+    set:
+      warmRuntimes.enabled: true
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: WARM_RUNTIME_CONFIG_OVERLAY
+            value: "1"
