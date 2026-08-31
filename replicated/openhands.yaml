@@ -124,6 +124,14 @@ spec:
       url: 'http://keycloak'
       ssoSessionIdleTimeout: 'repl{{ ConfigOption "keycloak_sso_session_idle_timeout" }}'
       ssoSessionMaxLifespan: 'repl{{ ConfigOption "keycloak_sso_session_max_lifespan" }}'
+      smtp:
+        host: 'repl{{ ConfigOption "keycloak_smtp_host" }}'
+        port: 'repl{{ ConfigOption "keycloak_smtp_port" }}'
+        from: 'repl{{ ConfigOption "keycloak_smtp_from" }}'
+        fromDisplayName: 'repl{{ ConfigOption "keycloak_smtp_from_display_name" }}'
+        user: 'repl{{ ConfigOption "keycloak_smtp_user" }}'
+        ssl: repl{{ ConfigOptionEquals "keycloak_smtp_use_ssl" "1" }}
+        starttls: repl{{ ConfigOptionEquals "keycloak_smtp_use_starttls" "1" }}
       resourcesPreset: none
       resources:
         requests:

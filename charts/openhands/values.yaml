@@ -454,6 +454,19 @@ keycloak:
   ssoSessionMaxLifespan: 604800
   # Allow self-hosted identity providers to survive brief network stalls.
   idpHttpSocketTimeoutMillis: "15000"
+  # SMTP settings applied to the realm's smtpServer by the keycloak-config
+  # init container. The password comes from the keycloak-realm secret
+  # (config.keycloak_smtp_password); the fields below are the non-secret
+  # connection parameters. Defaults target Resend so existing installs keep
+  # working; override for a customer SMTP server.
+  smtp:
+    host: "smtp.resend.com"
+    port: "465"
+    from: "admin@all-hands.dev"
+    fromDisplayName: "All Hands AI"
+    user: "resend"
+    ssl: true
+    starttls: false
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
