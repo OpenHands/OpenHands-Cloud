@@ -38,3 +38,8 @@ tests:
           content:
             name: WARM_RUNTIME_CONFIG_OVERLAY
             value: "0"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WARM_RUNTIME_CONFIG_OVERLAY
+            value: "1"

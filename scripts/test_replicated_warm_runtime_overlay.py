@@ -14,6 +14,7 @@ def _yaml(path: str) -> dict:
 def test_replicated_enables_overlay_without_changing_shared_chart_defaults() -> None:
     replicated = _yaml("replicated/openhands.yaml")
     subchart = _yaml("charts/openhands/charts/runtime-api/values.yaml")
+    umbrella = _yaml("charts/openhands/values.yaml")
 
     assert (
         replicated["spec"]["values"]["runtime-api"]["env"][
@@ -22,3 +23,4 @@ def test_replicated_enables_overlay_without_changing_shared_chart_defaults() -> 
         == "1"
     )
     assert "WARM_RUNTIME_CONFIG_OVERLAY" not in subchart["env"]
+    assert "WARM_RUNTIME_CONFIG_OVERLAY" not in umbrella["runtime-api"]["env"]
