@@ -3,6 +3,7 @@
 {{- $jobs := dict "reaper" .Values.cleanup.jobs.reaper "k8s-garbage" (index .Values.cleanup.jobs "k8s-garbage") "snapshotter" .Values.cleanup.jobs.snapshotter "retention" .Values.cleanup.jobs.retention }}
 {{- range $phase, $cfg := $jobs }}
 {{- if $cfg.enabled }}
+{{- $archiveVol := and (eq $phase "reaper") $.Values.runtimeFileArchive.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -32,16 +33,18 @@ spec:
           affinity:
             {{- . | nindent 12 }}
           {{- end }}
-          {{- if $.Values.ingressBase.enabled }}
+          {{- if or $.Values.ingressBase.enabled $archiveVol }}
           volumes:
+            {{- if $.Values.ingressBase.enabled }}
             - name: ingress-base-config
               configMap:
                 name: {{ include "runtime-api.fullname" $ }}-ingress-base
-          {{- end }}
-          {{- if and (eq $phase "reaper") $.Values.runtimeFileArchive.enabled }}
+            {{- end }}
+            {{- if $archiveVol }}
             - name: archive-tmp
               emptyDir:
                 sizeLimit: {{ $.Values.runtimeFileArchive.tmpSizeLimit | default "10Gi" | quote }}
+            {{- end }}
           {{- end }}
           containers:
           - name: cleanup-{{ $phase }}
@@ -54,18 +57,20 @@ spec:
                 value: {{ $.Values.database.poolSize.cronjobs | default 2 | quote }}
               - name: DB_MAX_OVERFLOW
                 value: {{ $.Values.database.maxOverflow.cronjobs | default 5 | quote }}
-              {{- if and (eq $phase "reaper") $.Values.runtimeFileArchive.enabled }}
+              {{- if $archiveVol }}
               - name: RUNTIME_FILE_ARCHIVE_TMPDIR
                 value: {{ $.Values.runtimeFileArchive.tmpDir | default "/archive-tmp" | quote }}
               {{- end }}
-            {{- if $.Values.ingressBase.enabled }}
+            {{- if or $.Values.ingressBase.enabled $archiveVol }}
             volumeMounts:
+              {{- if $.Values.ingressBase.enabled }}
               - name: ingress-base-config
                 mountPath: /ingress-base
-            {{- end }}
-            {{- if and (eq $phase "reaper") $.Values.runtimeFileArchive.enabled }}
+              {{- end }}
+              {{- if $archiveVol }}
               - name: archive-tmp
                 mountPath: {{ $.Values.runtimeFileArchive.tmpDir | default "/archive-tmp" | quote }}
+              {{- end }}
             {{- end }}
             resources:
               {{- toYaml $.Values.jobSettings.resources | nindent 14 }}
