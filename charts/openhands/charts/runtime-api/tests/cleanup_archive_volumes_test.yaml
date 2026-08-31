@@ -17,13 +17,16 @@ tests:
       ingressBase.enabled: false
       runtimeFileArchive.enabled: true
     asserts:
-      # imagePullSecrets must contain only the ghcr-login-secret, NOT the
-      # archive-tmp emptyDir volume (the regression merged it in here).
-      - equal:
-          path: spec.jobTemplate.spec.template.spec.imagePullSecrets[0].name
-          value: ghcr-login-secret
-      - notExists:
-          path: spec.jobTemplate.spec.template.spec.imagePullSecrets[1]
+      # The regression merged the archive-tmp emptyDir volume into
+      # imagePullSecrets (because the `volumes:` key was gated on
+      # ingressBase.enabled). Assert the archive-tmp entry is NOT present
+      # here. notContains is robust to imagePullSecrets being empty (the
+      # umbrella parent clears it to []) or holding the chart-default
+      # ghcr-login-secret (standalone subchart render).
+      - notContains:
+          path: spec.jobTemplate.spec.template.spec.imagePullSecrets
+          content:
+            name: archive-tmp
       - exists:
           path: spec.jobTemplate.spec.template.spec.volumes
       - equal:
