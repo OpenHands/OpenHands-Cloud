@@ -293,6 +293,10 @@ spec:
       replicaCount: 1
       autoscaling:
         enabled: false
+      # ADMIN_PASSWORD comes from a secretKeyRef, so a password change needs a
+      # rollout to take effect (same pattern as checksum/litellm-credentials).
+      podAnnotations:
+        checksum/admin-password: 'repl{{ sha256sum (ConfigOption "admin_password") }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
         # Do not override the image tag here. Pin to a stable version in the chart.

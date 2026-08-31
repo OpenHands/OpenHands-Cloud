@@ -10,6 +10,10 @@ fullnameOverride: ""
 
 replicaCount: 1
 
+# Extra pod-template annotations, e.g. a checksum of secret-backed config so a
+# credential change forces a rollout (env from secretKeyRef is not live-reloaded).
+podAnnotations: {}
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false

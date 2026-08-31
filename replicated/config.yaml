@@ -608,11 +608,6 @@ spec:
       description: Configure passwords and secrets for various services
       when: false
       items:
-        - name: admin_password
-          title: Admin Password
-          help_text: Admin password for Runtime API
-          type: password
-          hidden: true
         - name: postgres_username
           title: PostgreSQL Username
           help_text: Username for embedded PostgreSQL database
@@ -1276,6 +1271,11 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: admin_password
+          title: Runtime API Admin Password
+          help_text: Password for the Runtime API admin endpoints, used to manage warm runtime configurations (for example, running multiple custom sandbox images side by side). A random password is generated at install; to use the admin API, set your own password here and deploy. Changing this password restarts the runtime-api service.
+          type: password
+          value: '{{repl RandomString 32}}'
         - name: sandbox_max_num_sandboxes
           title: Max Concurrent Sandboxes
           help_text: >-
