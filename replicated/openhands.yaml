@@ -379,7 +379,9 @@ spec:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configsByName:
-          default:
+          # Entry name must match the app's OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME
+          # (and the chart values' entry, or the layers stop merging).
+          v1_current:
             # image omitted -> inherits global.agentServerImage. Proxy by
             # default; when custom_sandbox_image_enabled / HasLocalRegistry are
             # active, the optionalValues blocks below override the global instead.
@@ -735,7 +737,7 @@ spec:
         global:
           imageRegistry: '{{repl LocalRegistryHost }}'
           # agent-server comes from the local registry; runtime.image and the
-          # warmRuntimes default entry both inherit this. Tag pinned in the chart.
+          # warmRuntimes v1_current entry both inherit this. Tag pinned in the chart.
           agentServerImage:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
         image:
