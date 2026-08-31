@@ -3,8 +3,11 @@ templates:
   - templates/deployment.yaml
   - templates/warm-runtimes-cronjob.yaml
 tests:
-  - it: enables overlay mode in the API deployment
+  - it: passes OHE overlay mode into the API deployment with warm pools enabled
     template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.WARM_RUNTIME_CONFIG_OVERLAY: "1"
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -12,13 +15,26 @@ tests:
             name: WARM_RUNTIME_CONFIG_OVERLAY
             value: "1"
 
-  - it: enables overlay mode in the reconciler CronJob
+  - it: passes OHE overlay mode into the reconciler CronJob
     template: templates/warm-runtimes-cronjob.yaml
     set:
       warmRuntimes.enabled: true
+      env.WARM_RUNTIME_CONFIG_OVERLAY: "1"
     asserts:
       - contains:
           path: spec.jobTemplate.spec.template.spec.containers[0].env
           content:
             name: WARM_RUNTIME_CONFIG_OVERLAY
             value: "1"
+
+  - it: preserves an explicit overlay opt-out
+    template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.WARM_RUNTIME_CONFIG_OVERLAY: "0"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WARM_RUNTIME_CONFIG_OVERLAY
+            value: "0"
