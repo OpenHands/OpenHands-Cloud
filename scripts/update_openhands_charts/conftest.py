@@ -352,7 +352,8 @@ runtime-api:
     enabled: true
     count: 1
     configsByName:
-      v1_current:
+      default:
+        name: v1_current
         working_dir: "/openhands/code/"
 
 global:
@@ -404,7 +405,8 @@ warmRuntimes:
   configMapName: warm-runtimes-config
   count: 0
   configsByName:
-    v1_current:
+    default:
+      name: v1_current
       working_dir: "/openhands/code/"
       environment: {}
 

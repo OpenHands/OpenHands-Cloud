@@ -939,9 +939,9 @@ runtime-api:
     # Map form keyed by config name; see runtime-api subchart values for the
     # legacy `configs` list and precedence rules.
     configsByName:
-      # Entry name must match OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME (_env.yaml) so the
-      # app's default sandbox spec lookup resolves by name instead of list order.
-      v1_current:
+      # Keep the map key stable for existing Helm overrides.
+      default:
+        name: v1_current
         # image omitted -> defaults to global.agentServerImage (repo:tag).
         # Must match the app's sandbox spec working_dir, or no warm pod is ever claimable.
         working_dir: "/workspace/project"

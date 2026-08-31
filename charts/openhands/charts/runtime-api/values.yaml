@@ -283,16 +283,16 @@ warmRuntimes:
   # Legacy list form. Kept for backwards compatibility: when non-empty it takes
   # precedence over configsByName. Prefer configsByName for new configuration.
   configs: []
-  # Canonical map form. Each key is the config's name (promoted to "name" in the
-  # rendered JSON). Maps merge cleanly across values layers, so consumers can
-  # override one field of one entry without re-declaring every entry.
+  # Canonical map form. Each key becomes the config name unless the entry sets
+  # `name` explicitly. Maps merge cleanly across values layers.
   # Set `fuse_s3_mount: true` on an entry for fusey warm pods: dormant startup,
   # /workspace FUSE-mounted from object storage instead of a PVC. Needs the
   # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
   # device-plugin subchart).
   configsByName:
-    # Entry name must match the app's OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME.
-    v1_current:
+    # Keep the map key stable for existing Helm overrides.
+    default:
+      name: v1_current
       # image omitted -> defaults to global.agentServerImage (repo:tag).
       working_dir: "/workspace/project"
       environment:
