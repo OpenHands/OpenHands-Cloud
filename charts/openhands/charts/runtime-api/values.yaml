@@ -54,6 +54,9 @@ service:
   port: 5000
 
 env:
+  # Database warm-runtime configs overlay the installer-managed ConfigMap by
+  # name instead of replacing it (runtime-api#731). Inert on older images.
+  WARM_RUNTIME_CONFIG_OVERLAY: "1"
   PYTHONDONTWRITEBYTECODE: "1"
   PYTHONUNBUFFERED: "1"
   DEV_MODE: "false"
