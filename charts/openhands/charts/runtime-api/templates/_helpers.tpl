@@ -10,6 +10,13 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
+{{- define "runtime-api.cronjobName" -}}
+{{- $suffix := printf "-%s" .suffix -}}
+{{- $maxLen := int (sub 52 (len $suffix)) -}}
+{{- $fullname := include "runtime-api.fullname" .root -}}
+{{- printf "%s%s" ($fullname | trunc $maxLen | trimSuffix "-") $suffix -}}
+{{- end -}}
+
 {{- define "runtime-api.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
