@@ -332,6 +332,10 @@ spec:
         PGSSLMODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
+        # Admin-API warm configs overlay installer-managed entries by name:
+        # same-named rows override them and differently-named rows run beside
+        # them. Older runtime-api images ignore this variable.
+        WARM_RUNTIME_CONFIG_OVERLAY: "1"
         RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
         # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
         # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
