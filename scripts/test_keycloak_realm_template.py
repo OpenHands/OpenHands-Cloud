@@ -27,7 +27,6 @@ OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 OPENHANDS_VALUES = OPENHANDS_CHART / "values.yaml"
 OPENHANDS_VALUES_SCHEMA = OPENHANDS_CHART / "values.schema.json"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
-REPLICATED_CONFIG = REPO_ROOT / "replicated" / "config.yaml"
 OPENHANDS_README = OPENHANDS_CHART / "README.md"
 
 
@@ -538,6 +537,11 @@ def test_enterprise_sso_disable_path_reconciles_managed_provider() -> None:
 
 
 def test_manual_enterprise_sso_guidance_documents_required_mapper() -> None:
+    """The chart README is the only home for manual identity-provider setup.
+
+    The Replicated help text describes what each field is and nothing more, so
+    the mapper a hand-built provider needs has to be spelled out here.
+    """
     required_mapper_settings = (
         "identity-provider",
         "hardcoded-attribute-idp-mapper",
@@ -546,7 +550,6 @@ def test_manual_enterprise_sso_guidance_documents_required_mapper() -> None:
         "FORCE",
     )
 
-    for guidance_path in (OPENHANDS_README, REPLICATED_CONFIG):
-        guidance = guidance_path.read_text(encoding="utf-8")
-        for setting in required_mapper_settings:
-            assert setting in guidance, f"{guidance_path} must document {setting}"
+    guidance = OPENHANDS_README.read_text(encoding="utf-8")
+    for setting in required_mapper_settings:
+        assert setting in guidance, f"{OPENHANDS_README} must document {setting}"
