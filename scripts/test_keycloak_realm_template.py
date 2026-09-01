@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REALM_TEMPLATE = (
@@ -21,6 +24,8 @@ KEYCLOAK_CONFIG_SCRIPT = (
     REPO_ROOT / "charts" / "openhands" / "templates" / "keycloak-config-script.yaml"
 )
 OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
+OPENHANDS_VALUES = OPENHANDS_CHART / "values.yaml"
+OPENHANDS_VALUES_SCHEMA = OPENHANDS_CHART / "values.schema.json"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 
 
@@ -33,14 +38,18 @@ def pkce_enabled_providers_missing_method(realm: dict) -> list[str]:
     return missing_pkce_method
 
 
-def keycloak_api_call_body(script_template: str) -> str:
+def shell_function_body(script_template: str, function_name: str) -> str:
     match = re.search(
-        r"(?ms)^(?P<indent>[ \t]*)keycloak_api_call\(\) \{\n"
+        rf"(?ms)^(?P<indent>[ \t]*){re.escape(function_name)}\(\) \{{\n"
         r"(?P<body>.*?)^(?P=indent)\}",
         script_template,
     )
-    assert match, "Could not find keycloak_api_call() in keycloak-config-script.yaml"
+    assert match, f"Could not find {function_name}() in keycloak-config-script.yaml"
     return match.group("body")
+
+
+def keycloak_api_call_body(script_template: str) -> str:
+    return shell_function_body(script_template, "keycloak_api_call")
 
 
 def assert_pkce_enabled_providers_set_method(realm: dict) -> None:
@@ -100,6 +109,86 @@ def test_keycloak_api_call_extraction_is_not_tied_to_yaml_indent() -> None:
     assert "errorMessage" in keycloak_api_call_body(script_template)
 
 
+def test_keycloak_api_call_propagates_transport_failure() -> None:
+    if shutil.which("jq") is None:
+        pytest.skip("jq not available")
+
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    helper = keycloak_api_call_body(script_template)
+    result = subprocess.run(
+        [
+            "sh",
+            "-c",
+            f"keycloak_api_call() {{\n{helper}}}\nkeycloak_api_call false",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+
+
+def test_keycloak_write_checks_empty_response_http_status(tmp_path: Path) -> None:
+    class StatusHandler(BaseHTTPRequestHandler):
+        status = 204
+
+        def do_POST(self) -> None:
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.send_response(self.status)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    script_template = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    helper = shell_function_body(script_template, "keycloak_write")
+    command = f"keycloak_write() {{\n{helper}}}\nACCESS_TOKEN=test keycloak_write POST \"$1\" \"$2\""
+    payload = tmp_path / "payload.json"
+    payload.write_text("{}", encoding="utf-8")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), StatusHandler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/resource"
+
+    try:
+        success = subprocess.run(
+            ["sh", "-c", command, "sh", url, str(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert success.returncode == 0
+
+        StatusHandler.status = 403
+        failure = subprocess.run(
+            ["sh", "-c", command, "sh", url, str(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert failure.returncode != 0
+        assert "HTTP 403" in failure.stderr
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_enterprise_sso_writes_use_status_checked_helper() -> None:
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+
+    provider_path = '"$KC_REALM/identity-provider/instances/enterprise_sso'
+    instances_path = '"$KC_REALM/identity-provider/instances'
+    assert script.count(f"keycloak_write PUT {provider_path}") == 3
+    assert script.count(f"keycloak_write POST {instances_path}") == 2
+    assert not re.search(
+        r'keycloak_api_call "curl -s -X (?:POST|PUT) [^\n]*enterprise_sso',
+        script,
+    )
+
+
 def sso_session_jq_filter(script_template: str) -> str:
     match = re.search(
         r"jq --argjson idle \"\$SSO_SESSION_IDLE_TIMEOUT\" "
@@ -132,9 +221,6 @@ def test_keycloak_config_script_applies_sso_session_lifetimes() -> None:
 
 def test_sso_session_jq_filter_rewrites_realm_lifetimes() -> None:
     """Run the script's actual jq filter against the realm template."""
-    import shutil
-    import subprocess
-
     if shutil.which("jq") is None:
         pytest.skip("jq not available")
 
@@ -203,8 +289,6 @@ def test_keycloak_config_script_includes_laminar_web_host_in_envsubst() -> None:
 
 
 def test_keycloak_identity_provider_socket_timeout() -> None:
-    import subprocess
-
     result = subprocess.run(
         [
             "helm",
@@ -236,3 +320,216 @@ def test_replicated_keycloak_identity_provider_socket_timeout() -> None:
         r"\s+value: [\"']15000[\"']",
         replicated_values,
     )
+
+
+def enterprise_sso_idp_jq_filter(script_template: str) -> str:
+    match = re.search(
+        r'echo "\$IMPORT_RESPONSE" \| jq \\\n'
+        r'\s*--arg display "\$ENTERPRISE_SSO_DISPLAY_NAME" \\\n'
+        r"\s*'(?P<filter>\{.*?\})' > /tmp/idp-enterprise-sso\.json",
+        script_template,
+        re.DOTALL,
+    )
+    assert match, "Could not find the enterprise SSO identity provider jq filter"
+    return match.group("filter")
+
+
+def enterprise_sso_import_guard(script_template: str) -> str:
+    match = re.search(
+        r'if ! echo "\$IMPORT_RESPONSE" \| jq -e \\\n'
+        r"\s*'(?P<filter>[^']+)' \\\n",
+        script_template,
+    )
+    assert match, "Could not find the enterprise SSO import response guard"
+    return match.group("filter")
+
+
+def test_enterprise_sso_uses_one_canonical_values_key() -> None:
+    values = OPENHANDS_VALUES.read_text(encoding="utf-8")
+    schema = json.loads(OPENHANDS_VALUES_SCHEMA.read_text(encoding="utf-8"))
+    replicated = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
+
+    assert "enterpriseSso:" not in values
+    assert re.search(r"^enterpriseSSO:$", values, re.MULTILINE)
+    assert "enterpriseSso" not in schema["properties"]
+    assert set(schema["properties"]["enterpriseSSO"]["properties"]) == {
+        "enabled",
+        "displayName",
+        "idpMetadataUrl",
+    }
+    assert "enterpriseSso:" not in replicated
+    assert "    enterpriseSSO:" in replicated
+
+
+def test_enterprise_sso_metadata_url_requires_https() -> None:
+    schema = json.loads(OPENHANDS_VALUES_SCHEMA.read_text(encoding="utf-8"))
+    metadata_schema = schema["properties"]["enterpriseSSO"]["properties"][
+        "idpMetadataUrl"
+    ]
+    assert metadata_schema["pattern"] == r"^$|^https://[^\s]+$"
+
+
+def test_enterprise_sso_uses_keycloak_import_contract() -> None:
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+
+    assert re.search(
+        r'identity-provider/import-config".*?Content-Type: application/json',
+        script,
+        re.DOTALL,
+    )
+    assert "--data-urlencode" not in script
+    assert 'providerId: "saml"' in script
+    assert "fromUrl: $from_url" in script
+    assert 'has("idpEntityId")' in script
+    assert 'has("singleSignOnServiceUrl")' in script
+    assert 'has("signingCertificate")' in script
+    assert '"validateSignature": "true"' in script
+    assert 'syncMode: "FORCE"' in script
+
+
+def test_enterprise_sso_import_guard_requires_signing_certificate() -> None:
+    if shutil.which("jq") is None:
+        pytest.skip("jq not available")
+
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    jq_filter = enterprise_sso_import_guard(script)
+    imported_config = {
+        "idpEntityId": "https://idp.example.com/entity",
+        "singleSignOnServiceUrl": "https://idp.example.com/sso",
+    }
+
+    missing_certificate = subprocess.run(
+        ["jq", "-e", jq_filter],
+        input=json.dumps(imported_config),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert missing_certificate.returncode == 1
+
+    imported_config["signingCertificate"] = "certificate-data"
+    with_certificate = subprocess.run(
+        ["jq", "-e", jq_filter],
+        input=json.dumps(imported_config),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert with_certificate.returncode == 0
+
+
+def test_enterprise_sso_jq_filter_builds_keycloak_idp() -> None:
+    if shutil.which("jq") is None:
+        pytest.skip("jq not available")
+
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    jq_filter = enterprise_sso_idp_jq_filter(script)
+    imported_config = {
+        "idpEntityId": "https://idp.example.com/entity",
+        "singleSignOnServiceUrl": "https://idp.example.com/sso",
+        "signingCertificate": "certificate-data",
+    }
+    display_name = 'Company "Platform" $(touch /tmp/should-not-run)'
+
+    result = subprocess.run(
+        ["jq", "--arg", "display", display_name, jq_filter],
+        input=json.dumps(imported_config),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    identity_provider = json.loads(result.stdout)
+
+    assert identity_provider["alias"] == "enterprise_sso"
+    assert identity_provider["displayName"] == display_name
+    assert identity_provider["config"]["idpEntityId"] == imported_config["idpEntityId"]
+    assert identity_provider["config"]["validateSignature"] == "true"
+    assert identity_provider["config"]["syncMode"] == "IMPORT"
+
+
+def test_enterprise_sso_inputs_are_environment_data() -> None:
+    deployment = (OPENHANDS_CHART / "templates" / "deployment.yaml").read_text(
+        encoding="utf-8"
+    )
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+    replicated = REPLICATED_OPENHANDS.read_text(encoding="utf-8")
+
+    assert "- name: ENTERPRISE_SSO_DISPLAY_NAME" in deployment
+    assert "value: {{ .Values.enterpriseSSO.displayName | quote }}" in deployment
+    assert "- name: ENTERPRISE_SSO_IDP_METADATA_URL" in deployment
+    assert "value: {{ .Values.enterpriseSSO.idpMetadataUrl | quote }}" in deployment
+    assert "{{ .Values.enterpriseSSO.displayName" not in script
+    assert "{{ .Values.enterpriseSSO.idpMetadataUrl" not in script
+    assert '--arg display "$ENTERPRISE_SSO_DISPLAY_NAME"' in script
+    assert '--arg from_url "$ENTERPRISE_SSO_IDP_METADATA_URL"' in script
+    assert (
+        'displayName: repl{{ ConfigOption "enterprise_sso_display_name" | mustToJson }}'
+        in replicated
+    )
+    assert (
+        'idpMetadataUrl: repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}'
+        in replicated
+    )
+
+
+def test_enterprise_sso_env_overrides_render_once_for_keycloak_init() -> None:
+    display_name = "Operator SSO"
+    metadata_url = "https://operator.example.com/saml/metadata"
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "test",
+            str(OPENHANDS_CHART),
+            "--show-only",
+            "templates/deployment.yaml",
+            "--set",
+            "enabled=true",
+            "--set",
+            "keycloak.enabled=true",
+            "--set",
+            "databaseMigrations.waitForDatabase=false",
+            "--set",
+            "databaseMigrations.createDatabases=false",
+            "--set",
+            "databaseMigrations.migrate=false",
+            "--set",
+            "enterpriseSSO.enabled=true",
+            "--set-string",
+            "enterpriseSSO.idpMetadataUrl=https://idp.example.com/saml/metadata",
+            "--set-string",
+            f"env.ENTERPRISE_SSO_DISPLAY_NAME={display_name}",
+            "--set-string",
+            f"env.ENTERPRISE_SSO_IDP_METADATA_URL={metadata_url}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    keycloak_init = re.search(
+        r"(?ms)^      - name: keycloak-config\n(?P<body>.*?)(?=^      - name: litellm-config\n)",
+        result.stdout,
+    )
+    assert keycloak_init, "Could not find the rendered keycloak-config init container"
+    rendered = keycloak_init.group("body")
+
+    assert rendered.count("name: ENTERPRISE_SSO_DISPLAY_NAME") == 1
+    assert re.search(
+        rf"name: ENTERPRISE_SSO_DISPLAY_NAME\s+value: {re.escape(display_name)}",
+        rendered,
+    )
+    assert rendered.count("name: ENTERPRISE_SSO_IDP_METADATA_URL") == 1
+    assert re.search(
+        rf"name: ENTERPRISE_SSO_IDP_METADATA_URL\s+value: {re.escape(metadata_url)}",
+        rendered,
+    )
+
+
+def test_enterprise_sso_disable_path_reconciles_managed_provider() -> None:
+    script = KEYCLOAK_CONFIG_SCRIPT.read_text(encoding="utf-8")
+
+    assert '"openhandsManaged": "true"' in script
+    assert "else if .Values.enterpriseSSO.idpMetadataUrl" not in script
+    assert '.config.openhandsManaged == "true"' in script
+    assert "jq '.enabled = false'" in script
+    assert "Disabled managed identity provider: enterprise_sso" in script

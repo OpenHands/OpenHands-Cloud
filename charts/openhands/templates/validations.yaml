@@ -12,6 +12,10 @@ are never rendered, so a server-less release must not trip them.
 {{- if and .Values.enabled (not .Values.postgresql.enabled) (or (not .Values.externalDatabase.host) (not .Values.externalDatabase.username)) -}}
 {{- fail "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database." -}}
 {{- end -}}
+{{- if and .Values.enabled .Values.enterpriseSSO.idpMetadataUrl (not (include "openhands.keycloakProvisionRealm" .)) -}}
+{{- fail "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually." -}}
+{{- end -}}
+
 {{/*
 Data-loss guard for the bundled MinIO. Its chart runs the bucket job on
 post-install AND post-upgrade, and purge: true makes that job delete the bucket

@@ -221,8 +221,13 @@ bitbucket:
   auth:
     existingSecret: bitbucket-app
 
+# Enterprise SSO (SAML). Enabling this advertises the login provider. When an
+# HTTPS metadata URL is also set, the keycloak-config init container manages the
+# enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
+  displayName: "Company SSO"
+  idpMetadataUrl: ""
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any
 # secret-backed config changes this value, which changes the openhands pod
