@@ -108,4 +108,5 @@ jobs:
           # Platform team has been notified; track the fix in the Linear ticket
           # linked in #logistics-platform-team. Revert this to `exit "$FAILED"`
           # once the unstable deploy lane is healthy again.
+          echo "Failed: $FAILED"
           exit 0
