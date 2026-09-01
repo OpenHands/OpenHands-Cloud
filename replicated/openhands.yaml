@@ -293,6 +293,10 @@ spec:
       replicaCount: 1
       autoscaling:
         enabled: false
+      # ADMIN_PASSWORD comes from a secretKeyRef, so a password change needs a
+      # rollout to take effect (same pattern as checksum/litellm-credentials).
+      podAnnotations:
+        checksum/admin-password: 'repl{{ sha256sum (ConfigOption "admin_password") }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
         # Do not override the image tag here. Pin to a stable version in the chart.
@@ -328,13 +332,17 @@ spec:
         PGSSLMODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
+        # Admin-API warm configs overlay installer-managed entries by name:
+        # same-named rows override them and differently-named rows run beside
+        # them. Older runtime-api images ignore this variable.
+        WARM_RUNTIME_CONFIG_OVERLAY: "1"
         RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
         # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
         # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
         # it; "." nests it under the runtime base. The path-routing block below
         # overrides this to "/", which the runtime-api reads as path mode.
         RUNTIME_URL_SEPARATOR: '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
-        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_base_hostname" }}'
+        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_api_hostname" }}'
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
@@ -379,7 +387,9 @@ spec:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configsByName:
+          # Keep this key aligned with the chart values for Helm merging.
           default:
+            name: v1_current
             # image omitted -> inherits global.agentServerImage. Proxy by
             # default; when custom_sandbox_image_enabled / HasLocalRegistry are
             # active, the optionalValues blocks below override the global instead.

@@ -1,0 +1,17 @@
+suite: pod annotations
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: renders configured pod annotations
+    set:
+      podAnnotations:
+        checksum/admin-password: password-hash
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["checksum/admin-password"]
+          value: password-hash
+
+  - it: omits pod annotations by default
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations

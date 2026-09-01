@@ -1,0 +1,132 @@
+suite: cleanup CronJob archive volume rendering
+templates:
+  - templates/cleanup-cronjob.yaml
+tests:
+  # Regression for the bug where, with ingressBase.enabled=false and
+  # runtimeFileArchive.enabled=true, the archive-tmp volume list item was
+  # emitted without a `volumes:` key and merged into imagePullSecrets (and the
+  # archive-tmp volumeMount merged into env), producing an invalid Pod spec so
+  # the reaper CronJob could never start. See staging reaper outage.
+  - it: reaper archive volume is a real volume, not an imagePullSecret, when ingressBase is off
+    template: templates/cleanup-cronjob.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-runtime-api-cleanup-reaper
+    set:
+      cleanup.enabled: true
+      ingressBase.enabled: false
+      runtimeFileArchive.enabled: true
+    asserts:
+      # The regression merged the archive-tmp emptyDir volume into
+      # imagePullSecrets (because the `volumes:` key was gated on
+      # ingressBase.enabled). Assert the archive-tmp entry is NOT present
+      # here. notContains is robust to imagePullSecrets being empty (the
+      # umbrella parent clears it to []) or holding the chart-default
+      # ghcr-login-secret (standalone subchart render).
+      - notContains:
+          path: spec.jobTemplate.spec.template.spec.imagePullSecrets
+          content:
+            name: archive-tmp
+      - exists:
+          path: spec.jobTemplate.spec.template.spec.volumes
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.volumes[0].name
+          value: archive-tmp
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.volumes[0].emptyDir.sizeLimit
+          value: 10Gi
+
+  - it: reaper archive mount is a real volumeMount, not an env entry, when ingressBase is off
+    template: templates/cleanup-cronjob.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-runtime-api-cleanup-reaper
+    set:
+      cleanup.enabled: true
+      ingressBase.enabled: false
+      runtimeFileArchive.enabled: true
+    asserts:
+      - exists:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts[0].name
+          value: archive-tmp
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /archive-tmp
+      # The regression merged the archive-tmp mount into env as a malformed
+      # entry; assert no env var is named archive-tmp.
+      - notContains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: archive-tmp
+
+  - it: reaper has RUNTIME_FILE_ARCHIVE_TMPDIR env when archiving is on
+    template: templates/cleanup-cronjob.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-runtime-api-cleanup-reaper
+    set:
+      cleanup.enabled: true
+      runtimeFileArchive.enabled: true
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_FILE_ARCHIVE_TMPDIR
+            value: /archive-tmp
+
+  - it: reaper has no volumes and no volumeMounts when both ingressBase and archiving are off
+    template: templates/cleanup-cronjob.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-runtime-api-cleanup-reaper
+    set:
+      cleanup.enabled: true
+      ingressBase.enabled: false
+      runtimeFileArchive.enabled: false
+    asserts:
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.volumes
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
+
+  - it: reaper has both ingress-base-config and archive-tmp volumes when both are on
+    template: templates/cleanup-cronjob.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-runtime-api-cleanup-reaper
+    set:
+      cleanup.enabled: true
+      ingressBase.enabled: true
+      runtimeFileArchive.enabled: true
+    asserts:
+      - exists:
+          path: spec.jobTemplate.spec.template.spec.volumes
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.volumes[0].name
+          value: ingress-base-config
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.volumes[1].name
+          value: archive-tmp
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts[0].name
+          value: ingress-base-config
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts[1].name
+          value: archive-tmp
+
+  - it: non-reaper phases never get the archive-tmp volume even when archiving is on
+    template: templates/cleanup-cronjob.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-runtime-api-cleanup-snapshotter
+    set:
+      cleanup.enabled: true
+      ingressBase.enabled: false
+      runtimeFileArchive.enabled: true
+    asserts:
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.volumes
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
