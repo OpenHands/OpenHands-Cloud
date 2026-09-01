@@ -1,15 +1,20 @@
 name: Replicated deploy status
 
-# Visibility only, not a merge gate. Asserts the invariant behind the README
-# badges: whatever should have triggered a deploy actually got a run, and that
-# run succeeded. The "no run" case is what a badge cannot show -- GitHub renders
-# the last real conclusion forever, so a workflow that stopped firing stays green.
+# Merge gate on every PR. Asserts the invariant behind the README badges:
+# whatever should have triggered a deploy actually got a run, and that run
+# succeeded. The "no run" case is what a badge cannot show -- GitHub renders the
+# last real conclusion forever, so a workflow that stopped firing stays green.
 #
-# To make it blocking, add the check context `last-deploy` to the `main` ruleset
-# under Settings -> Rules -> Rulesets. No change to this file needed.
+# Required via the check context `last-deploy` in the `main` ruleset.
+# No paths: filter -- a required check that never runs blocks every merge.
 
 on:
   pull_request:
+    # labeled/unlabeled: without them the override label never re-runs this.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+env:
+  OVERRIDE_LABEL: deploy-gate-override
 
 jobs:
   last-deploy:
@@ -18,15 +23,42 @@ jobs:
     permissions:
       actions: read
       contents: read
+      issues: write  # repo-level label definitions are an Issues resource
     steps:
-      # Repo idiom: release-replicated-unstable.yml installs yq the same way.
-      - name: Install yq
-        uses: mikefarah/yq@v4
-
-      - name: Assert both lanes deployed their newest trigger
+      # Upserted every run so it survives deletion; a label API blip must
+      # never redden the gate.
+      - name: Ensure override label exists
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+        run: |
+          gh label create "$OVERRIDE_LABEL" --repo "$REPO" --color FBCA04 \
+            --description "Override label for fixing or bypassing the Replicated Deploy requirement" --force
+
+      # Not stripped on synchronize: this gate tracks main's lanes, not the
+      # PR's diff, so re-arming would force a re-label after every push.
+      - name: Break-glass override
+        if: contains(github.event.pull_request.labels.*.name, env.OVERRIDE_LABEL)
+        run: |
+          echo "::warning::deploy gate overridden by the ${OVERRIDE_LABEL} label"
+          {
+            echo "### Replicated deploy status: overridden"
+            echo ""
+            echo "Bypassed by the \`${OVERRIDE_LABEL}\` label"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Repo idiom: release-replicated-unstable.yml installs yq the same way.
+      - name: Install yq
+        if: ${{ !contains(github.event.pull_request.labels.*.name, env.OVERRIDE_LABEL) }}
+        uses: mikefarah/yq@v4
+
+      - name: Assert both lanes deployed their newest trigger
+        if: ${{ !contains(github.event.pull_request.labels.*.name, env.OVERRIDE_LABEL) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           FAILED=0
           {
@@ -99,14 +131,22 @@ jobs:
             echo "| beta | no openhands/* release | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # TEMPORARY BYPASS: exit 0 so the required `last-deploy` check on the
-          # `main` ruleset does not block PRs. The unstable deploy on main has
-          # been failing intermittently with an empty KOTS deploy response (see
-          # run https://github.com/OpenHands/OpenHands-Cloud/actions/runs/33497185018
-          # and the prior failures 33452723202, 33428909029) — an
-          # infrastructure-side issue unrelated to the PRs being gated.
-          # Platform team has been notified; track the fix in the Linear ticket
-          # linked in #logistics-platform-team. Revert this to `exit "$FAILED"`
-          # once the unstable deploy lane is healthy again.
-          echo "Failed: $FAILED"
-          exit 0
+          if [ "$FAILED" = 1 ]; then
+            {
+              echo ""
+              echo "#### This check is about \`main\`, not your PR"
+              echo ""
+              echo "A replicated deploy is failing (beta or unstable). This gate blocks **every** open PR until it is healthy"
+              echo ""
+              echo "**Fix the deployment** — open the run linked in the table above, or ask the most recent person to merge a PR."
+              echo ""
+              echo "**Or merge anyway** — if this PR *is* the fix, or cannot wait, apply the override label:"
+              echo ""
+              echo "    gh pr edit ${PR} --add-label ${OVERRIDE_LABEL}"
+              echo ""
+              echo "It re-runs this check green, is recorded on the PR, and stays until removed. Drop it if the lane recovers first."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::A Replicated deploy on main is unhealthy — this blocks all PRs and is not caused by your changes. Fix the deploy, or run: gh pr edit ${PR} --add-label ${OVERRIDE_LABEL}"
+          fi
+
+          exit "$FAILED"
