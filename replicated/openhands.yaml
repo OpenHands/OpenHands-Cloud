@@ -99,10 +99,9 @@ spec:
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
 
-    # Enterprise SSO auto-configuration. When the toggle is on and a metadata URL
-    # is provided, the chart's keycloak-config init container upserts the
-    # enterprise_sso SAML identity provider in Keycloak on every pod start.
-    # Leave idpMetadataUrl empty to manage the provider manually.
+    # Enterprise SSO auto-configuration. When the toggle is on, the chart's
+    # keycloak-config init container upserts the enterprise_sso SAML identity
+    # provider in Keycloak from this metadata URL on every pod start.
     enterpriseSSO:
       enabled: repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}
       displayName: repl{{ ConfigOption "enterprise_sso_display_name" | mustToJson }}
