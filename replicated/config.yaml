@@ -1009,7 +1009,11 @@ spec:
           when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
         - name: enterprise_sso_idp_metadata_url
           title: SAML Metadata URL
-          help_text: HTTPS URL of your identity provider's SAML metadata. Leave blank to set the provider up manually instead.
+          help_text: |
+            HTTPS URL of your identity provider's SAML metadata.
+            Leave blank to create the provider yourself in Keycloak:
+            • SAML v2.0 provider with alias enterprise_sso
+            • Mapper identity-provider, type hardcoded-attribute-idp-mapper, attribute identity_provider, value enterprise_sso:saml, sync mode FORCE
           type: text
           when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
           validation:
