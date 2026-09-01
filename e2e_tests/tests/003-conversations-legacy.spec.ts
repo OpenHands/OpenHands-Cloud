@@ -107,7 +107,8 @@ test.describe("legacy conversations @conversations", () => {
 
     await conversationPage.waitForConversationReady();
 
-    const prompt = "Append a poem about developers to the end of README.md — actually edit the file and save it.";
+    const prompt =
+      "Append a poem about developers to the end of README.md — actually edit the file and save it.";
     console.log(`Sending prompt: "${prompt}"`);
     await conversationPage.sendMessage(prompt);
 
