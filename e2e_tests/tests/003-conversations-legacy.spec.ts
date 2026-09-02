@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { HomePage, ConversationPage } from "../pages";
-import { runUser } from "../utils/config";
+import { env, runUser } from "../utils/config";
 
 /**
  * Legacy conversation controls specs.
@@ -92,7 +92,12 @@ test.describe("legacy conversations @conversations", () => {
     // the timeout to give waitForTaskCompleteMessage's budget room to apply.
     test.setTimeout(240_000);
 
-    const TEST_REPO_URL = "https://github.com/OpenHands/OpenHands";
+    // Use the shared fixture repo (env.testRepoUrl, default
+    // OpenHands/deploy ~12 MiB) rather than hardcoding OpenHands/OpenHands
+    // (~407 MiB). The clone is the dominant cost in this test; the smaller
+    // repo keeps it well under the timeout budget while still exercising the
+    // full clone → edit → diff-viewer → VSCode flow.
+    const TEST_REPO_URL = env.testRepoUrl;
 
     await homePage.goto();
 
@@ -178,12 +183,16 @@ test.describe("legacy conversations @conversations", () => {
     const elapsed = Date.now() - startTime;
     const remainingTimeout = Math.max(totalTimeout - elapsed, 0);
 
+    // VS Code's explorer shows the cloned repo's top-level folder, which is
+    // named after the repo (e.g. "deploy" for OpenHands/deploy) — not a fixed
+    // string — so derive the expected name from the configured repo URL.
+    const repoFolderName = TEST_REPO_URL.split("/").pop() ?? "";
     const vsCodeFrame = vsCodeFrameLocator.contentFrame();
     const explorerViewlet = vsCodeFrame
       .locator("a")
-      .filter({ hasText: "OpenHands" });
+      .filter({ hasText: repoFolderName });
     await expect(explorerViewlet).toBeVisible({ timeout: remainingTimeout });
-    console.log("VSCode loaded with OpenHands repository");
+    console.log(`VSCode loaded with repository folder: ${repoFolderName}`);
 
     await page.screenshot({
       path: "test-results/screenshots/vscode-openhands.png",
