@@ -108,7 +108,7 @@ test.describe("legacy conversations @conversations", () => {
     await conversationPage.waitForConversationReady();
 
     const prompt =
-      "Append a poem about developers to the end of README.md — actually edit the file and save it.";
+      "Append the phrase 'Terms and Conditions May Apply!' to the end of README.md — actually edit the file and save it.";
     console.log(`Sending prompt: "${prompt}"`);
     await conversationPage.sendMessage(prompt);
 
@@ -118,7 +118,7 @@ test.describe("legacy conversations @conversations", () => {
 
     await conversationPage.waitForTaskCompleteMessage();
     console.log(
-      "Status is 'Agent has finished the task' - poem task completed",
+      "Status is 'Agent has finished the task' - README append task completed",
     );
 
     await page.screenshot({
@@ -156,7 +156,7 @@ test.describe("legacy conversations @conversations", () => {
     await expect(readMe).toBeVisible();
     await readMe.click();
 
-    // Adding a poem should have inserted at least one new line.
+    // Appending a phrase should have inserted at least one new line.
     await expect(page.locator(".cdr.line-insert").first()).toBeVisible({
       timeout: 10_000,
     });
