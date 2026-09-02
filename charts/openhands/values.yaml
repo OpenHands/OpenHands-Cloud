@@ -340,6 +340,20 @@ proactiveConvoClean:
       memory: 512Mi
       cpu: 200m
 
+appConversationStartTaskClean:
+  enabled: false
+  schedule: "0 3 * * *" # Daily at 3 AM UTC
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+
 resendSync:
   enabled: false
   schedule: "0 1 * * *" # Daily at 1 AM
