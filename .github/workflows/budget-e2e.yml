@@ -15,7 +15,7 @@ concurrency:
 jobs:
   certify:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 210
     environment: budget-e2e-staging
     defaults:
       run:
@@ -31,6 +31,8 @@ jobs:
       BUDGET_E2E_LITELLM_URL: ${{ vars.BUDGET_E2E_LITELLM_URL }}
       BUDGET_E2E_LITELLM_API_KEY: ${{ secrets.BUDGET_E2E_LITELLM_API_KEY }}
       BUDGET_E2E_DIRECT_MODEL: ${{ vars.BUDGET_E2E_DIRECT_MODEL }}
+      BUDGET_E2E_SERVICE_USER_ID: ${{ vars.BUDGET_E2E_SERVICE_USER_ID }}
+      BUDGET_E2E_SERVICE_API_KEY: ${{ secrets.BUDGET_E2E_SERVICE_API_KEY }}
       BUDGET_E2E_EXPECTED_LITELLM_VERSION: ${{ vars.BUDGET_E2E_EXPECTED_LITELLM_VERSION }}
       BUDGET_E2E_SLACK_BOT_TOKEN: ${{ secrets.BUDGET_E2E_SLACK_BOT_TOKEN }}
       BUDGET_E2E_SLACK_CHANNEL_ID: ${{ vars.BUDGET_E2E_SLACK_CHANNEL_ID }}
@@ -62,6 +64,8 @@ jobs:
             BUDGET_E2E_LITELLM_URL
             BUDGET_E2E_LITELLM_API_KEY
             BUDGET_E2E_DIRECT_MODEL
+            BUDGET_E2E_SERVICE_USER_ID
+            BUDGET_E2E_SERVICE_API_KEY
             BUDGET_E2E_SLACK_BOT_TOKEN
             BUDGET_E2E_SLACK_CHANNEL_ID
             BUDGET_E2E_SLACK_CHANNEL_NAME

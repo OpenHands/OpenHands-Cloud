@@ -27,8 +27,12 @@ export interface BudgetSettings {
   litellm_last_sync_error: string | null;
   cycle_start_at: string;
   cycle_end_at: string;
-  current_spend: number;
-  current_spend_percentage: number;
+  spend_status: "live" | "stale" | "unavailable";
+  spend_observed_at: string | null;
+  current_spend: number | null;
+  current_spend_percentage: number | null;
+  unmapped_spend: number | null;
+  unmapped_member_count: number | null;
   thresholds: BudgetThreshold[];
   users: BudgetUser[];
 }
@@ -67,6 +71,17 @@ export interface LiteLLMTeamState {
   spend: number;
 }
 
+export interface LiteLLMMemberState {
+  userId: string;
+  maxBudget: number | null;
+  spend: number;
+}
+
+export interface LiteLLMCompletionResult {
+  status: number;
+  body: string;
+}
+
 interface OrgConversationPage {
   total_items: number;
 }
@@ -102,6 +117,8 @@ export interface BudgetE2EConfig {
   databaseUrl?: string;
   litellmUrl?: string;
   litellmApiKey?: string;
+  serviceUserId?: string;
+  serviceApiKey?: string;
   slack?: SlackConfig;
 }
 
@@ -120,6 +137,8 @@ export function loadBudgetE2EConfig(): BudgetE2EConfig {
   const databaseUrl = process.env.BUDGET_E2E_DATABASE_URL?.trim();
   const litellmUrl = process.env.BUDGET_E2E_LITELLM_URL?.trim();
   const litellmApiKey = process.env.BUDGET_E2E_LITELLM_API_KEY?.trim();
+  const serviceUserId = process.env.BUDGET_E2E_SERVICE_USER_ID?.trim();
+  const serviceApiKey = process.env.BUDGET_E2E_SERVICE_API_KEY?.trim();
   const directModel = process.env.BUDGET_E2E_DIRECT_MODEL?.trim();
   const slackValues = {
     botToken: process.env.BUDGET_E2E_SLACK_BOT_TOKEN?.trim(),
@@ -152,6 +171,11 @@ export function loadBudgetE2EConfig(): BudgetE2EConfig {
       "All BUDGET_E2E_SLACK_* variables are required for budget certification",
     );
   }
+  if (enabled && (!serviceUserId || !serviceApiKey)) {
+    throw new Error(
+      "BUDGET_E2E_SERVICE_USER_ID and BUDGET_E2E_SERVICE_API_KEY are required for unmapped SDK verification",
+    );
+  }
 
   return {
     enabled,
@@ -176,6 +200,8 @@ export function loadBudgetE2EConfig(): BudgetE2EConfig {
     databaseUrl,
     litellmUrl,
     litellmApiKey,
+    serviceUserId,
+    serviceApiKey,
     slack: hasAllSlackValues
       ? {
           botToken: slackValues.botToken!,
@@ -185,6 +211,25 @@ export function loadBudgetE2EConfig(): BudgetE2EConfig {
         }
       : undefined,
   };
+}
+
+function requiredNonNegativeNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${field} must be a finite non-negative number`);
+  }
+  return value;
+}
+
+function nullableNonNegativeNumber(
+  value: unknown,
+  field: string,
+): number | null {
+  if (value === null || value === undefined) return null;
+  return requiredNonNegativeNumber(value, field);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function responseJson<T>(
@@ -361,9 +406,9 @@ export async function getLiteLLMVersion(
   return details.litellm_version;
 }
 
-export async function getLiteLLMTeamState(
+async function getLiteLLMTeam(
   config: BudgetE2EConfig,
-): Promise<LiteLLMTeamState> {
+): Promise<Record<string, unknown>> {
   if (!config.litellmUrl || !config.litellmApiKey) {
     throw new Error("LiteLLM E2E admin configuration is not available");
   }
@@ -377,12 +422,59 @@ export async function getLiteLLMTeamState(
       `get LiteLLM team failed (${response.status} ${response.statusText})`,
     );
   }
-  const body = (await response.json()) as {
-    team_info?: { max_budget?: number | null; spend?: number | null };
-  };
+  const body: unknown = await response.json();
+  if (!isRecord(body)) {
+    throw new Error("LiteLLM team response must be an object");
+  }
+  return body;
+}
+
+export async function getLiteLLMTeamState(
+  config: BudgetE2EConfig,
+): Promise<LiteLLMTeamState> {
+  const body = await getLiteLLMTeam(config);
+  const teamInfo = body.team_info;
+  if (!isRecord(teamInfo)) {
+    throw new Error("LiteLLM team response is missing team_info");
+  }
   return {
-    maxBudget: body.team_info?.max_budget ?? null,
-    spend: body.team_info?.spend ?? 0,
+    maxBudget: nullableNonNegativeNumber(
+      teamInfo.max_budget,
+      "team_info.max_budget",
+    ),
+    spend: requiredNonNegativeNumber(teamInfo.spend, "team_info.spend"),
+  };
+}
+
+export async function getLiteLLMMemberState(
+  config: BudgetE2EConfig,
+  userId: string,
+): Promise<LiteLLMMemberState | null> {
+  const body = await getLiteLLMTeam(config);
+  const teamInfo = body.team_info;
+  if (!isRecord(teamInfo)) {
+    throw new Error("LiteLLM team response is missing team_info");
+  }
+  let memberships: unknown[] = [];
+  if (Array.isArray(body.team_memberships)) {
+    memberships = body.team_memberships;
+  } else if (Array.isArray(teamInfo.members_with_roles)) {
+    memberships = teamInfo.members_with_roles;
+  }
+  const membership = memberships.find(
+    (candidate) => isRecord(candidate) && candidate.user_id === userId,
+  );
+  if (!isRecord(membership)) return null;
+  return {
+    userId,
+    maxBudget: nullableNonNegativeNumber(
+      membership.max_budget_in_team,
+      `membership.${userId}.max_budget_in_team`,
+    ),
+    spend: requiredNonNegativeNumber(
+      membership.spend,
+      `membership.${userId}.spend`,
+    ),
   };
 }
 
@@ -434,6 +526,32 @@ export function updateLiteLLMMemberCap(
   });
 }
 
+export async function removeLiteLLMTeamMember(
+  config: BudgetE2EConfig,
+  userId: string,
+): Promise<void> {
+  await updateLiteLLM(config, "team/member_delete", {
+    team_id: config.orgId,
+    user_id: userId,
+  });
+}
+
+export async function ensureLiteLLMTeamMember(
+  config: BudgetE2EConfig,
+  userId: string,
+  maxBudget: number | null,
+): Promise<void> {
+  if (await getLiteLLMMemberState(config, userId)) return;
+  await updateLiteLLM(config, "team/member_add", {
+    team_id: config.orgId,
+    member: {
+      user_id: userId,
+      role: "user",
+    },
+    max_budget_in_team: maxBudget,
+  });
+}
+
 export async function createLiteLLMTestKey(
   config: BudgetE2EConfig,
   userId: string,
@@ -477,10 +595,10 @@ export function deleteLiteLLMTestKey(
   return updateLiteLLM(config, "key/delete", { key_aliases: [keyAlias] });
 }
 
-export async function generateDirectLiteLLMSpend(
+export async function requestDirectLiteLLMCompletion(
   config: BudgetE2EConfig,
   key: string,
-): Promise<void> {
+): Promise<LiteLLMCompletionResult> {
   if (!config.litellmUrl || !config.litellmApiKey || !config.directModel) {
     throw new Error("LiteLLM direct-traffic configuration is not available");
   }
@@ -491,7 +609,6 @@ export async function generateDirectLiteLLMSpend(
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
-        "x-goog-api-key": config.litellmApiKey,
       },
       body: JSON.stringify({
         model: config.directModel,
@@ -500,12 +617,36 @@ export async function generateDirectLiteLLMSpend(
       }),
     },
   );
-  if (!response.ok) {
+  return { status: response.status, body: await response.text() };
+}
+
+export async function generateDirectLiteLLMSpend(
+  config: BudgetE2EConfig,
+  key: string,
+): Promise<void> {
+  const response = await requestDirectLiteLLMCompletion(config, key);
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(
-      `direct LiteLLM completion failed (${response.status} ${response.statusText}): ${await response.text()}`,
+      `direct LiteLLM completion failed (${response.status}): ${response.body}`,
     );
   }
-  await response.json();
+  JSON.parse(response.body);
+}
+
+export async function requireDirectBudgetDenial(
+  config: BudgetE2EConfig,
+  key: string,
+): Promise<LiteLLMCompletionResult> {
+  const response = await requestDirectLiteLLMCompletion(config, key);
+  if (
+    ![400, 429].includes(response.status) ||
+    !/budget|exceed|limit/i.test(response.body)
+  ) {
+    throw new Error(
+      `expected a LiteLLM budget denial, received ${response.status}: ${response.body}`,
+    );
+  }
+  return response;
 }
 
 export async function findSlackBudgetAlert(
