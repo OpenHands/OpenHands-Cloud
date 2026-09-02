@@ -13,10 +13,14 @@ import { runUser } from "../utils/config";
  *  - Conversation launch: there is no dedicated "launch new conversation"
  *    button. Conversations are started by typing into the home chat input and
  *    submitting, which creates the conversation and navigates to it.
- *  - Status: canvas surfaces readiness/completion as short status strings
- *    ("Ready" / "Done") in a `chat-status-indicator`, rather than the legacy
- *    long-form text ("Waiting for task" / "Agent has finished the task").
- *  - Messages: rendered as `assistant-message` / `user-message` elements.
+ *  - Status: the canvas does NOT surface a persistent readiness/completion
+ *    status the way the legacy UI does. The `chat-status-indicator` is only
+ *    mounted while the agent is in the starting (LOADING/INIT) state and is
+ *    unmounted once ready, so readiness is detected from the chat shell
+ *    (chat-interface/chat-input/submit-button) being visible. Completion is
+ *    detected from the agent leaving the running state — the in-chat
+ *    stop-button (visible only while RUNNING) disappearing.
+ *  - Messages: rendered as `agent-message` / `user-message` elements.
  *  - Recent conversations: a `conversation-panel` of `conversation-card`
  *    items, not a `recent-conversations` link list.
  *
