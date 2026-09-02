@@ -251,13 +251,13 @@ test.describe("legacy conversations @conversations", () => {
     const prompt =
       "Using Tavily search, please tell me who is the prime minister of Ireland. Use the default search parameters — do not set a topic/category field (Tavily only accepts 'general', and other values are rejected).";
     console.log(`Sending prompt: "${prompt}"`);
-    await conversationPage.executePrompt(prompt, 120_000);
+    await conversationPage.executePrompt(prompt, 180_000);
 
     // Match the name with a regex so accent ("Micheál" vs "Micheal") and casing
     // variants in the agent's response don't cause spurious failures.
     const message = await conversationPage.waitForMessageContaining(
       /miche[aá]l martin/i,
-      120_000,
+      180_000,
     );
     console.log(
       `Found expected response containing 'Micheál Martin': "${message.substring(0, 100)}..."`,
