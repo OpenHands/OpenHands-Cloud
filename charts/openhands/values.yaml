@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.56.0
+  tag: 1.57.0
 
 autoscaling:
   enabled: false
@@ -221,8 +221,13 @@ bitbucket:
   auth:
     existingSecret: bitbucket-app
 
+# Enterprise SSO (SAML). Enabling this advertises the login provider. When an
+# HTTPS metadata URL is also set, the keycloak-config init container manages the
+# enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
+  displayName: "Company SSO"
+  idpMetadataUrl: ""
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any
 # secret-backed config changes this value, which changes the openhands pod
@@ -1314,7 +1319,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.43.1-python
+    tag: 1.44.1-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

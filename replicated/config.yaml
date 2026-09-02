@@ -992,6 +992,32 @@ spec:
           when: 'repl{{ ConfigOptionEquals "gitlab_auth_enabled" "1" }}'
           required: true
 
+    - name: enterprise_sso_authentication
+      title: Enterprise SSO (SAML) Authentication
+      description: Let users sign in with your corporate SAML identity provider.
+      items:
+        - name: enterprise_sso_enabled
+          title: Enable Enterprise SSO Authentication
+          help_text: Add an Enterprise SSO button to the OpenHands login page.
+          type: bool
+          default: "0"
+        - name: enterprise_sso_display_name
+          title: Identity Provider Display Name
+          help_text: Name shown for the identity provider on the sign-in page.
+          type: text
+          default: "Company SSO"
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+        - name: enterprise_sso_idp_metadata_url
+          title: SAML Metadata URL
+          help_text: HTTPS URL of your identity provider's SAML metadata.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+          required: true
+          validation:
+            regex:
+              pattern: '^https://[^[:space:]]+$'
+              message: 'Must be an HTTPS metadata URL.'
+
     - name: slack_configuration
       title: Enable Slack
       description: Enable Slack
@@ -1303,9 +1329,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.43.1-python
+          help_text: Image tag, e.g. 1.44.1-python
           type: text
-          default: "1.43.1-python"
+          default: "1.44.1-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
