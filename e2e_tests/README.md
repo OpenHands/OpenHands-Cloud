@@ -48,6 +48,7 @@ Configure the protected GitHub environment `budget-e2e-staging` with:
 
 | Kind     | Name                                  | Purpose                                                      |
 | -------- | ------------------------------------- | ------------------------------------------------------------ |
+| Variable | `BUDGET_E2E_SCHEDULE_ENABLED`         | Set to `true` only after the protected contract is ready     |
 | Variable | `BUDGET_E2E_RUNNER`                   | Optional runner label with network access; defaults to `ubuntu-latest` |
 | Variable | `BUDGET_E2E_BASE_URL`                 | HTTPS URL of the test deployment                             |
 | Variable | `BUDGET_E2E_ORG_ID`                   | Dedicated non-personal test organization UUID                |
@@ -72,6 +73,10 @@ is private, set `BUDGET_E2E_RUNNER` to a self-hosted runner label with network
 access to that database. Do not expose PostgreSQL publicly for a GitHub-hosted
 runner. `ubuntu-latest` is appropriate only when every configured endpoint is
 intentionally reachable from GitHub Actions.
+
+Scheduled certification is opt-in. Leave `BUDGET_E2E_SCHEDULE_ENABLED` unset
+or set to `false` while provisioning the environment; manual dispatch remains
+available. Enable the schedule only after a complete manual run passes.
 
 For Azure coverage, point `BUDGET_E2E_DIRECT_MODEL` at an Azure-backed model
 alias already configured in the deployment's LiteLLM proxy. Direct requests use

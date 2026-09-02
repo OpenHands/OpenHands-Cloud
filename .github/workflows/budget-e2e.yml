@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   certify:
+    if: github.event_name == 'workflow_dispatch' || vars.BUDGET_E2E_SCHEDULE_ENABLED == 'true'
     runs-on: ${{ vars.BUDGET_E2E_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 210
     environment: budget-e2e-staging
