@@ -113,7 +113,7 @@ test.describe("legacy conversations @conversations", () => {
     await conversationPage.waitForConversationReady();
 
     const prompt =
-      "Append the phrase 'Terms and Conditions May Apply!' to the end of README.md — actually edit the file and save it.";
+      "Append the phrase 'Terms and Conditions May Apply!' to the end of README.md in the current working directory (the repo root) — actually edit the file and save it.";
     console.log(`Sending prompt: "${prompt}"`);
     await conversationPage.sendMessage(prompt);
 
