@@ -48,6 +48,7 @@ Configure the protected GitHub environment `budget-e2e-staging` with:
 
 | Kind     | Name                                  | Purpose                                                      |
 | -------- | ------------------------------------- | ------------------------------------------------------------ |
+| Variable | `BUDGET_E2E_RUNNER`                   | Optional runner label with network access; defaults to `ubuntu-latest` |
 | Variable | `BUDGET_E2E_BASE_URL`                 | HTTPS URL of the test deployment                             |
 | Variable | `BUDGET_E2E_ORG_ID`                   | Dedicated non-personal test organization UUID                |
 | Variable | `BUDGET_E2E_LITELLM_URL`              | Admin-reachable URL of the deployment's LiteLLM proxy        |
@@ -64,6 +65,13 @@ Configure the protected GitHub environment `budget-e2e-staging` with:
 | Secret   | `BUDGET_E2E_LITELLM_API_KEY`          | LiteLLM admin key                                            |
 | Secret   | `BUDGET_E2E_SERVICE_API_KEY`          | Virtual key for the LiteLLM-only service identity            |
 | Secret   | `BUDGET_E2E_SLACK_BOT_TOKEN`          | Token allowed to read the test alert channel                 |
+
+The suite opens a direct PostgreSQL connection to snapshot cycle state and
+restore it after the destructive run. For a Replicated instance whose database
+is private, set `BUDGET_E2E_RUNNER` to a self-hosted runner label with network
+access to that database. Do not expose PostgreSQL publicly for a GitHub-hosted
+runner. `ubuntu-latest` is appropriate only when every configured endpoint is
+intentionally reachable from GitHub Actions.
 
 For Azure coverage, point `BUDGET_E2E_DIRECT_MODEL` at an Azure-backed model
 alias already configured in the deployment's LiteLLM proxy. Direct requests use

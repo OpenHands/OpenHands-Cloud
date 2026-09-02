@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   certify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.BUDGET_E2E_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 210
     environment: budget-e2e-staging
     defaults:
