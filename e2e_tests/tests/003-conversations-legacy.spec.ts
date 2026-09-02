@@ -249,7 +249,7 @@ test.describe("legacy conversations @conversations", () => {
     await conversationPage.waitForConversationReady();
 
     const prompt =
-      "Using Tavily search, please tell me who is the prime minister of Ireland.";
+      "Using Tavily search, please tell me who is the prime minister of Ireland. Use the default search parameters — do not set a topic/category field (Tavily only accepts 'general', and other values are rejected).";
     console.log(`Sending prompt: "${prompt}"`);
     await conversationPage.executePrompt(prompt, 120_000);
 
