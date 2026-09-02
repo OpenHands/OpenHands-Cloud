@@ -341,7 +341,7 @@ proactiveConvoClean:
       cpu: 200m
 
 appConversationStartTaskClean:
-  enabled: false
+  enabled: true
   schedule: "0 3 * * *" # Daily at 3 AM UTC
   concurrencyPolicy: Forbid
   failedJobsHistoryLimit: 3
