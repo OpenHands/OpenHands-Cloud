@@ -66,8 +66,9 @@ interface BudgetEvidence {
   overrideMaintenance: BudgetMaintenanceResult;
   overrideLimit: number;
   overrideExpectedCap: number;
+  overrideSharedCap: number;
   overrideExpectedMember: MemberFinancial;
-  overrideClearedMember: MemberFinancial;
+  overrideSharedMember: MemberFinancial;
   overrideReconciledMember: MemberFinancial;
   disabledSyncBefore: string | null;
   disabledSyncAfter: string | null;
@@ -413,12 +414,18 @@ test.describe("organization budget maintenance @budgets", () => {
         intervalMs: config.pollIntervalMs,
       },
     );
+    const overrideSharedCap = (await getLiteLLMTeamState(config)).maxBudget;
+    if (overrideSharedCap === null) {
+      throw new Error("Organization cap was absent before override drift test");
+    }
     await updateLiteLLMMemberCap(config, userId, null);
-    const overrideClearedMember = await pollUntil(
+    const overrideSharedMember = await pollUntil(
       () => api!.getMemberFinancial(userId),
-      (member) => member.max_budget === null,
+      (member) =>
+        member.max_budget !== null &&
+        Math.abs(member.max_budget - overrideSharedCap) < 0.005,
       {
-        description: "the individual override cap to be cleared directly",
+        description: "the member to fall back to the shared organization cap",
         timeoutMs: 60_000,
         intervalMs: config.pollIntervalMs,
       },
@@ -600,8 +607,9 @@ test.describe("organization budget maintenance @budgets", () => {
       overrideMaintenance,
       overrideLimit,
       overrideExpectedCap,
+      overrideSharedCap,
       overrideExpectedMember,
-      overrideClearedMember,
+      overrideSharedMember,
       overrideReconciledMember,
       disabledSyncBefore,
       disabledSyncAfter: disabledAfterMaintenance.litellm_last_sync_at,
@@ -792,8 +800,9 @@ test.describe("organization budget maintenance @budgets", () => {
       maintenance: evidence!.overrideMaintenance,
       overrideLimit: evidence!.overrideLimit,
       expectedCap: evidence!.overrideExpectedCap,
+      sharedCap: evidence!.overrideSharedCap,
       initial: evidence!.overrideExpectedMember,
-      cleared: evidence!.overrideClearedMember,
+      shared: evidence!.overrideSharedMember,
       reconciled: evidence!.overrideReconciledMember,
     });
     expect(evidence!.overrideMaintenance.status).toBe("COMPLETED");
@@ -801,7 +810,10 @@ test.describe("organization budget maintenance @budgets", () => {
       evidence!.overrideExpectedCap,
       closeToPrecision,
     );
-    expect(evidence!.overrideClearedMember.max_budget).toBeNull();
+    expect(evidence!.overrideSharedMember.max_budget).toBeCloseTo(
+      evidence!.overrideSharedCap,
+      closeToPrecision,
+    );
     expect(evidence!.overrideReconciledMember.max_budget).toBeCloseTo(
       evidence!.overrideExpectedCap,
       closeToPrecision,

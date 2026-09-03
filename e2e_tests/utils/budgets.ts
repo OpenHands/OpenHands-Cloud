@@ -450,27 +450,77 @@ export async function getLiteLLMMemberState(
   if (!isRecord(teamInfo)) {
     throw new Error("LiteLLM team response is missing team_info");
   }
-  let memberships: unknown[] = [];
-  if (Array.isArray(body.team_memberships)) {
-    memberships = body.team_memberships;
-  } else if (Array.isArray(teamInfo.members_with_roles)) {
-    memberships = teamInfo.members_with_roles;
+  const defaultBudgetTable = teamInfo.team_member_budget_table;
+  if (
+    defaultBudgetTable !== undefined &&
+    defaultBudgetTable !== null &&
+    !isRecord(defaultBudgetTable)
+  ) {
+    throw new Error("team_info.team_member_budget_table must be an object");
   }
+  const defaultMaxBudget = isRecord(defaultBudgetTable)
+    ? nullableNonNegativeNumber(
+        defaultBudgetTable.max_budget,
+        "team_info.team_member_budget_table.max_budget",
+      )
+    : null;
+
+  const memberships = Array.isArray(body.team_memberships)
+    ? body.team_memberships
+    : [];
   const membership = memberships.find(
     (candidate) => isRecord(candidate) && candidate.user_id === userId,
   );
-  if (!isRecord(membership)) return null;
-  return {
-    userId,
-    maxBudget: nullableNonNegativeNumber(
-      membership.max_budget_in_team,
-      `membership.${userId}.max_budget_in_team`,
-    ),
-    spend: requiredNonNegativeNumber(
-      membership.spend,
-      `membership.${userId}.spend`,
-    ),
-  };
+  if (isRecord(membership)) {
+    const budgetTable = membership.litellm_budget_table;
+    if (
+      budgetTable !== undefined &&
+      budgetTable !== null &&
+      !isRecord(budgetTable)
+    ) {
+      throw new Error(
+        `membership.${userId}.litellm_budget_table must be an object`,
+      );
+    }
+    return {
+      userId,
+      maxBudget: isRecord(budgetTable)
+        ? nullableNonNegativeNumber(
+            budgetTable.max_budget,
+            `membership.${userId}.litellm_budget_table.max_budget`,
+          )
+        : defaultMaxBudget,
+      spend: requiredNonNegativeNumber(
+        membership.spend,
+        `membership.${userId}.spend`,
+      ),
+    };
+  }
+
+  const roster = Array.isArray(teamInfo.members_with_roles)
+    ? teamInfo.members_with_roles
+    : [];
+  const isRosterMember = roster.some(
+    (candidate) => isRecord(candidate) && candidate.user_id === userId,
+  );
+  if (!isRosterMember) return null;
+
+  const matchingKeys = (Array.isArray(body.keys) ? body.keys : []).filter(
+    (candidate) => isRecord(candidate) && candidate.user_id === userId,
+  );
+  if (matchingKeys.length === 0) {
+    throw new Error(`role-only member ${userId} has no validated key spend`);
+  }
+  const spend = matchingKeys.reduce(
+    (total, key, index) =>
+      total +
+      requiredNonNegativeNumber(
+        (key as Record<string, unknown>).spend,
+        `keys.${userId}.${index}.spend`,
+      ),
+    0,
+  );
+  return { userId, maxBudget: defaultMaxBudget, spend };
 }
 
 async function updateLiteLLM(

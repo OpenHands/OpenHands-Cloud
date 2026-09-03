@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   type BudgetE2EConfig,
+  getLiteLLMMemberState,
   getLiteLLMTeamState,
   loadBudgetE2EConfig,
   requestDirectLiteLLMCompletion,
@@ -52,6 +53,72 @@ test("direct SDK traffic authenticates only with the virtual key", async () => {
     expect(result.status).toBe(429);
     expect(observedHeaders?.get("authorization")).toBe("Bearer virtual-key");
     expect(observedHeaders?.has("x-goog-api-key")).toBe(false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("reads nested LiteLLM 1.94.1 member caps and prefers membership spend", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        team_info: {
+          team_member_budget_table: { max_budget: 50 },
+          members_with_roles: [{ user_id: "private-member", role: "user" }],
+        },
+        team_memberships: [
+          {
+            user_id: "private-member",
+            spend: 12,
+            budget_id: "private-budget",
+            litellm_budget_table: { max_budget: 25 },
+          },
+        ],
+        keys: [{ user_id: "private-member", spend: 999 }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  try {
+    await expect(
+      getLiteLLMMemberState(config, "private-member"),
+    ).resolves.toEqual({
+      userId: "private-member",
+      maxBudget: 25,
+      spend: 12,
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("sums key spend for a role-only LiteLLM member", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        team_info: {
+          team_member_budget_table: null,
+          members_with_roles: [{ user_id: "role-only-member", role: "user" }],
+        },
+        team_memberships: [],
+        keys: [
+          { user_id: "role-only-member", spend: 2.5 },
+          { user_id: "role-only-member", spend: 3.75 },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  try {
+    await expect(
+      getLiteLLMMemberState(config, "role-only-member"),
+    ).resolves.toEqual({
+      userId: "role-only-member",
+      maxBudget: null,
+      spend: 6.25,
+    });
   } finally {
     global.fetch = originalFetch;
   }
