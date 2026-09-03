@@ -737,16 +737,35 @@ export async function requireDirectBudgetDenial(
   config: BudgetE2EConfig,
   key: string,
 ): Promise<LiteLLMCompletionResult> {
-  const response = await requestDirectLiteLLMCompletion(config, key);
-  if (
-    ![400, 429].includes(response.status) ||
-    !/budget|exceed|limit/i.test(response.body)
-  ) {
-    throw new Error(
-      `expected a LiteLLM budget denial, received ${response.status}: ${response.body}`,
-    );
+  const attempts = 5;
+  let response: LiteLLMCompletionResult | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    response = await requestDirectLiteLLMCompletion(config, key);
+    if (
+      [400, 429].includes(response.status) &&
+      /budget|exceed|limit/i.test(response.body)
+    ) {
+      return response;
+    }
+    // LiteLLM updates spend asynchronously. One request can be admitted after
+    // a verified cap write while the request-admission cache catches up; bound
+    // that race rather than mistaking an indefinitely unenforced cap for a
+    // pass.
+    if (
+      response.status < 200 ||
+      response.status >= 300 ||
+      attempt === attempts
+    ) {
+      break;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, config.pollIntervalMs);
+    });
   }
-  return response;
+  const body = response?.body.slice(0, 500) || "no response body";
+  throw new Error(
+    `expected a LiteLLM budget denial within ${attempts} attempts, last response was ${response?.status}: ${body}`,
+  );
 }
 
 export async function findSlackBudgetAlert(

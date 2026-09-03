@@ -13,6 +13,7 @@ import {
   getLiteLLMTeamState,
   loadBudgetE2EConfig,
   requestDirectLiteLLMCompletion,
+  requireDirectBudgetDenial,
 } from "../utils/budgets";
 
 const config: BudgetE2EConfig = {
@@ -92,6 +93,27 @@ test("direct SDK traffic authenticates only with the virtual key", async () => {
       },
       { role: "user", content: config.directPrompt },
     ]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("allows one admitted request while budget enforcement catches up", async () => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response('{"choices":[]}', { status: 200 });
+    }
+    return new Response('{"error":"budget exceeded"}', { status: 429 });
+  };
+
+  try {
+    await expect(
+      requireDirectBudgetDenial(config, "virtual-key"),
+    ).resolves.toMatchObject({ status: 429 });
+    expect(calls).toBe(2);
   } finally {
     global.fetch = originalFetch;
   }
