@@ -9,20 +9,38 @@ import {
   BudgetApi,
   type BudgetSettings,
   type BudgetUser,
+  type LiteLLMCompletionResult,
+  type LiteLLMMemberState,
   type LiteLLMTeamState,
   type MemberFinancial,
   createLiteLLMTestKey,
   deleteLiteLLMTestKey,
+  ensureLiteLLMTeamMember,
   findSlackBudgetAlert,
   generateDirectLiteLLMSpend,
+  getLiteLLMMemberState,
   getLiteLLMTeamState,
   getLiteLLMVersion,
   loadBudgetE2EConfig,
   pollUntil,
+  removeLiteLLMTeamMember,
+  requireDirectBudgetDenial,
   updateLiteLLMMemberCap,
   updateLiteLLMTeamCap,
 } from "../utils/budgets";
 import { authReturningFile, env, runUser } from "../utils/config";
+
+interface SlackBudgetEvidence {
+  maintenance: BudgetMaintenanceResult;
+  reportingSpendBefore: number;
+  reportingSpendAfter: number;
+  financialSpendBefore: number;
+  financialSpendAfter: number;
+  teamSpendBefore: number;
+  teamSpendAfter: number;
+  alertSpend: number;
+  alertText: string;
+}
 
 interface BudgetEvidence {
   rolloverMaintenance: BudgetMaintenanceResult;
@@ -44,19 +62,13 @@ interface BudgetEvidence {
   financialSpendAfter: number;
   conversationsBeforeDirectSpend: number;
   conversationsAfterDirectSpend: number;
-  alertReportingSpendBefore: number;
-  alertReportingSpendAfter: number;
-  alertFinancialSpendBefore: number;
-  alertFinancialSpendAfter: number;
-  alertTeamSpendBefore: number;
-  alertTeamSpendAfter: number;
-  slackAlertSpend: number;
-  slackAlertText: string;
+  slack?: SlackBudgetEvidence;
   overrideMaintenance: BudgetMaintenanceResult;
   overrideLimit: number;
   overrideExpectedCap: number;
+  overrideSharedCap: number;
   overrideExpectedMember: MemberFinancial;
-  overrideClearedMember: MemberFinancial;
+  overrideSharedMember: MemberFinancial;
   overrideReconciledMember: MemberFinancial;
   disabledSyncBefore: string | null;
   disabledSyncAfter: string | null;
@@ -65,12 +77,32 @@ interface BudgetEvidence {
   observedDisabledTeam: LiteLLMTeamState;
   seededDisabledMember: MemberFinancial;
   observedDisabledMember: MemberFinancial;
+  memberDenial: LiteLLMCompletionResult;
+  memberDenialState: LiteLLMMemberState;
+  organizationDenial: LiteLLMCompletionResult;
+  organizationDenialState: LiteLLMTeamState;
+  membershipMissingMaintenance: BudgetMaintenanceResult;
+  membershipRepairMaintenance: BudgetMaintenanceResult;
+  membershipSyncError: string | null;
+  memberAfterRemoval: LiteLLMMemberState | null;
+  memberAfterMidcycleMaintenance: LiteLLMMemberState | null;
+  memberAfterBoundaryRepair: LiteLLMMemberState;
+  serviceMemberBefore: LiteLLMMemberState;
+  serviceMemberAfter: LiteLLMMemberState;
+  serviceMaintenance: BudgetMaintenanceResult;
+  serviceReportingSpendBefore: number;
+  serviceReportingSpend: number;
+  serviceUnmappedSpend: number;
+  serviceUnmappedMemberCount: number;
+  serviceConversationsBefore: number;
+  serviceConversationsAfter: number;
 }
 
 const config = loadBudgetE2EConfig();
-const suiteTimeout = config.syncTimeoutMs * 6 + 10 * 60_000;
+const suiteTimeout = config.syncTimeoutMs * 9 + 10 * 60_000;
 const closeToPrecision = 2;
 const maxSpendAttempts = 8;
+const denialAllowance = 0.000_001;
 
 function restorePayload(settings: BudgetSettings): Record<string, unknown> {
   return {
@@ -93,6 +125,18 @@ function requireSuccessfulSync(
       `${operation} LiteLLM sync status was ${settings.litellm_last_sync_status}: ${settings.litellm_last_sync_error || "no error detail"}`,
     );
   }
+}
+
+function requireCurrentSpend(
+  settings: BudgetSettings,
+  operation: string,
+): number {
+  if (settings.current_spend === null) {
+    throw new Error(
+      `${operation} spend is unavailable (${settings.spend_status})`,
+    );
+  }
+  return settings.current_spend;
 }
 
 function attachEvidence(
@@ -157,6 +201,7 @@ test.describe("organization budget maintenance @budgets", () => {
   let originalTeam: LiteLLMTeamState | undefined;
   let originalMember: MemberFinancial | undefined;
   let testKeyAlias: string | undefined;
+  let managedKeyRepairRequired = false;
   let evidence: BudgetEvidence | undefined;
 
   test.beforeEach(({ browser: _browser }, testInfo) => {
@@ -178,12 +223,15 @@ test.describe("organization budget maintenance @budgets", () => {
       !config.databaseUrl ||
       !config.litellmUrl ||
       !config.litellmApiKey ||
-      !config.slack
+      !config.serviceUserId ||
+      !config.serviceApiKey
     ) {
       throw new Error(
         "Complete budget E2E certification configuration is required",
       );
     }
+    const { serviceUserId } = config;
+    const { serviceApiKey } = config;
 
     context = await browser.newContext({
       baseURL: env.baseUrl,
@@ -243,7 +291,10 @@ test.describe("organization budget maintenance @budgets", () => {
     requireSuccessfulSync(budgetAfterRollover, "stale-cycle rollover");
     const teamAfterRollover = await getLiteLLMTeamState(config);
     const memberAfterRollover = await api.getMemberFinancial(userId);
-    const reportingSpendBefore = budgetAfterRollover.current_spend;
+    const reportingSpendBefore = requireCurrentSpend(
+      budgetAfterRollover,
+      "post-rollover reporting",
+    );
     const financialSpendBefore = memberAfterRollover.lifetime_spend;
     const conversationsBeforeDirectSpend = await api.getConversationCount();
 
@@ -277,45 +328,67 @@ test.describe("organization budget maintenance @budgets", () => {
       reportingAfterDirect,
       "second direct-spend maintenance",
     );
+    const reportingSpendAfter = requireCurrentSpend(
+      reportingAfterDirect,
+      "second direct-spend maintenance",
+    );
     const conversationsAfterDirectSpend = await api.getConversationCount();
 
-    const thresholdStartedAt = Math.floor(Date.now() / 1000);
-    const alertMonthlyLimit =
-      reportingAfterDirect.current_spend + config.minimumSpendDelta / 2;
-    const slackConfigured = await api.patchBudget({
-      monthly_limit: alertMonthlyLimit,
-      slack_channel: config.slack.channelName,
-      slack_team_id: config.slack.teamId,
-      thresholds: [
-        { percentage: 100, email_enabled: false, slack_enabled: true },
-      ],
-    });
-    requireSuccessfulSync(slackConfigured, "Slack budget configuration");
-    const alertFinancialSpendBefore = memberAfterSecondSpend.lifetime_spend;
-    await generateMinimumDirectSpend(
-      api,
-      userId,
-      generatedKey.key,
-      alertFinancialSpendBefore,
-    );
-    const alertMaintenance = await runMaintenance(database);
-    const alertReporting = await api.getBudget();
-    requireSuccessfulSync(
-      alertReporting,
-      "authoritative-spend alert maintenance",
-    );
-    const alertFinancial = await api.getMemberFinancial(userId);
-    const alertTeam = await getLiteLLMTeamState(config);
-    const alert = await pollUntil(
-      () => findSlackBudgetAlert(config, org.name, thresholdStartedAt),
-      (value) => value !== undefined,
-      {
-        description: "the budget threshold Slack notification",
-        timeoutMs: 2 * 60_000,
-        intervalMs: config.pollIntervalMs,
-      },
-    );
-    if (!alert) throw new Error("Slack budget alert was not delivered");
+    let slackEvidence: SlackBudgetEvidence | undefined;
+    if (config.slack) {
+      const thresholdStartedAt = Math.floor(Date.now() / 1000);
+      const alertMonthlyLimit =
+        reportingSpendAfter + config.minimumSpendDelta / 2;
+      const slackConfigured = await api.patchBudget({
+        monthly_limit: alertMonthlyLimit,
+        slack_channel: config.slack.channelName,
+        slack_team_id: config.slack.teamId,
+        thresholds: [
+          { percentage: 100, email_enabled: false, slack_enabled: true },
+        ],
+      });
+      requireSuccessfulSync(slackConfigured, "Slack budget configuration");
+      const alertFinancialSpendBefore = memberAfterSecondSpend.lifetime_spend;
+      await generateMinimumDirectSpend(
+        api,
+        userId,
+        generatedKey.key,
+        alertFinancialSpendBefore,
+      );
+      const alertMaintenance = await runMaintenance(database);
+      const alertReporting = await api.getBudget();
+      requireSuccessfulSync(
+        alertReporting,
+        "authoritative-spend alert maintenance",
+      );
+      const alertReportingSpendAfter = requireCurrentSpend(
+        alertReporting,
+        "authoritative-spend alert maintenance",
+      );
+      const alertFinancial = await api.getMemberFinancial(userId);
+      const alertTeam = await getLiteLLMTeamState(config);
+      const alert = await pollUntil(
+        () => findSlackBudgetAlert(config, org.name, thresholdStartedAt),
+        (value) => value !== undefined,
+        {
+          description: "the budget threshold Slack notification",
+          timeoutMs: 2 * 60_000,
+          intervalMs: config.pollIntervalMs,
+        },
+      );
+      if (!alert) throw new Error("Slack budget alert was not delivered");
+      slackEvidence = {
+        maintenance: alertMaintenance,
+        reportingSpendBefore: reportingSpendAfter,
+        reportingSpendAfter: alertReportingSpendAfter,
+        financialSpendBefore: alertFinancialSpendBefore,
+        financialSpendAfter: alertFinancial.lifetime_spend,
+        teamSpendBefore: teamAfterSecondSpend.spend,
+        teamSpendAfter: alertTeam.spend,
+        alertSpend: alert.spend,
+        alertText: alert.text,
+      };
+    }
 
     if (memberAfterRollover.max_budget === null) {
       throw new Error("Default member cap was absent after cycle rollover");
@@ -342,18 +415,162 @@ test.describe("organization budget maintenance @budgets", () => {
         intervalMs: config.pollIntervalMs,
       },
     );
+    const overrideSharedCap = (await getLiteLLMTeamState(config)).maxBudget;
+    if (overrideSharedCap === null) {
+      throw new Error("Organization cap was absent before override drift test");
+    }
     await updateLiteLLMMemberCap(config, userId, null);
-    const overrideClearedMember = await pollUntil(
+    const overrideSharedMember = await pollUntil(
       () => api!.getMemberFinancial(userId),
-      (member) => member.max_budget === null,
+      (member) =>
+        member.max_budget !== null &&
+        Math.abs(member.max_budget - overrideSharedCap) < 0.005,
       {
-        description: "the individual override cap to be cleared directly",
+        description: "the member to fall back to the shared organization cap",
         timeoutMs: 60_000,
         intervalMs: config.pollIntervalMs,
       },
     );
     const overrideMaintenance = await runMaintenance(database);
     const overrideReconciledMember = await api.getMemberFinancial(userId);
+
+    await api.putOverride(userId, {
+      monthly_limit: denialAllowance,
+      is_disabled: false,
+    });
+    requireSuccessfulSync(await api.getBudget(), "member denial setup");
+    const memberDenialState = await getLiteLLMMemberState(config, userId);
+    if (!memberDenialState) {
+      throw new Error("Member was absent during member denial setup");
+    }
+    const memberDenial = await requireDirectBudgetDenial(
+      config,
+      generatedKey.key,
+    );
+    await api.deleteOverride(userId);
+    requireSuccessfulSync(await api.getBudget(), "member denial cleanup");
+
+    const organizationDenialBudget = await api.patchBudget({
+      monthly_limit: denialAllowance,
+    });
+    requireSuccessfulSync(
+      organizationDenialBudget,
+      "organization denial setup",
+    );
+    const organizationDenialState = await getLiteLLMTeamState(config);
+    const organizationDenial = await requireDirectBudgetDenial(
+      config,
+      generatedKey.key,
+    );
+    const restoredCertificationBudget = await api.patchBudget({
+      monthly_limit: config.monthlyLimit,
+      slack_channel: null,
+      slack_team_id: null,
+      thresholds: [],
+    });
+    requireSuccessfulSync(
+      restoredCertificationBudget,
+      "organization denial cleanup",
+    );
+
+    // LiteLLM removes the member's virtual keys with the membership. The
+    // boundary repair below restores membership and cleanup must rotate the
+    // OpenHands-managed key so the test account remains usable afterward. Set
+    // this before the request because a lost response could hide a successful
+    // removal.
+    managedKeyRepairRequired = true;
+    await removeLiteLLMTeamMember(config, userId);
+    const memberAfterRemoval = await getLiteLLMMemberState(config, userId);
+    const membershipMissingMaintenance = await runMaintenance(database);
+    const missingMembershipBudget = await api.getBudget();
+    const membershipSyncError = missingMembershipBudget.litellm_last_sync_error;
+    const memberAfterMidcycleMaintenance = await getLiteLLMMemberState(
+      config,
+      userId,
+    );
+    await database.makeCycleStale(config.orgId);
+    const membershipRepairMaintenance = await runMaintenance(database);
+    const repairedMembershipBudget = await api.getBudget();
+    requireSuccessfulSync(
+      repairedMembershipBudget,
+      "cycle-boundary membership repair",
+    );
+    const memberAfterBoundaryRepair = await getLiteLLMMemberState(
+      config,
+      userId,
+    );
+    if (!memberAfterBoundaryRepair) {
+      throw new Error("Member was absent after cycle-boundary repair");
+    }
+
+    const serviceMemberBefore = await getLiteLLMMemberState(
+      config,
+      serviceUserId,
+    );
+    if (!serviceMemberBefore) {
+      throw new Error(
+        `Configured SDK service identity ${serviceUserId} is not a LiteLLM team member`,
+      );
+    }
+    if (
+      repairedMembershipBudget.users.some(
+        (user) => user.user_id === serviceUserId,
+      )
+    ) {
+      throw new Error(
+        "SDK service identity must not be an OpenHands org member",
+      );
+    }
+    const serviceReportingSpendBefore = requireCurrentSpend(
+      repairedMembershipBudget,
+      "SDK service spend baseline",
+    );
+    const serviceConversationsBefore = await api.getConversationCount();
+    let serviceMemberAfter = serviceMemberBefore;
+    for (let attempt = 1; attempt <= maxSpendAttempts; attempt += 1) {
+      await generateDirectLiteLLMSpend(config, serviceApiKey);
+      const previousServiceSpend = serviceMemberAfter.spend;
+      const observed = await pollUntil(
+        () => getLiteLLMMemberState(config, serviceUserId),
+        (candidate) =>
+          candidate !== null && candidate.spend > previousServiceSpend,
+        {
+          description: `SDK service spend attempt ${attempt}`,
+          timeoutMs: 2 * 60_000,
+          intervalMs: config.pollIntervalMs,
+        },
+      );
+      if (!observed) throw new Error("SDK service spend disappeared");
+      serviceMemberAfter = observed;
+      if (
+        serviceMemberAfter.spend - serviceMemberBefore.spend >=
+        config.minimumSpendDelta
+      ) {
+        break;
+      }
+    }
+    if (
+      serviceMemberAfter.spend - serviceMemberBefore.spend <
+      config.minimumSpendDelta
+    ) {
+      throw new Error("SDK service identity did not produce enough spend");
+    }
+    const serviceMaintenance = await runMaintenance(database);
+    const serviceBudget = await api.getBudget();
+    requireSuccessfulSync(serviceBudget, "SDK service spend maintenance");
+    const serviceReportingSpend = requireCurrentSpend(
+      serviceBudget,
+      "SDK service spend maintenance",
+    );
+    if (
+      serviceBudget.unmapped_spend === null ||
+      serviceBudget.unmapped_member_count === null
+    ) {
+      throw new Error("Unmapped SDK service attribution is unavailable");
+    }
+    const serviceUnmappedSpend = serviceBudget.unmapped_spend;
+    const serviceUnmappedMemberCount = serviceBudget.unmapped_member_count;
+    const serviceConversationsAfter = await api.getConversationCount();
 
     const disabled = await api.patchBudget({ enabled: false });
     requireSuccessfulSync(disabled, "budget disable transition");
@@ -388,24 +605,18 @@ test.describe("organization budget maintenance @budgets", () => {
       memberAfterFirstSpend,
       memberAfterSecondSpend,
       reportingSpendBefore,
-      reportingSpendAfter: reportingAfterDirect.current_spend,
+      reportingSpendAfter,
       financialSpendBefore,
       financialSpendAfter: memberAfterSecondSpend.lifetime_spend,
       conversationsBeforeDirectSpend,
       conversationsAfterDirectSpend,
-      alertReportingSpendBefore: reportingAfterDirect.current_spend,
-      alertReportingSpendAfter: alertReporting.current_spend,
-      alertFinancialSpendBefore,
-      alertFinancialSpendAfter: alertFinancial.lifetime_spend,
-      alertTeamSpendBefore: teamAfterSecondSpend.spend,
-      alertTeamSpendAfter: alertTeam.spend,
-      slackAlertSpend: alert.spend,
-      slackAlertText: alert.text,
+      slack: slackEvidence,
       overrideMaintenance,
       overrideLimit,
       overrideExpectedCap,
+      overrideSharedCap,
       overrideExpectedMember,
-      overrideClearedMember,
+      overrideSharedMember,
       overrideReconciledMember,
       disabledSyncBefore,
       disabledSyncAfter: disabledAfterMaintenance.litellm_last_sync_at,
@@ -414,6 +625,25 @@ test.describe("organization budget maintenance @budgets", () => {
       observedDisabledTeam,
       seededDisabledMember,
       observedDisabledMember,
+      memberDenial,
+      memberDenialState,
+      organizationDenial,
+      organizationDenialState,
+      membershipMissingMaintenance,
+      membershipRepairMaintenance,
+      membershipSyncError,
+      memberAfterRemoval,
+      memberAfterMidcycleMaintenance,
+      memberAfterBoundaryRepair,
+      serviceMemberBefore,
+      serviceMemberAfter,
+      serviceMaintenance,
+      serviceReportingSpendBefore,
+      serviceReportingSpend,
+      serviceUnmappedSpend,
+      serviceUnmappedMemberCount,
+      serviceConversationsBefore,
+      serviceConversationsAfter,
     };
 
     await attachEvidence("maintenance-run-summary.json", {
@@ -421,8 +651,11 @@ test.describe("organization budget maintenance @budgets", () => {
       rolloverMaintenance,
       firstSpendMaintenance,
       secondSpendMaintenance,
-      alertMaintenance,
+      alertMaintenance: slackEvidence?.maintenance,
       overrideMaintenance,
+      membershipMissingMaintenance,
+      membershipRepairMaintenance,
+      serviceMaintenance,
       disabledMaintenance,
     });
   });
@@ -467,6 +700,14 @@ test.describe("organization budget maintenance @budgets", () => {
         deleteLiteLLMTestKey(config, testKeyAlias!),
       );
     }
+    await attempt("restore LiteLLM team membership", () =>
+      ensureLiteLLMTeamMember(config, userId, originalMember!.max_budget),
+    );
+    if (managedKeyRepairRequired) {
+      await attempt("restore managed LLM key", () =>
+        api!.refreshManagedLLMKey(),
+      );
+    }
     await attempt("restore member override", async () => {
       if (originalOverride) {
         await api!.putOverride(userId, {
@@ -479,7 +720,12 @@ test.describe("organization budget maintenance @budgets", () => {
     });
     await attempt("restore budget settings", async () => {
       const restored = await api!.patchBudget(restorePayload(originalBudget!));
-      requireSuccessfulSync(restored, "budget settings restore");
+      if (
+        originalBudget!.enabled ||
+        restored.litellm_last_sync_status !== "skipped"
+      ) {
+        requireSuccessfulSync(restored, "budget settings restore");
+      }
     });
     await attempt("restore budget cycle", () =>
       database!.restoreCycleState(config.orgId, originalCycle!),
@@ -524,12 +770,21 @@ test.describe("organization budget maintenance @budgets", () => {
         evidence!.teamAfterSecondSpend,
       ],
     });
-    expect(evidence!.cycleAfterFirstSpend).toEqual(
-      evidence!.cycleAfterRollover,
-    );
-    expect(evidence!.cycleAfterSecondSpend).toEqual(
-      evidence!.cycleAfterRollover,
-    );
+    for (const cycle of [
+      evidence!.cycleAfterFirstSpend,
+      evidence!.cycleAfterSecondSpend,
+    ]) {
+      expect(cycle.cycleStartAt).toBe(
+        evidence!.cycleAfterRollover.cycleStartAt,
+      );
+      expect(cycle.cycleStartSpend).toBeCloseTo(
+        evidence!.cycleAfterRollover.cycleStartSpend,
+        closeToPrecision,
+      );
+      expect(cycle.userCycleStartSpend).toEqual(
+        evidence!.cycleAfterRollover.userCycleStartSpend,
+      );
+    }
     expect(evidence!.teamAfterFirstSpend.maxBudget).toBeCloseTo(
       evidence!.teamAfterRollover.maxBudget!,
       closeToPrecision,
@@ -571,8 +826,9 @@ test.describe("organization budget maintenance @budgets", () => {
       maintenance: evidence!.overrideMaintenance,
       overrideLimit: evidence!.overrideLimit,
       expectedCap: evidence!.overrideExpectedCap,
+      sharedCap: evidence!.overrideSharedCap,
       initial: evidence!.overrideExpectedMember,
-      cleared: evidence!.overrideClearedMember,
+      shared: evidence!.overrideSharedMember,
       reconciled: evidence!.overrideReconciledMember,
     });
     expect(evidence!.overrideMaintenance.status).toBe("COMPLETED");
@@ -580,7 +836,10 @@ test.describe("organization budget maintenance @budgets", () => {
       evidence!.overrideExpectedCap,
       closeToPrecision,
     );
-    expect(evidence!.overrideClearedMember.max_budget).toBeNull();
+    expect(evidence!.overrideSharedMember.max_budget).toBeCloseTo(
+      evidence!.overrideSharedCap,
+      closeToPrecision,
+    );
     expect(evidence!.overrideReconciledMember.max_budget).toBeCloseTo(
       evidence!.overrideExpectedCap,
       closeToPrecision,
@@ -642,18 +901,20 @@ test.describe("organization budget maintenance @budgets", () => {
   });
 
   test("issue 5: LiteLLM-only threshold crossing emits authoritative Slack spend", async () => {
+    test.skip(!config.slack, "Slack alert verification is not configured");
     expect(evidence).toBeDefined();
+    expect(evidence!.slack).toBeDefined();
+    const slack = evidence!.slack!;
     const reportingDelta =
-      evidence!.alertReportingSpendAfter - evidence!.alertReportingSpendBefore;
+      slack.reportingSpendAfter - slack.reportingSpendBefore;
     const financialDelta =
-      evidence!.alertFinancialSpendAfter - evidence!.alertFinancialSpendBefore;
-    const teamDelta =
-      evidence!.alertTeamSpendAfter - evidence!.alertTeamSpendBefore;
+      slack.financialSpendAfter - slack.financialSpendBefore;
+    const teamDelta = slack.teamSpendAfter - slack.teamSpendBefore;
     await attachEvidence("issue-5-slack-alert.json", {
-      alertText: evidence!.slackAlertText,
-      alertSpend: evidence!.slackAlertSpend,
-      reportingBefore: evidence!.alertReportingSpendBefore,
-      reportingAfter: evidence!.alertReportingSpendAfter,
+      alertText: slack.alertText,
+      alertSpend: slack.alertSpend,
+      reportingBefore: slack.reportingSpendBefore,
+      reportingAfter: slack.reportingSpendAfter,
       reportingDelta,
       financialDelta,
       teamDelta,
@@ -661,9 +922,82 @@ test.describe("organization budget maintenance @budgets", () => {
     expect(financialDelta).toBeGreaterThanOrEqual(config.minimumSpendDelta);
     expect(teamDelta).toBeCloseTo(financialDelta, closeToPrecision);
     expect(reportingDelta).toBeCloseTo(teamDelta, closeToPrecision);
-    expect(evidence!.slackAlertSpend).toBeCloseTo(
-      evidence!.alertReportingSpendAfter,
+    expect(slack.alertSpend).toBeCloseTo(
+      slack.reportingSpendAfter,
       closeToPrecision,
+    );
+  });
+
+  test("organization and member caps reject direct SDK traffic", async () => {
+    expect(evidence).toBeDefined();
+    await attachEvidence("hard-budget-denials.json", {
+      memberCap: evidence!.memberDenialState,
+      memberDenial: evidence!.memberDenial,
+      organizationCap: evidence!.organizationDenialState,
+      organizationDenial: evidence!.organizationDenial,
+    });
+    expect(evidence!.memberDenialState.maxBudget).not.toBeNull();
+    expect(evidence!.memberDenialState.maxBudget!).toBeLessThanOrEqual(
+      evidence!.memberDenialState.spend,
+    );
+    expect([400, 429]).toContain(evidence!.memberDenial.status);
+    expect(evidence!.memberDenial.body).toMatch(/budget|exceed|limit/i);
+    expect(evidence!.organizationDenialState.maxBudget).not.toBeNull();
+    expect(evidence!.organizationDenialState.maxBudget!).toBeLessThanOrEqual(
+      evidence!.organizationDenialState.spend,
+    );
+    expect([400, 429]).toContain(evidence!.organizationDenial.status);
+    expect(evidence!.organizationDenial.body).toMatch(/budget|exceed|limit/i);
+  });
+
+  test("missing membership is held mid-cycle and repaired at the boundary", async () => {
+    expect(evidence).toBeDefined();
+    await attachEvidence("membership-repair-policy.json", {
+      missingMaintenance: evidence!.membershipMissingMaintenance,
+      repairMaintenance: evidence!.membershipRepairMaintenance,
+      syncError: evidence!.membershipSyncError,
+      afterRemoval: evidence!.memberAfterRemoval,
+      afterMidcycleMaintenance: evidence!.memberAfterMidcycleMaintenance,
+      afterBoundaryRepair: evidence!.memberAfterBoundaryRepair,
+    });
+    expect(evidence!.memberAfterRemoval).toBeNull();
+    expect(evidence!.memberAfterMidcycleMaintenance).toBeNull();
+    expect(evidence!.membershipSyncError).toMatch(
+      /member_missing_from_litellm/,
+    );
+    expect(evidence!.membershipMissingMaintenance.status).toBe("COMPLETED");
+    expect(evidence!.membershipRepairMaintenance.status).toBe("COMPLETED");
+    expect(evidence!.memberAfterBoundaryRepair.userId).toBe(userId);
+  });
+
+  test("unmapped service SDK spend is reported without a conversation or cap rewrite", async () => {
+    expect(evidence).toBeDefined();
+    const serviceSpendDelta =
+      evidence!.serviceMemberAfter.spend - evidence!.serviceMemberBefore.spend;
+    const reportingDelta =
+      evidence!.serviceReportingSpend - evidence!.serviceReportingSpendBefore;
+    await attachEvidence("unmapped-sdk-service-spend.json", {
+      maintenance: evidence!.serviceMaintenance,
+      before: evidence!.serviceMemberBefore,
+      after: evidence!.serviceMemberAfter,
+      serviceSpendDelta,
+      reportingDelta,
+      unmappedSpend: evidence!.serviceUnmappedSpend,
+      unmappedMemberCount: evidence!.serviceUnmappedMemberCount,
+      conversationsBefore: evidence!.serviceConversationsBefore,
+      conversationsAfter: evidence!.serviceConversationsAfter,
+    });
+    expect(serviceSpendDelta).toBeGreaterThanOrEqual(config.minimumSpendDelta);
+    expect(reportingDelta).toBeCloseTo(serviceSpendDelta, closeToPrecision);
+    expect(evidence!.serviceUnmappedSpend).toBeGreaterThanOrEqual(
+      serviceSpendDelta - 0.005,
+    );
+    expect(evidence!.serviceUnmappedMemberCount).toBeGreaterThanOrEqual(1);
+    expect(evidence!.serviceMemberAfter.maxBudget).toBe(
+      evidence!.serviceMemberBefore.maxBudget,
+    );
+    expect(evidence!.serviceConversationsAfter).toBe(
+      evidence!.serviceConversationsBefore,
     );
   });
 });
