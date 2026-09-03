@@ -1,0 +1,7 @@
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate*
+ssh/
+*.pem
+*.tfvars
+!example.tfvars

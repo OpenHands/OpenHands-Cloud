@@ -1,0 +1,87 @@
+name: Cleanup Enterprise Replicated Previews
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: Destroy preview VMs older than this many hours.
+        type: string
+        default: "168"
+      dry_run:
+        description: Report stale previews without dispatching destroy jobs.
+        type: boolean
+        default: true
+
+concurrency:
+  group: cleanup-enterprise-replicated-previews
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    env:
+      PREVIEW_GCP_PROJECT_ID: ${{ secrets.ENTERPRISE_PREVIEW_GCP_PROJECT_ID || 'staging-092324' }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      MAX_AGE_HOURS: ${{ inputs.max_age_hours || '168' }}
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Dispatch stale preview destroys
+        run: |
+          if ! [[ "$MAX_AGE_HOURS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "max_age_hours must be a positive integer" >&2
+            exit 1
+          fi
+
+          cutoff=$(date -u -d "-${MAX_AGE_HOURS} hours" +%s)
+          gcloud compute instances list \
+            --project "$PREVIEW_GCP_PROJECT_ID" \
+            --filter='labels.preview-kind=enterprise-replicated' \
+            --format='csv[no-heading](name,creationTimestamp,labels.enterprise-pr,labels.enterprise-sha)' \
+            > previews.csv
+
+          stale=0
+          while IFS=, read -r name created pr sha; do
+            [[ -n "$name" ]] || continue
+            created_epoch=$(date -u -d "$created" +%s)
+            if (( created_epoch >= cutoff )); then
+              continue
+            fi
+            if [[ -z "$pr" || -z "$sha" ]]; then
+              echo "Skipping $name: missing enterprise-pr or enterprise-sha label" >&2
+              continue
+            fi
+
+            stale=$((stale + 1))
+            echo "Stale preview: $name (Enterprise PR $pr, created $created)"
+            if [[ "$DRY_RUN" == "true" ]]; then
+              continue
+            fi
+            gh workflow run enterprise-replicated-preview.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$GITHUB_REF_NAME" \
+              -f action=destroy \
+              -f enterprise_pr_number="$pr" \
+              -f enterprise_sha="$sha" \
+              -f dry_run=false \
+              -f deploy_infrastructure_provider=gcp
+          done < previews.csv
+
+          echo "Found $stale preview(s) older than $MAX_AGE_HOURS hours."

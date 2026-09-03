@@ -1,0 +1,626 @@
+name: Enterprise Replicated Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deploy or destroy the preview environment.
+        type: choice
+        options: [deploy, destroy]
+        default: deploy
+      enterprise_pr_number:
+        description: Enterprise PR number to preview.
+        required: true
+      enterprise_sha:
+        description: Enterprise PR head SHA that produced the image.
+        required: true
+      enterprise_image_tag:
+        description: Enterprise image tag. Defaults to sha-<short-sha>.
+        required: false
+      dry_run:
+        description: Build manifests and show commands without Replicated/cloud side effects.
+        type: boolean
+        default: true
+      deploy_infrastructure_provider:
+        description: Optional provider for the Embedded Cluster VM install.
+        type: choice
+        options: [none, gcp, aws]
+        default: none
+  repository_dispatch:
+    types: [enterprise-replicated-preview]
+
+concurrency:
+  group: enterprise-replicated-preview-${{ github.event.client_payload.enterprise_pr_number || inputs.enterprise_pr_number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    env:
+      REPLICATED_APP: ${{ secrets.REPLICATED_APP || 'openhands' }}
+      REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+      PREVIEW_DOMAIN_SUFFIX: ${{ secrets.ENTERPRISE_PREVIEW_DOMAIN_SUFFIX || 'staging.all-hands-testing.dev' }}
+      PREVIEW_TLS_CERTIFICATE: ${{ secrets.ENTERPRISE_PREVIEW_TLS_CERTIFICATE }}
+      PREVIEW_TLS_PRIVATE_KEY: ${{ secrets.ENTERPRISE_PREVIEW_TLS_PRIVATE_KEY }}
+      PREVIEW_TLS_CA_CERTIFICATE: ${{ secrets.ENTERPRISE_PREVIEW_TLS_CA_CERTIFICATE }}
+      PREVIEW_ACME_EMAIL: ${{ secrets.ENTERPRISE_PREVIEW_ACME_EMAIL }}
+      PREVIEW_ALLOWED_CIDR: ${{ secrets.ENTERPRISE_PREVIEW_ALLOWED_CIDR }}
+      PREVIEW_GCP_PROJECT_ID: ${{ secrets.ENTERPRISE_PREVIEW_GCP_PROJECT_ID || 'staging-092324' }}
+      PREVIEW_GCP_REGION: ${{ vars.ENTERPRISE_PREVIEW_GCP_REGION || 'us-central1' }}
+      PREVIEW_GCP_ZONE: ${{ vars.ENTERPRISE_PREVIEW_GCP_ZONE || 'us-central1-a' }}
+      PREVIEW_GCP_NETWORK: ${{ vars.ENTERPRISE_PREVIEW_GCP_NETWORK || 'staging-core-app' }}
+      PREVIEW_GCP_SUBNETWORK: ${{ vars.ENTERPRISE_PREVIEW_GCP_SUBNETWORK || 'staging-core-app' }}
+      PREVIEW_GCP_DNS_ZONE: ${{ vars.ENTERPRISE_PREVIEW_GCP_DNS_ZONE || 'staging-all-hands-testing-dot-dev' }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      PREVIEW_GCP_TF_STATE_BUCKET: ${{ secrets.ENTERPRISE_PREVIEW_GCP_TF_STATE_BUCKET }}
+      PREVIEW_GITHUB_CLIENT_ID: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_CLIENT_ID }}
+      PREVIEW_GITHUB_CLIENT_SECRET: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_CLIENT_SECRET }}
+      PREVIEW_GITHUB_APP_ID: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_APP_ID }}
+      PREVIEW_GITHUB_APP_SLUG: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_APP_SLUG }}
+      PREVIEW_GITHUB_WEBHOOK_SECRET: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_WEBHOOK_SECRET }}
+      PREVIEW_GITHUB_PRIVATE_KEY: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_PRIVATE_KEY }}
+      PREVIEW_AWS_REGION: ${{ vars.ENTERPRISE_PREVIEW_AWS_REGION || 'us-east-1' }}
+      PREVIEW_ROUTE53_ZONE_ID: ${{ secrets.ENTERPRISE_PREVIEW_ROUTE53_ZONE_ID }}
+      PREVIEW_VPC_ID: ${{ secrets.ENTERPRISE_PREVIEW_VPC_ID }}
+      PREVIEW_SUBNET_ID: ${{ secrets.ENTERPRISE_PREVIEW_SUBNET_ID }}
+      PREVIEW_TF_STATE_BUCKET: ${{ secrets.ENTERPRISE_PREVIEW_TF_STATE_BUCKET }}
+      PREVIEW_TF_STATE_LOCK_TABLE: ${{ secrets.ENTERPRISE_PREVIEW_TF_STATE_LOCK_TABLE }}
+      PREVIEW_CUSTOM_LLM_BASE_URL: ${{ secrets.ENTERPRISE_PREVIEW_CUSTOM_LLM_BASE_URL }}
+      PREVIEW_CUSTOM_LLM_API_KEY: ${{ secrets.ENTERPRISE_PREVIEW_CUSTOM_LLM_API_KEY }}
+      PREVIEW_CUSTOM_LLM_MODELS: ${{ vars.ENTERPRISE_PREVIEW_CUSTOM_LLM_MODELS || 'openai/preview-smoke-test-model' }}
+      ENTERPRISE_PREVIEW_GITHUB_TOKEN: ${{ secrets.ENTERPRISE_PREVIEW_GITHUB_TOKEN }}
+    steps:
+      - name: Resolve request
+        id: request
+        env:
+          PAYLOAD_ACTION: ${{ github.event.client_payload.action }}
+          PAYLOAD_PR: ${{ github.event.client_payload.enterprise_pr_number }}
+          PAYLOAD_SHA: ${{ github.event.client_payload.enterprise_sha }}
+          PAYLOAD_TAG: ${{ github.event.client_payload.enterprise_image_tag }}
+          PAYLOAD_DRY_RUN: ${{ github.event.client_payload.dry_run }}
+          PAYLOAD_PROVIDER: ${{ github.event.client_payload.deploy_infrastructure_provider }}
+          PAYLOAD_DEPLOY_INFRA: ${{ github.event.client_payload.deploy_infrastructure }}
+          INPUT_ACTION: ${{ inputs.action }}
+          INPUT_PR: ${{ inputs.enterprise_pr_number }}
+          INPUT_SHA: ${{ inputs.enterprise_sha }}
+          INPUT_TAG: ${{ inputs.enterprise_image_tag }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_PROVIDER: ${{ inputs.deploy_infrastructure_provider }}
+        run: |
+          action="${PAYLOAD_ACTION:-${INPUT_ACTION:-deploy}}"
+          pr="${PAYLOAD_PR:-${INPUT_PR:-}}"
+          sha="${PAYLOAD_SHA:-${INPUT_SHA:-}}"
+          tag="${PAYLOAD_TAG:-${INPUT_TAG:-}}"
+          dry_run="${PAYLOAD_DRY_RUN:-${INPUT_DRY_RUN:-true}}"
+          provider="${PAYLOAD_PROVIDER:-${INPUT_PROVIDER:-none}}"
+          legacy_deploy_infra="${PAYLOAD_DEPLOY_INFRA:-false}"
+
+          if [[ -z "$provider" || "$provider" == "false" ]]; then
+            provider="none"
+          fi
+          if [[ "$legacy_deploy_infra" == "true" && "$provider" == "none" ]]; then
+            provider="gcp"
+          fi
+          deploy_infra="false"
+          if [[ "$provider" != "none" ]]; then
+            deploy_infra="true"
+          fi
+
+          if [[ "$action" != "deploy" && "$action" != "destroy" ]]; then
+            echo "Unsupported action: $action" >&2
+            exit 1
+          fi
+          if [[ "$provider" != "none" && "$provider" != "gcp" && "$provider" != "aws" ]]; then
+            echo "Unsupported deploy_infrastructure_provider: $provider" >&2
+            exit 1
+          fi
+          if [[ -z "$pr" || -z "$sha" ]]; then
+            echo "enterprise_pr_number and enterprise_sha are required" >&2
+            exit 1
+          fi
+
+          {
+            echo "action=$action"
+            echo "enterprise_pr_number=$pr"
+            echo "enterprise_sha=$sha"
+            echo "enterprise_image_tag=$tag"
+            echo "dry_run=$dry_run"
+            echo "deploy_infrastructure=$deploy_infra"
+            echo "deploy_infrastructure_provider=$provider"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compute preview metadata
+        env:
+          PR_NUMBER: ${{ steps.request.outputs.enterprise_pr_number }}
+          ENTERPRISE_SHA_INPUT: ${{ steps.request.outputs.enterprise_sha }}
+          ENTERPRISE_IMAGE_TAG_INPUT: ${{ steps.request.outputs.enterprise_image_tag }}
+          DOMAIN_SUFFIX: ${{ env.PREVIEW_DOMAIN_SUFFIX }}
+        run: |
+          python3 scripts/enterprise_replicated_preview.py metadata \
+            --pr "$PR_NUMBER" \
+            --sha "$ENTERPRISE_SHA_INPUT" \
+            --image-tag "$ENTERPRISE_IMAGE_TAG_INPUT" \
+            --run-number "$GITHUB_RUN_NUMBER" \
+            --domain-suffix "$DOMAIN_SUFFIX" \
+            --format env >> "$GITHUB_ENV"
+
+          {
+            echo "### Enterprise Replicated preview request"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Action | \`${{ steps.request.outputs.action }}\` |"
+            echo "| Enterprise PR | \`$PR_NUMBER\` |"
+            echo "| Enterprise SHA | \`$ENTERPRISE_SHA_INPUT\` |"
+            echo "| Dry run | \`${{ steps.request.outputs.dry_run }}\` |"
+            echo "| Deploy infrastructure | \`${{ steps.request.outputs.deploy_infrastructure }}\` |"
+            echo "| Infrastructure provider | \`${{ steps.request.outputs.deploy_infrastructure_provider }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate required secrets for side effects
+        if: steps.request.outputs.dry_run != 'true'
+        run: |
+          missing=()
+          action="${{ steps.request.outputs.action }}"
+          provider="${{ steps.request.outputs.deploy_infrastructure_provider }}"
+          [[ -n "$REPLICATED_API_TOKEN" ]] || missing+=(REPLICATED_API_TOKEN)
+          if [[ "$provider" != "none" ]]; then
+            [[ -n "$PREVIEW_DOMAIN_SUFFIX" ]] || missing+=(ENTERPRISE_PREVIEW_DOMAIN_SUFFIX)
+          fi
+          if [[ "$action" == "deploy" && "$provider" != "none" ]]; then
+            [[ -n "$PREVIEW_GITHUB_CLIENT_ID" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_CLIENT_ID)
+            [[ -n "$PREVIEW_GITHUB_CLIENT_SECRET" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_CLIENT_SECRET)
+            [[ -n "$PREVIEW_GITHUB_APP_ID" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_APP_ID)
+            [[ -n "$PREVIEW_GITHUB_APP_SLUG" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_APP_SLUG)
+            [[ -n "$PREVIEW_GITHUB_WEBHOOK_SECRET" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_WEBHOOK_SECRET)
+            [[ -n "$PREVIEW_GITHUB_PRIVATE_KEY" ]] || missing+=(ENTERPRISE_PREVIEW_GITHUB_PRIVATE_KEY)
+          fi
+          if [[ "$provider" == "gcp" ]]; then
+            [[ -n "$GCP_WORKLOAD_IDENTITY_PROVIDER" ]] || missing+=(GCP_WORKLOAD_IDENTITY_PROVIDER)
+            [[ -n "$GCP_SERVICE_ACCOUNT" ]] || missing+=(GCP_SERVICE_ACCOUNT)
+            [[ -n "$PREVIEW_GCP_PROJECT_ID" ]] || missing+=(ENTERPRISE_PREVIEW_GCP_PROJECT_ID)
+            [[ -n "$PREVIEW_GCP_DNS_ZONE" ]] || missing+=(ENTERPRISE_PREVIEW_GCP_DNS_ZONE)
+            [[ -n "$PREVIEW_GCP_TF_STATE_BUCKET" ]] || missing+=(ENTERPRISE_PREVIEW_GCP_TF_STATE_BUCKET)
+            if [[ "$action" == "deploy" ]]; then
+              [[ -n "$PREVIEW_TLS_CERTIFICATE" ]] || missing+=(ENTERPRISE_PREVIEW_TLS_CERTIFICATE)
+              [[ -n "$PREVIEW_TLS_PRIVATE_KEY" ]] || missing+=(ENTERPRISE_PREVIEW_TLS_PRIVATE_KEY)
+            fi
+          elif [[ "$provider" == "aws" ]]; then
+            [[ -n "$PREVIEW_ROUTE53_ZONE_ID" ]] || missing+=(ENTERPRISE_PREVIEW_ROUTE53_ZONE_ID)
+            if [[ "$action" == "deploy" ]]; then
+              [[ -n "$PREVIEW_ACME_EMAIL" ]] || missing+=(ENTERPRISE_PREVIEW_ACME_EMAIL)
+            fi
+          fi
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Set up Helm for Replicated chart packaging
+        if: steps.request.outputs.action == 'deploy'
+        uses: azure/setup-helm@v3
+        with:
+          version: "v3.18.4"
+
+      - name: Install yq
+        if: steps.request.outputs.action == 'deploy'
+        uses: mikefarah/yq@v4
+
+      - name: Install Replicated CLI
+        if: steps.request.outputs.dry_run != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          curl -s -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            https://api.github.com/repos/replicatedhq/replicated/releases/latest \
+            | grep "browser_download_url.*linux_amd64.tar.gz" \
+            | cut -d : -f 2,3 \
+            | tr -d '"' \
+            | wget -qi -
+          mkdir -p /tmp/replicated-cli
+          tar -xzf replicated_*_linux_amd64.tar.gz -C /tmp/replicated-cli replicated
+          sudo mv /tmp/replicated-cli/replicated /usr/local/bin/
+
+      - name: Wait for Enterprise image manifest
+        if: steps.request.outputs.action == 'deploy'
+        run: |
+          python3 scripts/wait_for_image_manifest.py \
+            "$ENTERPRISE_IMAGE_REF" \
+            --timeout-seconds 900 \
+            --interval-seconds 15
+
+      - name: Patch chart to the Enterprise PR image
+        if: steps.request.outputs.action == 'deploy'
+        env:
+          PR_NUMBER: ${{ steps.request.outputs.enterprise_pr_number }}
+          ENTERPRISE_SHA_INPUT: ${{ steps.request.outputs.enterprise_sha }}
+          ENTERPRISE_IMAGE_TAG_INPUT: ${{ steps.request.outputs.enterprise_image_tag }}
+        run: |
+          python3 scripts/enterprise_replicated_preview.py patch-chart \
+            --pr "$PR_NUMBER" \
+            --sha "$ENTERPRISE_SHA_INPUT" \
+            --image-tag "$ENTERPRISE_IMAGE_TAG_INPUT" \
+            --run-number "$GITHUB_RUN_NUMBER"
+          git diff -- charts/openhands/Chart.yaml charts/openhands/values.yaml
+
+      - name: Build Replicated release bundle locally
+        if: steps.request.outputs.action == 'deploy'
+        run: |
+          make clean manifests charts check-duplicate-chart-entries
+
+      - name: Publish temporary Replicated release
+        id: release
+        if: steps.request.outputs.action == 'deploy' && steps.request.outputs.dry_run != 'true'
+        env:
+          CHANNEL: ${{ env.PREVIEW_CHANNEL }}
+          VERSION: ${{ env.PREVIEW_RELEASE_VERSION }}
+        run: |
+          make lint
+          make release CHANNEL="$CHANNEL" VERSION="$VERSION" 2>&1 | tee release.log
+          sequence=$(grep -oE 'SEQUENCE:[[:space:]]*[0-9]+' release.log | grep -oE '[0-9]+' | tail -1)
+          if [[ -z "$sequence" ]]; then
+            echo "Could not parse Replicated release sequence" >&2
+            exit 1
+          fi
+          echo "sequence=$sequence" >> "$GITHUB_OUTPUT"
+          echo "Published Replicated release sequence $sequence to $CHANNEL"
+
+      - name: Create temporary Replicated customer and license
+        if: steps.request.outputs.action == 'deploy' && steps.request.outputs.dry_run != 'true'
+        run: |
+          replicated customer create \
+            --app "$REPLICATED_APP" \
+            --name "$PREVIEW_CUSTOMER" \
+            --channel "$PREVIEW_CHANNEL" \
+            --type dev \
+            --embedded-cluster-download \
+            --ensure-channel \
+            --output json > customer.json
+          customer_id=$(jq -r '.id // .customer.id // empty' customer.json)
+          license_id=$(jq -r '.licenseId // .licenseID // .license_id // .installationId // empty' customer.json)
+          if [[ -z "$license_id" ]]; then
+            echo "Could not parse license id from customer create output" >&2
+            cat customer.json >&2
+            exit 1
+          fi
+          echo "::add-mask::$license_id"
+          echo "LICENSE_ID=$license_id" >> "$GITHUB_ENV"
+          echo "CUSTOMER_ID=$customer_id" >> "$GITHUB_ENV"
+          replicated customer download-license \
+            --app "$REPLICATED_APP" \
+            --customer "$PREVIEW_CUSTOMER" \
+            --output license.yaml
+          chmod 600 license.yaml
+
+      - name: Authenticate to Google Cloud
+        if: steps.request.outputs.deploy_infrastructure_provider == 'gcp' && steps.request.outputs.dry_run != 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        if: steps.request.outputs.deploy_infrastructure_provider == 'gcp' && steps.request.outputs.dry_run != 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Terraform
+        if: steps.request.outputs.deploy_infrastructure == 'true' && steps.request.outputs.dry_run != 'true'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Provision AWS VM and install Embedded Cluster
+        if: steps.request.outputs.action == 'deploy' && steps.request.outputs.deploy_infrastructure_provider == 'aws' && steps.request.outputs.dry_run != 'true'
+        env:
+          AWS_REGION: ${{ env.PREVIEW_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ADMIN_CONSOLE_PASSWORD: ${{ secrets.ENTERPRISE_PREVIEW_ADMIN_PASSWORD }}
+        run: |
+          admin_password="${ADMIN_CONSOLE_PASSWORD:-$(openssl rand -base64 30)}"
+          echo "::add-mask::$admin_password"
+          allowed_cidr_args=()
+          if [[ -n "$PREVIEW_ALLOWED_CIDR" ]]; then
+            allowed_cidr_args+=(--allowed-cidr "$PREVIEW_ALLOWED_CIDR")
+          fi
+          python3 scripts/enterprise_replicated_preview.py write-tfvars \
+            --output terraform/aws/preview.auto.tfvars \
+            --pr "$ENTERPRISE_PR_NUMBER" \
+            --sha "$ENTERPRISE_SHA" \
+            --instance-name "$PREVIEW_INSTANCE_NAME" \
+            --base-domain "$PREVIEW_BASE_DOMAIN" \
+            --aws-region "$PREVIEW_AWS_REGION" \
+            --route53-zone-id "$PREVIEW_ROUTE53_ZONE_ID" \
+            --acme-email "$PREVIEW_ACME_EMAIL" \
+            --vpc-id "$PREVIEW_VPC_ID" \
+            --subnet-id "$PREVIEW_SUBNET_ID" \
+            "${allowed_cidr_args[@]}"
+
+          if [[ -n "$PREVIEW_TF_STATE_BUCKET" ]]; then
+            cat > terraform/aws/zz_preview_backend.tf <<'EOF'
+          terraform {
+            backend "s3" {}
+          }
+          EOF
+            backend_args=(
+              -backend-config="bucket=$PREVIEW_TF_STATE_BUCKET"
+              -backend-config="key=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER.tfstate"
+              -backend-config="region=$PREVIEW_AWS_REGION"
+            )
+            if [[ -n "$PREVIEW_TF_STATE_LOCK_TABLE" ]]; then
+              backend_args+=(-backend-config="dynamodb_table=$PREVIEW_TF_STATE_LOCK_TABLE")
+            fi
+            terraform -chdir=terraform/aws init "${backend_args[@]}"
+          else
+            terraform -chdir=terraform/aws init
+          fi
+          terraform -chdir=terraform/aws apply -auto-approve -var-file=preview.auto.tfvars
+
+          cert_file=$(terraform -chdir=terraform/aws output -raw certificate_file)
+          key_file=$(terraform -chdir=terraform/aws output -raw private_key_file)
+          ca_file=$(terraform -chdir=terraform/aws output -raw ca_file)
+          install -m 700 -d preview-secrets
+          printf '%s\n' "$PREVIEW_GITHUB_PRIVATE_KEY" > preview-secrets/github-app.pem
+          chmod 600 preview-secrets/github-app.pem
+          python3 scripts/enterprise_replicated_preview.py write-config-values \
+            --output preview-config-values.yaml \
+            --base-domain "$PREVIEW_BASE_DOMAIN" \
+            --tls-certificate "$cert_file" \
+            --tls-private-key "$key_file" \
+            --tls-ca-certificate "$ca_file" \
+            --custom-base-url "${PREVIEW_CUSTOM_LLM_BASE_URL:-http://openhands-litellm:4000/v1}" \
+            --custom-api-key "$PREVIEW_CUSTOM_LLM_API_KEY" \
+            --custom-models "$PREVIEW_CUSTOM_LLM_MODELS" \
+            --github-client-id "$PREVIEW_GITHUB_CLIENT_ID" \
+            --github-client-secret "$PREVIEW_GITHUB_CLIENT_SECRET" \
+            --github-app-id "$PREVIEW_GITHUB_APP_ID" \
+            --github-app-slug "$PREVIEW_GITHUB_APP_SLUG" \
+            --github-webhook-secret "$PREVIEW_GITHUB_WEBHOOK_SECRET" \
+            --github-private-key preview-secrets/github-app.pem
+
+          ssh_key=$(terraform -chdir=terraform/aws output -raw ssh_key_file)
+          host=$(terraform -chdir=terraform/aws output -raw instance_public_ip)
+          scp -o StrictHostKeyChecking=accept-new -i "$ssh_key" \
+            license.yaml preview-config-values.yaml ubuntu@"$host":~/
+          ssh -o StrictHostKeyChecking=accept-new -i "$ssh_key" ubuntu@"$host" \
+            "LICENSE_ID='$LICENSE_ID' CHANNEL='$PREVIEW_CHANNEL' VERSION='$PREVIEW_RELEASE_VERSION' ADMIN_PASSWORD='$admin_password' bash -s" <<'REMOTE'
+          set -euo pipefail
+          curl -f "https://replicated.app/embedded/openhands/${CHANNEL}/${VERSION}" \
+            -H "Authorization: ${LICENSE_ID}" \
+            -o openhands.tgz
+          tar -xzf openhands.tgz
+          sudo ./openhands install \
+            --license license.yaml \
+            --config-values preview-config-values.yaml \
+            --admin-console-password "$ADMIN_PASSWORD"
+          REMOTE
+
+
+      - name: Provision GCP VM and install Embedded Cluster
+        if: steps.request.outputs.action == 'deploy' && steps.request.outputs.deploy_infrastructure_provider == 'gcp' && steps.request.outputs.dry_run != 'true'
+        env:
+          ADMIN_CONSOLE_PASSWORD: ${{ secrets.ENTERPRISE_PREVIEW_ADMIN_PASSWORD }}
+        run: |
+          admin_password="${ADMIN_CONSOLE_PASSWORD:-$(openssl rand -base64 30)}"
+          echo "::add-mask::$admin_password"
+          allowed_cidr_args=()
+          if [[ -n "$PREVIEW_ALLOWED_CIDR" ]]; then
+            allowed_cidr_args+=(--allowed-admin-cidr "$PREVIEW_ALLOWED_CIDR")
+          fi
+          python3 scripts/enterprise_replicated_preview.py write-gcp-tfvars \
+            --output terraform/gcp/preview.auto.tfvars \
+            --pr "$ENTERPRISE_PR_NUMBER" \
+            --sha "$ENTERPRISE_SHA" \
+            --instance-name "$PREVIEW_INSTANCE_NAME" \
+            --base-domain "$PREVIEW_BASE_DOMAIN" \
+            --project-id "$PREVIEW_GCP_PROJECT_ID" \
+            --region "$PREVIEW_GCP_REGION" \
+            --zone "$PREVIEW_GCP_ZONE" \
+            --network "$PREVIEW_GCP_NETWORK" \
+            --subnetwork "$PREVIEW_GCP_SUBNETWORK" \
+            --dns-managed-zone "$PREVIEW_GCP_DNS_ZONE" \
+            "${allowed_cidr_args[@]}"
+
+          cat > terraform/gcp/zz_preview_backend.tf <<'EOF'
+          terraform {
+            backend "gcs" {}
+          }
+          EOF
+          terraform -chdir=terraform/gcp init \
+            -backend-config="bucket=$PREVIEW_GCP_TF_STATE_BUCKET" \
+            -backend-config="prefix=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER"
+          terraform -chdir=terraform/gcp apply -auto-approve -var-file=preview.auto.tfvars
+
+          install -m 700 -d preview-secrets
+          printf '%s\n' "$PREVIEW_TLS_CERTIFICATE" > preview-secrets/certificate.pem
+          printf '%s\n' "$PREVIEW_TLS_PRIVATE_KEY" > preview-secrets/private-key.pem
+          printf '%s\n' "$PREVIEW_GITHUB_PRIVATE_KEY" > preview-secrets/github-app.pem
+          chmod 600 preview-secrets/private-key.pem preview-secrets/github-app.pem
+          tls_ca_args=()
+          if [[ -n "$PREVIEW_TLS_CA_CERTIFICATE" ]]; then
+            printf '%s\n' "$PREVIEW_TLS_CA_CERTIFICATE" > preview-secrets/ca.pem
+            tls_ca_args+=(--tls-ca-certificate preview-secrets/ca.pem)
+          fi
+          python3 scripts/enterprise_replicated_preview.py write-config-values \
+            --output preview-config-values.yaml \
+            --base-domain "$PREVIEW_BASE_DOMAIN" \
+            --hostname-layout flat \
+            --tls-certificate preview-secrets/certificate.pem \
+            --tls-private-key preview-secrets/private-key.pem \
+            "${tls_ca_args[@]}" \
+            --custom-base-url "${PREVIEW_CUSTOM_LLM_BASE_URL:-http://openhands-litellm:4000/v1}" \
+            --custom-api-key "$PREVIEW_CUSTOM_LLM_API_KEY" \
+            --custom-models "$PREVIEW_CUSTOM_LLM_MODELS" \
+            --github-client-id "$PREVIEW_GITHUB_CLIENT_ID" \
+            --github-client-secret "$PREVIEW_GITHUB_CLIENT_SECRET" \
+            --github-app-id "$PREVIEW_GITHUB_APP_ID" \
+            --github-app-slug "$PREVIEW_GITHUB_APP_SLUG" \
+            --github-webhook-secret "$PREVIEW_GITHUB_WEBHOOK_SECRET" \
+            --github-private-key preview-secrets/github-app.pem
+
+          ssh_key=$(terraform -chdir=terraform/gcp output -raw ssh_key_file)
+          host=$(terraform -chdir=terraform/gcp output -raw instance_public_ip)
+          scp -o StrictHostKeyChecking=accept-new -i "$ssh_key" \
+            license.yaml preview-config-values.yaml ubuntu@"$host":~/
+          ssh -o StrictHostKeyChecking=accept-new -i "$ssh_key" ubuntu@"$host" \
+            "LICENSE_ID='$LICENSE_ID' CHANNEL='$PREVIEW_CHANNEL' VERSION='$PREVIEW_RELEASE_VERSION' ADMIN_PASSWORD='$admin_password' REPLICATED_APP='$REPLICATED_APP' bash -s" <<'REMOTE'
+          set -euo pipefail
+          curl -f "https://replicated.app/embedded/${REPLICATED_APP}/${CHANNEL}/${VERSION}" \
+            -H "Authorization: ${LICENSE_ID}" \
+            -o openhands.tgz
+          tar -xzf openhands.tgz
+          sudo ./openhands install \
+            --license license.yaml \
+            --config-values preview-config-values.yaml \
+            --admin-console-password "$ADMIN_PASSWORD"
+          REMOTE
+
+      - name: Destroy preview resources
+        if: steps.request.outputs.action == 'destroy' && steps.request.outputs.dry_run != 'true'
+        env:
+          AWS_REGION: ${{ env.PREVIEW_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          provider="${{ steps.request.outputs.deploy_infrastructure_provider }}"
+          if [[ "$provider" == "gcp" ]]; then
+            allowed_cidr_args=()
+            if [[ -n "$PREVIEW_ALLOWED_CIDR" ]]; then
+              allowed_cidr_args+=(--allowed-admin-cidr "$PREVIEW_ALLOWED_CIDR")
+            fi
+            python3 scripts/enterprise_replicated_preview.py write-gcp-tfvars \
+              --output terraform/gcp/preview.auto.tfvars \
+              --pr "$ENTERPRISE_PR_NUMBER" \
+              --sha "$ENTERPRISE_SHA" \
+              --instance-name "$PREVIEW_INSTANCE_NAME" \
+              --base-domain "$PREVIEW_BASE_DOMAIN" \
+              --project-id "$PREVIEW_GCP_PROJECT_ID" \
+              --region "$PREVIEW_GCP_REGION" \
+              --zone "$PREVIEW_GCP_ZONE" \
+              --network "$PREVIEW_GCP_NETWORK" \
+              --subnetwork "$PREVIEW_GCP_SUBNETWORK" \
+              --dns-managed-zone "$PREVIEW_GCP_DNS_ZONE" \
+              "${allowed_cidr_args[@]}"
+            cat > terraform/gcp/zz_preview_backend.tf <<'EOF'
+          terraform {
+            backend "gcs" {}
+          }
+          EOF
+            terraform -chdir=terraform/gcp init \
+              -backend-config="bucket=$PREVIEW_GCP_TF_STATE_BUCKET" \
+              -backend-config="prefix=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER"
+            terraform -chdir=terraform/gcp destroy -auto-approve -var-file=preview.auto.tfvars
+          elif [[ "$provider" == "aws" ]]; then
+            if [[ -n "$PREVIEW_TF_STATE_BUCKET" && -n "$PREVIEW_BASE_DOMAIN" ]]; then
+              cat > terraform/aws/zz_preview_backend.tf <<'EOF'
+          terraform {
+            backend "s3" {}
+          }
+          EOF
+              terraform -chdir=terraform/aws init \
+                -backend-config="bucket=$PREVIEW_TF_STATE_BUCKET" \
+                -backend-config="key=enterprise-replicated-preview/pr-$ENTERPRISE_PR_NUMBER.tfstate" \
+                -backend-config="region=$PREVIEW_AWS_REGION"
+              python3 scripts/enterprise_replicated_preview.py write-tfvars \
+                --output terraform/aws/preview.auto.tfvars \
+                --pr "$ENTERPRISE_PR_NUMBER" \
+                --sha "$ENTERPRISE_SHA" \
+                --instance-name "$PREVIEW_INSTANCE_NAME" \
+                --base-domain "$PREVIEW_BASE_DOMAIN" \
+                --aws-region "$PREVIEW_AWS_REGION" \
+                --route53-zone-id "$PREVIEW_ROUTE53_ZONE_ID" \
+                --acme-email "$PREVIEW_ACME_EMAIL" \
+                --vpc-id "$PREVIEW_VPC_ID" \
+                --subnet-id "$PREVIEW_SUBNET_ID"
+              terraform -chdir=terraform/aws destroy -auto-approve -var-file=preview.auto.tfvars || true
+            else
+              echo "Skipping AWS Terraform destroy because no remote state/domain suffix is configured."
+            fi
+          fi
+
+          if command -v replicated >/dev/null 2>&1; then
+            replicated customer archive --app "$REPLICATED_APP" "$PREVIEW_CUSTOMER" || true
+            replicated channel rm --app "$REPLICATED_APP" "$PREVIEW_CHANNEL" || true
+          fi
+
+      - name: Write example and summary
+        if: always()
+        env:
+          ACTION: ${{ steps.request.outputs.action }}
+          DRY_RUN: ${{ steps.request.outputs.dry_run }}
+          DEPLOY_INFRA: ${{ steps.request.outputs.deploy_infrastructure }}
+          DEPLOY_PROVIDER: ${{ steps.request.outputs.deploy_infrastructure_provider }}
+        run: |
+          app_url=""
+          if [[ -n "${PREVIEW_BASE_DOMAIN:-}" ]]; then
+            if [[ "$DEPLOY_PROVIDER" == "gcp" ]]; then
+              app_url="https://app-${PREVIEW_BASE_DOMAIN}"
+            else
+              app_url="https://app.${PREVIEW_BASE_DOMAIN}"
+            fi
+          fi
+          {
+            echo "| Preview channel | \`${PREVIEW_CHANNEL:-unknown}\` |"
+            echo "| Preview release | \`${PREVIEW_RELEASE_VERSION:-unknown}\` |"
+            echo "| Preview customer | \`${PREVIEW_CUSTOMER:-unknown}\` |"
+            echo "| Enterprise image | \`${ENTERPRISE_IMAGE_REF:-unknown}\` |"
+            if [[ -n "$app_url" ]]; then
+              echo "| Application URL | ${app_url} |"
+            fi
+            echo ""
+            echo "#### Example repository_dispatch payload"
+            echo '```json'
+            jq -n \
+              --arg action "deploy" \
+              --arg pr "${ENTERPRISE_PR_NUMBER:-92}" \
+              --arg sha "${ENTERPRISE_SHA:-c23c797b11aa22bb33cc44dd55ee66ff77889900}" \
+              --arg tag "${ENTERPRISE_IMAGE_TAG:-sha-c23c797}" \
+              '{event_type:"enterprise-replicated-preview", client_payload:{action:$action, enterprise_pr_number:$pr, enterprise_sha:$sha, enterprise_image_tag:$tag, dry_run:"true", deploy_infrastructure_provider:"none"}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat > preview-comment.md <<EOF
+          ### Replicated Enterprise preview ${ACTION}
+
+          | Field | Value |
+          | --- | --- |
+          | Enterprise PR | \`${ENTERPRISE_PR_NUMBER:-unknown}\` |
+          | Enterprise image | \`${ENTERPRISE_IMAGE_REF:-unknown}\` |
+          | Channel | \`${PREVIEW_CHANNEL:-unknown}\` |
+          | Release | \`${PREVIEW_RELEASE_VERSION:-unknown}\` |
+          | Dry run | \`${DRY_RUN}\` |
+          | Infrastructure | \`${DEPLOY_INFRA}\` |
+          | Provider | \`${DEPLOY_PROVIDER}\` |
+          EOF
+          if [[ -n "$app_url" && "$DRY_RUN" != "true" && "$DEPLOY_INFRA" == "true" ]]; then
+            echo "| URL | ${app_url} |" >> preview-comment.md
+          fi
+          cat >> preview-comment.md <<'EOF'
+
+          This comment was generated by an AI-authored GitHub Actions workflow on behalf of the OpenHands team.
+          EOF
+
+      - name: Comment on Enterprise PR when configured
+        if: always() && env.ENTERPRISE_PREVIEW_GITHUB_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ env.ENTERPRISE_PREVIEW_GITHUB_TOKEN }}
+        run: |
+          gh pr comment "$ENTERPRISE_PR_NUMBER" \
+            --repo OpenHands/enterprise \
+            --body-file preview-comment.md
