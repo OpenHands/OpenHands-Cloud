@@ -1,0 +1,161 @@
+# Environment-specific values for the GKE test install, rendered by envsubst.
+# Mirrors an OpenHands Enterprise Helm install: ghcr chart source, Traefik ingress,
+# cert-manager TLS, embedded Postgres on a PVC.
+enabled: true
+autoscaling:
+  enabled: false
+
+deployment:
+  replicas: 1
+  resources:
+    requests: {cpu: 500m, memory: 2Gi}
+    limits: {cpu: "2", memory: 4Gi}
+uvicorn:
+  workers: 1
+
+integrationEvents:
+  deployment:
+    replicas: 1
+mcpEvents:
+  deployment:
+    replicas: 1
+
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: true
+  migrate: true
+
+ingress:
+  enabled: true
+  host: ${APP_HOST}
+  class: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+
+tls:
+  enabled: true
+  env: sandbox
+
+github:
+  enabled: true
+
+env:
+  ENABLE_ENTERPRISE_SSO: "false"
+  KEYCLOAK_SERVER_URL_EXT: "https://${AUTH_HOST}"
+  AUTH_WEB_HOST: "${AUTH_HOST}"
+  AUTH_URL: "https://${AUTH_HOST}"
+  ENABLE_BILLING: "false"
+  REQUIRE_PAYMENT: "0"
+  DEBUG: "true"
+  DEFAULT_V1_ENABLED: "true"
+  CONVERSATION_MANAGER_CLASS: "server.saas_nested_conversation_manager.SaasNestedConversationManager"
+  OH_APP_CONVERSATION_INFO_KIND: "server.utils.saas_app_conversation_info_injector.SaasAppConversationInfoServiceInjector"
+  OH_WEBHOOKS_0_BASE_URL: "https://${APP_HOST}/api/v1/webhooks"
+  LITELLM_DEFAULT_MODEL: "litellm_proxy/${LLM_MODEL}"
+  MAX_CONCURRENT_CONVERSATIONS: "10"
+  PROMETHEUS_MULTIPROC_DIR: ""
+  # Subdomain routing: path mode needs ingress-nginx or Gateway API (see skill).
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtime.${BASE_DOMAIN}"
+
+keycloak:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  resourcesPreset: none
+  resources:
+    requests: {cpu: 250m, memory: 768Mi}
+    limits: {cpu: "1", memory: 1536Mi}
+  ingress:
+    enabled: true
+    hostname: ${AUTH_HOST}
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    tls: true
+  extraEnvVars:
+    - {name: KC_HOSTNAME_STRICT, value: "false"}
+    - {name: KC_PROXY, value: edge}
+    - {name: KC_PROXY_HEADERS, value: xforwarded}
+    - {name: KC_SPI_COOKIE_SAME_SITE, value: none}
+    - {name: KC_SPI_COOKIE_SECURE, value: "true"}
+
+# Embedded Postgres on a PVC. Leaving persistence.size unset is deliberate:
+# it reproduces the Bitnami 8Gi default that installs inherit. resources: null
+# is what makes resourcesPreset take effect at all - see the skill.
+postgresql:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  auth:
+    database: openhands
+  primary:
+    networkPolicy:
+      enabled: false
+    resourcesPreset: "large"
+    resources: null
+    extendedConfiguration: |
+      max_connections = 300
+      shared_buffers = 1GB
+    persistence:
+      enabled: true
+
+redis:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  master:
+    persistence:
+      enabled: false
+
+filestore:
+  type: s3
+minio:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {cpu: 500m, memory: 1Gi}
+
+litellm-helm:
+  enabled: true
+  proxy_config:
+    model_list:
+      - model_name: ${LLM_MODEL}
+        litellm_params:
+          model: anthropic/${LLM_MODEL}
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+runtime-api:
+  enabled: true
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+  warmRuntimes:
+    enabled: false
+  cleanup:
+    enabled: false
+  databaseMigrations:
+    waitForDatabase: true
+    createDatabases: true
+    migrate: true
+  ingress:
+    enabled: true
+    host: ${RUNTIME_API_HOST}
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+  env:
+    RUNTIME_BASE_URL: "runtime.${BASE_DOMAIN}"
+    RUNTIME_URL_SEPARATOR: "-"
+    RUNTIME_DISABLE_SSL: "false"
+    STORAGE_CLASS: "standard-rwo"
+    RUNTIME_CERT_SECRET: "runtime-wildcard-tls"
+    K8S_NAMESPACE: "${NAMESPACE}"
+
+sandbox:
+  apiHostname: http://openhands-runtime-api:5000
+
+# The SDK's license is injected only when pulling from registry.replicated.com.
+# A ghcr install has no license, so the SDK pod crashloops if left enabled.
+replicated:
+  enabled: false
