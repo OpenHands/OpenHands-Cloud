@@ -240,6 +240,31 @@ async function responseJson<T>(
   return (await response.json()) as T;
 }
 
+const transientReadError =
+  /socket hang up|econnreset|etimedout|fetch failed|network.*(?:changed|closed|error)/i;
+
+async function readJsonWithRetry<T>(
+  request: () => Promise<APIResponse>,
+  operation: string,
+): Promise<T> {
+  const attempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await responseJson<T>(request(), operation);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts || !transientReadError.test(String(error))) {
+        throw error;
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, attempt * 500);
+      });
+    }
+  }
+  throw lastError;
+}
+
 export class BudgetApi {
   constructor(
     private readonly request: APIRequestContext,
@@ -251,36 +276,39 @@ export class BudgetApi {
   }
 
   getOrganizations(): Promise<OrgPage> {
-    return responseJson<OrgPage>(
-      this.request.get("/api/organizations"),
+    return readJsonWithRetry<OrgPage>(
+      () => this.request.get("/api/organizations"),
       "list organizations",
     );
   }
 
   getOrg(): Promise<OrgDetails> {
-    return responseJson<OrgDetails>(
-      this.request.get(`/api/organizations/${this.orgId}`, {
-        headers: this.headers,
-      }),
+    return readJsonWithRetry<OrgDetails>(
+      () =>
+        this.request.get(`/api/organizations/${this.orgId}`, {
+          headers: this.headers,
+        }),
       "get organization details",
     );
   }
 
   getMe(): Promise<OrgMember> {
-    return responseJson<OrgMember>(
-      this.request.get(`/api/organizations/${this.orgId}/me`, {
-        headers: this.headers,
-      }),
+    return readJsonWithRetry<OrgMember>(
+      () =>
+        this.request.get(`/api/organizations/${this.orgId}/me`, {
+          headers: this.headers,
+        }),
       "get organization member",
     );
   }
 
   async getConversationCount(): Promise<number> {
-    const page = await responseJson<OrgConversationPage>(
-      this.request.get(
-        `/api/organizations/${this.orgId}/conversations?page=1&per_page=1`,
-        { headers: this.headers },
-      ),
+    const page = await readJsonWithRetry<OrgConversationPage>(
+      () =>
+        this.request.get(
+          `/api/organizations/${this.orgId}/conversations?page=1&per_page=1`,
+          { headers: this.headers },
+        ),
       "get organization conversation count",
     );
     return page.total_items;
@@ -306,10 +334,11 @@ export class BudgetApi {
   }
 
   getBudget(): Promise<BudgetSettings> {
-    return responseJson<BudgetSettings>(
-      this.request.get(`/api/organizations/${this.orgId}/budgets`, {
-        headers: this.headers,
-      }),
+    return readJsonWithRetry<BudgetSettings>(
+      () =>
+        this.request.get(`/api/organizations/${this.orgId}/budgets`, {
+          headers: this.headers,
+        }),
       "get budget settings",
     );
   }
@@ -325,11 +354,12 @@ export class BudgetApi {
   }
 
   async getMemberFinancial(userId: string): Promise<MemberFinancial> {
-    const page = await responseJson<MemberFinancialPage>(
-      this.request.get(
-        `/api/organizations/${this.orgId}/members/financial?limit=100`,
-        { headers: this.headers },
-      ),
+    const page = await readJsonWithRetry<MemberFinancialPage>(
+      () =>
+        this.request.get(
+          `/api/organizations/${this.orgId}/members/financial?limit=100`,
+          { headers: this.headers },
+        ),
       "get member financial data",
     );
     const member = page.items.find((item) => item.user_id === userId);

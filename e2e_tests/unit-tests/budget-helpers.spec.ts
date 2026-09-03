@@ -1,6 +1,12 @@
-import { expect, test } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+} from "@playwright/test";
 
 import {
+  BudgetApi,
   type BudgetE2EConfig,
   deleteLiteLLMTestKey,
   getLiteLLMMemberState,
@@ -23,6 +29,28 @@ const config: BudgetE2EConfig = {
   litellmUrl: "https://litellm.example.test",
   litellmApiKey: "admin-key",
 };
+
+test("retries an idempotent API read after a dropped connection", async () => {
+  let calls = 0;
+  const response = {
+    ok: () => true,
+    json: async () => ({ items: [], current_org_id: null }),
+  } as unknown as APIResponse;
+  const request = {
+    get: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("socket hang up");
+      return response;
+    },
+  } as unknown as APIRequestContext;
+
+  const api = new BudgetApi(request, "budget-test-org");
+  await expect(api.getOrganizations()).resolves.toEqual({
+    items: [],
+    current_org_id: null,
+  });
+  expect(calls).toBe(2);
+});
 
 test("rejects LiteLLM team responses with missing spend", async () => {
   const originalFetch = global.fetch;
