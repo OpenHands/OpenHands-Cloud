@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   type BudgetE2EConfig,
+  deleteLiteLLMTestKey,
   getLiteLLMMemberState,
   getLiteLLMTeamState,
   loadBudgetE2EConfig,
@@ -63,6 +64,20 @@ test("direct SDK traffic authenticates only with the virtual key", async () => {
       },
       { role: "user", content: config.directPrompt },
     ]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("temporary key cleanup tolerates a key removed with its member", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response('{"detail":"Key not found"}', { status: 404 });
+
+  try {
+    await expect(
+      deleteLiteLLMTestKey(config, "already-removed"),
+    ).resolves.toBeUndefined();
   } finally {
     global.fetch = originalFetch;
   }

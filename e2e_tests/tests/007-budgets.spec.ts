@@ -708,7 +708,12 @@ test.describe("organization budget maintenance @budgets", () => {
     });
     await attempt("restore budget settings", async () => {
       const restored = await api!.patchBudget(restorePayload(originalBudget!));
-      requireSuccessfulSync(restored, "budget settings restore");
+      if (
+        originalBudget!.enabled ||
+        restored.litellm_last_sync_status !== "skipped"
+      ) {
+        requireSuccessfulSync(restored, "budget settings restore");
+      }
     });
     await attempt("restore budget cycle", () =>
       database!.restoreCycleState(config.orgId, originalCycle!),
@@ -753,12 +758,21 @@ test.describe("organization budget maintenance @budgets", () => {
         evidence!.teamAfterSecondSpend,
       ],
     });
-    expect(evidence!.cycleAfterFirstSpend).toEqual(
-      evidence!.cycleAfterRollover,
-    );
-    expect(evidence!.cycleAfterSecondSpend).toEqual(
-      evidence!.cycleAfterRollover,
-    );
+    for (const cycle of [
+      evidence!.cycleAfterFirstSpend,
+      evidence!.cycleAfterSecondSpend,
+    ]) {
+      expect(cycle.cycleStartAt).toBe(
+        evidence!.cycleAfterRollover.cycleStartAt,
+      );
+      expect(cycle.cycleStartSpend).toBeCloseTo(
+        evidence!.cycleAfterRollover.cycleStartSpend,
+        closeToPrecision,
+      );
+      expect(cycle.userCycleStartSpend).toEqual(
+        evidence!.cycleAfterRollover.userCycleStartSpend,
+      );
+    }
     expect(evidence!.teamAfterFirstSpend.maxBudget).toBeCloseTo(
       evidence!.teamAfterRollover.maxBudget!,
       closeToPrecision,

@@ -527,6 +527,7 @@ async function updateLiteLLM(
   config: BudgetE2EConfig,
   path: string,
   data: Record<string, unknown>,
+  acceptableStatuses: number[] = [],
 ): Promise<void> {
   if (!config.litellmUrl || !config.litellmApiKey) {
     throw new Error("LiteLLM E2E admin configuration is not available");
@@ -542,7 +543,7 @@ async function updateLiteLLM(
       body: JSON.stringify(data),
     },
   );
-  if (!response.ok) {
+  if (!response.ok && !acceptableStatuses.includes(response.status)) {
     throw new Error(
       `update LiteLLM ${path} failed (${response.status} ${response.statusText})`,
     );
@@ -637,7 +638,12 @@ export function deleteLiteLLMTestKey(
   config: BudgetE2EConfig,
   keyAlias: string,
 ): Promise<void> {
-  return updateLiteLLM(config, "key/delete", { key_aliases: [keyAlias] });
+  return updateLiteLLM(
+    config,
+    "key/delete",
+    { key_aliases: [keyAlias] },
+    [404],
+  );
 }
 
 export async function requestDirectLiteLLMCompletion(
