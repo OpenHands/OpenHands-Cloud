@@ -293,6 +293,18 @@ export class BudgetApi {
     );
   }
 
+  async refreshManagedLLMKey(): Promise<void> {
+    const result = await responseJson<{ refreshed: boolean }>(
+      this.request.post("/api/keys/llm/managed/refresh", {
+        headers: this.headers,
+      }),
+      "refresh managed LLM key",
+    );
+    if (!result.refreshed) {
+      throw new Error("managed LLM key refresh did not report success");
+    }
+  }
+
   getBudget(): Promise<BudgetSettings> {
     return responseJson<BudgetSettings>(
       this.request.get(`/api/organizations/${this.orgId}/budgets`, {

@@ -201,6 +201,7 @@ test.describe("organization budget maintenance @budgets", () => {
   let originalTeam: LiteLLMTeamState | undefined;
   let originalMember: MemberFinancial | undefined;
   let testKeyAlias: string | undefined;
+  let managedKeyRepairRequired = false;
   let evidence: BudgetEvidence | undefined;
 
   test.beforeEach(({ browser: _browser }, testInfo) => {
@@ -472,6 +473,12 @@ test.describe("organization budget maintenance @budgets", () => {
       "organization denial cleanup",
     );
 
+    // LiteLLM removes the member's virtual keys with the membership. The
+    // boundary repair below restores membership and cleanup must rotate the
+    // OpenHands-managed key so the test account remains usable afterward. Set
+    // this before the request because a lost response could hide a successful
+    // removal.
+    managedKeyRepairRequired = true;
     await removeLiteLLMTeamMember(config, userId);
     const memberAfterRemoval = await getLiteLLMMemberState(config, userId);
     const membershipMissingMaintenance = await runMaintenance(database);
@@ -696,6 +703,11 @@ test.describe("organization budget maintenance @budgets", () => {
     await attempt("restore LiteLLM team membership", () =>
       ensureLiteLLMTeamMember(config, userId, originalMember!.max_budget),
     );
+    if (managedKeyRepairRequired) {
+      await attempt("restore managed LLM key", () =>
+        api!.refreshManagedLLMKey(),
+      );
+    }
     await attempt("restore member override", async () => {
       if (originalOverride) {
         await api!.putOverride(userId, {
