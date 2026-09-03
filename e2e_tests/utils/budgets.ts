@@ -657,7 +657,14 @@ export async function requestDirectLiteLLMCompletion(
       },
       body: JSON.stringify({
         model: config.directModel,
-        messages: [{ role: "user", content: config.directPrompt }],
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are responding to an automated budget certification request.",
+          },
+          { role: "user", content: config.directPrompt },
+        ],
         max_tokens: 1024,
       }),
     },

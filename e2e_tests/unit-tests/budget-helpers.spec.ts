@@ -43,8 +43,10 @@ test("rejects LiteLLM team responses with missing spend", async () => {
 test("direct SDK traffic authenticates only with the virtual key", async () => {
   const originalFetch = global.fetch;
   let observedHeaders: Headers | undefined;
+  let observedBody: Record<string, unknown> | undefined;
   global.fetch = async (_input, init) => {
     observedHeaders = new Headers(init?.headers);
+    observedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     return new Response('{"error":"budget exceeded"}', { status: 429 });
   };
 
@@ -53,6 +55,14 @@ test("direct SDK traffic authenticates only with the virtual key", async () => {
     expect(result.status).toBe(429);
     expect(observedHeaders?.get("authorization")).toBe("Bearer virtual-key");
     expect(observedHeaders?.has("x-goog-api-key")).toBe(false);
+    expect(observedBody?.messages).toEqual([
+      {
+        role: "system",
+        content:
+          "You are responding to an automated budget certification request.",
+      },
+      { role: "user", content: config.directPrompt },
+    ]);
   } finally {
     global.fetch = originalFetch;
   }
