@@ -661,7 +661,7 @@ export async function requestDirectLiteLLMCompletion(
           {
             role: "system",
             content:
-              "You are responding to an automated budget certification request.",
+              "You are OpenHands agent, a helpful AI assistant that can interact with a computer to solve tasks.",
           },
           { role: "user", content: config.directPrompt },
         ],
