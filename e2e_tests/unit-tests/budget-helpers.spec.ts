@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import {
   type BudgetE2EConfig,
   getLiteLLMTeamState,
+  loadBudgetE2EConfig,
   requestDirectLiteLLMCompletion,
 } from "../utils/budgets";
 
@@ -53,5 +54,54 @@ test("direct SDK traffic authenticates only with the virtual key", async () => {
     expect(observedHeaders?.has("x-goog-api-key")).toBe(false);
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test("accepts omitted Slack settings but rejects partial Slack configuration", () => {
+  const names = [
+    "BUDGET_E2E_ORG_ID",
+    "BUDGET_E2E_MUTATION_CONFIRMED",
+    "BUDGET_E2E_DATABASE_URL",
+    "BUDGET_E2E_LITELLM_URL",
+    "BUDGET_E2E_LITELLM_API_KEY",
+    "BUDGET_E2E_DIRECT_MODEL",
+    "BUDGET_E2E_SERVICE_USER_ID",
+    "BUDGET_E2E_SERVICE_API_KEY",
+    "BUDGET_E2E_SLACK_BOT_TOKEN",
+    "BUDGET_E2E_SLACK_CHANNEL_ID",
+    "BUDGET_E2E_SLACK_CHANNEL_NAME",
+    "BUDGET_E2E_SLACK_TEAM_ID",
+  ] as const;
+  const original = new Map(names.map((name) => [name, process.env[name]]));
+
+  try {
+    process.env.BUDGET_E2E_ORG_ID = "budget-test-org";
+    process.env.BUDGET_E2E_MUTATION_CONFIRMED = "true";
+    process.env.BUDGET_E2E_DATABASE_URL = "postgresql://example.test/db";
+    process.env.BUDGET_E2E_LITELLM_URL = "https://litellm.example.test";
+    process.env.BUDGET_E2E_LITELLM_API_KEY = "admin-key";
+    process.env.BUDGET_E2E_DIRECT_MODEL = "test-model";
+    process.env.BUDGET_E2E_SERVICE_USER_ID = "service-user";
+    process.env.BUDGET_E2E_SERVICE_API_KEY = "service-key";
+    delete process.env.BUDGET_E2E_SLACK_BOT_TOKEN;
+    delete process.env.BUDGET_E2E_SLACK_CHANNEL_ID;
+    delete process.env.BUDGET_E2E_SLACK_CHANNEL_NAME;
+    delete process.env.BUDGET_E2E_SLACK_TEAM_ID;
+
+    expect(loadBudgetE2EConfig()).toMatchObject({
+      enabled: true,
+      slack: undefined,
+    });
+
+    process.env.BUDGET_E2E_SLACK_CHANNEL_ID = "partial-channel";
+    expect(() => loadBudgetE2EConfig()).toThrow(
+      "All BUDGET_E2E_SLACK_* variables are required when Slack verification is enabled",
+    );
+  } finally {
+    for (const name of names) {
+      const value = original.get(name);
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 });

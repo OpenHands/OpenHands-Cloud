@@ -67,10 +67,6 @@ jobs:
             BUDGET_E2E_DIRECT_MODEL
             BUDGET_E2E_SERVICE_USER_ID
             BUDGET_E2E_SERVICE_API_KEY
-            BUDGET_E2E_SLACK_BOT_TOKEN
-            BUDGET_E2E_SLACK_CHANNEL_ID
-            BUDGET_E2E_SLACK_CHANNEL_NAME
-            BUDGET_E2E_SLACK_TEAM_ID
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then

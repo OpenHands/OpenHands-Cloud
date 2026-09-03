@@ -30,6 +30,18 @@ import {
 } from "../utils/budgets";
 import { authReturningFile, env, runUser } from "../utils/config";
 
+interface SlackBudgetEvidence {
+  maintenance: BudgetMaintenanceResult;
+  reportingSpendBefore: number;
+  reportingSpendAfter: number;
+  financialSpendBefore: number;
+  financialSpendAfter: number;
+  teamSpendBefore: number;
+  teamSpendAfter: number;
+  alertSpend: number;
+  alertText: string;
+}
+
 interface BudgetEvidence {
   rolloverMaintenance: BudgetMaintenanceResult;
   firstSpendMaintenance: BudgetMaintenanceResult;
@@ -50,14 +62,7 @@ interface BudgetEvidence {
   financialSpendAfter: number;
   conversationsBeforeDirectSpend: number;
   conversationsAfterDirectSpend: number;
-  alertReportingSpendBefore: number;
-  alertReportingSpendAfter: number;
-  alertFinancialSpendBefore: number;
-  alertFinancialSpendAfter: number;
-  alertTeamSpendBefore: number;
-  alertTeamSpendAfter: number;
-  slackAlertSpend: number;
-  slackAlertText: string;
+  slack?: SlackBudgetEvidence;
   overrideMaintenance: BudgetMaintenanceResult;
   overrideLimit: number;
   overrideExpectedCap: number;
@@ -217,8 +222,7 @@ test.describe("organization budget maintenance @budgets", () => {
       !config.litellmUrl ||
       !config.litellmApiKey ||
       !config.serviceUserId ||
-      !config.serviceApiKey ||
-      !config.slack
+      !config.serviceApiKey
     ) {
       throw new Error(
         "Complete budget E2E certification configuration is required",
@@ -328,47 +332,61 @@ test.describe("organization budget maintenance @budgets", () => {
     );
     const conversationsAfterDirectSpend = await api.getConversationCount();
 
-    const thresholdStartedAt = Math.floor(Date.now() / 1000);
-    const alertMonthlyLimit =
-      reportingSpendAfter + config.minimumSpendDelta / 2;
-    const slackConfigured = await api.patchBudget({
-      monthly_limit: alertMonthlyLimit,
-      slack_channel: config.slack.channelName,
-      slack_team_id: config.slack.teamId,
-      thresholds: [
-        { percentage: 100, email_enabled: false, slack_enabled: true },
-      ],
-    });
-    requireSuccessfulSync(slackConfigured, "Slack budget configuration");
-    const alertFinancialSpendBefore = memberAfterSecondSpend.lifetime_spend;
-    await generateMinimumDirectSpend(
-      api,
-      userId,
-      generatedKey.key,
-      alertFinancialSpendBefore,
-    );
-    const alertMaintenance = await runMaintenance(database);
-    const alertReporting = await api.getBudget();
-    requireSuccessfulSync(
-      alertReporting,
-      "authoritative-spend alert maintenance",
-    );
-    const alertReportingSpendAfter = requireCurrentSpend(
-      alertReporting,
-      "authoritative-spend alert maintenance",
-    );
-    const alertFinancial = await api.getMemberFinancial(userId);
-    const alertTeam = await getLiteLLMTeamState(config);
-    const alert = await pollUntil(
-      () => findSlackBudgetAlert(config, org.name, thresholdStartedAt),
-      (value) => value !== undefined,
-      {
-        description: "the budget threshold Slack notification",
-        timeoutMs: 2 * 60_000,
-        intervalMs: config.pollIntervalMs,
-      },
-    );
-    if (!alert) throw new Error("Slack budget alert was not delivered");
+    let slackEvidence: SlackBudgetEvidence | undefined;
+    if (config.slack) {
+      const thresholdStartedAt = Math.floor(Date.now() / 1000);
+      const alertMonthlyLimit =
+        reportingSpendAfter + config.minimumSpendDelta / 2;
+      const slackConfigured = await api.patchBudget({
+        monthly_limit: alertMonthlyLimit,
+        slack_channel: config.slack.channelName,
+        slack_team_id: config.slack.teamId,
+        thresholds: [
+          { percentage: 100, email_enabled: false, slack_enabled: true },
+        ],
+      });
+      requireSuccessfulSync(slackConfigured, "Slack budget configuration");
+      const alertFinancialSpendBefore = memberAfterSecondSpend.lifetime_spend;
+      await generateMinimumDirectSpend(
+        api,
+        userId,
+        generatedKey.key,
+        alertFinancialSpendBefore,
+      );
+      const alertMaintenance = await runMaintenance(database);
+      const alertReporting = await api.getBudget();
+      requireSuccessfulSync(
+        alertReporting,
+        "authoritative-spend alert maintenance",
+      );
+      const alertReportingSpendAfter = requireCurrentSpend(
+        alertReporting,
+        "authoritative-spend alert maintenance",
+      );
+      const alertFinancial = await api.getMemberFinancial(userId);
+      const alertTeam = await getLiteLLMTeamState(config);
+      const alert = await pollUntil(
+        () => findSlackBudgetAlert(config, org.name, thresholdStartedAt),
+        (value) => value !== undefined,
+        {
+          description: "the budget threshold Slack notification",
+          timeoutMs: 2 * 60_000,
+          intervalMs: config.pollIntervalMs,
+        },
+      );
+      if (!alert) throw new Error("Slack budget alert was not delivered");
+      slackEvidence = {
+        maintenance: alertMaintenance,
+        reportingSpendBefore: reportingSpendAfter,
+        reportingSpendAfter: alertReportingSpendAfter,
+        financialSpendBefore: alertFinancialSpendBefore,
+        financialSpendAfter: alertFinancial.lifetime_spend,
+        teamSpendBefore: teamAfterSecondSpend.spend,
+        teamSpendAfter: alertTeam.spend,
+        alertSpend: alert.spend,
+        alertText: alert.text,
+      };
+    }
 
     if (memberAfterRollover.max_budget === null) {
       throw new Error("Default member cap was absent after cycle rollover");
@@ -578,14 +596,7 @@ test.describe("organization budget maintenance @budgets", () => {
       financialSpendAfter: memberAfterSecondSpend.lifetime_spend,
       conversationsBeforeDirectSpend,
       conversationsAfterDirectSpend,
-      alertReportingSpendBefore: reportingSpendAfter,
-      alertReportingSpendAfter,
-      alertFinancialSpendBefore,
-      alertFinancialSpendAfter: alertFinancial.lifetime_spend,
-      alertTeamSpendBefore: teamAfterSecondSpend.spend,
-      alertTeamSpendAfter: alertTeam.spend,
-      slackAlertSpend: alert.spend,
-      slackAlertText: alert.text,
+      slack: slackEvidence,
       overrideMaintenance,
       overrideLimit,
       overrideExpectedCap,
@@ -625,7 +636,7 @@ test.describe("organization budget maintenance @budgets", () => {
       rolloverMaintenance,
       firstSpendMaintenance,
       secondSpendMaintenance,
-      alertMaintenance,
+      alertMaintenance: slackEvidence?.maintenance,
       overrideMaintenance,
       membershipMissingMaintenance,
       membershipRepairMaintenance,
@@ -852,18 +863,20 @@ test.describe("organization budget maintenance @budgets", () => {
   });
 
   test("issue 5: LiteLLM-only threshold crossing emits authoritative Slack spend", async () => {
+    test.skip(!config.slack, "Slack alert verification is not configured");
     expect(evidence).toBeDefined();
+    expect(evidence!.slack).toBeDefined();
+    const slack = evidence!.slack!;
     const reportingDelta =
-      evidence!.alertReportingSpendAfter - evidence!.alertReportingSpendBefore;
+      slack.reportingSpendAfter - slack.reportingSpendBefore;
     const financialDelta =
-      evidence!.alertFinancialSpendAfter - evidence!.alertFinancialSpendBefore;
-    const teamDelta =
-      evidence!.alertTeamSpendAfter - evidence!.alertTeamSpendBefore;
+      slack.financialSpendAfter - slack.financialSpendBefore;
+    const teamDelta = slack.teamSpendAfter - slack.teamSpendBefore;
     await attachEvidence("issue-5-slack-alert.json", {
-      alertText: evidence!.slackAlertText,
-      alertSpend: evidence!.slackAlertSpend,
-      reportingBefore: evidence!.alertReportingSpendBefore,
-      reportingAfter: evidence!.alertReportingSpendAfter,
+      alertText: slack.alertText,
+      alertSpend: slack.alertSpend,
+      reportingBefore: slack.reportingSpendBefore,
+      reportingAfter: slack.reportingSpendAfter,
       reportingDelta,
       financialDelta,
       teamDelta,
@@ -871,8 +884,8 @@ test.describe("organization budget maintenance @budgets", () => {
     expect(financialDelta).toBeGreaterThanOrEqual(config.minimumSpendDelta);
     expect(teamDelta).toBeCloseTo(financialDelta, closeToPrecision);
     expect(reportingDelta).toBeCloseTo(teamDelta, closeToPrecision);
-    expect(evidence!.slackAlertSpend).toBeCloseTo(
-      evidence!.alertReportingSpendAfter,
+    expect(slack.alertSpend).toBeCloseTo(
+      slack.reportingSpendAfter,
       closeToPrecision,
     );
   });

@@ -39,10 +39,11 @@ BASE_URL=https://release-under-test.example.test \
 
 `tests/007-budgets.spec.ts` is a destructive, serial certification suite for a
 dedicated test organization. It verifies stable cycle-anchored caps,
-authoritative LiteLLM reporting and alerts, direct SDK enforcement, missing
-membership recovery, unmapped service identities, and cleanup from fresh
-database sessions. It will not run unless `BUDGET_E2E_MUTATION_CONFIRMED=true`,
-and it rejects personal or non-test organizations by default.
+authoritative LiteLLM reporting, optional Slack alerts, direct SDK enforcement,
+missing membership recovery, unmapped service identities, and cleanup from
+fresh database sessions. It will not run unless
+`BUDGET_E2E_MUTATION_CONFIRMED=true`, and it rejects personal or non-test
+organizations by default.
 
 Configure the protected GitHub environment `budget-e2e-staging` with:
 
@@ -56,16 +57,16 @@ Configure the protected GitHub environment `budget-e2e-staging` with:
 | Variable | `BUDGET_E2E_DIRECT_MODEL`             | Billable proxy model alias used by direct SDK-style requests |
 | Variable | `BUDGET_E2E_EXPECTED_LITELLM_VERSION` | Expected readiness version; defaults to `1.94.1`             |
 | Variable | `BUDGET_E2E_SERVICE_USER_ID`          | Existing LiteLLM-only identity in the test organization team |
-| Variable | `BUDGET_E2E_SLACK_CHANNEL_ID`         | Test alert channel ID                                        |
-| Variable | `BUDGET_E2E_SLACK_CHANNEL_NAME`       | Test alert channel name                                      |
-| Variable | `BUDGET_E2E_SLACK_TEAM_ID`            | Slack workspace/team ID                                      |
+| Variable | `BUDGET_E2E_SLACK_CHANNEL_ID`         | Optional test alert channel ID                               |
+| Variable | `BUDGET_E2E_SLACK_CHANNEL_NAME`       | Optional test alert channel name                             |
+| Variable | `BUDGET_E2E_SLACK_TEAM_ID`            | Optional Slack workspace/team ID                             |
 | Secret   | `BUDGET_E2E_GITHUB_USERNAME`          | Returning test administrator username                        |
 | Secret   | `BUDGET_E2E_GITHUB_PASSWORD`          | Returning test administrator password                        |
 | Secret   | `BUDGET_E2E_GITHUB_TOTP_SECRET`       | Optional TOTP seed for that account                          |
 | Secret   | `BUDGET_E2E_DATABASE_URL`             | PostgreSQL connection string for the test deployment         |
 | Secret   | `BUDGET_E2E_LITELLM_API_KEY`          | LiteLLM admin key                                            |
 | Secret   | `BUDGET_E2E_SERVICE_API_KEY`          | Virtual key for the LiteLLM-only service identity            |
-| Secret   | `BUDGET_E2E_SLACK_BOT_TOKEN`          | Token allowed to read the test alert channel                 |
+| Secret   | `BUDGET_E2E_SLACK_BOT_TOKEN`          | Optional token allowed to read the test alert channel        |
 
 The suite opens a direct PostgreSQL connection to snapshot cycle state and
 restore it after the destructive run. For a Replicated instance whose database
@@ -78,6 +79,11 @@ Scheduled certification is opt-in. Leave `BUDGET_E2E_SCHEDULE_ENABLED` unset
 or set to `false` while provisioning the environment; manual dispatch remains
 available. Enable the schedule only after a complete manual run passes.
 
+Slack verification is optional. Configure all four `BUDGET_E2E_SLACK_*`
+settings together to exercise the alert path. If all four are omitted, the
+suite executes the non-Slack scenarios and explicitly reports issue 5 as
+skipped. A partial Slack configuration is rejected.
+
 For Azure coverage, point `BUDGET_E2E_DIRECT_MODEL` at an Azure-backed model
 alias already configured in the deployment's LiteLLM proxy. Direct requests use
 only the generated virtual key in the `Authorization` header, matching an
@@ -88,8 +94,9 @@ outside this budget contract.
 Before the first run, create the LiteLLM-only service identity and virtual key
 in the dedicated team, but do not add that identity to the OpenHands
 organization. Give it no member cap or a deliberately chosen cap; the suite
-records the original value and proves maintenance does not rewrite it. Use a
-test Slack channel because the suite emits a real alert.
+records the original value and proves maintenance does not rewrite it. When
+Slack verification is enabled, use a test channel because the suite emits a
+real alert.
 
 Run the protected `Budget Incident E2E` workflow manually after deploying the
 candidate enterprise image. Download the Playwright artifact and retain the

@@ -166,11 +166,6 @@ export function loadBudgetE2EConfig(): BudgetE2EConfig {
       "BUDGET_E2E_DIRECT_MODEL is required for direct LiteLLM traffic",
     );
   }
-  if (enabled && !hasAllSlackValues) {
-    throw new Error(
-      "All BUDGET_E2E_SLACK_* variables are required for budget certification",
-    );
-  }
   if (enabled && (!serviceUserId || !serviceApiKey)) {
     throw new Error(
       "BUDGET_E2E_SERVICE_USER_ID and BUDGET_E2E_SERVICE_API_KEY are required for unmapped SDK verification",
