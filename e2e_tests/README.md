@@ -146,6 +146,9 @@ Test fixtures (optional overrides):
 - `TEST_REPO_URL` — repo used in conversations (default: `https://github.com/OpenHands/deploy`).
 - `TEST_PROMPT` — prompt used in conversations (default: `Flip a coin!`).
 - `TEST_ENV` — label for the environment.
+- `MANAGED_KEY_E2E_MUTATION_CONFIRMED` — set to `true` only on a disposable
+  install to enable the managed-key ownership scenario. The first authenticated
+  user must be the instance superadmin, and user provisioning must be enabled.
 
 ### Storage-state files
 
