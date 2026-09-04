@@ -119,7 +119,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
     test.setTimeout(12 * 60_000);
 
     const suffix = `${Date.now()}`;
-    const secondaryEmail = `managed-key-e2e-${suffix}@example.test`;
+    const secondaryEmail = `managed-key-e2e+${suffix}@openhands.dev`;
     let originalOrgId: string | null = null;
     let orgId: string | null = null;
     let secondaryRequest: APIRequestContext | null = null;
@@ -141,7 +141,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
           data: {
             name: `managed-key-e2e-${suffix}`,
             contact_name: "Managed Key E2E",
-            contact_email: "managed-key-e2e@example.test",
+            contact_email: "managed-key-e2e@openhands.dev",
           },
         }),
         "create test organization",
