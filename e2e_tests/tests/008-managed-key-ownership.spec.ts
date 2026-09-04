@@ -8,7 +8,7 @@ import {
 import { runUser } from "../utils/config";
 
 interface CurrentUser {
-  user_id: string;
+  id: string;
   email: string;
 }
 
@@ -148,7 +148,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
       );
       orgId = org.id;
 
-      await json<ProvisionedUser>(
+      const owner = await json<ProvisionedUser>(
         await page.request.post("/api/organizations/provision-user", {
           headers: { "X-Org-Id": orgId },
           data: {
@@ -159,6 +159,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
         }),
         "provision owner",
       );
+      expect(owner.user_id).toBe(me.id);
       const secondary = await json<ProvisionedUser>(
         await page.request.post("/api/organizations/provision-user", {
           headers: { "X-Org-Id": orgId },
@@ -184,7 +185,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
       expect(llm.model).toBeTruthy();
 
       const before = await financialByUser(page.request, orgId);
-      expect(before.has(me.user_id)).toBe(true);
+      expect(before.has(owner.user_id)).toBe(true);
       expect(before.has(secondary.user_id)).toBe(true);
 
       await json<OrganizationSettings>(
@@ -230,7 +231,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
       conversationId = readyTask.app_conversation_id ?? null;
       expect(conversationId).toBeTruthy();
 
-      const ownerSpendBefore = before.get(me.user_id) ?? 0;
+      const ownerSpendBefore = before.get(owner.user_id) ?? 0;
       const memberSpendBefore = before.get(secondary.user_id) ?? 0;
       const spendDeadline = Date.now() + 4 * 60_000;
       let after = before;
@@ -240,7 +241,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
         await new Promise((resolve) => setTimeout(resolve, 5_000));
       }
 
-      const ownerSpendAfter = after.get(me.user_id) ?? 0;
+      const ownerSpendAfter = after.get(owner.user_id) ?? 0;
       const memberSpendAfter = after.get(secondary.user_id) ?? 0;
       expect(memberSpendAfter).toBeGreaterThan(memberSpendBefore);
       expect(ownerSpendAfter).toBeCloseTo(ownerSpendBefore, 8);
@@ -249,7 +250,7 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
         body: JSON.stringify(
           {
             org_id: orgId,
-            owner_user_id: me.user_id,
+            owner_user_id: owner.user_id,
             member_user_id: secondary.user_id,
             owner_spend_before: ownerSpendBefore,
             owner_spend_after: ownerSpendAfter,
