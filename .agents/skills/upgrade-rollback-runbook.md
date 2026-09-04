@@ -79,8 +79,14 @@ helm diff upgrade <release-name> \
   oci://ghcr.io/openhands/helm-charts/openhands \
   --namespace <namespace> \
   --values values.yaml \
-  --version <Y>
+  --version <Y> \
+  --context=0
 ```
+
+`--context=0` trims the surrounding unchanged lines so the diff shows only the
+changed lines. Customers routinely find the default output too noisy; use this flag
+to keep the review focused on what actually changed. Drop it (or raise the value) if
+you need surrounding context to interpret a specific hunk.
 
 Split the output into **substantive** (image bumps, added/removed workloads,
 ConfigMap/logic changes) and **cosmetic/artifact**. Known noise to expect and label
@@ -197,7 +203,7 @@ Prereq: the `helm-diff` plugin
 <pg_dump --clean --if-exists command>
 
 ## 2. Review the diff — gate before upgrading
-<helm diff command>
+<helm diff command with --context=0 so only changed lines show>
 Proceed only if the output contains only the changes below; otherwise stop and
 investigate, then send the investigation notes to the OpenHands team.
 Expected — substantive: <discovered image bumps / workload changes>
