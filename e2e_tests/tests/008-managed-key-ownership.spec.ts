@@ -246,21 +246,21 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
       expect(memberSpendAfter).toBeGreaterThan(memberSpendBefore);
       expect(ownerSpendAfter).toBeCloseTo(ownerSpendBefore, 8);
 
+      const attributionEvidence = {
+        org_id: orgId,
+        owner_user_id: owner.user_id,
+        member_user_id: secondary.user_id,
+        owner_spend_before: ownerSpendBefore,
+        owner_spend_after: ownerSpendAfter,
+        member_spend_before: memberSpendBefore,
+        member_spend_after: memberSpendAfter,
+        conversation_id: conversationId,
+      };
+      console.log(
+        `Managed key attribution evidence: ${JSON.stringify(attributionEvidence)}`,
+      );
       await testInfo.attach("managed-key-attribution.json", {
-        body: JSON.stringify(
-          {
-            org_id: orgId,
-            owner_user_id: owner.user_id,
-            member_user_id: secondary.user_id,
-            owner_spend_before: ownerSpendBefore,
-            owner_spend_after: ownerSpendAfter,
-            member_spend_before: memberSpendBefore,
-            member_spend_after: memberSpendAfter,
-            conversation_id: conversationId,
-          },
-          null,
-          2,
-        ),
+        body: JSON.stringify(attributionEvidence, null, 2),
         contentType: "application/json",
       });
     } finally {
