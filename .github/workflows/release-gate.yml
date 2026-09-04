@@ -1,0 +1,215 @@
+name: Release gate (unstable E2E)
+
+# Blocks only the openhands release-please PR when the latest unstable E2E
+# result is not green. A completed unstable pipeline refreshes the release PR's
+# check, so a new red or green signal is reflected without changing the PR.
+#
+# The release PR is identified by its same-repository head branch instead of a
+# removable label. An `override-e2e-gate` label is accepted only when its newest
+# event postdates the failing signal and its applier has write access. Each
+# override is therefore attributable and valid for one E2E signal only.
+#
+# To enforce this after the E2E job reports the real Argo result, add the
+# `release-gate` context to the main ruleset under Settings -> Rules -> Rulesets.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  workflow_run:
+    workflows: ["Release Replicated to Unstable"]
+    types: [completed]
+
+permissions: {}
+
+env:
+  RELEASE_PR_BRANCH: "release-please--branches--main--components--openhands"
+  OVERRIDE_LABEL: "override-e2e-gate"
+  E2E_WORKFLOW: "release-replicated-unstable.yml"
+  E2E_JOB_NAME: "E2E Replicated"
+  E2E_MAX_AGE_HOURS: "24"
+
+jobs:
+  release-gate:
+    name: release-gate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Evaluate release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Release gate (unstable E2E)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # --- Signal: latest unstable E2E result -----------------------------
+          runs=$(gh api "repos/${REPO}/actions/workflows/${E2E_WORKFLOW}/runs?branch=main&per_page=20")
+          run_id=""
+          run_url=""
+          run_completed=""
+          E2E_CONCLUSION=""
+
+          # A called job is named "E2E Replicated / trigger-e2e" when it runs
+          # and "E2E Replicated" when skipped. Ignore a newer in-flight job.
+          while IFS=$'\t' read -r id url; do
+            [ -n "$id" ] || continue
+            jobs=$(gh api "repos/${REPO}/actions/runs/${id}/jobs")
+            job=$(jq -r --arg name "$E2E_JOB_NAME" '
+              first(
+                .jobs[]
+                | select(.name == $name or (.name | startswith($name + " /")))
+                | select(.conclusion != null)
+                | [.conclusion, .completed_at]
+                | @tsv
+              ) // empty
+            ' <<<"$jobs")
+            if [ -n "$job" ]; then
+              IFS=$'\t' read -r E2E_CONCLUSION run_completed <<<"$job"
+              run_id=$id
+              run_url=$url
+              break
+            fi
+          done < <(jq -r '.workflow_runs[] | [.id, .html_url] | @tsv' <<<"$runs")
+
+          if [ -z "$run_id" ] || [ -z "$run_completed" ]; then
+            echo "::error::no completed ${E2E_JOB_NAME} job found in recent ${E2E_WORKFLOW} runs on main"
+            echo "| E2E result | **no run** — blocked |" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          now=$(date -u +%s)
+          signal_epoch=$(date -u -d "$run_completed" +%s)
+          age_h=$(( (now - signal_epoch) / 3600 ))
+          {
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Latest E2E conclusion | \`${E2E_CONCLUSION}\` |"
+            echo "| Run | ${run_url} |"
+            echo "| Completed | ${run_completed} |"
+            echo "| Age | ${age_h}h (max ${E2E_MAX_AGE_HOURS}h) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          gate_reason=""
+          if [ "$E2E_CONCLUSION" != "success" ]; then
+            gate_reason="latest unstable E2E concluded ${E2E_CONCLUSION}"
+          elif [ "$age_h" -gt "$E2E_MAX_AGE_HOURS" ]; then
+            gate_reason="latest unstable E2E is stale (${age_h}h old)"
+          else
+            echo "Latest unstable E2E is green and fresh (${age_h}h old)."
+            exit 0
+          fi
+
+          labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
+          if ! grep -Fxq "$OVERRIDE_LABEL" <<<"$labels"; then
+            echo "::error::${gate_reason} — blocking the release PR. ${run_url}"
+            exit 1
+          fi
+
+          events=$(gh api --paginate --slurp \
+            "repos/${REPO}/issues/${PR_NUMBER}/events?per_page=100")
+          applier_when=$(jq -r --arg label "$OVERRIDE_LABEL" '
+            [.[][] | select(.event == "labeled" and .label.name == $label)]
+            | last
+            | if . == null then empty else [.actor.login, .created_at] | @tsv end
+          ' <<<"$events")
+          IFS=$'\t' read -r applier override_when <<<"$applier_when"
+
+          if [ -z "${applier:-}" ] || [ -z "${override_when:-}" ]; then
+            echo "::error::${OVERRIDE_LABEL} is present but no event records who applied it"
+            exit 1
+          fi
+
+          override_epoch=$(date -u -d "$override_when" +%s)
+          if [ "$override_epoch" -le "$signal_epoch" ]; then
+            echo "::error::override by ${applier} at ${override_when} predates the signal at ${run_completed}; remove and reapply ${OVERRIDE_LABEL} to authorize this result"
+            exit 1
+          fi
+
+          perm=$(gh api "repos/${REPO}/collaborators/${applier}/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          case "$perm" in
+            admin|write|maintain) ;;
+            *)
+              echo "::error::${OVERRIDE_LABEL} was applied by ${applier}, who lacks write permission (${perm})"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo ""
+            echo "> [!WARNING]"
+            echo "> **E2E release gate overridden.**"
+            echo ">"
+            echo "> ${gate_reason}; override applied by \`${applier}\` (\`${perm}\`) at ${override_when}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          marker="<!-- release-gate-override:${override_when} -->"
+          comments=$(gh api --paginate --slurp \
+            "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")
+          already_recorded=$(jq -r --arg marker "$marker" \
+            'any(.[][]; .body | contains($marker))' <<<"$comments")
+          if [ "$already_recorded" != "true" ]; then
+            body=$(printf '%s\n\n%s\n\n%s' \
+              "🟡 **E2E release gate overridden** by \`${applier}\` (\`${perm}\`) at ${override_when}. ${gate_reason}; unstable → beta is allowed for this signal only." \
+              "$marker" \
+              "_Posted automatically by an AI-assisted workflow on behalf of the OpenHands-Cloud maintainers._")
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+          fi
+
+          echo "Override honored for the signal completed at ${run_completed}."
+
+  refresh-release-gate:
+    name: Refresh release gate
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Rerun the open release PR gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" | jq -c \
+            --arg repo "$REPO" --arg branch "$RELEASE_PR_BRANCH" '
+              first(.[] | select(
+                .base.ref == "main" and
+                .head.ref == $branch and
+                .head.repo.full_name == $repo
+              )) // empty
+            ')
+          if [ -z "$pr" ]; then
+            echo "No open openhands release PR; nothing to refresh."
+            exit 0
+          fi
+
+          sha=$(jq -r '.head.sha' <<<"$pr")
+          gate_run=$(gh api \
+            "repos/${REPO}/actions/workflows/release-gate.yml/runs?event=pull_request&per_page=100" \
+            | jq -c --arg sha "$sha" \
+              'first(.workflow_runs[] | select(.head_sha == $sha)) // empty')
+          if [ -z "$gate_run" ]; then
+            echo "::warning::No release-gate run found for release PR head ${sha}."
+            exit 0
+          fi
+
+          run_id=$(jq -r '.id' <<<"$gate_run")
+          gh api --method POST "repos/${REPO}/actions/runs/${run_id}/rerun"
+          echo "Rerunning release gate ${run_id} for release PR head ${sha}."
