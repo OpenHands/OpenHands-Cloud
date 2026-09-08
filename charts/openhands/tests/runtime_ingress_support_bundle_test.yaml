@@ -1,0 +1,57 @@
+suite: runtime ingress support bundle diagnostics
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: diagnoses stale starting runtimes from inside Runtime API
+    set:
+      replicated.enabled: true
+      runtime-api.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "collectorName: runtime-api-ingress-diagnostics"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "Direct Kubernetes Service|service_url|\\.svc\\.cluster\\.local"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "socket.getaddrinfo|ssl.create_default_context|requests.get\\(external_url"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'checkName: "?Starting Runtime Ingress Reachability'
+
+  - it: collects Traefik logs used by Replicated embedded clusters
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "name: traefik/logs\\n\\s+selector:\\n\\s+- app.kubernetes.io/name=traefik\\n\\s+namespace: traefik"
+
+  - it: omits runtime ingress diagnostics when Runtime API is disabled
+    set:
+      replicated.enabled: true
+      runtime-api.enabled: false
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "runtime-api-ingress-diagnostics"

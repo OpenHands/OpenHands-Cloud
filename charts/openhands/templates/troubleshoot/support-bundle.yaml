@@ -220,6 +220,197 @@ spec:
                 run(label, sql)
             conn.close()
         timeout: 30s
+    # Compare direct Service health with the external ingress path for stale starts.
+    - exec:
+        name: app/{{ .Release.Name }}-runtime-api-ingress
+        collectorName: runtime-api-ingress-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name=runtime-api
+        containerName: runtime-api
+        command: ["python3", "-c"]
+        args:
+          - |
+            import concurrent.futures, datetime, json, os, re, socket, ssl
+            from urllib.parse import urlsplit
+            import pg8000.dbapi, requests
+            from kubernetes import client, config
+
+            def error_text(exc):
+                text = re.sub(r"(https?://)[^/@\s]+@", r"\1<redacted>@", str(exc))
+                return {"type": type(exc).__name__, "message": text}
+
+            def db_connection():
+                kw = dict(
+                    host=os.environ["DB_HOST"], port=int(os.environ.get("DB_PORT", "5432")),
+                    user=os.environ["DB_USER"], password=os.environ.get("DB_PASS", ""),
+                    database=os.environ["DB_NAME"], timeout=5,
+                )
+                mode = (os.environ.get("DB_SSL_MODE") or "").strip().lower()
+                if mode == "require":
+                    kw["ssl_context"] = True
+                elif mode == "disable":
+                    kw["ssl_context"] = False
+                return pg8000.dbapi.connect(**kw)
+
+            def response_status(response, expected_key, expected_value):
+                try:
+                    payload = response.json()
+                    value = payload.get(expected_key) if isinstance(payload, dict) else None
+                except Exception:
+                    value = None
+                final_url = urlsplit(response.url)
+                return {
+                    "ok": response.status_code == 200 and value == expected_value,
+                    "http_status": response.status_code,
+                    "json_value": {expected_key: value},
+                    "final_url": (
+                        f"{final_url.scheme}://{final_url.netloc}{final_url.path}"
+                    ),
+                }
+
+            def inspect_runtime(row, ingress, core_api, namespace):
+                runtime_id, last_state_change, use_fuse_mount = row
+                result = {
+                    "runtime_id": runtime_id,
+                    "last_state_change": str(last_state_change),
+                    "use_fuse_mount": use_fuse_mount,
+                }
+                if ingress is None or not ingress.spec.rules:
+                    result["external_alive"] = False
+                    result["ingress_error"] = "runtime ingress not found"
+                    return result
+
+                rule = ingress.spec.rules[0]
+                path = rule.http.paths[0]
+                backend = path.backend.service
+                service_port = backend.port.number
+                if service_port is None:
+                    service = core_api.read_namespaced_service(backend.name, namespace)
+                    service_port = next(
+                        port.port for port in service.spec.ports if port.name == backend.port.name
+                    )
+                endpoint = "api/init" if use_fuse_mount else "alive"
+                expected_key, expected_value = (
+                    ("state", "ready") if use_fuse_mount else ("status", "ok")
+                )
+                service_url = (
+                    f"http://{backend.name}.{namespace}.svc.cluster.local:"
+                    f"{service_port}/{endpoint}"
+                )
+                direct = requests.Session()
+                direct.trust_env = False
+                try:
+                    result["service"] = response_status(
+                        direct.get(service_url, timeout=3), expected_key, expected_value
+                    )
+                except Exception as exc:
+                    result["service"] = {"ok": False, "error": error_text(exc)}
+
+                scheme = (
+                    "http"
+                    if os.environ.get("RUNTIME_DISABLE_SSL", "false").lower() == "true"
+                    else "https"
+                )
+                ingress_path = (path.path or "").rstrip("/")
+                external_url = f"{scheme}://{rule.host}{ingress_path}/{endpoint}"
+                result["external_url"] = external_url
+                parsed = urlsplit(external_url)
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+                try:
+                    addresses = sorted({
+                        entry[4][0] for entry in socket.getaddrinfo(parsed.hostname, port)
+                    })
+                    result["dns"] = {"ok": True, "addresses": addresses}
+                except Exception as exc:
+                    result["dns"] = {"ok": False, "error": error_text(exc)}
+
+                if parsed.scheme == "https":
+                    ca_file = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+                    try:
+                        context = ssl.create_default_context(
+                            cafile=ca_file if ca_file and os.path.isfile(ca_file) else None
+                        )
+                        with socket.create_connection((parsed.hostname, port), timeout=3) as raw:
+                            with context.wrap_socket(raw, server_hostname=parsed.hostname) as tls:
+                                cert = tls.getpeercert()
+                        result["tls"] = {
+                            "ok": True,
+                            "expires": cert.get("notAfter"),
+                            "dns_names": [
+                                value for kind, value in cert.get("subjectAltName", [])
+                                if kind == "DNS"
+                            ],
+                        }
+                    except Exception as exc:
+                        result["tls"] = {"ok": False, "error": error_text(exc)}
+
+                try:
+                    result["external"] = response_status(
+                        requests.get(external_url, timeout=5), expected_key, expected_value
+                    )
+                except Exception as exc:
+                    result["external"] = {"ok": False, "error": error_text(exc)}
+                result["external_alive"] = result["external"]["ok"]
+                return result
+
+            def inspect_runtime_safe(row, ingress, core_api, namespace):
+                try:
+                    return inspect_runtime(row, ingress, core_api, namespace)
+                except Exception as exc:
+                    return {
+                        "runtime_id": row[0],
+                        "last_state_change": str(row[1]),
+                        "external_alive": False,
+                        "diagnostic_error": error_text(exc),
+                    }
+
+            output = {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            try:
+                conn = db_connection()
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute("SET default_transaction_read_only = on")
+                cur.execute(
+                    "SELECT runtime_id, last_state_change, use_fuse_mount FROM runtimes "
+                    "WHERE status = 'starting' "
+                    "AND COALESCE(last_state_change, created_at) < NOW() - INTERVAL '60 seconds' "
+                    "ORDER BY created_at DESC LIMIT 5"
+                )
+                rows = cur.fetchall()
+                conn.close()
+                if not rows:
+                    output.update(overall="not-applicable", runtimes=[])
+                else:
+                    namespace = os.environ.get("K8S_NAMESPACE", "{{ .Release.Namespace }}")
+                    config.load_incluster_config()
+                    networking_api = client.NetworkingV1Api()
+                    core_api = client.CoreV1Api()
+                    ingresses = {
+                        item.metadata.name: item
+                        for item in networking_api.list_namespaced_ingress(namespace).items
+                    }
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=len(rows)) as pool:
+                        futures = [
+                            pool.submit(
+                                inspect_runtime_safe, row,
+                                ingresses.get(f"runtime-{row[0]}"), core_api, namespace,
+                            )
+                            for row in rows
+                        ]
+                        results = [future.result() for future in futures]
+                    output.update(
+                        overall=(
+                            "pass" if all(item["external_alive"] for item in results)
+                            else "fail"
+                        ),
+                        runtimes=results,
+                    )
+            except Exception as exc:
+                output.update(overall="collector-error", error=error_text(exc))
+            print(json.dumps(output, indent=2, default=str))
+        timeout: 20s
     {{- end }}
     {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
     # LiteLLM logs
@@ -472,6 +663,14 @@ spec:
         namespace: ingress-nginx
         limits:
           maxAge: 336h
+    # Replicated embedded clusters use Traefik rather than ingress-nginx.
+    - logs:
+        name: traefik/logs
+        selector:
+          - app.kubernetes.io/name=traefik
+        namespace: traefik
+        limits:
+          maxAge: 336h
     {{- if and .Values.postgresql.enabled .Values.replicated.enabled .Values.replicated.postgresPassword }}
     - postgresql:
         collectorName: postgresql
@@ -552,6 +751,23 @@ spec:
           - pass:
               when: ">= 1"
               message: "OpenHands Runtime API deployment is ready"
+    - textAnalyze:
+        checkName: "Starting Runtime Ingress Reachability"
+        collectorName: app/{{ .Release.Name }}-runtime-api-ingress
+        fileName: "*/*/runtime-api-ingress-diagnostics-stdout.txt"
+        regexGroups: '"overall":\s*"(?P<Overall>[^"]+)"'
+        outcomes:
+          - fail:
+              when: "Overall == fail"
+              message: "A stale starting runtime is not reachable through its external ingress; inspect runtime-api-ingress-diagnostics for DNS, TLS, Service, and HTTP results"
+          - warn:
+              when: "Overall == collector-error"
+              message: "Runtime ingress diagnostics could not complete; inspect runtime-api-ingress-diagnostics for the collector error"
+          - pass:
+              when: "Overall == pass"
+              message: "All stale starting runtimes are reachable through their external ingresses"
+          - pass:
+              message: "No stale starting runtimes required an ingress check"
     {{- end }}
     {{- if .Values.postgresql.enabled }}
     - statefulsetStatus:
