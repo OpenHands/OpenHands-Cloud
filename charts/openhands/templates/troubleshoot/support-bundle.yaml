@@ -235,6 +235,7 @@ spec:
             from urllib.parse import urlsplit
             import pg8000.dbapi, requests
             from kubernetes import client, config
+            from utils.id import subdomain_to_url
 
             def error_text(exc):
                 text = re.sub(r"(https?://)[^/@\s]+@", r"\1<redacted>@", str(exc))
@@ -269,33 +270,62 @@ spec:
                     ),
                 }
 
-            def inspect_runtime(row, ingress, core_api, namespace):
+            def route_backend(runtime_id, namespace, networking_api, custom_api):
+                name = f"runtime-{runtime_id}"
+                if os.environ.get("USE_GATEWAY_API", "false").lower() == "true":
+                    route = custom_api.get_namespaced_custom_object(
+                        group="gateway.networking.k8s.io", version="v1",
+                        namespace=namespace, plural="httproutes", name=name,
+                    )
+                    for rule in route.get("spec", {}).get("rules", []):
+                        refs = rule.get("backendRefs", [])
+                        if refs:
+                            return {
+                                "kind": "HTTPRoute", "name": name,
+                                "service_name": refs[0]["name"],
+                                "service_port": refs[0].get("port"),
+                            }
+                    raise RuntimeError("runtime HTTPRoute has no backendRefs")
+
+                ingress = networking_api.read_namespaced_ingress(name, namespace)
+                for rule in ingress.spec.rules or []:
+                    for path in (rule.http.paths if rule.http else []) or []:
+                        backend = path.backend.service
+                        if backend:
+                            return {
+                                "kind": "Ingress", "name": name,
+                                "service_name": backend.name,
+                                "service_port": backend.port.number or backend.port.name,
+                            }
+                raise RuntimeError("runtime Ingress has no Service backend")
+
+            def inspect_runtime(
+                row, core_api, networking_api, custom_api, namespace
+            ):
                 runtime_id, last_state_change, use_fuse_mount = row
                 result = {
                     "runtime_id": runtime_id,
                     "last_state_change": str(last_state_change),
                     "use_fuse_mount": use_fuse_mount,
                 }
-                if ingress is None or not ingress.spec.rules:
-                    result["external_alive"] = False
-                    result["ingress_error"] = "runtime ingress not found"
-                    return result
-
-                rule = ingress.spec.rules[0]
-                path = rule.http.paths[0]
-                backend = path.backend.service
-                service_port = backend.port.number
-                if service_port is None:
-                    service = core_api.read_namespaced_service(backend.name, namespace)
+                routing = route_backend(
+                    runtime_id, namespace, networking_api, custom_api
+                )
+                result["routing_resource"] = routing
+                service_name = routing["service_name"]
+                service_port = routing["service_port"]
+                if not isinstance(service_port, int):
+                    service = core_api.read_namespaced_service(service_name, namespace)
                     service_port = next(
-                        port.port for port in service.spec.ports if port.name == backend.port.name
+                        port.port for port in service.spec.ports
+                        if service_port is None or port.name == service_port
                     )
                 endpoint = "api/init" if use_fuse_mount else "alive"
                 expected_key, expected_value = (
                     ("state", "ready") if use_fuse_mount else ("status", "ok")
                 )
                 service_url = (
-                    f"http://{backend.name}.{namespace}.svc.cluster.local:"
+                    f"http://{service_name}.{namespace}.svc.cluster.local:"
                     f"{service_port}/{endpoint}"
                 )
                 direct = requests.Session()
@@ -307,13 +337,7 @@ spec:
                 except Exception as exc:
                     result["service"] = {"ok": False, "error": error_text(exc)}
 
-                scheme = (
-                    "http"
-                    if os.environ.get("RUNTIME_DISABLE_SSL", "false").lower() == "true"
-                    else "https"
-                )
-                ingress_path = (path.path or "").rstrip("/")
-                external_url = f"{scheme}://{rule.host}{ingress_path}/{endpoint}"
+                external_url = f"{subdomain_to_url(runtime_id).rstrip('/')}/{endpoint}"
                 result["external_url"] = external_url
                 parsed = urlsplit(external_url)
                 port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -355,9 +379,13 @@ spec:
                 result["external_alive"] = result["external"]["ok"]
                 return result
 
-            def inspect_runtime_safe(row, ingress, core_api, namespace):
+            def inspect_runtime_safe(
+                row, core_api, networking_api, custom_api, namespace
+            ):
                 try:
-                    return inspect_runtime(row, ingress, core_api, namespace)
+                    return inspect_runtime(
+                        row, core_api, networking_api, custom_api, namespace
+                    )
                 except Exception as exc:
                     return {
                         "runtime_id": row[0],
@@ -387,15 +415,12 @@ spec:
                     config.load_incluster_config()
                     networking_api = client.NetworkingV1Api()
                     core_api = client.CoreV1Api()
-                    ingresses = {
-                        item.metadata.name: item
-                        for item in networking_api.list_namespaced_ingress(namespace).items
-                    }
+                    custom_api = client.CustomObjectsApi()
                     with concurrent.futures.ThreadPoolExecutor(max_workers=len(rows)) as pool:
                         futures = [
                             pool.submit(
                                 inspect_runtime_safe, row,
-                                ingresses.get(f"runtime-{row[0]}"), core_api, namespace,
+                                core_api, networking_api, custom_api, namespace,
                             )
                             for row in rows
                         ]

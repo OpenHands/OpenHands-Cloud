@@ -33,6 +33,26 @@ tests:
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
+          pattern: "subdomain_to_url\\(runtime_id\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'plural="httproutes"'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "read_namespaced_ingress"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "ingress_path|rule\\.host"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
           pattern: 'checkName: "?Starting Runtime Ingress Reachability'
 
   - it: collects Traefik logs used by Replicated embedded clusters
