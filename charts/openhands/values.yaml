@@ -693,8 +693,7 @@ litellm-helm:
   ingress:
     enabled: false
     className: traefik
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-production
+    annotations: {}
     hosts:
     # REQUIRED: Update to a hostname in a DNS domain you own
     # - host: llm-proxy.example.com
