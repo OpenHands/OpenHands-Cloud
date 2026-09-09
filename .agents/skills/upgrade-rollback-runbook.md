@@ -54,6 +54,26 @@ context pointing at the target cluster are available.
 - Resource names are release-fixed (`deploy/openhands`, `openhands-postgresql-0`);
   namespace and release name are customer-specific — use `<namespace>` / the real
   release name in customer notes.
+- **Three images move on a version bump, not two:** `enterprise-server` (used by
+  `deploy/openhands`, mcp, integrations), `runtime-api`, and the sandbox
+  `agent-server` that warm runtimes run. Check all three in the diff.
+
+## Warm runtimes (handle before upgrading)
+
+A version bump usually ships a new sandbox `agent-server` image (e.g. 0.60.0 used
+`1.44.1-python`, 0.64.0 uses `1.46.0-python`). Warm pods are claimed by an **exact
+image + env match**, so this must be reconciled **before** the upgrade:
+
+- If the customer pins the tag, update it in `values.yaml` first —
+  `global.agentServerImage.tag`, or per pool
+  `runtime-api.warmRuntimes.configsByName.<name>.image`.
+- If they do not pin it, the warm pool inherits the new default automatically; no
+  change is needed.
+
+A stale pinned tag leaves the pool **unclaimable**: new conversations cold-start and
+the old sandbox keeps serving — one that lacks the fix shipped in the new image (in
+0.64.0, the per-token cost-attribution fix). Discover the new tag from the diff's
+`agent-server` image line rather than assuming it.
 
 ## Procedure
 
@@ -110,10 +130,11 @@ as safe:
   and only randomizes when the secret is absent; `helm diff` cannot resolve that
   lookup, so it shows a phantom `rootPassword`. A real upgrade preserves it. Ignore.
 
-Confirm there are no image versions other than the expected old→new pair:
+Confirm there are no image versions other than the expected old→new bumps — including
+the sandbox `agent-server` image that warm runtimes claim on an exact match:
 
 ```bash
-grep -E '^[+-].*image:' <diff> | grep -iE 'enterprise-server|runtime-api' | sort -u
+grep -E '^[+-].*image:' <diff> | grep -iE 'enterprise-server|runtime-api|agent-server' | sort -u
 ```
 
 Instruct the customer: proceed only if the diff contains only the expected changes;
@@ -139,7 +160,16 @@ verifying.
 
 Re-run the step-1 checks. Expect the images at Y, the app `alembic_version`
 **advanced** (record the from→to), and no unhealthy pods. Note whether
-`runtime_api_db` advanced too. Then have the user run a real conversation.
+`runtime_api_db` advanced too. Confirm the sandbox/warm pods run the new
+`agent-server` image, so warm claims actually hit:
+
+```bash
+kubectl get pods -n <namespace> \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\n"}{end}' \
+  | grep agent-server
+```
+
+Then have the user run a real conversation.
 
 ### 6. Rollback (only if needed)
 
@@ -169,9 +199,11 @@ Verify: images back at X, `alembic_version` back at the X value, pods healthy, n
   SQL
   ```
   Zero rows after the scale-down confirms the single scale-down is sufficient.
-- **`--clean` leaves orphan tables** that Y's migration added (they are not in the X
-  dump, so they are not dropped). They are harmless — X ignores them — but call them
-  out. Identify them by diffing current tables against the dump's `CREATE TABLE` list:
+- **`--clean` leaves orphan tables only when Y adds new tables.** Column-only
+  migrations (e.g. 155→157, which just add columns) leave none and restore cleanly.
+  When Y does add tables they are not in the X dump, so `--clean` cannot drop them;
+  they are harmless — X ignores them — but call them out. Identify them by diffing
+  current tables against the dump's `CREATE TABLE` list:
   ```bash
   kubectl exec -i openhands-postgresql-0 -n <namespace> -- bash -c \
     'PGPASSWORD=$POSTGRES_PASSWORD psql -U postgres -d openhands -tAc \
@@ -186,29 +218,35 @@ Verify: images back at X, `alembic_version` back at the X value, pods healthy, n
   (stick to `pg_dump`), and do not reference cloud-specific storage (EBS/PD) — the
   customer's platform may differ from the test rig.
 
-## Worked example (0.55.0 → 0.60.0)
+## Worked example (0.60.0 → 0.64.0)
 
 Concrete result of running this procedure once, as a reference for tone and content:
 
-- Images: `enterprise-server 1.56.0 → 1.57.0`, `runtime-api 0.8.2 → 0.9.0`.
-- App DB alembic `153 → 155`; `runtime_api_db` unchanged.
-- Substantive diff: the two image bumps; the single `openhands-runtime-api-cleanup`
-  CronJob replaced by four (`-reaper`, `-k8s-garbage`, `-snapshotter`, `-retention`);
-  Keycloak ConfigMaps gained a managed `enterprise_sso` SAML IdP, auto-disabled when
-  `enterpriseSSO.*` is unset (no effect on existing auth).
+- Images: `enterprise-server 1.57.0 → 1.59.1`, `runtime-api 0.9.0 → 0.10.0`, and the
+  sandbox/warm `agent-server 1.44.1-python → 1.46.0-python`.
+- App DB alembic `155 → 157` (adds only columns — org budget-spend snapshot, then a
+  user-disabled flag); `runtime_api_db` unchanged.
+- Substantive diff: the three image bumps; one CronJob added
+  (`openhands-app-conversation-start-task-clean`, daily at 03:00); no workloads removed.
 - Artifacts: label/version churn and the phantom `openhands-minio` secret change.
-- `--clean` orphan tables from 155: `feature_flags`, `feature_flag_rules` (harmless).
-- No new values required.
+- Rollback restored cleanly with **no orphan tables** (column-only migration).
+- No new values required — except re-pinning the warm-runtime `agent-server` tag.
 
 ## Output template (write to a single .md file)
 
 ```markdown
 # OpenHands Enterprise — Upgrade <X> → <Y>
 
-No new values are required — your existing `values.yaml` carries over.
+No new values are required — your existing `values.yaml` carries over — **except**
+the warm-runtime `agent-server` image if you pin it (see Warm runtimes below).
 
 Prereq: the `helm-diff` plugin
 (`helm plugin install https://github.com/databus23/helm-diff`).
+
+## Warm runtimes — update the pinned agent-server image (only if you pin it)
+<Y> ships agent-server `<new-tag>` (<X> used `<old-tag>`). If you pin it, set it in
+`values.yaml` **before** upgrading; if you do not pin it, the pool inherits the new
+default automatically. A stale pinned tag leaves the warm pool unclaimable.
 
 ## 1. Take a DB dump (required for rollback)
 <pg_dump --clean --if-exists command>
@@ -217,20 +255,30 @@ Prereq: the `helm-diff` plugin
 <helm diff command with --context=0 so only changed lines show>
 Proceed only if the output contains only the changes below; otherwise stop and
 investigate, then send the investigation notes to the OpenHands team.
-Expected — substantive: <discovered image bumps / workload changes>
-Expected — cosmetic (safe to ignore): label churn; phantom openhands-minio secret.
+
+Expected — substantive:
+- <image bump: enterprise-server old → new>
+- <image bump: runtime-api old → new>
+- <image bump: agent-server old → new>
+- <added/removed workloads, if any>
+
+Expected — cosmetic (safe to ignore, on ~20 resources):
+- label/version churn (`helm.sh/chart`, `app.kubernetes.io/version`)
+- phantom `openhands-minio` secret change
 
 ## 3. Upgrade
 <helm upgrade command>
 The app DB migrates automatically (alembic <from> → <to>) on startup.
 
 ## 4. Verify
-<kubectl get pods>  then log in and start a conversation.
+<kubectl get pods>; confirm sandbox pods run agent-server `<new-tag>`, then log in
+and start a conversation.
 
 ## Rollback (only if needed)
 Restore the pre-upgrade dump, then roll back the release:
 <scale down / psql restore / helm rollback commands>
-> Note: --clean does not drop the tables <Y> added (<orphans>); <X> ignores them.
+> Note: if <Y> added tables, --clean does not drop them (<orphans>) and <X> ignores
+> them; column-only migrations leave no orphans.
 ```
 
 Keep the final notes lean: only what the customer runs and what to expect.
