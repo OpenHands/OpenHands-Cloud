@@ -488,6 +488,7 @@ spec:
       enabled: true
       persistence:
         enabled: true
+        storageClass: openebs-hostpath
       resources:
         requests:
           cpu: "1"
