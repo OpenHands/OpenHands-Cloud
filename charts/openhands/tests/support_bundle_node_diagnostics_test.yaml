@@ -1,0 +1,39 @@
+suite: support bundle node diagnostics
+templates:
+  - troubleshoot/preflights.yaml
+  - troubleshoot/secrets.yaml
+  - troubleshoot/support-bundle.yaml
+tests:
+  - it: captures node memory metrics and bounded kernel history
+    template: troubleshoot/secrets.yaml
+    set:
+      enabled: true
+      replicated.enabled: true
+    asserts:
+      - documentIndex: 1
+        isKind:
+          of: Secret
+      - documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '(?m)^  runHostCollectorsInPod: true$'
+      - documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '(?m)^    - nodeMetrics: \{\}$'
+      - documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '(?m)^  hostCollectors:$'
+      - documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '(?m)^        collectorName: kernel-messages$'
+      - documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '(?m)^        since: "14 days ago"$'
+      - documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '(?m)^        lines: 50000$'
