@@ -1300,6 +1300,13 @@ automation:
     name: automation-service-key
     key: automation-service-key
   
+  # Git sync wrapping key from K8s secret: encrypts each organization's git
+  # token and repo encryption key at rest. Optional in the pod spec, so the
+  # pods start before the secret exists.
+  gitSyncSecretFromSecret:
+    name: automation-git-sync-secret
+    key: git-sync-secret
+  
   # Datadog configuration
   datadog:
     env: "dev"

@@ -177,6 +177,12 @@ automationWebhookSecretFromSecret:
   name: automation-webhook-secret
   key: webhook-secret
 
+# Git sync wrapping key from K8s secret
+# Encrypts each organization's git token and repo encryption key at rest
+gitSyncSecretFromSecret:
+  name: automation-git-sync-secret
+  key: git-sync-secret
+
 # Datadog configuration
 datadog:
   env: "dev"

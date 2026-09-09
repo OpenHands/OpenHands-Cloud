@@ -107,6 +107,18 @@
       name: {{ .Values.automationWebhookSecretFromSecret.name }}
       key: {{ .Values.automationWebhookSecretFromSecret.key }}
 {{- end }}
+# Git sync wrapping key: encrypts each organization's git token and repo
+# encryption key at rest. Optional so pods start before the secret exists;
+# until then the service refuses to store git sync secrets (503) rather than
+# fall back to a per-pod key file the other replicas could not read.
+{{- if .Values.gitSyncSecretFromSecret }}
+- name: AUTOMATION_GIT_SYNC_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.gitSyncSecretFromSecret.name }}
+      key: {{ .Values.gitSyncSecretFromSecret.key }}
+      optional: true
+{{- end }}
 # Laminar (Laminar) monitoring/analytics
 {{- if .Values.lmnrApiKeyFromSecret }}
 - name: LMNR_PROJECT_API_KEY

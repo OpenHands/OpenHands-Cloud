@@ -36,12 +36,17 @@ spec:
       affinity:
         {{- . | nindent 8 }}
       {{- end }}
-      {{- if .Values.caBundle.enabled }}
       volumes:
+        # Scratch space for git sync checkouts (AUTOMATION_WORKSPACE_BASE
+        # defaults to /workspace, which the image does not create). Pods keep
+        # no state across restarts; a fresh pod re-clones on its first cycle.
+        - name: workspace
+          emptyDir: {}
+        {{- if .Values.caBundle.enabled }}
         - name: openhands-ca-bundle
           configMap:
             name: {{ .Values.caBundle.name }}
-      {{- end }}
+        {{- end }}
       initContainers:
       - name: migrate
         image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
@@ -94,8 +99,10 @@ spec:
         - name: REQUESTS_CA_BUNDLE
           value: {{ .Values.caBundle.mountPath }}/{{ .Values.caBundle.key }}
         {{- end }}
-        {{- if .Values.caBundle.enabled }}
         volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        {{- if .Values.caBundle.enabled }}
         - name: openhands-ca-bundle
           mountPath: {{ .Values.caBundle.mountPath }}
           readOnly: true
