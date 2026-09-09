@@ -18,6 +18,23 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### Organization condenser defaults
+
+Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. The effective threshold cannot exceed the model input limit and does not change the model context window. Event-count condensation may still occur first.
+
+```yaml
+orgDefaults:
+  condenser:
+    maxTokens: 200000
+    applyToExisting: true
+    overwriteExisting: true
+```
+
+This is rollout reconciliation, not continuous enforcement. New applicable OpenHands org settings receive the configured value. Existing org rows are only updated when `applyToExisting: true`; existing non-null values are only replaced when `overwriteExisting: true`. Missing and JSON-null `condenser.max_tokens` values are treated as unset.
+
+`overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later stops future defaulting/reconciliation but does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
+
+
 ### Email (Resend)
 
 To enable organization invitation emails via Resend, set `resend.enabled: true` and create a Kubernetes secret named `resend-api-key` with key `resend-api-key` containing your Resend API key. The secret name can be overridden with `resend.auth.existingSecret`.

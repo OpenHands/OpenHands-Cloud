@@ -41,6 +41,19 @@ dailyConversationLimit: null
 # a plus-address suffix (for example, name+test@example.com and name@example.com).
 duplicateEmailCheck: true
 
+
+# Organization-default condenser settings. These seed newly-created applicable
+# OpenHands org settings. Existing org rows are only reconciled when explicitly
+# enabled below because that mutates persisted database settings.
+orgDefaults:
+  condenser:
+    # Adds a token-based condensation threshold; null preserves app/SDK defaults.
+    maxTokens: null
+    # Mutate existing org rows during rollout reconciliation.
+    applyToExisting: false
+    # Force existing non-null org-level values to maxTokens during reconciliation.
+    overwriteExisting: false
+
 datadog:
   enabled: false
   env: "dev" # Default environment, can be overridden

@@ -34,6 +34,14 @@
 - name: OH_DAILY_CONVERSATION_LIMIT
   value: {{ .Values.dailyConversationLimit | quote }}
 {{- end }}
+{{- with .Values.orgDefaults.condenser.maxTokens }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+  value: {{ . | quote }}
+{{- end }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+  value: {{ .Values.orgDefaults.condenser.applyToExisting | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+  value: {{ .Values.orgDefaults.condenser.overwriteExisting | quote }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
