@@ -253,6 +253,8 @@ spec:
       ingress:
         enabled: true
         className: traefik
+        # Replicated uses the customer-uploaded openhands-tls Secret.
+        annotations: null
         hosts:
           - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
             paths:
