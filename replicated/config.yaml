@@ -734,28 +734,6 @@ spec:
           type: bool
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
-        - name: org_condenser_max_tokens
-          title: Organization Condenser Token Threshold
-          help_text: 'Optional. Adds a token-based condensation threshold for applicable OpenHands organization settings. The effective threshold cannot exceed the model input limit and does not change the model context window. Leave blank to preserve app defaults.'
-          type: text
-          default: ""
-          validation:
-            regex:
-              pattern: '^$|^[1-9][0-9]*$'
-              message: Must be blank or a positive base-10 integer.
-        - name: org_condenser_apply_to_existing
-          title: Apply Condenser Threshold to Existing Organizations
-          help_text: 'Apply this value to existing applicable OpenHands organization settings during rollout reconciliation. This mutates persisted organization settings. Missing and JSON-null values are treated as unset.'
-          type: bool
-          default: "0"
-          when: 'repl{{ ne (ConfigOption "org_condenser_max_tokens") "" }}'
-        - name: org_condenser_overwrite_existing
-          title: Overwrite Existing Organization Condenser Thresholds
-          help_text: 'Overwrite mode replaces existing org-level max_tokens values and cannot restore prior values unless you have a database backup.'
-          type: bool
-          default: "0"
-          when: 'repl{{ and (ne (ConfigOption "org_condenser_max_tokens") "") (ConfigOptionEquals "org_condenser_apply_to_existing" "1") }}'
-
 
     - name: authentication_security
       title: Authentication Security

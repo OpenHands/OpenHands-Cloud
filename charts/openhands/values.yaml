@@ -48,6 +48,7 @@ duplicateEmailCheck: true
 orgDefaults:
   condenser:
     # Adds a token-based condensation threshold; null preserves app/SDK defaults.
+    # Must be between 1 and 1,000,000 when set.
     maxTokens: null
     # Mutate existing org rows during rollout reconciliation.
     applyToExisting: false

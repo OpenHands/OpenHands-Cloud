@@ -3,13 +3,31 @@ templates:
   - deployment.yaml
   - litellm-config-script.yaml
 tests:
-  - it: leaves token threshold unset by default
+  - it: leaves org condenser env unset by default
     set:
       enabled: true
     asserts:
       - template: deployment.yaml
         notExists:
           path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING")]
+
+  - it: wires false rollout flags when only a threshold is configured
+    set:
+      enabled: true
+      orgDefaults.condenser.maxTokens: 200000
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+            value: "200000"
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env

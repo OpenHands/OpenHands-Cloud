@@ -20,7 +20,7 @@ Make sure to update all values marked with "REQUIRED" comments.
 
 ### Organization condenser defaults
 
-Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. The effective threshold cannot exceed the model input limit and does not change the model context window. Event-count condensation may still occur first.
+Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Values must be between 1 and 1,000,000 tokens; higher values are rejected at render time instead of relying on backend clamping to the model input limit. The effective threshold cannot exceed the model input limit and does not change the model context window. Event-count condensation may still occur first.
 
 ```yaml
 orgDefaults:
@@ -30,9 +30,11 @@ orgDefaults:
     overwriteExisting: true
 ```
 
-This is rollout reconciliation, not continuous enforcement. New applicable OpenHands org settings receive the configured value. Existing org rows are only updated when `applyToExisting: true`; existing non-null values are only replaced when `overwriteExisting: true`. Missing and JSON-null `condenser.max_tokens` values are treated as unset.
+New applicable OpenHands org settings receive the configured value. Existing org rows are only updated when `applyToExisting: true`; existing non-null values are only replaced when `overwriteExisting: true`. Missing and JSON-null `condenser.max_tokens` values are treated as unset.
 
-`overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later stops future defaulting/reconciliation but does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
+Reconciliation runs on every app start while these values remain in the release. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction can overwrite org-admin UI changes made after the initial rollout. Remove `applyToExisting`/`overwriteExisting` after the rollout completes, or remove `orgDefaults.condenser.maxTokens` to stop future defaulting/reconciliation.
+
+`overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
 
 
 ### Email (Resend)

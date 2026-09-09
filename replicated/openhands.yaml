@@ -41,12 +41,6 @@ spec:
 
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
-    orgDefaults:
-      condenser:
-        maxTokens: repl{{ $orgCondenserMaxTokens := trim (ConfigOption "org_condenser_max_tokens") }}repl{{ if $orgCondenserMaxTokens }}repl{{ $orgCondenserMaxTokens }}repl{{ else }}nullrepl{{ end }}
-        applyToExisting: repl{{ and (ne (ConfigOption "org_condenser_max_tokens") "") (ConfigOptionEquals "org_condenser_apply_to_existing" "1") }}
-        overwriteExisting: repl{{ and (ne (ConfigOption "org_condenser_max_tokens") "") (ConfigOptionEquals "org_condenser_apply_to_existing" "1") (ConfigOptionEquals "org_condenser_overwrite_existing" "1") }}
-
     env:
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
