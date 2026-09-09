@@ -20,6 +20,7 @@ REPLICATED_CONFIG = REPO_ROOT / "replicated" / "config.yaml"
 
 SEPARATOR_OPTION = '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
 BASE_OPTION = '{{repl ConfigOption "computed_runtime_base_hostname" }}'
+API_HOST_OPTION = '{{repl ConfigOption "computed_runtime_api_hostname" }}'
 
 
 @pytest.fixture(scope="module")
@@ -55,6 +56,14 @@ def test_installer_sets_the_separator_rather_than_inheriting_a_chart_default(
 
     assert runtime_api_env["RUNTIME_URL_SEPARATOR"] == SEPARATOR_OPTION
     assert runtime_api_env["RUNTIME_BASE_URL"] == BASE_OPTION
+
+
+def test_runtime_api_advertises_its_own_ingress_for_storage_callbacks(
+    helm_chart_cr: dict,
+) -> None:
+    runtime_api_env = helm_chart_cr["spec"]["values"]["runtime-api"]["env"]
+
+    assert runtime_api_env["RUNTIME_API_BASE_URL"] == f"https://{API_HOST_OPTION}"
 
 
 def test_app_sandbox_url_is_built_from_the_same_separator_and_base(

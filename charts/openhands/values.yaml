@@ -221,8 +221,13 @@ bitbucket:
   auth:
     existingSecret: bitbucket-app
 
+# Enterprise SSO (SAML). Enabling this advertises the login provider. When an
+# HTTPS metadata URL is also set, the keycloak-config init container manages the
+# enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
+  displayName: "Company SSO"
+  idpMetadataUrl: ""
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any
 # secret-backed config changes this value, which changes the openhands pod
@@ -334,6 +339,20 @@ proactiveConvoClean:
     limits:
       memory: 512Mi
       cpu: 200m
+
+appConversationStartTaskClean:
+  enabled: true
+  schedule: "0 3 * * *" # Daily at 3 AM UTC
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
 
 resendSync:
   enabled: false
@@ -939,7 +958,9 @@ runtime-api:
     # Map form keyed by config name; see runtime-api subchart values for the
     # legacy `configs` list and precedence rules.
     configsByName:
+      # Keep the map key stable for existing Helm overrides.
       default:
+        name: v1_current
         # image omitted -> defaults to global.agentServerImage (repo:tag).
         # Must match the app's sandbox spec working_dir, or no warm pod is ever claimable.
         working_dir: "/workspace/project"
@@ -1312,7 +1333,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.43.1-python
+    tag: 1.45.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1555,3 +1576,7 @@ agent-canvas:
 
   staticServer:
     basePath: /canvas
+    # Disable PostHog product telemetry in the pre-built canvas frontend at
+    # runtime, via AGENT_CANVAS_DISABLE_TELEMETRY=1. Defaults to true for
+    # self-hosted deployments; a SaaS deployment can override to false.
+    disableTelemetry: true

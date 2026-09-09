@@ -1,0 +1,42 @@
+# HTTP-01 ClusterIssuer for the flat per-host certs (app, auth, runtime-api).
+# The solver validates over the Traefik NLB, so *.$BASE_DOMAIN must already
+# resolve to the NLB before this can issue.
+#
+# Replace the email before applying. Swap the server line for the staging
+# endpoint (https://acme-staging-v02.api.letsencrypt.org/directory) while
+# iterating, to avoid Let's Encrypt rate limits.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: you@example.com
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+# OPTIONAL: DNS-01 ClusterIssuer for the sandbox *wildcard* cert.
+# HTTP-01 cannot issue wildcards, so subdomain sandbox routing
+# ({id}-runtime.$BASE_DOMAIN) needs this. Requires an IRSA-bound service
+# account (or ambient node role) with Route53 change permission on the zone.
+# Fill in region and hostedZoneID. NOT yet validated end to end on EKS.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-dns01
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: you@example.com
+    privateKeySecretRef:
+      name: letsencrypt-dns01-account-key
+    solvers:
+      - dns01:
+          route53:
+            region: us-east-1
+            hostedZoneID: ZXXXXXXXXXXXXX

@@ -21,3 +21,21 @@ tests:
       - notMatchRegex:
           path: data["warm-runtimes.json"]
           pattern: fuse_s3_mount
+
+  - it: preserves legacy default-key overrides while rendering v1_current
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.configsByName.default.count: 4
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "v1_current"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"working_dir": "/workspace/project"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 4'
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "default"'

@@ -19,6 +19,10 @@ spec:
       {{- include "runtime-api.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "runtime-api.selectorLabels" . | nindent 8 }}
         {{- /* Distinguishes API pods from the warm-runtimes CronJob pods

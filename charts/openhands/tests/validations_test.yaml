@@ -45,6 +45,25 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: fails when SSO metadata is set without chart-managed realm provisioning
+    set:
+      enterpriseSSO.enabled: true
+      enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually."
+  - it: allows manually managed SSO with external Keycloak
+    set:
+      enterpriseSSO.enabled: true
+      enterpriseSSO.idpMetadataUrl: ""
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
   # The bundled MinIO bucket job runs on post-upgrade too, so purge: true wipes
   # conversation and session data on every ordinary upgrade of a persistent
   # install. These cases pin the guard that rejects it.

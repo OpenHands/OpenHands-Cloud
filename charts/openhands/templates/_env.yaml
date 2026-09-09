@@ -671,6 +671,11 @@ the app UI and webhook users are matched by email. */}}
       key: client-secret
 {{- end }}
 
+{{- if .Values.enterpriseSSO.enabled }}
+- name: ENABLE_ENTERPRISE_SSO
+  value: "true"
+{{- end }}
+
 {{- if .Values.automationServiceKey.enabled }}
 - name: AUTOMATIONS_SERVICE_KEY
   valueFrom:

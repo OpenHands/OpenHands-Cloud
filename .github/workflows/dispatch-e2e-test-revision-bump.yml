@@ -1,0 +1,62 @@
+# Tells OpenHands/saas-deploy to bump the e2e test revision its openhands-e2e
+# development chart is pinned to, whenever a change under e2e_tests/ lands here.
+#
+# This repo is public and saas-deploy is private, so we cannot call a reusable
+# workflow over there. We send a repository_dispatch instead. The payload is
+# provenance and requested state, not authorisation: saas-deploy authorises on
+# this dispatcher App's identity and opens a pull request a human still merges.
+#
+# See docs/automated-e2e-test-revision-bumps.md.
+
+name: Dispatch e2e test revision bump
+
+run-name: "Dispatch e2e test revision bump (${{ github.sha }})"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'e2e_tests/**'
+  workflow_dispatch:
+
+concurrency:
+  group: dispatch-e2e-test-revision-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch e2e test revision bump
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Holds the dispatcher App credentials, and is restricted to main so a run
+    # from any other ref cannot reach them.
+    environment: e2e-test-revision-bump-dispatcher
+    steps:
+      - name: Mint saas-deploy dispatcher token
+        id: dispatcher-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.E2E_TEST_REVISION_BUMP_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.E2E_TEST_REVISION_BUMP_DISPATCHER_APP_PRIVATE_KEY }}
+          owner: OpenHands
+          repositories: saas-deploy
+          permission-contents: write
+
+      - name: Dispatch bump-e2e-test-revision
+        env:
+          GH_TOKEN: ${{ steps.dispatcher-token.outputs.token }}
+          REVISION: ${{ github.sha }}
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          gh api \
+            --method POST \
+            /repos/OpenHands/saas-deploy/dispatches \
+            -f event_type=bump-e2e-test-revision \
+            -f "client_payload[revision]=${REVISION}" \
+            -f "client_payload[environment]=development" \
+            -f "client_payload[source-repo]=${SOURCE_REPO}"
+
+          echo "Requested a development e2e test revision bump to ${REVISION}." >> "$GITHUB_STEP_SUMMARY"
