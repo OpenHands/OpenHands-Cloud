@@ -20,7 +20,9 @@ Make sure to update all values marked with "REQUIRED" comments.
 
 ### Organization condenser defaults
 
-Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Values must be between 1 and 1,000,000 tokens; higher values are rejected at render time instead of relying on backend clamping to the model input limit. The effective threshold cannot exceed the model input limit and does not change the model context window. Event-count condensation may still occur first.
+Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Any positive integer is accepted. Condensation triggers on the smaller of this value and the agent LLM's effective input limit, so a value above that limit has no effect; it does not change the model context window, and event-count condensation may still occur first.
+
+These values only take effect from the app version that reads the `OPENHANDS_ORG_DEFAULTS_CONDENSER_*` environment variables. On earlier app versions they render into the pod but do nothing.
 
 ```yaml
 orgDefaults:
@@ -35,7 +37,6 @@ New applicable OpenHands org settings receive the configured value. Existing org
 Reconciliation runs on every app start while these values remain in the release. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction can overwrite org-admin UI changes made after the initial rollout. Remove `applyToExisting`/`overwriteExisting` after the rollout completes, or remove `orgDefaults.condenser.maxTokens` to stop future defaulting/reconciliation.
 
 `overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
-
 
 ### Email (Resend)
 

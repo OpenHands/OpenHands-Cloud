@@ -15,10 +15,11 @@ are never rendered, so a server-less release must not trip them.
 {{- if and .Values.enabled .Values.enterpriseSSO.idpMetadataUrl (not (include "openhands.keycloakProvisionRealm" .)) -}}
 {{- fail "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually." -}}
 {{- end -}}
-{{- if and .Values.enabled (eq .Values.orgDefaults.condenser.maxTokens nil) (or .Values.orgDefaults.condenser.applyToExisting .Values.orgDefaults.condenser.overwriteExisting) -}}
+{{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict -}}
+{{- if and .Values.enabled (eq $orgCondenser.maxTokens nil) (or $orgCondenser.applyToExisting $orgCondenser.overwriteExisting) -}}
 {{- fail "orgDefaults.condenser.maxTokens must be set before applyToExisting or overwriteExisting can be enabled." -}}
 {{- end -}}
-{{- if and .Values.enabled .Values.orgDefaults.condenser.overwriteExisting (not .Values.orgDefaults.condenser.applyToExisting) -}}
+{{- if and .Values.enabled $orgCondenser.overwriteExisting (not $orgCondenser.applyToExisting) -}}
 {{- fail "orgDefaults.condenser.overwriteExisting requires orgDefaults.condenser.applyToExisting=true because overwrite mode only runs while reconciling existing organizations." -}}
 {{- end -}}
 

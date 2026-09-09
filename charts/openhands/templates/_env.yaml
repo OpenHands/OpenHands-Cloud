@@ -1,5 +1,6 @@
 {{- define "openhands.env.defaults" }}
 {{- $integrations := .Values.integrations | default dict }}
+{{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
   value: remote
 - name: OH_SANDBOX_SPEC_KIND
@@ -34,13 +35,13 @@
 - name: OH_DAILY_CONVERSATION_LIMIT
   value: {{ .Values.dailyConversationLimit | quote }}
 {{- end }}
-{{- if ne .Values.orgDefaults.condenser.maxTokens nil }}
+{{- if ne $orgCondenser.maxTokens nil }}
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
-  value: {{ .Values.orgDefaults.condenser.maxTokens | quote }}
+  value: {{ $orgCondenser.maxTokens | quote }}
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
-  value: {{ .Values.orgDefaults.condenser.applyToExisting | quote }}
+  value: {{ $orgCondenser.applyToExisting | default false | quote }}
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
-  value: {{ .Values.orgDefaults.condenser.overwriteExisting | quote }}
+  value: {{ $orgCondenser.overwriteExisting | default false | quote }}
 {{- end }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}

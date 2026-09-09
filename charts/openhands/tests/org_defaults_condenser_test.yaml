@@ -17,6 +17,25 @@ tests:
         notExists:
           path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING")]
 
+  - it: renders without org condenser env when the orgDefaults block is null
+    set:
+      enabled: true
+      orgDefaults: null
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS")]
+
+  - it: renders without org condenser env when the condenser block is null
+    set:
+      enabled: true
+      orgDefaults:
+        condenser: null
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS")]
+
   - it: wires false rollout flags when only a threshold is configured
     set:
       enabled: true

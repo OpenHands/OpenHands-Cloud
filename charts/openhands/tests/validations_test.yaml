@@ -87,6 +87,19 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: renders no resources when the orgDefaults block is null
+    set:
+      orgDefaults: null
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when the org condenser block is null
+    set:
+      orgDefaults:
+        condenser: null
+    asserts:
+      - hasDocuments:
+          count: 0
 
   # The bundled MinIO bucket job runs on post-upgrade too, so purge: true wipes
   # conversation and session data on every ordinary upgrade of a persistent

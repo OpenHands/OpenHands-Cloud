@@ -32,12 +32,11 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "orgDefaults/condenser/maxTokens"
-  - it: rejects orgDefaults.condenser.maxTokens above the maximum
+  - it: accepts orgDefaults.condenser.maxTokens above one million
     set:
-      orgDefaults.condenser.maxTokens: 1000001
+      orgDefaults.condenser.maxTokens: 2000000
     asserts:
-      - failedTemplate:
-          errorPattern: "orgDefaults/condenser/maxTokens.*maximum"
+      - notFailedTemplate: {}
   - it: rejects a non-integer orgDefaults.condenser.maxTokens
     set:
       orgDefaults.condenser.maxTokens: "200000"

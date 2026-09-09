@@ -9,12 +9,12 @@
     "dailyConversationLimit": { "type": ["integer", "null"] },
     "duplicateEmailCheck": { "type": "boolean" },
     "orgDefaults": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "condenser": {
-          "type": "object",
+          "type": ["object", "null"],
           "properties": {
-            "maxTokens": { "type": ["integer", "null"], "minimum": 1, "maximum": 1000000 },
+            "maxTokens": { "type": ["integer", "null"], "minimum": 1 },
             "applyToExisting": { "type": "boolean" },
             "overwriteExisting": { "type": "boolean" }
           }
