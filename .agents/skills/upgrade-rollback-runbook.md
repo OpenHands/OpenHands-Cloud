@@ -1,6 +1,17 @@
 ---
 name: upgrade-rollback-runbook
-description: Produce customer-facing upgrade AND rollback notes (with a helm diff review gate) for an OpenHands Enterprise Helm chart bump from an older version X to a newer version Y. Use when the user asks to "write upgrade instructions", "create an upgrade/rollback runbook", "prepare upgrade notes for the customer", "helm diff for an upgrade", "upgrade OpenHands from X to Y", or "how do we roll back a chart upgrade". Pairs with the cluster-provisioning skills (eks-install, gke-install, local-kind-install): those stand up a running OpenHands Enterprise install, and this skill drives the upgrade/rollback on top of whichever one was used. Cloud-agnostic - it operates only through kubectl/helm and favors no provider. Discovers the version-specific facts (image bumps, alembic schema delta, orphan tables) rather than assuming them.
+description: >-
+  Produce customer-facing upgrade AND rollback notes (with a helm diff review gate)
+  for an OpenHands Enterprise Helm chart bump from an older version X to a newer
+  version Y. Use when the user asks to "write upgrade instructions", "create an
+  upgrade/rollback runbook", "prepare upgrade notes for the customer", "helm diff
+  for an upgrade", "upgrade OpenHands from X to Y", or "how do we roll back a chart
+  upgrade". Pairs with the cluster-provisioning skills (eks-install, gke-install,
+  local-kind-install): those stand up a running OpenHands Enterprise install, and
+  this skill drives the upgrade/rollback on top of whichever one was used.
+  Cloud-agnostic - it operates only through kubectl/helm and favors no provider.
+  Discovers the version-specific facts (image bumps, alembic schema delta, orphan
+  tables) rather than assuming them.
 ---
 
 # OpenHands Enterprise upgrade + rollback runbook
