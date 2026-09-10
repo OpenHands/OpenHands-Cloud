@@ -576,11 +576,13 @@ spec:
             from psycopg2.extras import RealDictCursor
 
             output = {
+                "collector_version": 1,
                 "schema_version": None,
                 "org_budget_settings": [],
                 "org_user_budget_overrides": [],
                 "recent_budget_maintenance_tasks": [],
                 "litellm_applied_state": [],
+                "summary": {},
                 "collector_errors": [],
             }
 
@@ -718,7 +720,7 @@ spec:
                 except (TypeError, ValueError):
                     return False
 
-            def desired_member_budget(budget, user_id):
+            def desired_member_budget(budget, user_id, live_spend):
                 if not budget.get("enabled"):
                     return {"status": "resolved", "max_budget_in_team": None}
                 override = overrides_by_member.get((str(budget["org_id"]), user_id))
@@ -733,8 +735,19 @@ spec:
                     return {"status": "resolved", "max_budget_in_team": None}
                 baselines = budget.get("user_cycle_start_spend") or {}
                 if user_id not in baselines:
+                    known_member_ids = budget.get("litellm_known_member_ids")
+                    if (
+                        "litellm_known_member_ids" in budget
+                        and user_id not in (known_member_ids or [])
+                    ):
+                        return {
+                            "status": "resolved_new_member_from_live_spend",
+                            "max_budget_in_team": (
+                                float(live_spend or 0) + float(effective_limit)
+                            ),
+                        }
                     return {
-                        "status": "unknown_missing_cycle_baseline",
+                        "status": "unknown_missing_known_member_cycle_baseline",
                         "max_budget_in_team": None,
                     }
                 return {
@@ -779,7 +792,9 @@ spec:
                         ):
                             continue
                         user_id = str(member["user_id"])
-                        desired = desired_member_budget(budget, user_id)
+                        desired = desired_member_budget(
+                            budget, user_id, member.get("spend")
+                        )
                         applied = member.get("max_budget_in_team")
                         member_results.append(
                             {
@@ -791,7 +806,7 @@ spec:
                                 "desired_budget_status": desired["status"],
                                 "budget_matches": (
                                     budgets_match(desired["max_budget_in_team"], applied)
-                                    if desired["status"] == "resolved"
+                                    if desired["status"].startswith("resolved")
                                     else None
                                 ),
                                 "is_enterprise_org_member": user_id in enterprise_member_ids,
@@ -824,6 +839,56 @@ spec:
                 output["litellm_applied_state"] = list(
                     pool.map(fetch_applied_state, budget_orgs)
                 )
+
+            budget_by_org = {
+                str(budget["org_id"]): budget
+                for budget in output["org_budget_settings"]
+            }
+            degraded_org_ids = []
+            for applied_state in output["litellm_applied_state"]:
+                budget = budget_by_org[applied_state["org_id"]]
+                reasons = []
+                if applied_state.get("error"):
+                    reasons.append("litellm_applied_state_unavailable")
+                else:
+                    if not applied_state.get("team_budget_matches", False):
+                        reasons.append("team_budget_mismatch")
+                    if any(
+                        member.get("budget_matches") is False
+                        for member in applied_state.get("members", [])
+                    ):
+                        reasons.append("member_budget_mismatch")
+                    if applied_state.get("members_missing_from_litellm"):
+                        reasons.append("members_missing_from_litellm")
+                    if applied_state.get("unexpected_litellm_member_ids"):
+                        reasons.append("unexpected_litellm_members")
+                if budget.get("known_members_missing_cycle_baseline"):
+                    reasons.append("known_member_cycle_baseline_missing")
+                if budget.get("litellm_last_sync_status") == "error":
+                    reasons.append("last_budget_sync_failed")
+                applied_state["degraded_reasons"] = reasons
+                applied_state["degraded"] = bool(reasons)
+                if reasons:
+                    degraded_org_ids.append(applied_state["org_id"])
+
+            maintenance_tasks_with_errors = []
+            for task in output["recent_budget_maintenance_tasks"]:
+                info = task.get("info") or {}
+                if str(task.get("status", "")).endswith("ERROR") or (
+                    isinstance(info, dict) and (info.get("error_count") or 0) > 0
+                ):
+                    maintenance_tasks_with_errors.append(task.get("id"))
+
+            output["summary"] = {
+                "budget_org_count": len(output["org_budget_settings"]),
+                "litellm_org_limit": 200,
+                "litellm_orgs_truncated": len(output["org_budget_settings"]) > 200,
+                "degraded_org_count": len(degraded_org_ids),
+                "degraded_org_ids": degraded_org_ids,
+                "recent_maintenance_task_ids_with_errors": (
+                    maintenance_tasks_with_errors
+                ),
+            }
 
             conn.close()
             print(json.dumps(output, indent=2, default=str, sort_keys=True))

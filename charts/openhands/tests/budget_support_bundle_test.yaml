@@ -37,6 +37,16 @@ tests:
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
+          pattern: 'known_member_cycle_baseline_missing'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'degraded_reasons'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
           pattern: '/team/info\?'
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
