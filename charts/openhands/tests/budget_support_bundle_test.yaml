@@ -47,6 +47,16 @@ tests:
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
+          pattern: 'members_without_expected_private_budget'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'litellm_budget_table'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
           pattern: '/team/info\?'
       - template: troubleshoot/secrets.yaml
         documentIndex: 1

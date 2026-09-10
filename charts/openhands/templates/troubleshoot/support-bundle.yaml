@@ -722,17 +722,29 @@ spec:
 
             def desired_member_budget(budget, user_id, live_spend):
                 if not budget.get("enabled"):
-                    return {"status": "resolved", "max_budget_in_team": None}
+                    return {
+                        "status": "resolved",
+                        "max_budget_in_team": None,
+                        "requires_private_budget": False,
+                    }
                 override = overrides_by_member.get((str(budget["org_id"]), user_id))
                 if override and override.get("is_disabled"):
-                    return {"status": "resolved", "max_budget_in_team": None}
+                    return {
+                        "status": "resolved",
+                        "max_budget_in_team": None,
+                        "requires_private_budget": False,
+                    }
                 effective_limit = (
                     override.get("monthly_limit")
                     if override is not None
                     else budget.get("default_user_monthly_limit")
                 )
                 if effective_limit is None:
-                    return {"status": "resolved", "max_budget_in_team": None}
+                    return {
+                        "status": "resolved",
+                        "max_budget_in_team": None,
+                        "requires_private_budget": False,
+                    }
                 baselines = budget.get("user_cycle_start_spend") or {}
                 if user_id not in baselines:
                     known_member_ids = budget.get("litellm_known_member_ids")
@@ -740,21 +752,30 @@ spec:
                         "litellm_known_member_ids" in budget
                         and user_id not in (known_member_ids or [])
                     ):
+                        if live_spend is None:
+                            return {
+                                "status": "unknown_missing_live_spend",
+                                "max_budget_in_team": None,
+                                "requires_private_budget": True,
+                            }
                         return {
                             "status": "resolved_new_member_from_live_spend",
                             "max_budget_in_team": (
-                                float(live_spend or 0) + float(effective_limit)
+                                float(live_spend) + float(effective_limit)
                             ),
+                            "requires_private_budget": True,
                         }
                     return {
                         "status": "unknown_missing_known_member_cycle_baseline",
                         "max_budget_in_team": None,
+                        "requires_private_budget": True,
                     }
                 return {
                     "status": "resolved",
                     "max_budget_in_team": (
                         float(baselines[user_id]) + float(effective_limit)
                     ),
+                    "requires_private_budget": True,
                 }
 
             def fetch_applied_state(budget):
@@ -774,38 +795,109 @@ spec:
                     with urllib.request.urlopen(request, timeout=5) as response:
                         payload = json.load(response)
                     team = payload.get("team_info") or {}
-                    memberships = payload.get("team_memberships") or team.get("members_with_roles") or []
-                    enterprise_member_ids = set(budget["enterprise_member_ids"])
-                    applied_member_ids = {
+                    memberships = [
+                        member
+                        for member in (payload.get("team_memberships") or [])
+                        if isinstance(member, dict)
+                        and member.get("user_id")
+                        and member.get("user_id") != "default_user_id"
+                    ]
+                    memberships_by_user_id = {
+                        str(member["user_id"]): member for member in memberships
+                    }
+                    roster_member_ids = {
                         str(member.get("user_id"))
-                        for member in memberships
+                        for member in (team.get("members_with_roles") or [])
                         if isinstance(member, dict)
                         and member.get("user_id")
                         and member.get("user_id") != "default_user_id"
                     }
-                    member_results = []
-                    for member in memberships:
+                    # LiteLLM can have a roster member without a TeamMembership
+                    # row until a private cap is assigned. Include both sources.
+                    litellm_member_ids = roster_member_ids | set(
+                        memberships_by_user_id
+                    )
+                    key_spend_by_user_id = {}
+                    for key in payload.get("keys") or []:
+                        if not isinstance(key, dict) or key.get("team_id") != org_id:
+                            continue
+                        user_id = key.get("user_id")
+                        spend = key.get("spend")
                         if (
-                            not isinstance(member, dict)
-                            or not member.get("user_id")
-                            or member.get("user_id") == "default_user_id"
+                            not user_id
+                            or isinstance(spend, bool)
+                            or not isinstance(spend, (int, float))
                         ):
                             continue
-                        user_id = str(member["user_id"])
-                        desired = desired_member_budget(
-                            budget, user_id, member.get("spend")
+                        key_spend_by_user_id[str(user_id)] = (
+                            key_spend_by_user_id.get(str(user_id), 0.0) + float(spend)
                         )
-                        applied = member.get("max_budget_in_team")
+                    enterprise_member_ids = set(budget["enterprise_member_ids"])
+                    default_member_budget_id = (team.get("metadata") or {}).get(
+                        "team_member_budget_id"
+                    )
+                    member_results = []
+                    members_without_expected_private_budget = []
+                    for user_id in sorted(litellm_member_ids):
+                        member = memberships_by_user_id.get(user_id)
+                        if member is None:
+                            spend = key_spend_by_user_id.get(user_id)
+                            applied = team.get("max_budget")
+                            applied_budget_source = "team_shared_roster_only"
+                            has_private_budget = False
+                        else:
+                            spend = member.get("spend")
+                            budget_id = member.get("budget_id")
+                            uses_shared_budget = budget_id is None or (
+                                default_member_budget_id is not None
+                                and budget_id == default_member_budget_id
+                            )
+                            if uses_shared_budget:
+                                applied = team.get("max_budget")
+                                applied_budget_source = "team_shared_membership"
+                                has_private_budget = False
+                            else:
+                                budget_table = member.get("litellm_budget_table")
+                                applied = (
+                                    budget_table.get("max_budget")
+                                    if isinstance(budget_table, dict)
+                                    else None
+                                )
+                                applied_budget_source = "private_membership"
+                                has_private_budget = True
+                        desired = desired_member_budget(
+                            budget, user_id, spend
+                        )
+                        if (
+                            desired["requires_private_budget"]
+                            and not has_private_budget
+                            and user_id in enterprise_member_ids
+                        ):
+                            members_without_expected_private_budget.append(user_id)
                         member_results.append(
                             {
                                 "user_id": user_id,
-                                "team_id": member.get("team_id", org_id),
-                                "spend": member.get("spend"),
+                                "team_id": (
+                                    member.get("team_id", org_id)
+                                    if member is not None
+                                    else org_id
+                                ),
+                                "spend": spend,
                                 "applied_max_budget_in_team": applied,
+                                "applied_budget_source": applied_budget_source,
                                 "desired_max_budget_in_team": desired["max_budget_in_team"],
                                 "desired_budget_status": desired["status"],
+                                "desired_private_budget_required": desired[
+                                    "requires_private_budget"
+                                ],
                                 "budget_matches": (
-                                    budgets_match(desired["max_budget_in_team"], applied)
+                                    budgets_match(
+                                        desired["max_budget_in_team"], applied
+                                    )
+                                    and (
+                                        not desired["requires_private_budget"]
+                                        or has_private_budget
+                                    )
                                     if desired["status"].startswith("resolved")
                                     else None
                                 ),
@@ -820,11 +912,14 @@ spec:
                             budget["desired_team_max_budget"], team.get("max_budget")
                         ),
                         team_spend=team.get("spend"),
-                        members_missing_from_litellm=sorted(
-                            enterprise_member_ids - applied_member_ids
+                        members_missing_from_litellm_roster=sorted(
+                            enterprise_member_ids - litellm_member_ids
                         ),
-                        unexpected_litellm_member_ids=sorted(
-                            applied_member_ids - enterprise_member_ids
+                        members_without_expected_private_budget=sorted(
+                            members_without_expected_private_budget
+                        ),
+                        unexpected_litellm_roster_member_ids=sorted(
+                            litellm_member_ids - enterprise_member_ids
                         ),
                         members=member_results,
                     )
@@ -858,10 +953,12 @@ spec:
                         for member in applied_state.get("members", [])
                     ):
                         reasons.append("member_budget_mismatch")
-                    if applied_state.get("members_missing_from_litellm"):
-                        reasons.append("members_missing_from_litellm")
-                    if applied_state.get("unexpected_litellm_member_ids"):
-                        reasons.append("unexpected_litellm_members")
+                    if applied_state.get("members_missing_from_litellm_roster"):
+                        reasons.append("members_missing_from_litellm_roster")
+                    if applied_state.get("members_without_expected_private_budget"):
+                        reasons.append("members_without_expected_private_budget")
+                    if applied_state.get("unexpected_litellm_roster_member_ids"):
+                        reasons.append("unexpected_litellm_roster_members")
                 if budget.get("known_members_missing_cycle_baseline"):
                     reasons.append("known_member_cycle_baseline_missing")
                 if budget.get("litellm_last_sync_status") == "error":
