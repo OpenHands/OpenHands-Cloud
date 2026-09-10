@@ -60,6 +60,26 @@ tests:
             name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
             value: "false"
 
+  - it: defaults null rollout flags to false rather than an empty value
+    set:
+      enabled: true
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: null
+      orgDefaults.condenser.overwriteExisting: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+            value: "false"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+            value: "false"
+
   - it: wires configured org condenser rollout settings
     set:
       enabled: true
