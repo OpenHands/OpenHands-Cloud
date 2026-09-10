@@ -54,7 +54,7 @@ context pointing at the target cluster are available.
 - Resource names are release-fixed (`deploy/openhands`, `openhands-postgresql-0`);
   namespace and release name are customer-specific — use `<namespace>` / the real
   release name in customer notes.
-- **Three images move on a version bump, not two:** `enterprise-server` (used by
+- **Three images move on a version bump:** `enterprise-server` (used by
   `deploy/openhands`, mcp, integrations), `runtime-api`, and the sandbox
   `agent-server` that warm runtimes run. Check all three in the diff.
 
