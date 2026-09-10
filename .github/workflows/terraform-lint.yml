@@ -15,6 +15,7 @@ jobs:
       matrix:
         directory:
           - terraform/aws
+          - terraform/gcp
 
     defaults:
       run:
