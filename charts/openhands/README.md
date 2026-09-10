@@ -36,7 +36,7 @@ New applicable OpenHands org settings receive the configured value. Existing org
 
 Reconciliation is triggered from the app server's startup lifespan, so it runs once per `saas_server` worker process every time one starts, and it stays armed for as long as these values remain in the release. The maintenance CronJobs that share this env block never trigger it, because they run standalone `python -m` entrypoints that do not start the app. A concurrent database lock serializes overlapping runs, so repeated runs converge on the same result rather than conflicting.
 
-The practical consequence is that this is not a rollout-scoped, one-time operation. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction re-applies it and overwrites org-admin UI changes made since the last start. Remove `applyToExisting`/`overwriteExisting` once the rollout completes, or remove `orgDefaults.condenser.maxTokens` to stop future defaulting and reconciliation.
+The practical consequence is that this is not a rollout-scoped, one-time operation. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction re-applies it and overwrites org-admin UI changes made since the last start. Remove `applyToExisting`/`overwriteExisting` once the rollout completes. Then remove `orgDefaults.condenser.maxTokens` as well if you want to stop future defaulting and reconciliation.
 
 `overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
 
