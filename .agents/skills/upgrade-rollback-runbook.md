@@ -71,9 +71,8 @@ image + env match**, so this must be reconciled **before** the upgrade:
   change is needed.
 
 A stale pinned tag leaves the pool **unclaimable**: new conversations cold-start and
-the old sandbox keeps serving — one that lacks the fix shipped in the new image (in
-0.64.0, the per-token cost-attribution fix). Discover the new tag from the diff's
-`agent-server` image line rather than assuming it.
+the old sandbox keeps serving. Discover the new tag from the diff's
+`agent-server` image line.
 
 ## Procedure
 
