@@ -778,6 +778,15 @@ spec:
                     "requires_private_budget": True,
                 }
 
+            def member_budget_matches(desired, applied, has_private_budget):
+                if not desired["status"].startswith("resolved"):
+                    return None
+                if not desired["requires_private_budget"]:
+                    return not has_private_budget
+                return has_private_budget and budgets_match(
+                    desired["max_budget_in_team"], applied
+                )
+
             def fetch_applied_state(budget):
                 org_id = str(budget["org_id"])
                 result = {"org_id": org_id}
@@ -890,16 +899,8 @@ spec:
                                 "desired_private_budget_required": desired[
                                     "requires_private_budget"
                                 ],
-                                "budget_matches": (
-                                    budgets_match(
-                                        desired["max_budget_in_team"], applied
-                                    )
-                                    and (
-                                        not desired["requires_private_budget"]
-                                        or has_private_budget
-                                    )
-                                    if desired["status"].startswith("resolved")
-                                    else None
+                                "budget_matches": member_budget_matches(
+                                    desired, applied, has_private_budget
                                 ),
                                 "is_enterprise_org_member": user_id in enterprise_member_ids,
                             }

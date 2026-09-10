@@ -65,6 +65,11 @@ tests:
           pattern: 'max_budget_in_team'
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'if not desired\["requires_private_budget"\]:[\s\S]*return not has_private_budget'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
         notMatchRegex:
           path: stringData.support-bundle-spec
           pattern: 'budget-diagnostics[\s\S]*SELECT[^\n]*_llm_api_key'
