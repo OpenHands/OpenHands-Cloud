@@ -557,6 +557,277 @@ spec:
             for label, sql in queries:
                 run(label, sql)
         timeout: 30s
+    # Sanitized budget reconciliation snapshot. This compares Enterprise's
+    # desired policy/baselines with LiteLLM's live applied team/member caps.
+    # It includes opaque org/user ids but never reads or emits managed keys.
+    - exec:
+        name: app/openhands-budget-diagnostics
+        collectorName: openhands-budget-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["python3", "-c"]
+        args:
+          - |
+            import concurrent.futures, json, os, urllib.error, urllib.parse, urllib.request
+
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+
+            output = {
+                "schema_version": None,
+                "org_budget_settings": [],
+                "org_user_budget_overrides": [],
+                "recent_budget_maintenance_tasks": [],
+                "litellm_applied_state": [],
+                "collector_errors": [],
+            }
+
+            conn = psycopg2.connect(
+                host=os.environ["DB_HOST"],
+                port=os.environ.get("DB_PORT", "5432"),
+                dbname=os.environ["DB_NAME"],
+                user=os.environ["DB_USER"],
+                password=os.environ.get("DB_PASS", ""),
+                sslmode=os.environ.get("DB_SSL_MODE", "prefer"),
+                connect_timeout=10,
+            )
+            conn.set_session(readonly=True, autocommit=True)
+
+            def table_columns(table):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = current_schema() AND table_name = %s",
+                        (table,),
+                    )
+                    return {row[0] for row in cur.fetchall()}
+
+            def rows(sql, params=()):
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(sql, params)
+                    return [dict(row) for row in cur.fetchall()]
+
+            try:
+                versions = rows("SELECT version_num FROM alembic_version")
+                output["schema_version"] = [row["version_num"] for row in versions]
+            except Exception as exc:
+                output["collector_errors"].append(
+                    {"section": "schema_version", "error": type(exc).__name__}
+                )
+
+            budget_columns = table_columns("org_budget_settings")
+            wanted_budget_columns = [
+                "org_id", "enabled", "monthly_limit", "reset_day",
+                "default_user_monthly_limit", "cycle_start_at", "cycle_start_spend",
+                "user_cycle_start_spend", "litellm_last_sync_at",
+                "litellm_last_sync_status", "litellm_last_sync_error",
+                "litellm_last_spend_snapshot_at", "litellm_last_team_spend",
+                "litellm_last_member_spend", "litellm_known_member_ids",
+                "created_at", "updated_at",
+            ]
+            selected_budget_columns = [
+                column for column in wanted_budget_columns if column in budget_columns
+            ]
+            if selected_budget_columns:
+                budget_rows = rows(
+                    "SELECT " + ", ".join(selected_budget_columns)
+                    + " FROM org_budget_settings ORDER BY org_id"
+                )
+                member_rows = rows("SELECT org_id, user_id FROM org_member ORDER BY org_id, user_id")
+                member_ids_by_org = {}
+                for member in member_rows:
+                    member_ids_by_org.setdefault(str(member["org_id"]), []).append(
+                        str(member["user_id"])
+                    )
+
+                for budget in budget_rows:
+                    org_id = str(budget["org_id"])
+                    actual_member_ids = member_ids_by_org.get(org_id, [])
+                    baselines = budget.get("user_cycle_start_spend") or {}
+                    known_ids = budget.get("litellm_known_member_ids") or []
+                    snapshot = budget.get("litellm_last_member_spend") or {}
+                    budget["member_count"] = len(actual_member_ids)
+                    budget["enterprise_member_ids"] = actual_member_ids
+                    budget["members_missing_cycle_baseline"] = sorted(
+                        user_id for user_id in actual_member_ids if user_id not in baselines
+                    )
+                    if "litellm_known_member_ids" in budget:
+                        budget["known_members_missing_cycle_baseline"] = sorted(
+                            user_id
+                            for user_id in actual_member_ids
+                            if user_id in known_ids and user_id not in baselines
+                        )
+                    if "litellm_last_member_spend" in budget:
+                        budget["members_missing_last_spend_snapshot"] = sorted(
+                            user_id for user_id in actual_member_ids if user_id not in snapshot
+                        )
+                    monthly_limit = budget.get("monthly_limit")
+                    budget["desired_team_max_budget"] = (
+                        float(budget.get("cycle_start_spend") or 0) + float(monthly_limit)
+                        if budget.get("enabled") and monthly_limit
+                        else None
+                    )
+                    output["org_budget_settings"].append(budget)
+
+            override_columns = table_columns("org_user_budget_override")
+            wanted_override_columns = [
+                "org_id", "user_id", "monthly_limit", "is_disabled",
+                "created_at", "updated_at",
+            ]
+            selected_override_columns = [
+                column for column in wanted_override_columns if column in override_columns
+            ]
+            if selected_override_columns:
+                output["org_user_budget_overrides"] = rows(
+                    "SELECT " + ", ".join(selected_override_columns)
+                    + " FROM org_user_budget_override ORDER BY org_id, user_id"
+                )
+
+            overrides_by_member = {
+                (str(override["org_id"]), str(override["user_id"])): override
+                for override in output["org_user_budget_overrides"]
+            }
+
+            maintenance_columns = table_columns("maintenance_tasks")
+            if {"processor_type", "status"}.issubset(maintenance_columns):
+                selected_task_columns = [
+                    column
+                    for column in (
+                        "id", "status", "processor_type", "started_at", "info",
+                        "created_at", "updated_at",
+                    )
+                    if column in maintenance_columns
+                ]
+                output["recent_budget_maintenance_tasks"] = rows(
+                    "SELECT " + ", ".join(selected_task_columns)
+                    + " FROM maintenance_tasks "
+                    "WHERE processor_type LIKE %s ORDER BY id DESC LIMIT 50",
+                    ("%OrgBudgetMaintenanceProcessor",),
+                )
+
+            lite_llm_url = os.environ.get("LITE_LLM_API_URL", "").rstrip("/")
+            lite_llm_key = os.environ.get("LITE_LLM_API_KEY")
+
+            def budgets_match(desired, applied):
+                if desired is None or applied is None:
+                    return desired is None and applied is None
+                try:
+                    return abs(float(desired) - float(applied)) < 0.000001
+                except (TypeError, ValueError):
+                    return False
+
+            def desired_member_budget(budget, user_id):
+                if not budget.get("enabled"):
+                    return {"status": "resolved", "max_budget_in_team": None}
+                override = overrides_by_member.get((str(budget["org_id"]), user_id))
+                if override and override.get("is_disabled"):
+                    return {"status": "resolved", "max_budget_in_team": None}
+                effective_limit = (
+                    override.get("monthly_limit")
+                    if override is not None
+                    else budget.get("default_user_monthly_limit")
+                )
+                if effective_limit is None:
+                    return {"status": "resolved", "max_budget_in_team": None}
+                baselines = budget.get("user_cycle_start_spend") or {}
+                if user_id not in baselines:
+                    return {
+                        "status": "unknown_missing_cycle_baseline",
+                        "max_budget_in_team": None,
+                    }
+                return {
+                    "status": "resolved",
+                    "max_budget_in_team": (
+                        float(baselines[user_id]) + float(effective_limit)
+                    ),
+                }
+
+            def fetch_applied_state(budget):
+                org_id = str(budget["org_id"])
+                result = {"org_id": org_id}
+                if not lite_llm_url or not lite_llm_key:
+                    result["error"] = "litellm_not_configured"
+                    return result
+                request = urllib.request.Request(
+                    lite_llm_url + "/team/info?" + urllib.parse.urlencode({"team_id": org_id}),
+                    headers={
+                        "Authorization": "Bearer " + lite_llm_key,
+                        "x-goog-api-key": lite_llm_key,
+                    },
+                )
+                try:
+                    with urllib.request.urlopen(request, timeout=5) as response:
+                        payload = json.load(response)
+                    team = payload.get("team_info") or {}
+                    memberships = payload.get("team_memberships") or team.get("members_with_roles") or []
+                    enterprise_member_ids = set(budget["enterprise_member_ids"])
+                    applied_member_ids = {
+                        str(member.get("user_id"))
+                        for member in memberships
+                        if isinstance(member, dict)
+                        and member.get("user_id")
+                        and member.get("user_id") != "default_user_id"
+                    }
+                    member_results = []
+                    for member in memberships:
+                        if (
+                            not isinstance(member, dict)
+                            or not member.get("user_id")
+                            or member.get("user_id") == "default_user_id"
+                        ):
+                            continue
+                        user_id = str(member["user_id"])
+                        desired = desired_member_budget(budget, user_id)
+                        applied = member.get("max_budget_in_team")
+                        member_results.append(
+                            {
+                                "user_id": user_id,
+                                "team_id": member.get("team_id", org_id),
+                                "spend": member.get("spend"),
+                                "applied_max_budget_in_team": applied,
+                                "desired_max_budget_in_team": desired["max_budget_in_team"],
+                                "desired_budget_status": desired["status"],
+                                "budget_matches": (
+                                    budgets_match(desired["max_budget_in_team"], applied)
+                                    if desired["status"] == "resolved"
+                                    else None
+                                ),
+                                "is_enterprise_org_member": user_id in enterprise_member_ids,
+                            }
+                        )
+                    result.update(
+                        team_found=True,
+                        applied_team_max_budget=team.get("max_budget"),
+                        desired_team_max_budget=budget["desired_team_max_budget"],
+                        team_budget_matches=budgets_match(
+                            budget["desired_team_max_budget"], team.get("max_budget")
+                        ),
+                        team_spend=team.get("spend"),
+                        members_missing_from_litellm=sorted(
+                            enterprise_member_ids - applied_member_ids
+                        ),
+                        unexpected_litellm_member_ids=sorted(
+                            applied_member_ids - enterprise_member_ids
+                        ),
+                        members=member_results,
+                    )
+                except urllib.error.HTTPError as exc:
+                    result.update(team_found=False, error="http_error", status=exc.code)
+                except Exception as exc:
+                    result.update(team_found=False, error=type(exc).__name__)
+                return result
+
+            budget_orgs = output["org_budget_settings"][:200]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+                output["litellm_applied_state"] = list(
+                    pool.map(fetch_applied_state, budget_orgs)
+                )
+
+            conn.close()
+            print(json.dumps(output, indent=2, default=str, sort_keys=True))
+        timeout: 90s
     # Non-secret config/feature snapshot from the running pod: values for flags,
     # presence-only ("set"/"empty_or_unset") for secret-backed vars (never values).
     - exec:
