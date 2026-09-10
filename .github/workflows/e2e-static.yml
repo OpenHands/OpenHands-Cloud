@@ -3,6 +3,7 @@ name: E2E Static Checks
 on:
   pull_request:
     paths:
+      - ".github/workflows/budget-e2e.yml"
       - ".github/workflows/e2e-static.yml"
       - "e2e_tests/**"
 
