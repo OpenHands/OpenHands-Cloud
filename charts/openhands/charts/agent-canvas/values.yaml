@@ -13,7 +13,7 @@ image:
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "sha-c8c7c8e"
+  tag: "sha-725f558"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
