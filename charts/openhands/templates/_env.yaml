@@ -41,8 +41,13 @@
     `python -m` entrypoints that never start the app.
    */}}
 {{- if ne $orgCondenser.maxTokens nil }}
+{{- /*
+    int64 before quoting: JSON Schema's integer type accepts YAML floats with a
+    zero fraction, and Go renders 1e6 as "1e+06", which the backend's isdecimal
+    parse rejects by raising out of the startup lifespan.
+   */}}
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
-  value: {{ $orgCondenser.maxTokens | quote }}
+  value: {{ $orgCondenser.maxTokens | int64 | quote }}
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
   value: {{ $orgCondenser.applyToExisting | default false | quote }}
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING

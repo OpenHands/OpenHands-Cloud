@@ -80,6 +80,20 @@ tests:
             name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
             value: "false"
 
+  - it: renders an exponent-notation threshold as a plain integer
+    set:
+      enabled: true
+      orgDefaults:
+        condenser:
+          maxTokens: 1.0e+6
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+            value: "1000000"
+
   - it: wires configured org condenser rollout settings
     set:
       enabled: true
