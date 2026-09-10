@@ -1,0 +1,57 @@
+suite: agent canvas cloud proxy env
+# The agent-canvas subchart normally runs as a frontend-only static server. When
+# the umbrella ingress routes /api/cloud-proxy to it, the pod must also enable
+# the static-server's SDK cloud-proxy helper so that path reaches agent-server.
+templates:
+  - charts/agent-canvas/templates/deployment.yaml
+tests:
+  - it: does not enable SDK cloud-proxy helper by default
+    set:
+      agent-canvas.enabled: true
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: AGENT_CANVAS_ENABLE_SDK_CLOUD_PROXY
+
+  - it: enables SDK cloud-proxy helper and port when configured
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.cloudProxy.enabled: true
+      agent-canvas.cloudProxy.agentServerPort: 18080
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_ENABLE_SDK_CLOUD_PROXY
+            value: "1"
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_SDK_CLOUD_PROXY_PORT
+            value: "18080"
+
+  - it: preserves caller env and keeps chart-owned cloud-proxy values authoritative
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.cloudProxy.enabled: true
+      agent-canvas.cloudProxy.agentServerPort: 18080
+      agent-canvas.env.AGENT_CANVAS_SDK_CLOUD_PROXY_PORT: "19090"
+      agent-canvas.env.CUSTOM_ENV: present
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CUSTOM_ENV
+            value: present
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_SDK_CLOUD_PROXY_PORT
+            value: "18080"

@@ -1564,6 +1564,14 @@ agent-canvas:
     repository: ghcr.io/openhands/agent-canvas
     # tag: supplied at deploy time via the OpenHands deploy workflow.
 
+  # Optional cloud runtime proxy. When enabled, the agent-canvas pod starts the
+  # bundled SDK agent-server and the umbrella ingress exposes only this path to
+  # that service; all other /api routes stay on the OpenHands app service.
+  cloudProxy:
+    enabled: false
+    path: /api/cloud-proxy
+    agentServerPort: 18000
+
   ingress:
     enabled: false
     host: ""
