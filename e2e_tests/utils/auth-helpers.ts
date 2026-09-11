@@ -472,17 +472,82 @@ async function generateTOTP(secret: string): Promise<string> {
   return token;
 }
 
+/** URL prefix of GitHub's OAuth authorize page. */
+const OAUTH_AUTHORIZE_URL_PREFIX = "https://github.com/login/oauth/authorize";
+
+/** Overall budget for completing the OAuth authorization grant. */
+const OAUTH_AUTHORIZE_TIMEOUT_MS = 30_000;
+
+/**
+ * Submit the GitHub OAuth authorize form from within the page.
+ *
+ * The authorize page's Authorize button is kept disabled by GitHub's
+ * clickjacking protection (it requires document.hasFocus(), which never
+ * resolves in headless Playwright), so we grant access by submitting the
+ * authorize form directly. The form carries all the server-rendered hidden
+ * fields (client_id, redirect_uri, state, scope); we only set authorize=1.
+ *
+ * Returns "submitted" when the form was found and submitted, or "missing"
+ * when no authorize form is present in the DOM yet. A first-time consent
+ * page can render the form a beat after the URL changes, so "missing" is a
+ * retryable state — not proof that GitHub already redirected.
+ */
+async function submitAuthorizeForm(
+  page: Page,
+): Promise<"submitted" | "missing"> {
+  return page.evaluate(() => {
+    // Prefer the exact relative action GitHub renders, then fall back to a
+    // looser match (absolute action, or any form carrying the authorize
+    // control) so a first-time-grant page variant is still handled.
+    const form =
+      document.querySelector<HTMLFormElement>(
+        'form[action="/login/oauth/authorize"]',
+      ) ??
+      document.querySelector<HTMLFormElement>(
+        'form[action*="/login/oauth/authorize"]',
+      ) ??
+      Array.from(document.querySelectorAll<HTMLFormElement>("form")).find((f) =>
+        f.querySelector('button[name="authorize"], input[name="authorize"]'),
+      ) ??
+      null;
+    if (!form) {
+      return "missing";
+    }
+    let input = form.querySelector<HTMLInputElement>('input[name="authorize"]');
+    if (!input) {
+      input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "authorize";
+      form.appendChild(input);
+    }
+    input.value = "1";
+    form.submit();
+    return "submitted";
+  });
+}
+
 /**
  * Handle the OAuth authorization prompt if it appears.
  *
- * After 2FA, GitHub either lands on the OAuth authorize page (if the app
- * hasn't been authorized yet) or redirects straight back to the app (if it
- * has). The authorize page's Authorize button is kept disabled by GitHub's
- * clickjacking protection, which requires document.hasFocus() — this never
- * resolves in Playwright. So instead of waiting for the button, we submit
- * the form directly via JavaScript.
+ * After 2FA, GitHub either lands on the OAuth authorize page (app not yet
+ * authorized for this account — the first-time / new-user path) or redirects
+ * straight back to the app (app already authorized — the returning-user
+ * path).
+ *
+ * For a new user whose account has no standing grant, GitHub renders the
+ * first-time consent page and the authorize form can appear slightly after
+ * the URL settles. The previous implementation submitted the form once and,
+ * if it was not yet present, assumed GitHub had "already redirected" and
+ * returned — leaving the browser stranded on the authorize page, so the
+ * downstream `completeLoginAndOnboard` wait timed out with a misleading
+ * stack. Instead, retry until the grant actually completes (the page leaves
+ * the authorize URL) and fail loudly with context if it never does.
  */
-async function handleOAuthAuthorization(page: Page): Promise<void> {
+export async function handleOAuthAuthorization(
+  page: Page,
+  options: { timeoutMs?: number } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? OAUTH_AUTHORIZE_TIMEOUT_MS;
   // Wait for navigation to a stable destination: either the OAuth authorize
   // page (app not yet authorized) or a non-GitHub URL (redirected back to
   // the app). Using a positive condition avoids matching intermediate
@@ -492,7 +557,7 @@ async function handleOAuthAuthorization(page: Page): Promise<void> {
       (url) => {
         const urlString = url.toString();
         return (
-          urlString.startsWith("https://github.com/login/oauth/authorize") ||
+          urlString.startsWith(OAUTH_AUTHORIZE_URL_PREFIX) ||
           !urlString.includes("github.com")
         );
       },
@@ -502,61 +567,66 @@ async function handleOAuthAuthorization(page: Page): Promise<void> {
 
   // If we're not on the OAuth authorize page, GitHub skipped it (the app was
   // previously authorized) and redirected straight back to the app.
-  const currentUrl = page.url();
-  if (!currentUrl.startsWith("https://github.com/login/oauth/authorize")) {
+  if (!page.url().startsWith(OAUTH_AUTHORIZE_URL_PREFIX)) {
     console.log("No OAuth authorization page shown (redirected back to app).");
     return;
   }
 
-  console.log("On OAuth authorization page, submitting form directly...");
+  console.log("On OAuth authorization page, granting access...");
 
-  // Submit the authorize form directly. The form contains all the hidden
-  // fields (client_id, redirect_uri, state, scope) server-rendered; we just
-  // need to set authorize=1 and submit. This bypasses the disabled button
-  // and GitHub's clickjacking protection entirely.
-  //
-  // GitHub may auto-redirect away from the authorize page at any moment
-  // (when the app was recently authorized). In that case the form won't
-  // exist or the execution context will be destroyed — both are handled
-  // below as a bypass.
-  try {
-    await page.evaluate(() => {
-      const form = document.querySelector<HTMLFormElement>(
-        'form[action="/login/oauth/authorize"]',
-      );
-      if (!form) {
-        throw new Error("OAuth authorize form not found on page");
-      }
-      let input = form.querySelector<HTMLInputElement>(
-        'input[name="authorize"]',
-      );
-      if (!input) {
-        input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "authorize";
-        form.appendChild(input);
-      }
-      input.value = "1";
-      form.submit();
-    });
-  } catch (e) {
-    const msg = String(e);
-    // "Execution context was destroyed" means form.submit() triggered a
-    // navigation — the form was submitted successfully.
-    // "form not found" means GitHub already redirected away from the
-    // authorize page (bypass) — nothing to do.
-    if (
-      !msg.includes("Execution context was destroyed") &&
-      !msg.includes("form not found")
-    ) {
-      throw e;
-    }
-    if (msg.includes("form not found")) {
-      console.log(
-        "Authorize page bypassed (form not found, already redirected).",
-      );
+  // Retry submitting the authorize form until the grant completes: success is
+  // defined as GitHub leaving the authorize URL, not merely "form submitted"
+  // (a first-time consent page can re-render, and a submit can race the DOM).
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    // Grant is done once GitHub has taken us off the authorize page.
+    if (!page.url().startsWith(OAUTH_AUTHORIZE_URL_PREFIX)) {
+      console.log("OAuth authorization complete (left authorize page).");
       return;
     }
+
+    attempt += 1;
+    let result: "submitted" | "missing" | "navigated";
+    try {
+      result = await submitAuthorizeForm(page);
+    } catch (e) {
+      // "Execution context was destroyed" means form.submit() triggered a
+      // navigation while page.evaluate was running — the grant went through.
+      if (String(e).includes("Execution context was destroyed")) {
+        result = "navigated";
+      } else {
+        throw e;
+      }
+    }
+
+    if (result === "submitted" || result === "navigated") {
+      console.log(`OAuth authorize form submitted (attempt ${attempt}).`);
+      // Wait for GitHub to redirect away from the authorize page.
+      await page
+        .waitForURL(
+          (url) => !url.toString().startsWith(OAUTH_AUTHORIZE_URL_PREFIX),
+          {
+            timeout: 15_000,
+          },
+        )
+        .catch(() => {});
+      if (!page.url().startsWith(OAUTH_AUTHORIZE_URL_PREFIX)) {
+        console.log("OAuth authorization complete.");
+        return;
+      }
+      // Still on the authorize page — fall through and retry.
+    }
+
+    // Form not present yet (or the submit did not take). Give the consent
+    // page a moment to finish rendering, then retry.
+    await page.waitForTimeout(1_000);
   }
-  console.log("OAuth authorize form submitted.");
+
+  throw new Error(
+    `OAuth authorization did not complete: still on ${page.url()} after ` +
+      `${Math.round(timeoutMs / 1000)}s. GitHub did not redirect back to ` +
+      "the app after submitting the authorize form (the new-user first-time " +
+      "consent page may not have been granted).",
+  );
 }
