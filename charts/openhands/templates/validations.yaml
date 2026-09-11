@@ -33,3 +33,14 @@ external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Budget upgrade hook modes. An unknown mode would silently run the preflight
+script in its usage-error path, so refuse it at render time instead.
+*/}}
+{{- if and .Values.enabled .Values.budgetPreflight.enabled (not (has (toString .Values.budgetPreflight.mode) (list "strict" "acknowledge"))) -}}
+{{- fail (printf "budgetPreflight.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetPreflight.mode)) -}}
+{{- end -}}
+{{- if and .Values.enabled .Values.budgetReconcileGate.enabled (not (has (toString .Values.budgetReconcileGate.mode) (list "strict" "acknowledge"))) -}}
+{{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
+{{- end -}}

@@ -929,6 +929,41 @@ budgetMaintenance:
       memory: "1Gi"
       cpu: "500m"
 
+# Budget upgrade checks. Both run as Helm hook Jobs on the enterprise image
+# around every `helm upgrade` (never on install, and never under ArgoCD, which
+# renders with `helm template`). mode is "strict" (a blocking finding fails the
+# upgrade) or "acknowledge" (findings are recorded and the upgrade proceeds).
+# Each Job prints one JSON artifact line to its log and the last run is kept
+# until the next upgrade.
+budgetPreflight:
+  enabled: true
+  # Pre-upgrade, read-only: reports each enabled organization's budget state
+  # (missing baselines/members, cap drift, last sync) before enforcement changes.
+  mode: acknowledge
+  # Counts image pull time; must stay under Helm's per-hook wait (600s on Replicated).
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+budgetReconcileGate:
+  enabled: true
+  # Post-upgrade: reconciles every enabled organization's LiteLLM caps and
+  # verifies them by readback; strict marks the release failed until it succeeds.
+  mode: strict
+  activeDeadlineSeconds: 540
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
 runtime-api:
   enabled: true
   replicaCount: 1

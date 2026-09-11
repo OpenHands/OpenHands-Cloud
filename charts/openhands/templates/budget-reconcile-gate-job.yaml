@@ -1,0 +1,74 @@
+{{- /*
+Post-upgrade budget reconciliation gate. A Helm post-upgrade hook that
+reconciles every enabled organization's LiteLLM budget policy in-process and
+verifies it by readback. In strict mode a blocking finding exits non-zero, which
+fails `helm upgrade` and is what Replicated and native Helm report as release
+health. Weight 5 keeps it ahead of the laminar retention job (weight 10). Gated
+on .Release.IsUpgrade for the same reasons as budget-preflight-job.yaml.
+*/ -}}
+{{- if and .Values.enabled .Values.budgetReconcileGate.enabled .Release.IsUpgrade }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-budget-reconcile-gate
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: budget-reconcile-gate
+    app: {{ .Release.Name }}-budget-reconcile-gate
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "5"
+    # Keep the last run (and the artifact in its pod log) until the next upgrade.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.budgetReconcileGate.activeDeadlineSeconds }}
+  template:
+    metadata:
+      name: budget-reconcile-gate
+      labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: budget-reconcile-gate
+        app: {{ .Release.Name }}-budget-reconcile-gate
+    spec:
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "openhands.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.caBundle.enabled }}
+      volumes:
+        {{- include "openhands.caBundle.volume" . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: budget-reconcile-gate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          command: ["/bin/sh", "-c"]
+          workingDir: /app
+          args:
+            - |
+              echo "Reconciling budgets and verifying LiteLLM policy (mode: ${BUDGET_PREFLIGHT_MODE})..."
+              python -m run_budget_preflight
+          {{- if .Values.caBundle.enabled }}
+          volumeMounts:
+            {{- include "openhands.caBundle.volumeMount" . | nindent 12 }}
+          {{- end }}
+          env:
+            {{- include "openhands.env" . | nindent 12 }}
+            {{- include "openhands.caBundle.env" . | nindent 12 }}
+            - name: BUDGET_PREFLIGHT_PHASE
+              value: post
+            - name: BUDGET_PREFLIGHT_MODE
+              value: {{ .Values.budgetReconcileGate.mode | quote }}
+          resources:
+            {{- toYaml .Values.budgetReconcileGate.resources | nindent 12 }}
+{{- end }}
