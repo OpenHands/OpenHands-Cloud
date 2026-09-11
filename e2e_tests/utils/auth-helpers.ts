@@ -99,6 +99,10 @@ export async function authenticateWithGitHub(
     await handle2FA(page, creds.totpSecret);
   }
 
+  // GitHub may interrupt with a one-time "verify your 2FA settings" reminder
+  // between 2FA and the OAuth grant; dismiss it so the authorize form renders.
+  await dismissTwoFactorReminder(page);
+
   // Handle OAuth authorization if needed
   await handleOAuthAuthorization(page);
 
@@ -472,6 +476,44 @@ async function generateTOTP(secret: string): Promise<string> {
   return token;
 }
 
+/**
+ * Dismiss GitHub's "Verify your two-factor authentication (2FA) settings"
+ * reminder if it is shown.
+ *
+ * GitHub interrupts the login flow (page `/sessions/two-factor`) with a
+ * one-time reminder to verify recently configured 2FA credentials, offering
+ * "Verify 2FA now" or "skip 2FA verification (we'll remind you again
+ * tomorrow)". It sits between 2FA entry and the OAuth authorize page, so
+ * leaving it up means the authorize form never renders and the grant stalls.
+ * We click "skip": it resumes the interrupted navigation and, unlike "Verify
+ * 2FA now", needs no extra TOTP entry, so it is safe to repeat every run.
+ *
+ * Returns true when the reminder was found and dismissed; false (no-op) when
+ * it is not shown.
+ */
+export async function dismissTwoFactorReminder(page: Page): Promise<boolean> {
+  const skip = page.getByRole("button", { name: "skip 2FA verification" });
+  const shown = await skip
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) {
+    return false;
+  }
+  console.log(
+    'Dismissing GitHub "verify your 2FA settings" reminder (skip)...',
+  );
+  await skip.click();
+  // Skipping resumes the interrupted flow; wait for GitHub to leave the
+  // reminder page before the caller continues.
+  await page
+    .waitForURL((url) => !url.toString().includes("/sessions/two-factor"), {
+      timeout: 15_000,
+    })
+    .catch(() => {});
+  return true;
+}
+
 /** URL prefix of GitHub's OAuth authorize page. */
 const OAUTH_AUTHORIZE_URL_PREFIX = "https://github.com/login/oauth/authorize";
 
@@ -615,12 +657,18 @@ export async function handleOAuthAuthorization(
         console.log("OAuth authorization complete.");
         return;
       }
-      // Still on the authorize page — fall through and retry.
+      // Still on the authorize page — pause briefly, then retry.
+      await page.waitForTimeout(1_000);
+    } else {
+      // No authorize form yet. GitHub may be showing its one-time "verify your
+      // 2FA settings" reminder in place of the grant; dismiss it and retry
+      // straight away. Otherwise give the consent form a moment to render
+      // before the next attempt.
+      const dismissedReminder = await dismissTwoFactorReminder(page);
+      if (!dismissedReminder) {
+        await page.waitForTimeout(1_000);
+      }
     }
-
-    // Form not present yet (or the submit did not take). Give the consent
-    // page a moment to finish rendering, then retry.
-    await page.waitForTimeout(1_000);
   }
 
   throw new Error(
