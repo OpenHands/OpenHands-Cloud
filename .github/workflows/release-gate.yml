@@ -16,6 +16,11 @@ on:
 
 permissions: {}
 
+defaults:
+  run:
+    # Some reasonable default args to any bash invocation usage
+    shell: bash --noprofile --norc -euo pipefail {0}
+
 env:
   RELEASE_PR_BRANCH: "release-please--branches--main--components--openhands"
   OVERRIDE_LABEL: "override-e2e-gate"
@@ -33,7 +38,7 @@ jobs:
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # No `environment:` - e2e-replicated rejects refs/pull/N/merge, so the gate
     # token is repo-level. Safe: it is read-only, no submit, no Secrets.
     permissions:
@@ -48,8 +53,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           ARGO_GATE_TOKEN: ${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}
         run: |
-          set -euo pipefail
-
           {
             echo "### Release gate (unstable E2E)"
             echo ""
@@ -174,7 +177,7 @@ jobs:
   refresh-release-gate:
     name: Refresh release gate
     if: github.event_name == 'workflow_run' || github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
       contents: read
@@ -185,8 +188,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-
           pr=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" | jq -c \
             --arg repo "$REPO" --arg branch "$RELEASE_PR_BRANCH" '
               first(.[] | select(
