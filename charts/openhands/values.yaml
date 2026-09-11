@@ -1300,6 +1300,20 @@ automation:
     name: automation-service-key
     key: automation-service-key
   
+  # Git sync wrapping key from K8s secret: encrypts each organization's git
+  # token and repo encryption key at rest. Optional in the pod spec, so the
+  # pods start before the secret exists.
+  gitSyncSecretFromSecret:
+    name: automation-git-sync-secret
+    key: git-sync-secret
+  
+  # Node-local scratch space for git sync checkouts, rendered as
+  # AUTOMATION_WORKSPACE_BASE and as the emptyDir mount on both deployments.
+  # sizeLimit caps it so consumer repositories cannot exhaust node storage.
+  workspace:
+    mountPath: /workspace
+    sizeLimit: 10Gi
+  
   # Datadog configuration
   datadog:
     env: "dev"
