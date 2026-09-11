@@ -1,0 +1,225 @@
+name: Release gate (unstable E2E)
+
+# Blocks the openhands release-please PR when the latest unstable E2E is not green.
+# Enforce by adding the `release-gate` context to the main ruleset.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  workflow_run:
+    workflows: ["Release Replicated to Unstable"]
+    types: [completed]
+  # Scheduled Argo runs fire no GitHub event, so nothing else would re-evaluate
+  # a blocked release PR when the signal recovers.
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions: {}
+
+env:
+  RELEASE_PR_BRANCH: "release-please--branches--main--components--openhands"
+  OVERRIDE_LABEL: "override-e2e-gate"
+  ARGO_NAMESPACE: "openhands-e2e"
+  ARGO_BASE: "https://workflows.dev.all-hands.dev"
+  E2E_INSTANCE: "unstable"
+  # Must stay under Argo's 24h ttlStrategy, or aged-out runs read as "no run".
+  E2E_MAX_AGE_HOURS: "20"
+
+jobs:
+  release-gate:
+    name: release-gate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # No `environment:` - e2e-replicated rejects refs/pull/N/merge, so the gate
+    # token is repo-level. Safe: it is read-only, no submit, no Secrets.
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Evaluate release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ARGO_GATE_TOKEN: ${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Release gate (unstable E2E)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Scheduled and deploy-triggered runs share this name prefix, so one
+          # list covers both. Job names would miss the scheduled ones entirely.
+          listing=$(curl --fail-with-body --silent --show-error --max-time 30 \
+            --header "Authorization: Bearer ${ARGO_GATE_TOKEN}" \
+            "${ARGO_BASE}/api/v1/workflows/${ARGO_NAMESPACE}?listOptions.labelSelector=workflows.argoproj.io/phase!=Running") || {
+              echo "::error::could not reach Argo to read the ${E2E_INSTANCE} E2E result"
+              echo "| E2E result | **Argo unreachable** — blocked |" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            }
+
+          signal=$(jq -r --arg prefix "openhands-e2e-${E2E_INSTANCE}-" '
+            [ (.items // [])[]
+              | select(.metadata.name | startswith($prefix))
+              | select(.status.finishedAt != null and .status.finishedAt != "")
+              | {name: .metadata.name, phase: .status.phase, finished: .status.finishedAt}
+            ]
+            | sort_by(.finished)
+            | last
+            | if . == null then empty else [.name, .phase, .finished] | @tsv end
+          ' <<<"$listing")
+
+          if [ -z "$signal" ]; then
+            echo "::error::no finished openhands-e2e-${E2E_INSTANCE}-* workflow found in Argo"
+            {
+              echo "| E2E result | **no run** — blocked |"
+              echo ""
+              echo "Argo keeps finished runs for 24h and has no archive database, so this also means no run has completed in the last day. Check the CronWorkflow: \`kubectl -n openhands-e2e get cronworkflow openhands-e2e-unstable-scheduled\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          IFS=$'\t' read -r wf_name E2E_CONCLUSION run_completed <<<"$signal"
+          run_url="${ARGO_BASE}/workflows/${ARGO_NAMESPACE}/${wf_name}"
+          # Normalise Argo's phase to the success word the rest of this uses.
+          [ "$E2E_CONCLUSION" = "Succeeded" ] && E2E_CONCLUSION=success
+
+          now=$(date -u +%s)
+          signal_epoch=$(date -u -d "$run_completed" +%s)
+          age_h=$(( (now - signal_epoch) / 3600 ))
+          {
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Latest E2E result | \`${E2E_CONCLUSION}\` |"
+            echo "| Workflow | [\`${wf_name}\`](${run_url}) |"
+            echo "| Completed | ${run_completed} |"
+            echo "| Age | ${age_h}h (max ${E2E_MAX_AGE_HOURS}h) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          gate_reason=""
+          if [ "$E2E_CONCLUSION" != "success" ]; then
+            gate_reason="latest ${E2E_INSTANCE} E2E finished ${E2E_CONCLUSION}"
+          elif [ "$age_h" -gt "$E2E_MAX_AGE_HOURS" ]; then
+            gate_reason="latest ${E2E_INSTANCE} E2E is stale (${age_h}h old, max ${E2E_MAX_AGE_HOURS}h)"
+          else
+            echo "Latest ${E2E_INSTANCE} E2E is green and fresh (${age_h}h old)."
+            exit 0
+          fi
+
+          labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
+          if ! grep -Fxq "$OVERRIDE_LABEL" <<<"$labels"; then
+            echo "::error::${gate_reason} — blocking the release PR. ${run_url}"
+            exit 1
+          fi
+
+          events=$(gh api --paginate --slurp \
+            "repos/${REPO}/issues/${PR_NUMBER}/events?per_page=100")
+          applier_when=$(jq -r --arg label "$OVERRIDE_LABEL" '
+            [.[][] | select(.event == "labeled" and .label.name == $label)]
+            | last
+            | if . == null then empty else [.actor.login, .created_at] | @tsv end
+          ' <<<"$events")
+          IFS=$'\t' read -r applier override_when <<<"$applier_when"
+
+          if [ -z "${applier:-}" ] || [ -z "${override_when:-}" ]; then
+            echo "::error::${OVERRIDE_LABEL} is present but no event records who applied it"
+            exit 1
+          fi
+
+          override_epoch=$(date -u -d "$override_when" +%s)
+          if [ "$override_epoch" -le "$signal_epoch" ]; then
+            echo "::error::override by ${applier} at ${override_when} predates the signal at ${run_completed}; remove and reapply ${OVERRIDE_LABEL} to authorize this result"
+            exit 1
+          fi
+
+          perm=$(gh api "repos/${REPO}/collaborators/${applier}/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          case "$perm" in
+            admin|write|maintain) ;;
+            *)
+              echo "::error::${OVERRIDE_LABEL} was applied by ${applier}, who lacks write permission (${perm})"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo ""
+            echo "> [!WARNING]"
+            echo "> **E2E release gate overridden.**"
+            echo ">"
+            echo "> ${gate_reason}; override applied by \`${applier}\` (\`${perm}\`) at ${override_when}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          marker="<!-- release-gate-override:${override_when} -->"
+          comments=$(gh api --paginate --slurp \
+            "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")
+          already_recorded=$(jq -r --arg marker "$marker" \
+            'any(.[][]; .body | contains($marker))' <<<"$comments")
+          if [ "$already_recorded" != "true" ]; then
+            body=$(printf '%s\n\n%s\n\n%s' \
+              "🟡 **E2E release gate overridden** by \`${applier}\` (\`${perm}\`) at ${override_when}. ${gate_reason}; unstable → beta is allowed for this signal only." \
+              "$marker" \
+              "_Posted automatically by an AI-assisted workflow on behalf of the OpenHands-Cloud maintainers._")
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+          fi
+
+          echo "Override honored for the signal completed at ${run_completed}."
+
+  refresh-release-gate:
+    name: Refresh release gate
+    if: github.event_name == 'workflow_run' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Rerun the open release PR gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" | jq -c \
+            --arg repo "$REPO" --arg branch "$RELEASE_PR_BRANCH" '
+              first(.[] | select(
+                .base.ref == "main" and
+                .head.ref == $branch and
+                .head.repo.full_name == $repo
+              )) // empty
+            ')
+          if [ -z "$pr" ]; then
+            echo "No open openhands release PR; nothing to refresh."
+            exit 0
+          fi
+
+          sha=$(jq -r '.head.sha' <<<"$pr")
+          gate_run=$(gh api \
+            "repos/${REPO}/actions/workflows/release-gate.yml/runs?event=pull_request&per_page=100" \
+            | jq -c --arg sha "$sha" \
+              'first(.workflow_runs[] | select(.head_sha == $sha)) // empty')
+          if [ -z "$gate_run" ]; then
+            echo "::warning::No release-gate run found for release PR head ${sha}."
+            exit 0
+          fi
+
+          run_id=$(jq -r '.id' <<<"$gate_run")
+          status=$(jq -r '.status' <<<"$gate_run")
+          if [ "$status" != "completed" ]; then
+            echo "Release gate ${run_id} is ${status}; leaving it alone."
+            exit 0
+          fi
+          # A rerun request races the run finishing, so a 403 here is expected
+          # and must not redden a job that fires every 15 minutes.
+          if gh api --method POST "repos/${REPO}/actions/runs/${run_id}/rerun"; then
+            echo "Rerunning release gate ${run_id} for release PR head ${sha}."
+          else
+            echo "::notice::Release gate ${run_id} could not be rerun right now."
+          fi
