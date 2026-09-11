@@ -121,4 +121,19 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-
+  - it: fails when budgetPreflight.mode is not strict or acknowledge
+    set:
+      budgetPreflight.mode: sometimes
+    asserts:
+      - failedTemplate:
+          errorMessage: 'budgetPreflight.mode must be "strict" or "acknowledge", got "sometimes".'
+  - it: fails when budgetReconcileGate.mode is not strict or acknowledge
+    set:
+      budgetReconcileGate.mode: never
+    asserts:
+      - failedTemplate:
+          errorMessage: 'budgetReconcileGate.mode must be "strict" or "acknowledge", got "never".'
+  - it: renders no resources with the default budget hook modes
+    asserts:
+      - hasDocuments:
+          count: 0

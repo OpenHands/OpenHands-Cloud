@@ -59,6 +59,22 @@ spec:
           - app=openhands-mcp
         limits:
           maxAge: 336h
+    # Budget upgrade hook Jobs. The last run of each is kept until the next
+    # upgrade and its log carries the JSON before/after artifact.
+    - logs:
+        name: app/budget-preflight/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app={{ .Release.Name }}-budget-preflight
+        limits:
+          maxAge: 336h
+    - logs:
+        name: app/budget-reconcile-gate/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app={{ .Release.Name }}-budget-reconcile-gate
+        limits:
+          maxAge: 336h
     {{- if .Values.postgresql.enabled }}
     # PostgreSQL logs (Bitnami chart)
     - logs:

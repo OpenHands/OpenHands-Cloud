@@ -186,6 +186,97 @@ kubectl rollout status deploy/openhands -n <namespace>
 Verify: images back at X, `alembic_version` back at the X value, pods healthy, no
 `migrate-db` crash-loop.
 
+## Budget policy hooks and LiteLLM external state
+
+Charts that carry `budget-preflight-job.yaml` run two Helm hook Jobs on every
+`helm upgrade` of the `openhands` release (never on install, and never under
+ArgoCD, which renders with `helm template`):
+
+| Job | Hook | Default mode | What it does |
+|---|---|---|---|
+| `<release-name>-budget-preflight` | pre-upgrade | `acknowledge` | Read-only. Runs the new image against the not-yet-migrated database and reports each enabled organization's budget state as found. |
+| `<release-name>-budget-reconcile-gate` | post-upgrade | `strict` | Reconciles every enabled organization's LiteLLM caps and verifies them by readback. |
+
+Modes come from `budgetPreflight.mode` / `budgetReconcileGate.mode` (Replicated
+Config group "Upgrade Checks"). `strict` fails `helm upgrade` on a blocking
+finding; `acknowledge` records the same findings and exits 0, which is the
+explicit availability-recovery mode. Expect both Jobs as substantive lines in
+the step-3 diff the first time a customer upgrades onto such a chart.
+
+Blocking finding codes: `litellm_unreachable`, `last_sync_error`,
+`maintenance_failed`, `member_missing_from_litellm`, `member_baseline_missing`,
+`cap_drift`. Informational: `unmapped_member`, `over_cap_team`,
+`over_cap_member`, `snapshot_stale`, `sync_never_ran`, `schema_missing_columns`.
+On a database that predates app migration 149 every governed member reports
+`member_baseline_missing`; that is expected, the first post-upgrade sync
+recovers those members from live spend (OpenHands/enterprise#347), and it is
+why the preflight defaults to `acknowledge`.
+
+### Capture the before/after artifacts (with step 5)
+
+Both Jobs are retained until the next upgrade, so their logs are readable after
+`helm upgrade` returns, and the support bundle collects them:
+
+```bash
+kubectl logs job/<release-name>-budget-preflight -n <namespace> \
+  | jq -c 'select(.artifact_type=="org_budget_preflight")' > pre<Y>_budget_preflight.json
+kubectl logs job/<release-name>-budget-reconcile-gate -n <namespace> \
+  | jq -c 'select(.artifact_type=="org_budget_preflight")' > post<Y>_budget_reconcile.json
+jq '.summary' post<Y>_budget_reconcile.json
+```
+
+The artifacts hold organization and user UUIDs, cap and spend figures, and sync
+status; no keys or e-mail addresses. Keep both next to the DB dump.
+
+### When the strict gate fails
+
+`helm upgrade` reports `post-upgrade hooks failed`. The Deployments are already
+on the new version and keep serving, but the release (and the Replicated
+version) is marked failed. Read `post<Y>_budget_reconcile.json`, fix what the
+findings point at (add the member to the LiteLLM team, repair the key, restore
+LiteLLM availability), then run the upgrade again (Replicated: Redeploy) so the
+hooks re-run. To accept the state instead, set
+`budgetReconcileGate.mode: acknowledge` (Config item "Post-upgrade Budget
+Reconciliation Gate") and run the upgrade again.
+
+To run the preflight by hand, on a deployment where hooks do not run (ArgoCD)
+or outside an upgrade:
+
+```bash
+kubectl exec deploy/openhands -n <namespace> -- \
+  env BUDGET_PREFLIGHT_MODE=acknowledge python -m run_budget_preflight
+```
+
+### Rolling back LiteLLM-side state
+
+`pg_dump` covers the Enterprise settings rows only; the caps LiteLLM enforces
+live in LiteLLM's own database, and `helm rollback` runs no upgrade hooks. After
+the step-6 restore and rollback, bring LiteLLM back in line with the restored
+settings by either:
+
+1. re-running maintenance on the rolled-back version, which recomputes every
+   cap from the restored baselines:
+
+   ```bash
+   kubectl create job --from=cronjob/<release-name>-budget-maintenance \
+     budget-resync-$(date +%s) -n <namespace>
+   ```
+
+2. or re-applying the caps recorded in `pre<Y>_budget_preflight.json`
+   (`orgs[].litellm.team_max_budget` and
+   `orgs[].litellm.members[<user_id>].max_budget`) with the LiteLLM admin key:
+
+   ```bash
+   curl -sS -X POST "$LITE_LLM_API_URL/team/update" \
+     -H "x-goog-api-key: $LITE_LLM_API_KEY" -H 'Content-Type: application/json' \
+     -d '{"team_id":"<org_id>","max_budget":<team_max_budget>}'
+   curl -sS -X POST "$LITE_LLM_API_URL/team/member_update" \
+     -H "x-goog-api-key: $LITE_LLM_API_KEY" -H 'Content-Type: application/json' \
+     -d '{"team_id":"<org_id>","user_id":"<user_id>","max_budget_in_team":<max_budget>}'
+   ```
+
+Then run the preflight by hand (above) and confirm `summary.blocking` is false.
+
 ## Non-obvious findings to bake into the notes
 
 - **Only `deploy/openhands` needs scaling down** before the restore. Verify no other
