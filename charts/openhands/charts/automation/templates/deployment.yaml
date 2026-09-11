@@ -32,11 +32,12 @@ spec:
         {{- . | nindent 8 }}
       {{- end }}
       volumes:
-        # Scratch space for git sync checkouts (AUTOMATION_WORKSPACE_BASE
-        # defaults to /workspace, which the image does not create). Pods keep
-        # no state across restarts; a fresh pod re-clones on its first cycle.
+        # Scratch space for git sync checkouts, mounted at
+        # AUTOMATION_WORKSPACE_BASE (see values.workspace). Bounded so
+        # consumer repositories cannot exhaust the node's ephemeral storage.
         - name: workspace
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: {{ .Values.workspace.sizeLimit | quote }}
         {{- if .Values.caBundle.enabled }}
         - name: openhands-ca-bundle
           configMap:
@@ -188,7 +189,7 @@ spec:
         {{- end }}
         volumeMounts:
         - name: workspace
-          mountPath: /workspace
+          mountPath: {{ .Values.workspace.mountPath }}
         {{- if .Values.caBundle.enabled }}
         - name: openhands-ca-bundle
           mountPath: {{ .Values.caBundle.mountPath }}

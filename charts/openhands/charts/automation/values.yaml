@@ -20,6 +20,16 @@ caBundle:
   key: ca-bundle.crt
   mountPath: /etc/openhands/ca-bundle
 
+# Node-local scratch space the service writes to (git sync checkouts, one
+# directory per organization). Rendered as AUTOMATION_WORKSPACE_BASE and as
+# the emptyDir mount on both deployments, so the write path and the mount can
+# never drift apart. Pods keep no state across restarts; a fresh pod re-clones.
+workspace:
+  mountPath: /workspace
+  # Caps the emptyDir: clones of consumer repositories are otherwise unbounded
+  # and would exhaust the node's ephemeral storage, evicting the whole pod.
+  sizeLimit: 10Gi
+
 deployment:
   replicas: 1
   resources:

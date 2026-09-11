@@ -9,6 +9,10 @@
 - name: AUTOMATION_BASE_URL
   value: {{ .Values.automationBaseUrl | quote }}
 {{- end }}
+# Scratch directory for git sync checkouts; the same value mounts the
+# workspace emptyDir, so the write path and the mount cannot drift apart.
+- name: AUTOMATION_WORKSPACE_BASE
+  value: {{ .Values.workspace.mountPath | quote }}
 # PostgreSQL database configuration
 - name: AUTOMATION_DB_HOST
   value: {{ .Values.database.host | quote }}

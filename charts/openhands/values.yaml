@@ -1307,6 +1307,13 @@ automation:
     name: automation-git-sync-secret
     key: git-sync-secret
   
+  # Node-local scratch space for git sync checkouts, rendered as
+  # AUTOMATION_WORKSPACE_BASE and as the emptyDir mount on both deployments.
+  # sizeLimit caps it so consumer repositories cannot exhaust node storage.
+  workspace:
+    mountPath: /workspace
+    sizeLimit: 10Gi
+  
   # Datadog configuration
   datadog:
     env: "dev"
