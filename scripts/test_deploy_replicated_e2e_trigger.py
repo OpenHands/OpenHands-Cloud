@@ -10,8 +10,10 @@ E2E_WORKFLOW = ROOT / ".github/workflows/e2e-replicated.yml"
 TEST_WORKFLOW = ROOT / ".github/workflows/test-scripts.yml"
 RELEASE_WORKFLOWS = {
     "unstable": ROOT / ".github/workflows/release-replicated-unstable.yml",
-    "beta": ROOT / ".github/workflows/release-replicated-beta.yml",
 }
+# Beta deploys but does not test: its instance has no `e2e` GitHub user, so
+# saas-deploy no longer lists it and no binding would match the dispatch.
+BETA_WORKFLOW = ROOT / ".github/workflows/release-replicated-beta.yml"
 
 
 def load_workflow(path: Path):
@@ -73,7 +75,7 @@ def test_e2e_workflow_uses_its_environment_token_and_argo_owned_target():
 def test_e2e_workflow_rejects_an_instance_no_binding_serves():
     """A caller typo would otherwise dispatch, match nothing, and pass."""
     command = trigger_step()["run"]
-    assert "unstable|beta|stable" in command
+    assert "unstable|stable" in command
 
 
 def test_e2e_workflow_never_retries_the_dispatch():
@@ -164,6 +166,15 @@ def test_each_release_calls_e2e_only_after_a_successful_deploy(instance):
         "with": {"instance": instance},
         "secrets": "inherit",
     }
+
+
+def test_beta_release_does_not_dispatch_e2e():
+    """Beta has no `e2e` GitHub user, so saas-deploy renders no binding for it.
+    Dispatching anyway would land a 200 that matches nothing, and the
+    confirmation step would warn on every beta release."""
+    workflow = load_workflow(BETA_WORKFLOW)
+    assert "e2e" not in workflow["jobs"]
+    assert "e2e-replicated.yml" not in BETA_WORKFLOW.read_text(encoding="utf-8")
 
 
 def test_deploy_replicated_does_not_call_e2e():

@@ -30,8 +30,9 @@ jobs:
         run: |
           # Argo answers an event that matches no binding with 200 {}, the same
           # as a dispatched one, so a caller typo would otherwise pass silently.
+          # Must match the instances saas-deploy lists in replicatedInstances.
           case "$INSTANCE" in
-            unstable|beta|stable) ;;
+            unstable|stable) ;;
             *) echo "::error::unknown instance \"$INSTANCE\"" ; exit 1 ;;
           esac
 
