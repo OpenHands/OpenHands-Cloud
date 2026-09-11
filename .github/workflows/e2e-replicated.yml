@@ -40,10 +40,15 @@ jobs:
           workflow="openhands-e2e-${INSTANCE}-gh-${RUN_ID}-${RUN_ATTEMPT}"
           echo "workflow=${workflow}" >> "$GITHUB_OUTPUT"
 
+          # run_id/run_attempt are sent as strings (--arg, not --argjson) so the
+          # receiver cannot reformat them: a numeric run_id is large enough that
+          # the event binding formats it in scientific notation (e.g.
+          # 34620115214 -> 3.4620115214e+10) when building the Argo workflow name,
+          # producing an invalid k8s object name and a 500 on dispatch.
           payload=$(jq -n \
             --arg instance "$INSTANCE" \
-            --argjson run_id "$RUN_ID" \
-            --argjson run_attempt "$RUN_ATTEMPT" \
+            --arg run_id "$RUN_ID" \
+            --arg run_attempt "$RUN_ATTEMPT" \
             '{
               instance: $instance,
               run_id: $run_id,
