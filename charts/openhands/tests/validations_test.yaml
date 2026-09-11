@@ -64,6 +64,43 @@ tests:
       - hasDocuments:
           count: 0
 
+  - it: fails when org condenser rollout flags are set without a threshold
+    set:
+      orgDefaults.condenser.maxTokens: null
+      orgDefaults.condenser.applyToExisting: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "orgDefaults.condenser.maxTokens must be set before applyToExisting or overwriteExisting can be enabled."
+  - it: fails when org condenser overwrite is enabled without applyToExisting
+    set:
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: false
+      orgDefaults.condenser.overwriteExisting: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "orgDefaults.condenser.overwriteExisting requires orgDefaults.condenser.applyToExisting=true because overwrite mode only runs while reconciling existing organizations."
+  - it: allows org condenser overwrite when existing-org reconciliation is enabled
+    set:
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: true
+      orgDefaults.condenser.overwriteExisting: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when the orgDefaults block is null
+    set:
+      orgDefaults: null
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when the org condenser block is null
+    set:
+      orgDefaults:
+        condenser: null
+    asserts:
+      - hasDocuments:
+          count: 0
+
   # The bundled MinIO bucket job runs on post-upgrade too, so purge: true wipes
   # conversation and session data on every ordinary upgrade of a persistent
   # install. These cases pin the guard that rejects it.

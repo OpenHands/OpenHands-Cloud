@@ -8,6 +8,19 @@
     "enabled": { "type": "boolean" },
     "dailyConversationLimit": { "type": ["integer", "null"] },
     "duplicateEmailCheck": { "type": "boolean" },
+    "orgDefaults": {
+      "type": ["object", "null"],
+      "properties": {
+        "condenser": {
+          "type": ["object", "null"],
+          "properties": {
+            "maxTokens": { "type": ["integer", "null"], "minimum": 1 },
+            "applyToExisting": { "type": "boolean" },
+            "overwriteExisting": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "image": {
       "type": "object",
       "required": ["repository", "tag"],
