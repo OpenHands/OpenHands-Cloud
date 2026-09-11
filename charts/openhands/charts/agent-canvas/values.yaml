@@ -31,6 +31,15 @@ deployment:
 service:
   port: 8000
 
+# Optional cloud runtime proxy. When enabled, the static server starts the
+# bundled SDK agent-server and routes only cloud-proxy envelopes to it; the
+# umbrella chart can then expose /api/cloud-proxy to this service while keeping
+# the rest of /api on the OpenHands app service.
+cloudProxy:
+  enabled: false
+  path: /api/cloud-proxy
+  agentServerPort: 18000
+
 # Ingress for the agent-canvas service. The umbrella `openhands` chart renders
 # this path on the host supplied here when this chart is used as a subchart.
 ingress:
