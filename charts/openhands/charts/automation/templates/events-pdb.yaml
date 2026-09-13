@@ -1,0 +1,21 @@
+{{- /*
+Only rendered above one replica: at replicas=1 a minAvailable=1 budget makes the
+single pod unevictable, so the node drain this is meant to survive hangs forever
+instead. On a single-node cluster the same stall is possible at any replica count
+(nowhere to reschedule the evicted pod) — turn the budget off there.
+*/}}
+{{- if and .Values.events.enabled .Values.events.podDisruptionBudget.enabled (gt (int .Values.events.deployment.replicas) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: automation-events
+  labels:
+    {{- include "automation.labels" . | nindent 4 }}
+    app.kubernetes.io/component: events
+    app: automation-events
+spec:
+  minAvailable: {{ .Values.events.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: automation-events
+{{- end }}

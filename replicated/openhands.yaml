@@ -39,6 +39,8 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
+
     env:
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
@@ -60,6 +62,7 @@ spec:
       # ignored, so the flag falls back to the model default (false) and the Jira DC
       # integration card never renders. Mirror jira_data_center_enabled here.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA_DC: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA: 'repl{{ ConfigOptionEquals "jira_cloud_enabled" "1" }}'
       LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
       # The chart's fallback for LAMINAR_WEB_HOST is laminar.<ingress.host>, but
       # Replicated installs expose Laminar at the analytics hostname. Set it
@@ -72,6 +75,7 @@ spec:
       # example.com, so this has to be set explicitly. The path-routing block
       # further down replaces it with the <base>/{runtime_id} form.
       RUNTIME_URL_PATTERN: 'https://{runtime_id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}'
+      OH_SANDBOX_MAX_NUM_SANDBOXES: 'repl{{ ConfigOption "sandbox_max_num_sandboxes" }}'
       # OH_AGENT_SERVER_ENV is assembled by the chart from
       # spec.values.global.agentServerEnv, not hand-written here.
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
@@ -94,6 +98,14 @@ spec:
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
+
+    # Enterprise SSO auto-configuration. When the toggle is on, the chart's
+    # keycloak-config init container upserts the enterprise_sso SAML identity
+    # provider in Keycloak from this metadata URL on every pod start.
+    enterpriseSSO:
+      enabled: repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}
+      displayName: repl{{ ConfigOption "enterprise_sso_display_name" | mustToJson }}
+      idpMetadataUrl: repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}
 
     ingress:
       enabled: true
@@ -241,6 +253,8 @@ spec:
       ingress:
         enabled: true
         className: traefik
+        # Replicated uses the customer-uploaded openhands-tls Secret.
+        annotations: null
         hosts:
           - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
             paths:
@@ -289,6 +303,10 @@ spec:
       replicaCount: 1
       autoscaling:
         enabled: false
+      # ADMIN_PASSWORD comes from a secretKeyRef, so a password change needs a
+      # rollout to take effect (same pattern as checksum/litellm-credentials).
+      podAnnotations:
+        checksum/admin-password: 'repl{{ sha256sum (ConfigOption "admin_password") }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
         # Do not override the image tag here. Pin to a stable version in the chart.
@@ -324,24 +342,32 @@ spec:
         PGSSLMODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
+        # Admin-API warm configs overlay installer-managed entries by name:
+        # same-named rows override them and differently-named rows run beside
+        # them. Older runtime-api images ignore this variable.
+        WARM_RUNTIME_CONFIG_OVERLAY: "1"
         RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
         # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
         # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
         # it; "." nests it under the runtime base. The path-routing block below
         # overrides this to "/", which the runtime-api reads as path mode.
         RUNTIME_URL_SEPARATOR: '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
-        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_base_hostname" }}'
+        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_api_hostname" }}'
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
         RUNTIME_CLASS: '{{repl if ConfigOptionEquals "sandbox_isolation" "sysbox"}}sysbox-runc{{repl else}}{{repl end}}'
-        # The embedded-cluster node carries no sysbox-install label or
-        # sysbox-runtime taint, so clear the scheduling defaults the runtime-api
-        # injects for the sysbox-runc class (node selector sysbox-install=yes +
-        # the sysbox-runtime toleration). Empty JSON collections mean "no node
-        # selector / no tolerations", keeping sandboxes schedulable on the single
-        # node. Scheduling is independent from the userns/hostUsers config
-        # (SET_HOST_USERS below). (runtime-api env vars from OpenHands/runtime-api#631.)
+        # Sandbox pod scheduling. Both are empty JSON collections ("no node
+        # selector", "no tolerations"), which overrides the defaults the
+        # runtime-api injects for the sysbox-runc class (node selector
+        # sysbox-install=yes + the sysbox-runtime toleration) — embedded-cluster
+        # nodes carry neither that label nor any taint, so those defaults would
+        # leave sandboxes unschedulable. Embedded Cluster cannot taint nodes at
+        # all, so RUNTIME_TOLERATIONS stays empty; the dedicated-nodes
+        # optionalValues block below points RUNTIME_NODE_SELECTOR at the sandbox
+        # role's label. Scheduling is independent from the userns/hostUsers
+        # config (SET_HOST_USERS below).
+        # (runtime-api env vars from OpenHands/runtime-api#631.)
         RUNTIME_TOLERATIONS: "[]"
         RUNTIME_NODE_SELECTOR: "{}"
         # Make the runtime-api set hostUsers: false on sysbox-runc sandboxes
@@ -371,11 +397,13 @@ spec:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configsByName:
+          # Keep this key aligned with the chart values for Helm merging.
           default:
+            name: v1_current
             # image omitted -> inherits global.agentServerImage. Proxy by
             # default; when custom_sandbox_image_enabled / HasLocalRegistry are
             # active, the optionalValues blocks below override the global instead.
-            working_dir: "/workspace"
+            working_dir: "/workspace/project"
             environment:
               LOG_JSON: "1"
               LOG_JSON_LEVEL_KEY: "severity"
@@ -462,6 +490,7 @@ spec:
       enabled: true
       persistence:
         enabled: true
+        storageClass: openebs-hostpath
       resources:
         requests:
           cpu: "1"
@@ -481,7 +510,7 @@ spec:
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
     # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -493,6 +522,11 @@ spec:
     jiraDc:
       enabled: repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}
       linkMethod: 'repl{{ ConfigOption "jira_data_center_link_method" }}'
+    # Jira Cloud in OHE is email-match only: OAuth linking needs an Atlassian
+    # OAuth app, which self-hosted installs don't have.
+    jira:
+      enabled: repl{{ ConfigOptionEquals "jira_cloud_enabled" "1" }}
+      linkMethod: 'email'
     github:
       enabled: repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}
     gitlab:
@@ -687,7 +721,13 @@ spec:
             accessKey: default
             secretKey: notasecret
           database:
-            createDatabaseUser: true
+            # With automatic database creation off, no bootstrap container
+            # renders, so the automations database and role must already exist.
+            # Unquoted, like the createDatabases lines above, so this reaches
+            # the chart as a boolean rather than a string.
+            createDatabaseUser: repl{{ or (not (ConfigOptionEquals "postgres_type" "external_postgres")) (ConfigOptionEquals "external_postgres_create_databases" "1") }}
+            name: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_automations_database"}}{{repl else}}automations{{repl end}}'
+            user: '{{repl if and (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0")}}{{repl ConfigOption "automations_db_username"}}{{repl else}}automation_user{{repl end}}'
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'
             port: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
             sslMode: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
@@ -1082,6 +1122,8 @@ spec:
           global:
             cloudProvider: "aws"
           clickhouse:
+            diagnostics:
+              retentionDays: repl{{ ConfigOption "clickhouse_diagnostic_log_retention_days" }}
             persistence:
               storageClass: "openebs-hostpath" # default storage class for the k0s embededed cluster
             s3:
@@ -1211,6 +1253,72 @@ spec:
             basePath: /canvas
             authRequired: false
             lockToCloud: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+    # Dedicated sandbox nodes: sandboxes go to nodes joined with the `sandbox`
+    # role, everything else stays on the controller(s). Embedded Cluster v2
+    # cannot taint nodes — its custom roles only stamp labels — so "keep other
+    # workloads off the sandbox nodes" is a required nodeAffinity on our own
+    # pods rather than a taint the sandboxes tolerate.
+    #
+    # The affinity keys on the control-plane role label, which k0s stamps on
+    # every controller and never on a node joined as a plain worker. That label
+    # is already present on every existing install, whereas role labels are
+    # applied at join time only, so openhands.dev/app is absent from any node
+    # that joined before this feature existed. The two nodeSelectorTerms are
+    # OR'd: the second admits dedicated application-capacity workers, joined
+    # with the `app` role, if capacity ever needs to grow beyond the controllers.
+    #
+    # global.scheduling.affinity reaches every chart OpenHands owns; Helm does
+    # not propagate it into vendored third-party subcharts, so each of those
+    # that this install enables gets the same value under its own affinity key.
+    # Node-level DaemonSets (the KVM device plugin here, the sysbox installer in
+    # the infra-sysbox release) are deliberately exempt — they must keep running
+    # on the sandbox nodes too.
+    - when: '{{repl ConfigOptionEquals "sandbox_dedicated_nodes" "1" }}'
+      recursiveMerge: true
+      values:
+        global:
+          scheduling:
+            affinity: &dedicated_nodes_affinity
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: Exists
+                    - matchExpressions:
+                        - key: openhands.dev/app
+                          operator: Exists
+        keycloak:
+          affinity: *dedicated_nodes_affinity
+        litellm-helm:
+          affinity: *dedicated_nodes_affinity
+        minio:
+          affinity: *dedicated_nodes_affinity
+          # Bucket/service-account creation runs as a post-install hook Job with
+          # its own scheduling knobs.
+          postJob:
+            affinity: *dedicated_nodes_affinity
+        postgresql:
+          primary:
+            affinity: *dedicated_nodes_affinity
+        redis:
+          # architecture is standalone, so only the master pod is rendered.
+          master:
+            affinity: *dedicated_nodes_affinity
+        replicated:
+          affinity: *dedicated_nodes_affinity
+        laminar:
+          # Only rendered when analytics is enabled. Every component of the
+          # chart falls back to global.affinity, so one key covers all of them.
+          global:
+            affinity: *dedicated_nodes_affinity
+        runtime-api:
+          env:
+            # Sandboxes go the other way: onto the sandbox-role nodes only.
+            # Only newly created sandbox Deployments pick this up; an existing
+            # sandbox keeps the pod template it was created with, so its pod can
+            # still return to the node its openebs-hostpath PV is pinned to.
+            RUNTIME_NODE_SELECTOR: '{"openhands.dev/sandbox":"true"}'
 
   builder:
     keycloak:

@@ -14,6 +14,10 @@ deployment:
       memory: 512Mi
       cpu: 500m
 
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
 securityContext:
   runAsUser: 42420
   runAsGroup: 42420
@@ -170,3 +174,8 @@ global:
   security:
     # This allows using the bitnamilegacy image repo
     allowInsecureImages: true
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

@@ -1,0 +1,55 @@
+suite: bundled MinIO storage preflight
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+  - troubleshoot/_sandbox-nodes.tpl
+tests:
+  - it: checks node storage for OpenEBS-backed bundled MinIO
+    set:
+      minio.enabled: true
+      minio.persistence.enabled: true
+      minio.persistence.storageClass: openebs-hostpath
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'checkName: "?Embedded storage capacity"?[\s\S]*max\(ephemeralStorageCapacity\) < 200Gi'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData["support-bundle-spec"]
+          pattern: 'checkName: "?Embedded storage capacity"?[\s\S]*max\(ephemeralStorageCapacity\) < 200Gi'
+
+  - it: omits the check for non-hostpath storage
+    set:
+      minio.enabled: true
+      minio.persistence.enabled: true
+      minio.persistence.storageClass: standard
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "Embedded storage capacity"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData["support-bundle-spec"]
+          pattern: "Embedded storage capacity"
+
+  - it: omits the check when bundled MinIO persistence is disabled
+    set:
+      minio.enabled: true
+      minio.persistence.enabled: false
+      minio.persistence.storageClass: openebs-hostpath
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "Embedded storage capacity"

@@ -1,0 +1,44 @@
+suite: duplicate email check env wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: prevents duplicate base emails by default
+    set:
+      enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DUPLICATE_EMAIL_CHECK
+            value: "true"
+
+  - it: allows operators to disable duplicate base email checks
+    set:
+      enabled: true
+      duplicateEmailCheck: false
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DUPLICATE_EMAIL_CHECK
+            value: "false"
+
+  - it: preserves the generic env override without duplicate entries
+    set:
+      enabled: true
+      duplicateEmailCheck: true
+      env:
+        DUPLICATE_EMAIL_CHECK: "false"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DUPLICATE_EMAIL_CHECK
+            value: "false"
+          count: 1

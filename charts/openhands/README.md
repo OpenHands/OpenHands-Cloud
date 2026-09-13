@@ -18,9 +18,40 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### Organization condenser defaults
+
+Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Any positive integer is accepted. Condensation triggers on the smaller of this value and the agent LLM's effective input limit, so a value above that limit has no effect; it does not change the model context window, and event-count condensation may still occur first.
+
+These values only take effect from the app version that reads the `OPENHANDS_ORG_DEFAULTS_CONDENSER_*` environment variables, which is tracked in [OpenHands/enterprise#337](https://github.com/OpenHands/enterprise/pull/337). The current chart `appVersion` does not include that reader, so on it these values render into the pod and do nothing.
+
+```yaml
+orgDefaults:
+  condenser:
+    maxTokens: 200000
+    applyToExisting: true
+    overwriteExisting: true
+```
+
+New applicable OpenHands org settings receive the configured value. Existing org rows are only updated when `applyToExisting: true`; existing non-null values are only replaced when `overwriteExisting: true`. Missing and JSON-null `condenser.max_tokens` values are treated as unset.
+
+Reconciliation is triggered from the app server's startup lifespan, so it runs once per `saas_server` worker process every time one starts, and it stays armed for as long as these values remain in the release. The maintenance CronJobs that share this env block never trigger it, because they run standalone `python -m` entrypoints that do not start the app. A concurrent database lock serializes overlapping runs, so repeated runs converge on the same result rather than conflicting.
+
+The practical consequence is that this is not a rollout-scoped, one-time operation. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction re-applies it and overwrites org-admin UI changes made since the last start. Remove `applyToExisting`/`overwriteExisting` once the rollout completes. Then remove `orgDefaults.condenser.maxTokens` as well if you want to stop future defaulting and reconciliation.
+
+`overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
+
 ### Email (Resend)
 
 To enable organization invitation emails via Resend, set `resend.enabled: true` and create a Kubernetes secret named `resend-api-key` with key `resend-api-key` containing your Resend API key. The secret name can be overridden with `resend.auth.existingSecret`.
+
+### Laminar ClickHouse diagnostics
+
+When Laminar analytics is enabled, the chart applies bounded retention to
+high-volume ClickHouse diagnostic tables such as `system.trace_log`. Replicated
+installs expose this as **Analytics Configuration → ClickHouse Diagnostic Log
+Retention**, defaulting to 3 days. See
+[ClickHouse diagnostic log retention](../../docs/clickhouse-diagnostic-log-retention.md)
+for cleanup commands and support-bundle details.
 
 ### TLS and Certificate Configuration
 
@@ -272,6 +303,39 @@ Bitbucket Data Center is the self-hosted version of Bitbucket. The setup is diff
      enabled: true
      host: <your-bitbucket-data-center-host>
    ```
+
+#### Enterprise SSO (SAML)
+
+Enterprise SSO signs users in with a corporate SAML identity provider through the bundled Keycloak.
+
+1. Register Keycloak with your identity provider using these SAML values:
+
+   - ACS URL `https://auth.openhands.example.com/realms/allhands/broker/enterprise_sso/endpoint`
+   - Entity ID `https://auth.openhands.example.com/realms/allhands`
+
+2. Update site-values.yaml file:
+
+   ```yaml
+   enterpriseSSO:
+     enabled: true
+     displayName: "Company SSO"          # optional, defaults to "Company SSO"
+     idpMetadataUrl: "https://idp.example.com/saml/metadata"
+   # When idpMetadataUrl is provided, the chart automatically creates and keeps updated the
+   # enterprise_sso SAML identity provider in the bundled Keycloak on every pod start.
+   # The managed provider validates SAML signatures, trusts the assertion email for account
+   # linking, and stores an ownership marker in Keycloak. Turning enabled off disables only
+   # a provider with that marker, even if idpMetadataUrl is cleared in the same rollout.
+   # Leave idpMetadataUrl empty to configure the provider manually in the Keycloak admin
+   # console instead; the chart does not disable providers without its ownership marker.
+   ```
+
+   For manual setup, also add this identity-provider mapper to `enterprise_sso`:
+
+   - Name: `identity-provider`
+   - Mapper type: `hardcoded-attribute-idp-mapper`
+   - Attribute: `identity_provider`
+   - Value: `enterprise_sso:saml`
+   - Sync mode: `FORCE`
 
 ### LiteLLM configuration
 

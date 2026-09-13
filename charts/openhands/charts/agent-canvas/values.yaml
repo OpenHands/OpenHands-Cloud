@@ -13,7 +13,7 @@ image:
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "1.10.0"
+  tag: "1.18.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -49,6 +49,14 @@ ingress:
 staticServer:
   authRequired: true
   basePath: /canvas
+  # When true, sets AGENT_CANVAS_DISABLE_TELEMETRY=1 on the container, which
+  # static-server.mjs reads to inject window.__AGENT_CANVAS_DO_NOT_TRACK__ so
+  # the pre-built frontend disables all PostHog product telemetry (including the
+  # anonymous install event) at runtime.
+  # Defaults to true because this chart targets self-hosted deployments (e.g.
+  # OHE), which ship with telemetry off. A SaaS deployment that wants telemetry
+  # can override this to false.
+  disableTelemetry: true
   # When set, passes `--lock-to-cloud <url>` to static-server.mjs, which
   # injects window.__AGENT_CANVAS_LOCK_TO_CLOUD__ so the UI locks backend
   # setup to a single OpenHands Cloud host (e.g.
@@ -65,6 +73,10 @@ staticServer:
     - /docs
     - /redoc
     - /openapi.json
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
 
 # Pod-level security context
 securityContext:
@@ -94,3 +106,10 @@ probes:
 
 # Extra environment variables to pass to the container.
 env: {}
+
+global:
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

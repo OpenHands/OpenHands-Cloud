@@ -36,7 +36,7 @@ jobs:
             --arg agent_server "openhands/agent-server:${AGENT_SERVER_TAG}" \
             '[$runtime_api, $enterprise, $agent_server]')
 
-          echo "images=${IMAGES}" >> $GITHUB_OUTPUT
+          echo "images=${IMAGES}" >> "$GITHUB_OUTPUT"
           echo "Discovered images: ${IMAGES}"
 
   scan_docker_images:

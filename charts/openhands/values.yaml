@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.49.1
+  tag: 1.61.0
 
 autoscaling:
   enabled: false
@@ -32,6 +32,31 @@ appConfig:
   OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
+
+# Maximum conversations a user may start per UTC day. null leaves the
+# enterprise application default unlimited; set an integer to enforce a limit.
+dailyConversationLimit: null
+
+# Reject sign-ins when another identity has the same base email after removing
+# a plus-address suffix (for example, name+test@example.com and name@example.com).
+duplicateEmailCheck: true
+
+# Organization-default condenser settings. These seed newly-created applicable
+# OpenHands org settings. Existing org rows are only reconciled when explicitly
+# enabled below because that mutates persisted database settings.
+orgDefaults:
+  condenser:
+    # Conversation-history size that triggers condensation, NOT an LLM output-token
+    # cap. Named to match the backend's condenser.max_tokens field. Condensation
+    # fires on the smaller of this and the agent LLM's effective input limit, so a
+    # larger value has no effect. Positive integer, or null for app/SDK defaults.
+    maxTokens: null
+    # Mutate existing org rows during reconciliation, which the app server runs on
+    # every start while these values are set -- not just once per rollout.
+    applyToExisting: false
+    # Force existing non-null org-level values to maxTokens during reconciliation.
+    # Destructive and repeated on every app start; see README before enabling.
+    overwriteExisting: false
 
 datadog:
   enabled: false
@@ -72,6 +97,11 @@ deployment:
     limits:
       memory: 3Gi
 
+# Affinity for the pods this chart owns directly (the app, integrations and MCP
+# Deployments, and the maintenance CronJobs). Overrides
+# global.scheduling.affinity for those pods; leave empty to inherit it.
+affinity: {}
+
 # Security context settings for all pods
 securityContext:
   runAsUser: 42420
@@ -88,6 +118,11 @@ env:
   # each sandbox ingress. The default nests sandboxes under the runtime base,
   # matching the runtime-api's own "." separator.
   RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
+  # Maximum number of concurrent sandboxes the app will start (0 = no cap).
+  # The Replicated installer exposes this as the sandbox_max_num_sandboxes
+  # ConfigOption; leave at 0 here so non-Replicated installs are uncapped by
+  # default and operators opt in to a limit.
+  OH_SANDBOX_MAX_NUM_SANDBOXES: "0"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
@@ -203,8 +238,13 @@ bitbucket:
   auth:
     existingSecret: bitbucket-app
 
+# Enterprise SSO (SAML). Enabling this advertises the login provider. When an
+# HTTPS metadata URL is also set, the keycloak-config init container manages the
+# enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
+  displayName: "Company SSO"
+  idpMetadataUrl: ""
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any
 # secret-backed config changes this value, which changes the openhands pod
@@ -316,6 +356,20 @@ proactiveConvoClean:
     limits:
       memory: 512Mi
       cpu: 200m
+
+appConversationStartTaskClean:
+  enabled: true
+  schedule: "0 3 * * *" # Daily at 3 AM UTC
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
 
 resendSync:
   enabled: false
@@ -552,6 +606,13 @@ laminar:
   # HTTP port for Laminar app server (default: 443)
   # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
   httpPort: null
+
+  clickhouse:
+    diagnostics:
+      # Retention, in days, for high-volume ClickHouse system diagnostic tables
+      # used by Laminar. The chart applies this with a Helm install/upgrade hook
+      # so it survives Replicated/KOTS reconciliation and upgrades.
+      retentionDays: 3
 
   frontend:
     ingress:
@@ -914,9 +975,12 @@ runtime-api:
     # Map form keyed by config name; see runtime-api subchart values for the
     # legacy `configs` list and precedence rules.
     configsByName:
+      # Keep the map key stable for existing Helm overrides.
       default:
+        name: v1_current
         # image omitted -> defaults to global.agentServerImage (repo:tag).
-        working_dir: "/workspace"
+        # Must match the app's sandbox spec working_dir, or no warm pod is ever claimable.
+        working_dir: "/workspace/project"
         environment:
           # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
           LMNR_BASE_URL: ""
@@ -1004,6 +1068,7 @@ device-plugin:
 
 jira:
   enabled: false
+  linkMethod: oauth
 
 jiraDc:
   enabled: false
@@ -1139,6 +1204,24 @@ automation:
           cpu: 500m
     uvicorn:
       workers: 2
+    # Keep at least one events pod serving during voluntary disruptions (node
+    # drains / rotations). Only rendered when deployment.replicas > 1 — at one
+    # replica the budget would make the pod unevictable and stall the drain.
+    # Set enabled=false on a single-node cluster, where an evicted pod has
+    # nowhere else to land.
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    # Spread replicas across nodes so a single node failure/drain cannot take
+    # out the whole deployment. ScheduleAnyway keeps scheduling best-effort when
+    # a perfect spread is not possible (e.g. small clusters).
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: automation-events
   
   securityContext:
     runAsUser: 42420
@@ -1267,7 +1350,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.39.1-python
+    tag: 1.47.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1278,6 +1361,14 @@ global:
   # runtime-api claims warm pods by exact env match, so a key present here but
   # absent from the warm env would make the pool unclaimable.
   agentServerEnv: {}
+  scheduling:
+    # Affinity applied to every pod this chart and its OpenHands subcharts own
+    # (Deployments, Jobs and CronJobs alike). Node-level DaemonSets are exempt
+    # so they keep covering every node — the KVM device plugin and the sysbox
+    # installer in charts/infra must run on sandbox nodes too. Vendored
+    # third-party subcharts cannot read this; set each one's own `affinity`
+    # value alongside it. A chart-level `affinity` value wins over this.
+    affinity: {}
 
 # Trust-manager Bundle that fans a CA bundle (public CAs + an optional
 # operator-supplied CA certificate) out as a ConfigMap into the release
@@ -1502,3 +1593,7 @@ agent-canvas:
 
   staticServer:
     basePath: /canvas
+    # Disable PostHog product telemetry in the pre-built canvas frontend at
+    # runtime, via AGENT_CANVAS_DISABLE_TELEMETRY=1. Defaults to true for
+    # self-hosted deployments; a SaaS deployment can override to false.
+    disableTelemetry: true

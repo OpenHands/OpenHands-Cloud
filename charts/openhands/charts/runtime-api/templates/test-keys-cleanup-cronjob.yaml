@@ -20,6 +20,10 @@ spec:
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with (include "runtime-api.affinity" .) }}
+          affinity:
+            {{- . | nindent 12 }}
+          {{- end }}
           containers:
           - name: test-keys-cleanup
             image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

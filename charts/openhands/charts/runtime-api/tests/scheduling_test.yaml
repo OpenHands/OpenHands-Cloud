@@ -1,0 +1,80 @@
+suite: pod scheduling affinity
+templates:
+  - templates/cleanup-cronjob.yaml
+  - templates/deployment.yaml
+tests:
+  - it: the runtime-api Deployment renders global.scheduling.affinity
+    template: templates/deployment.yaml
+    set:
+      global.scheduling.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+              - matchExpressions:
+                  - key: openhands.dev/app
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms
+          value:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+            - matchExpressions:
+                - key: openhands.dev/app
+                  operator: Exists
+
+  - it: the chart-level affinity value wins over global.scheduling.affinity
+    template: templates/deployment.yaml
+    set:
+      global.scheduling.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: openhands.dev/app
+                    operator: Exists
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: chart.example.com/override
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: chart.example.com/override
+
+  - it: the runtime-api Deployment renders no affinity key by default
+    template: templates/deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity
+
+  - it: the cleanup CronJob renders global.scheduling.affinity
+    template: templates/cleanup-cronjob.yaml
+    set:
+      cleanup.enabled: true
+      global.scheduling.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: node-role.kubernetes.io/control-plane
+
+  - it: the cleanup CronJob renders no affinity key by default
+    template: templates/cleanup-cronjob.yaml
+    set:
+      cleanup.enabled: true
+    asserts:
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.affinity

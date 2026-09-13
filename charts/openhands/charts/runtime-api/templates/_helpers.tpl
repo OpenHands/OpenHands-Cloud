@@ -10,6 +10,13 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
+{{- define "runtime-api.cronjobName" -}}
+{{- $suffix := printf "-%s" .suffix -}}
+{{- $maxLen := int (sub 52 (len $suffix)) -}}
+{{- $fullname := include "runtime-api.fullname" .root -}}
+{{- printf "%s%s" ($fullname | trunc $maxLen | trimSuffix "-") $suffix -}}
+{{- end -}}
+
 {{- define "runtime-api.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
@@ -104,4 +111,17 @@ PostgreSQL secret key
 {{- else }}
 {{- printf "db-password" -}}
 {{- end }}
+{{- end -}}
+
+{{/*
+Pod affinity. Renders the affinity map as YAML, or nothing when no affinity is
+configured, so callers can wrap the include in a `with` and omit the key
+entirely. A chart-level `affinity` value wins over the umbrella-wide
+`global.scheduling.affinity`.
+*/}}
+{{- define "runtime-api.affinity" -}}
+{{- $affinity := .Values.affinity | default (dig "scheduling" "affinity" (dict) (.Values.global | default (dict))) -}}
+{{- with $affinity -}}
+{{- toYaml . -}}
+{{- end -}}
 {{- end -}}
