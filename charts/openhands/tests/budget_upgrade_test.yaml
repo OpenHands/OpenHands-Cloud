@@ -1,0 +1,50 @@
+suite: budget writer upgrade barrier
+templates:
+  - templates/budget-upgrade.yaml
+  - templates/budget-maintenance-cronjob.yaml
+  - templates/maintenance-tasks-cronjob.yaml
+tests:
+  - it: leaves the upgrade hooks opt-in until the ownership-aware image is pinned
+    template: templates/budget-upgrade.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: quiesces before migration and verifies after rollout
+    template: templates/budget-upgrade.yaml
+    release:
+      upgrade: true
+    set:
+      budgetUpgrade.enabled: true
+      image.tag: sha-candidate
+    asserts:
+      - hasDocuments:
+          count: 6
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade
+        documentIndex: 4
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/openhands/enterprise-server:sha-candidate
+        documentIndex: 4
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+        documentIndex: 5
+  - it: holds budget jobs until the post-upgrade gate passes
+    template: templates/budget-maintenance-cronjob.yaml
+    set:
+      budgetUpgrade.enabled: true
+    asserts:
+      - equal:
+          path: spec.suspend
+          value: true
+  - it: also holds the general key-repair writer
+    template: templates/maintenance-tasks-cronjob.yaml
+    set:
+      budgetUpgrade.enabled: true
+      maintenanceTasks.enabled: true
+    asserts:
+      - equal:
+          path: spec.suspend
+          value: true

@@ -19,6 +19,7 @@ CHART_YAMLS := $(shell find $(CHARTDIR) -name 'Chart.yaml')
 # Release metadata: version comes from the openhands chart, channel from the current git branch
 VERSION     ?= $(shell yq .version $(CHARTDIR)/openhands/Chart.yaml)
 REPLICATED_APP ?= openhands
+REQUIRED_RELEASE ?= false
 BRANCH      := $(shell git branch --show-current)
 CHANNEL     := $(BRANCH)
 ifeq ($(CHANNEL), main)
@@ -148,4 +149,5 @@ release: check-release-guard clean $(RELEASE_FILES) check-duplicate-chart-entrie
 		--version $(VERSION) \
 		--yaml-dir $(BUILDDIR) \
 		--ensure-channel \
+		--required=$(REQUIRED_RELEASE) \
 		--promote $(CHANNEL)
