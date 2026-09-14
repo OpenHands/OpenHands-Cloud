@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.59.1
+  tag: 1.61.0
 
 autoscaling:
   enabled: false
@@ -40,6 +40,23 @@ dailyConversationLimit: null
 # Reject sign-ins when another identity has the same base email after removing
 # a plus-address suffix (for example, name+test@example.com and name@example.com).
 duplicateEmailCheck: true
+
+# Organization-default condenser settings. These seed newly-created applicable
+# OpenHands org settings. Existing org rows are only reconciled when explicitly
+# enabled below because that mutates persisted database settings.
+orgDefaults:
+  condenser:
+    # Conversation-history size that triggers condensation, NOT an LLM output-token
+    # cap. Named to match the backend's condenser.max_tokens field. Condensation
+    # fires on the smaller of this and the agent LLM's effective input limit, so a
+    # larger value has no effect. Positive integer, or null for app/SDK defaults.
+    maxTokens: null
+    # Mutate existing org rows during reconciliation, which the app server runs on
+    # every start while these values are set -- not just once per rollout.
+    applyToExisting: false
+    # Force existing non-null org-level values to maxTokens during reconciliation.
+    # Destructive and repeated on every app start; see README before enabling.
+    overwriteExisting: false
 
 datadog:
   enabled: false
@@ -1368,7 +1385,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.46.0-python
+    tag: 1.47.0-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
