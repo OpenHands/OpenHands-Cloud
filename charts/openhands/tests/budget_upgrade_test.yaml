@@ -31,6 +31,17 @@ tests:
           path: metadata.annotations["helm.sh/hook"]
           value: post-install,post-upgrade
         documentIndex: 5
+  - it: retains the upgrade hook when KOTS renders an install preview
+    template: templates/budget-upgrade.yaml
+    set:
+      budgetUpgrade.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 6
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade
+        documentIndex: 4
   - it: holds budget jobs until the post-upgrade gate passes
     template: templates/budget-maintenance-cronjob.yaml
     set:

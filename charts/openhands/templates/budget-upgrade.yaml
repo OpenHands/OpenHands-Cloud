@@ -68,7 +68,6 @@ data:
   budget_upgrade.py: |
     {{- .Files.Get "files/budget_upgrade.py" | nindent 4 }}
 {{- range $phase := list "pre" "post" }}
-{{- if or (eq $phase "post") $.Release.IsUpgrade }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -142,6 +141,5 @@ spec:
                   fieldPath: metadata.namespace
           resources:
             {{- toYaml $.Values.budgetMaintenance.resources | nindent 12 }}
-{{- end }}
 {{- end }}
 {{- end }}
