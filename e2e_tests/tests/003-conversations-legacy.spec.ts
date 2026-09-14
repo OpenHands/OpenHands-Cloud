@@ -49,8 +49,6 @@ test.describe("legacy conversations @conversations", () => {
     // Start a new conversation using the launch button.
     await homePage.startNewConversation("launch-new-conversation-button");
 
-    // Allow navigation to complete.
-    await page.waitForTimeout(2000);
     conversationPage = new ConversationPage(page);
 
     await conversationPage.waitForConversationReady();
@@ -107,7 +105,6 @@ test.describe("legacy conversations @conversations", () => {
     // Start a new conversation with the repo launch button.
     await homePage.startNewConversation("repo-launch-button");
 
-    await page.waitForTimeout(2000);
     conversationPage = new ConversationPage(page);
 
     await conversationPage.waitForConversationReady();
@@ -246,7 +243,6 @@ test.describe("legacy conversations @conversations", () => {
 
     await homePage.startNewConversation("launch-new-conversation-button");
 
-    await page.waitForTimeout(2000);
     conversationPage = new ConversationPage(page);
 
     // Pass an explicit cold-start budget: the default is 120s, which a busy
