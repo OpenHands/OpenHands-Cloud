@@ -5,6 +5,14 @@ import { pollUntil } from "./budgets";
 export interface BudgetCycleState {
   cycleStartAt: string;
   cycleStartSpend: number;
+  userCycleStartSpend: Record<string, number>;
+  liteLLMLastSyncAt: string | null;
+  liteLLMLastSyncStatus: string | null;
+  liteLLMLastSyncError: string | null;
+  liteLLMLastSpendSnapshotAt: string | null;
+  liteLLMLastTeamSpend: number | null;
+  liteLLMLastMemberSpend: Record<string, number>;
+  liteLLMKnownMemberIds: string[];
 }
 
 export interface BudgetMaintenanceResult {
@@ -36,8 +44,25 @@ export class BudgetDatabase {
       const result = await client.query<{
         cycle_start_at: Date;
         cycle_start_spend: number;
+        user_cycle_start_spend: Record<string, number>;
+        litellm_last_sync_at: Date | null;
+        litellm_last_sync_status: string | null;
+        litellm_last_sync_error: string | null;
+        litellm_last_spend_snapshot_at: Date | null;
+        litellm_last_team_spend: number | null;
+        litellm_last_member_spend: Record<string, number>;
+        litellm_known_member_ids: string[];
       }>(
-        `SELECT cycle_start_at, cycle_start_spend
+        `SELECT cycle_start_at,
+                cycle_start_spend,
+                user_cycle_start_spend,
+                litellm_last_sync_at,
+                litellm_last_sync_status,
+                litellm_last_sync_error,
+                litellm_last_spend_snapshot_at,
+                litellm_last_team_spend,
+                litellm_last_member_spend,
+                litellm_known_member_ids
            FROM org_budget_settings
           WHERE org_id = $1`,
         [orgId],
@@ -47,6 +72,18 @@ export class BudgetDatabase {
       return {
         cycleStartAt: row.cycle_start_at.toISOString(),
         cycleStartSpend: Number(row.cycle_start_spend),
+        userCycleStartSpend: row.user_cycle_start_spend,
+        liteLLMLastSyncAt: row.litellm_last_sync_at?.toISOString() ?? null,
+        liteLLMLastSyncStatus: row.litellm_last_sync_status,
+        liteLLMLastSyncError: row.litellm_last_sync_error,
+        liteLLMLastSpendSnapshotAt:
+          row.litellm_last_spend_snapshot_at?.toISOString() ?? null,
+        liteLLMLastTeamSpend:
+          row.litellm_last_team_spend === null
+            ? null
+            : Number(row.litellm_last_team_spend),
+        liteLLMLastMemberSpend: row.litellm_last_member_spend,
+        liteLLMKnownMemberIds: row.litellm_known_member_ids,
       };
     });
   }
@@ -69,9 +106,30 @@ export class BudgetDatabase {
     return this.withClient(async (client) => {
       const result = await client.query(
         `UPDATE org_budget_settings
-            SET cycle_start_at = $2, cycle_start_spend = $3
+            SET cycle_start_at = $2,
+                cycle_start_spend = $3,
+                user_cycle_start_spend = $4::json,
+                litellm_last_sync_at = $5,
+                litellm_last_sync_status = $6,
+                litellm_last_sync_error = $7,
+                litellm_last_spend_snapshot_at = $8,
+                litellm_last_team_spend = $9,
+                litellm_last_member_spend = $10::json,
+                litellm_known_member_ids = $11::json
           WHERE org_id = $1`,
-        [orgId, state.cycleStartAt, state.cycleStartSpend],
+        [
+          orgId,
+          state.cycleStartAt,
+          state.cycleStartSpend,
+          JSON.stringify(state.userCycleStartSpend),
+          state.liteLLMLastSyncAt,
+          state.liteLLMLastSyncStatus,
+          state.liteLLMLastSyncError,
+          state.liteLLMLastSpendSnapshotAt,
+          state.liteLLMLastTeamSpend,
+          JSON.stringify(state.liteLLMLastMemberSpend),
+          JSON.stringify(state.liteLLMKnownMemberIds),
+        ],
       );
       if (result.rowCount !== 1) {
         throw new Error(`Failed to restore budget cycle for org ${orgId}`);
