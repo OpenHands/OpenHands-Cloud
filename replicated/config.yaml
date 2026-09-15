@@ -1435,6 +1435,31 @@ spec:
             - name: "DEBUG"
               title: "Debug"
 
+    - name: upgrade_checks
+      title: Upgrade Checks
+      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      items:
+        - name: budget_preflight_mode
+          title: Pre-upgrade Budget Preflight
+          help_text: Read-only check of each organization's budget state before the upgrade applies. Strict blocks the upgrade on missing baselines, members missing from LiteLLM, cap drift, or a failed last sync; Acknowledge only records the findings.
+          type: select_one
+          default: "acknowledge"
+          items:
+            - name: "acknowledge"
+              title: "Acknowledge (default)"
+            - name: "strict"
+              title: "Strict"
+        - name: budget_reconcile_gate_mode
+          title: Post-upgrade Budget Reconciliation Gate
+          help_text: Reconciles every organization's LiteLLM budget policy after the upgrade and verifies it by readback. Strict marks the upgrade failed until reconciliation succeeds; Acknowledge lets the release proceed and records the findings.
+          type: select_one
+          default: "strict"
+          items:
+            - name: "strict"
+              title: "Strict (default)"
+            - name: "acknowledge"
+              title: "Acknowledge"
+
     - name: experimental
       title: Experimental
       description: Preview features that are still in development. Enable at your own risk.

@@ -1,0 +1,96 @@
+suite: openhands budget reconcile gate hook job
+templates:
+  - budget-reconcile-gate-job.yaml
+tests:
+  - it: renders nothing on install
+    set:
+      enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a post-upgrade hook Job on upgrade with the strict default
+    release:
+      upgrade: true
+    set:
+      enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-budget-reconcile-gate
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: budget-reconcile-gate
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "5"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 540
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+      - equal:
+          path: spec.template.metadata.labels.app
+          value: RELEASE-NAME-budget-reconcile-gate
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: budget-reconcile-gate
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: "python -m run_budget_preflight"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BUDGET_PREFLIGHT_PHASE
+            value: post
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BUDGET_PREFLIGHT_MODE
+            value: strict
+
+  - it: passes acknowledge mode through from values
+    release:
+      upgrade: true
+    set:
+      enabled: true
+      budgetReconcileGate.mode: acknowledge
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BUDGET_PREFLIGHT_MODE
+            value: acknowledge
+
+  - it: renders no resources when budgetReconcileGate is disabled
+    release:
+      upgrade: true
+    set:
+      enabled: true
+      budgetReconcileGate.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no resources when the release is disabled
+    release:
+      upgrade: true
+    set:
+      enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
