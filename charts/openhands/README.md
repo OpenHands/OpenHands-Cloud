@@ -703,7 +703,7 @@ Note: This will not delete any PVCs or secrets created. You'll need to delete th
 
 ### Budget ownership upgrade
 
-Enable `budgetUpgrade.enabled` only with the ownership-aware Enterprise image. The upgrade pauses Enterprise CronJobs, stops application and bundled LiteLLM deployments, and removes active old Enterprise Jobs before migrations. This causes a short application/inference outage. The post-upgrade gate verifies budgets and every Enterprise container/init image before resuming maintenance. It resumes the budget CronJob even if previously suspended and preserves other existing CronJob suspensions.
+Replicated enables `budgetUpgrade.enabled`; standalone Helm installations must enable it when selecting the ownership-aware Enterprise image. The hook rejects an old application image before stopping any writers. The upgrade pauses Enterprise CronJobs, stops application and bundled LiteLLM deployments, and removes active old Enterprise Jobs before migrations. This causes a short application/inference outage. The post-upgrade gate verifies budgets and every Enterprise container/init image before resuming maintenance. It resumes the budget CronJob even if previously suspended and preserves other existing CronJob suspensions.
 
 A failed hook leaves its Job log and `<release>-budget-upgrade-state` ConfigMap for diagnosis. Retry the corrected upgrade; the checkpoint preserves original suspension state. Do not restart old writers or roll back to an ownership-unaware image after migration. For the first Replicated ownership release, publish with `make release REQUIRED_RELEASE=true`; verify the release is required before deployment. KOTS must refuse redeployment of versions below that release. Rollback does not restore databases.
 

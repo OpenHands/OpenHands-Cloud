@@ -107,6 +107,8 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
+              # Reject an old application image before stopping any writers.
+              python -c 'from server.services.budget_adoption_service import BudgetAdoptionService'
               {{- if eq $phase "post" }}
               python -m run_budget_preflight
               {{- end }}
