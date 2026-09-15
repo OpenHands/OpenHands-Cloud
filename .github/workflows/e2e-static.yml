@@ -27,7 +27,9 @@ jobs:
         run: npm ci
       - name: Lint and type-check
         run: npm run lint
-      - name: Run helper unit tests
+      - name: Install Chromium for unit tests
+        run: npx playwright install --with-deps chromium
+      - name: Unit tests
         run: npm run test:unit
       - name: Discover Chromium tests
         env:
