@@ -8,6 +8,9 @@ metadata:
     app.kubernetes.io/component: proactive-convo-clean
     app: {{ .Release.Name }}-proactive-convo-clean
 spec:
+  {{- if .Values.budgetUpgrade.enabled }}
+  suspend: true
+  {{- end }}
   schedule: {{ .Values.proactiveConvoClean.schedule | quote }}
   concurrencyPolicy: {{ .Values.proactiveConvoClean.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.proactiveConvoClean.failedJobsHistoryLimit }}

@@ -681,17 +681,9 @@ litellm-helm:
   # and because it is the most extensively tested scenario. Our automation uses an admin key
   # to do user management for the LiteLLM instance.
   enabled: false
-  # Pin the litellm image tag. The litellm-helm chart's default tag is its
-  # appVersion (currently v1.80.8-nightly), which predates the
-  # --use_v2_migration_resolver arg passed via the Replicated values and so
-  # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
-  # format BerriAI uses for 1.84.x+ stable images).
-  #
-  # 1.94.1 picks up the orphaned prisma query-engine reaping fix
-  # (BerriAI/litellm#33424, released in v1.94.0), which addresses the gradual
-  # per-worker memory growth seen on 1.93.0.
+  # 1.100.1 restores exhausted member keys; bypass admission caches below.
   image:
-    tag: "1.94.1"
+    tag: "1.100.1@sha256:fc44cf7f72786e636dc4dc1032b4e431818abfec9d54b8e04284fdea7ef03e2a"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
@@ -740,6 +732,8 @@ litellm-helm:
     #     model: "anthropic/claude-3-7-sonnet-20250219"
     #     api_key: os.environ/ANTHROPIC_API_KEY
     general_settings:
+      # Read current policy on every request, including across proxy workers.
+      user_api_key_cache_ttl: 0
       # When true, LiteLLM forwards client x-* headers and anthropic-beta to upstream LLM providers.
       # Keep false unless you trust callers and need provider-visible custom headers.
       forward_client_headers_to_llm_api: false
@@ -930,6 +924,10 @@ maintenanceTasks:
     limits:
       memory: "1Gi"
       cpu: "500m"
+
+budgetUpgrade:
+  # Enable only with an ownership-aware Enterprise image and verified LiteLLM.
+  enabled: false
 
 budgetMaintenance:
   enabled: true

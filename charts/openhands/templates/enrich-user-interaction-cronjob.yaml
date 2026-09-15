@@ -9,6 +9,9 @@ metadata:
     app.kubernetes.io/component: enrich-user-interaction
     app: {{ .Release.Name | trunc 27 }}-enrich-user-interaction
 spec:
+  {{- if .Values.budgetUpgrade.enabled }}
+  suspend: true
+  {{- end }}
   schedule: {{ .Values.enrichUserInteractionData.schedule | quote }}
   concurrencyPolicy: {{ .Values.enrichUserInteractionData.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.enrichUserInteractionData.failedJobsHistoryLimit }}

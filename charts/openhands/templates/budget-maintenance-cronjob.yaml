@@ -8,6 +8,9 @@ metadata:
     app.kubernetes.io/component: budget-maintenance
     app: {{ .Release.Name }}-budget-maintenance
 spec:
+  {{- if .Values.budgetUpgrade.enabled }}
+  suspend: true
+  {{- end }}
   schedule: {{ .Values.budgetMaintenance.schedule | quote }}
   concurrencyPolicy: {{ .Values.budgetMaintenance.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.budgetMaintenance.failedJobsHistoryLimit }}

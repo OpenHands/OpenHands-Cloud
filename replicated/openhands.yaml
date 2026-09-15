@@ -34,6 +34,11 @@ spec:
         CURL_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
         NODE_EXTRA_CA_CERTS: /etc/openhands/ca-bundle/ca-bundle.crt
 
+    # Stop old writers before the ownership migration and resume maintenance
+    # only after the new controller has verified the preserved policy.
+    budgetUpgrade:
+      enabled: true
+
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
     imagePullSecrets:

@@ -45,6 +45,16 @@ fresh database sessions. It will not run unless
 `BUDGET_E2E_MUTATION_CONFIRMED=true`, and it rejects personal or non-test
 organizations by default.
 
+This suite targets the legacy budget API. It refuses to mutate organizations
+whose budget response contains `control_mode`: direct cycle restoration and
+native membership repair would bypass their journaled controller. A passing
+legacy run does not certify the ownership-aware upgrade. For that release,
+use an isolated reconstruction of the pre-upgrade state and record the exact
+images and rendered configuration while exercising product preview/adoption,
+current and future allowances, immediate same-key inference after recovery,
+renewal/retry/restart, and a real conversation. Retain the database and evidence
+after the run rather than restoring managed policy with legacy SQL.
+
 Configure the protected GitHub environment `budget-e2e-staging` with:
 
 | Kind     | Name                                  | Purpose                                                      |
