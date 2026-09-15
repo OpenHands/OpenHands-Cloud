@@ -36,8 +36,8 @@
           when: "min(memoryCapacity) < 8Gi"
           message: "At least 8GB of memory per node is recommended for OpenHands with dependencies"
       - warn:
-          when: "min(memoryCapacity) < 16Gi"
-          message: "At least 16GB of memory per node is recommended for optimal performance"
+          when: "min(memoryCapacity) < 32Gi"
+          message: "At least 32GB of memory per node is recommended for optimal performance"
       - warn:
           when: "min(cpuCapacity) < 4"
           message: "At least 4 CPU cores per node is recommended for OpenHands"
