@@ -118,6 +118,22 @@ spec:
           - app=laminar-clickhouse
         limits:
           maxAge: 336h
+    # Laminar app-server pod logs
+    - logs:
+        name: app/laminar-app-server/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-app-server
+        limits:
+          maxAge: 336h
+    # Laminar app-server-consumer pod logs
+    - logs:
+        name: app/laminar-app-server-consumer/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-app-server-consumer
+        limits:
+          maxAge: 336h
     - exec:
         name: app/laminar-clickhouse-diagnostics
         collectorName: laminar-clickhouse-diagnostics
