@@ -57,6 +57,41 @@ tests:
           path: spec.tls[0].secretName
           value: openhands-tls
 
+  - it: optionally routes /api/cloud-proxy to the agent-canvas service
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: true
+      agent-canvas.ingress.host: app.example.com
+      agent-canvas.cloudProxy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /api/cloud-proxy
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.name
+          value: agent-canvas
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.port.number
+          value: 8000
+
+  - it: uses the configured cloud-proxy path
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: true
+      agent-canvas.ingress.host: app.example.com
+      agent-canvas.cloudProxy.enabled: true
+      agent-canvas.cloudProxy.path: /internal/cloud-proxy
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /internal/cloud-proxy
+
+
   - it: omits the TLS block when TLS is disabled
     set:
       agent-canvas.enabled: true

@@ -55,6 +55,31 @@ agent-canvas:
       secretName: app-all-hands-dev-tls
 ```
 
+### Exposing the Cloud runtime proxy
+
+Set `cloudProxy.enabled=true` when the same host also needs Canvas browser
+requests to reach the SDK agent-server's `POST /api/cloud-proxy` endpoint.
+The static server starts the bundled SDK agent-server on `cloudProxy.agentServerPort`
+and the umbrella chart adds a same-host ingress path (default `/api/cloud-proxy`)
+to this service. All other `/api` paths remain owned by the OpenHands app.
+
+```yaml
+agent-canvas:
+  enabled: true
+  image:
+    tag: sha-623de56 # image containing the SDK cloud-proxy helper support
+  cloudProxy:
+    enabled: true
+  deployment:
+    resources:
+      requests:
+        memory: 768Mi
+        cpu: 100m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+```
+
 ### Disabling telemetry
 
 `staticServer.disableTelemetry` (default `true`) sets
