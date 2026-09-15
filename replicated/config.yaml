@@ -1518,6 +1518,22 @@ spec:
           help_text: Password for the Automations database role. Leave blank unless you created that role yourself with a different password, in which case enter it here. Note that changing this does not change the password in PostgreSQL.
           type: password
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        - name: automations_sandbox_cleanup_delay_seconds
+          title: Conversation Archive Delay (seconds)
+          help_text: >-
+            How long (in seconds) after an automation run finishes before its
+            conversation is archived and its sandbox deleted. Until then the
+            sandbox is paused, and opening the conversation resumes it. Set to 0
+            (default) to archive as soon as the run finishes. Values above the
+            sandbox Deletion Time have no further effect, because paused
+            sandboxes are deleted at that age regardless.
+          type: text
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer (in seconds)
 
     - name: agent_canvas_configuration
       title: Agent Canvas
