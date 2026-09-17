@@ -237,7 +237,10 @@ test.describe("legacy conversations @conversations", () => {
     });
 
     // Sandbox cold-start plus an external search outlast the 120s default cap.
-    test.setTimeout(240_000);
+    // Give readiness its own extended budget (below) and size the per-test cap
+    // to cover that plus the prompt/answer waits: readiness 180s + agent run
+    // 180s + answer 180s.
+    test.setTimeout(360_000);
 
     await homePage.goto();
 
@@ -246,7 +249,11 @@ test.describe("legacy conversations @conversations", () => {
     await page.waitForTimeout(2000);
     conversationPage = new ConversationPage(page);
 
-    await conversationPage.waitForConversationReady();
+    // Pass an explicit cold-start budget: the default is 120s, which a busy
+    // staging sandbox can exceed on a cold start, failing readiness before the
+    // conversation ever runs (observed on unstable). The raised per-test cap
+    // above leaves room for this larger readiness budget to apply.
+    await conversationPage.waitForConversationReady(180_000);
 
     const prompt =
       "Using Tavily search, please tell me who is the prime minister of Ireland. Use the default search parameters — do not set a topic/category field (Tavily only accepts 'general', and other values are rejected).";
