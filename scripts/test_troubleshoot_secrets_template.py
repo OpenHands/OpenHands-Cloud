@@ -63,7 +63,7 @@ def test_db_collectors_render_with_credentials() -> None:
     assert "- postgresql:" in manifest
     assert "uri: postgresql://oh:pg-secret@openhands-postgresql" in manifest
     assert "- redis:" in manifest
-    assert "uri: redis://default:redis-secret@openhands-redis-master" in manifest
+    assert "uri: redis://default:redis-secret@openhands-valkey" in manifest
 
 
 def test_replicated_sdk_renders_by_default() -> None:

@@ -24,7 +24,7 @@ app-cluster: Kubernetes Cluster {
     shape: cylinder
   }
   litellm: LiteLLM Proxy
-  redis: Redis {
+  valkey: Valkey {
     shape: cylinder
   }
   runtimes: Runtimes {
@@ -51,7 +51,7 @@ lb -> app-cluster.openhands
 lb -> app-cluster.keycloak
 app-cluster.openhands -> app-cluster.runtime-api
 app-cluster.openhands -> app-cluster.keycloak
-app-cluster.openhands -> app-cluster.redis
+app-cluster.openhands -> app-cluster.valkey
 app-cluster.openhands -> convo-bucket
 app-cluster.runtime-api -> app-cluster.runtimes
 app-cluster.openhands -> app-cluster.litellm
