@@ -8,6 +8,9 @@ metadata:
     app.kubernetes.io/component: resend-sync
     app: {{ .Release.Name }}-resend-sync
 spec:
+  {{- if .Values.budgetUpgrade.enabled }}
+  suspend: true
+  {{- end }}
   schedule: {{ .Values.resendSync.schedule | quote }}
   concurrencyPolicy: {{ .Values.resendSync.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.resendSync.failedJobsHistoryLimit }}

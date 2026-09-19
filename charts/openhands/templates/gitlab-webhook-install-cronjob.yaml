@@ -8,6 +8,9 @@ metadata:
     app.kubernetes.io/component: gitlab-webhook-install
     app: {{ .Release.Name }}-install-gitlab-webhooks
 spec:
+  {{- if .Values.budgetUpgrade.enabled }}
+  suspend: true
+  {{- end }}
   schedule: {{ .Values.gitlabWebhookInstallation.schedule | quote }}
   concurrencyPolicy: {{ .Values.gitlabWebhookInstallation.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.gitlabWebhookInstallation.failedJobsHistoryLimit }}

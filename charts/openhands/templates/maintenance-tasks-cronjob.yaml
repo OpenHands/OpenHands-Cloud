@@ -8,6 +8,9 @@ metadata:
     app.kubernetes.io/component: maintenance-tasks
     app: {{ .Release.Name }}-maintenance-tasks
 spec:
+  {{- if .Values.budgetUpgrade.enabled }}
+  suspend: true
+  {{- end }}
   schedule: {{ .Values.maintenanceTasks.schedule | quote }}
   concurrencyPolicy: {{ .Values.maintenanceTasks.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.maintenanceTasks.failedJobsHistoryLimit }}

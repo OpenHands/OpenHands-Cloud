@@ -16,6 +16,7 @@ export interface BudgetUser {
 }
 
 export interface BudgetSettings {
+  control_mode?: "needs_adoption" | "external" | "managed";
   enabled: boolean;
   monthly_limit: number | null;
   reset_day: number;

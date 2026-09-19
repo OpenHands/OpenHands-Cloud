@@ -59,4 +59,5 @@ jobs:
           --with httpx
           --with ruamel.yaml
           --with PyYAML
+          --with kubernetes
           python -m pytest scripts -q

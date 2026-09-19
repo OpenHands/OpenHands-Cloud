@@ -4,6 +4,7 @@ metadata:
   name: openhands
 spec:
   title: OpenHands
+  allowRollback: false
   icon: https://raw.githubusercontent.com/All-Hands-AI/OpenHands/main/frontend/public/apple-touch-icon.png
   releaseNotes: |
     ## OpenHands v0.47.0

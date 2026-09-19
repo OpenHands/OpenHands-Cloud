@@ -262,9 +262,14 @@ test.describe("organization budget maintenance @budgets", () => {
       );
     }
 
+    originalBudget = await api.getBudget();
+    if (originalBudget.control_mode !== undefined) {
+      throw new Error(
+        "This suite writes legacy cycle state directly and cannot certify ownership-aware budgets. Run the product adoption, enforcement, and recovery workflow on an isolated fixture instead.",
+      );
+    }
     await api.switchOrg(config.orgId);
     userId = (await api.getMe()).user_id;
-    originalBudget = await api.getBudget();
     originalCycle = await database.getCycleState(config.orgId);
     originalOverride = originalBudget.users.find(
       (user) => user.user_id === userId && user.is_override,
