@@ -400,9 +400,10 @@ def test_ci_workflow_wires_new_checker_and_paths() -> None:
         missing = required_paths - paths
         assert not missing, f"{section} path filter missing: {sorted(missing)}"
 
-    # The checker must actually run in the workflow.
-    steps_text = wf_path.read_text(encoding="utf-8")
-    assert "scripts/check_litellm_checksum.py" in steps_text
+    # The checker must actually run in the workflow. A substring match against
+    # the raw file text is not enough: the path appears in the `paths:` filter
+    # comment block too, so it stays satisfied even if the run step is deleted.
+    # test_checker_is_actually_run_by_a_workflow_step walks the parsed steps.
 
     # The tests must be executed. Route: test-scripts.yml must list this
     # workflow in its own paths so an edit here triggers the test job.
@@ -414,6 +415,115 @@ def test_ci_workflow_wires_new_checker_and_paths() -> None:
         "test-scripts.yml must include check-secret-checksum.yml in its paths so "
         "edits to the guard workflow run the wiring assertions."
     )
+
+
+# ---------------------------------------------------------------------------
+# CI wiring: the checker must run as an actual workflow step (walk the steps,
+# don't substring-match the file text). Deleting the run step must fail here.
+# ---------------------------------------------------------------------------
+def test_checker_is_actually_run_by_a_workflow_step() -> None:
+    wf_path = REPO_ROOT / ".github" / "workflows" / "check-secret-checksum.yml"
+    wf = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+    runs = [
+        step.get("run", "")
+        for job in wf["jobs"].values()
+        for step in job.get("steps", [])
+    ]
+    assert any("scripts/check_litellm_checksum.py" in r for r in runs), (
+        "no workflow step runs scripts/check_litellm_checksum.py"
+    )
+
+
+# ---------------------------------------------------------------------------
+# printf separators: the '|' between placeholders is load-bearing. Without it,
+# adjacent values can trade a character and leave the hash unchanged.
+# ---------------------------------------------------------------------------
+def test_printf_format_is_pipe_separated() -> None:
+    value = _annotation_value()
+    fmt = re.search(r'printf\s+"([^"]*)"', value).group(1)
+    n = len(re.findall(r"ConfigOption(?:Data)?\s+\"", value))
+    assert fmt == "|".join(["%s"] * n), (
+        f"format must be {n} '%s' joined by '|'; without separators two adjacent "
+        f"values can trade a character and leave the hash unchanged, so the pod "
+        f"never rolls. Got: {fmt!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stage 6: the dependency-count backstop must actually fire when the count
+# diverges from EXPECTED_DEPENDENCY_COUNT.
+# ---------------------------------------------------------------------------
+def test_dependency_count_backstop_fires(tmp_path: Path, monkeypatch) -> None:
+    root = _make_fixture_root(tmp_path)
+    monkeypatch.setattr(clc, "EXPECTED_DEPENDENCY_COUNT", EXPECTED_DEPENDENCY_COUNT + 1)
+    errors = check(root)
+    assert any("dependency-count backstop" in e for e in errors), errors
+
+
+# ---------------------------------------------------------------------------
+# Stage 5: the ORIGINAL_INPUTS preservation loop must fire when an original
+# input is dropped from the checksum.
+# ---------------------------------------------------------------------------
+def test_preservation_failure_for_original_input(tmp_path: Path) -> None:
+    root = _make_fixture_root(tmp_path)
+    text = _read(root, OPENHANDS_REL)
+    _write(root, OPENHANDS_REL, _remove_checksum_option(text, "litellm_salt_key"))
+    errors = check(root)
+    assert any(
+        "preservation failure" in e and "litellm_salt_key" in e for e in errors
+    ), errors
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: every structure construct in _STRUCTURE_CONSTRUCTS must be rejected,
+# not just the assignment-binding case covered by test_aliased_context.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "snippet,label",
+    [
+        ('{{- include "openhands.helper" . }}', "include"),
+        ('{{- define "openhands.helper" }}{{- end }}', "define"),
+        ("{{- with .Values.config }}{{- end }}", "with"),
+        ("{{- range $k := list }}{{- end }}", "range"),
+    ],
+)
+def test_structure_constructs_are_rejected(tmp_path: Path, snippet: str, label: str) -> None:
+    root = _make_fixture_root(tmp_path)
+    tmpl = _read(root, TEMPLATE_REL)
+    _write(root, TEMPLATE_REL, tmpl + "\n" + snippet + "\n")
+    errors = check(root)
+    assert any(
+        "template-structure violation" in e and label in e for e in errors
+    ), errors
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: the generic "unsupported .Values reference" branch must fire for a
+# .Values reference that matches no recognised access form.
+# ---------------------------------------------------------------------------
+def test_unsupported_values_reference(tmp_path: Path) -> None:
+    root = _make_fixture_root(tmp_path)
+    tmpl = _read(root, TEMPLATE_REL)
+    _write(root, TEMPLATE_REL, tmpl + "\n  EXTRA: {{ .Values.global.imageTag | quote }}\n")
+    errors = check(root)
+    assert any("unsupported .Values reference" in e for e in errors), errors
+
+
+# ---------------------------------------------------------------------------
+# _line_of: diagnostics must point at the correct 1-based line, not off by one.
+# ---------------------------------------------------------------------------
+def test_diagnostic_line_number_is_correct(tmp_path: Path) -> None:
+    root = _make_fixture_root(tmp_path)
+    tmpl = _read(root, TEMPLATE_REL)
+    bad = '  EXTRA: {{ index .Values "config" "mistral_api_key" }}'
+    new = tmpl + "\n" + bad + "\n"
+    _write(root, TEMPLATE_REL, new)
+    expected_line = new.splitlines().index(bad) + 1
+    errors = check(root)
+    assert any(
+        f"{TEMPLATE_REL}:{expected_line}:" in e and "indirect map access" in e
+        for e in errors
+    ), (expected_line, errors)
 
 
 if __name__ == "__main__":
