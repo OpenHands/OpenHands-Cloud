@@ -1000,4 +1000,54 @@ test.describe("organization budget maintenance @budgets", () => {
       evidence!.serviceConversationsBefore,
     );
   });
+
+  test("member financial listing paginates past its first page", async () => {
+    expect(evidence).toBeDefined();
+    expect(api).toBeDefined();
+    expect(database).toBeDefined();
+
+    // Seed more members than the page size so the walk has to follow
+    // ``next_page_id`` past the first page. The dedicated budget org can be
+    // as small as two members (the returning admin + any counterpart) at the
+    // ``limit=100`` the rest of the suite uses, so a page size of two
+    // guarantees at least two pages when three members are seeded.
+    const seededIds = await database!.seedMemberFinancialListingMembers(
+      config.orgId,
+      3,
+    );
+    try {
+      const pageSize = 2;
+      const seen = new Set<string>();
+      let nextPageId: string | undefined;
+      let pagesFetched = 0;
+
+      do {
+        const page = await api!.getMemberFinancialPage(pageSize, nextPageId);
+        expect(page.items.length).toBeGreaterThan(0);
+        for (const item of page.items) {
+          seen.add(item.user_id);
+        }
+        nextPageId = page.next_page_id ?? undefined;
+        pagesFetched += 1;
+        expect(pagesFetched).toBeLessThanOrEqual(10);
+      } while (nextPageId);
+
+      // Every seeded member must appear in some page. On the broken
+      // ``next_page_id`` computation (offset < has_more bool) the walk stops
+      // after the first page, so this user is never reached.
+      for (const seededId of seededIds) {
+        expect(seen.has(seededId)).toBeTruthy();
+      }
+      // And the walk genuinely spanned more than one page, so the
+      // next_page_id link was actually followed rather than all rows
+      // arriving in a single oversized page.
+
+      expect(seen.size).toBeGreaterThan(pageSize);
+    } finally {
+      await database!.removeMemberFinancialListingMembers(
+        config.orgId,
+        seededIds,
+      );
+    }
+  });
 });

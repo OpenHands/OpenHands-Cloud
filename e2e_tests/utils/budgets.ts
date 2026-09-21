@@ -64,6 +64,9 @@ export interface MemberFinancial {
 
 interface MemberFinancialPage {
   items: MemberFinancial[];
+  current_page: number;
+  per_page: number;
+  next_page_id: string | null;
 }
 
 export interface LiteLLMTeamState {
@@ -353,15 +356,26 @@ export class BudgetApi {
     );
   }
 
-  async getMemberFinancial(userId: string): Promise<MemberFinancial> {
-    const page = await readJsonWithRetry<MemberFinancialPage>(
+  async getMemberFinancialPage(
+    limit: number,
+    pageId?: string,
+  ): Promise<MemberFinancialPage> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (pageId) {
+      params.set("page_id", pageId);
+    }
+    return readJsonWithRetry<MemberFinancialPage>(
       () =>
         this.request.get(
-          `/api/organizations/${this.orgId}/members/financial?limit=100`,
+          `/api/organizations/${this.orgId}/members/financial?${params.toString()}`,
           { headers: this.headers },
         ),
-      "get member financial data",
+      "get member financial page",
     );
+  }
+
+  async getMemberFinancial(userId: string): Promise<MemberFinancial> {
+    const page = await this.getMemberFinancialPage(100);
     const member = page.items.find((item) => item.user_id === userId);
     if (!member) {
       throw new Error(`Member ${userId} was absent from financial data`);
