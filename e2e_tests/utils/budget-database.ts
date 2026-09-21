@@ -39,6 +39,28 @@ export class BudgetDatabase {
     }
   }
 
+  async getPersonalBudgetRowCounts(
+    orgId: string,
+  ): Promise<Record<string, number>> {
+    return this.withClient(async (client) => {
+      const tables = [
+        "org_budget_settings",
+        "org_budget_threshold",
+        "org_user_budget_override",
+        "org_budget_cycle_baseline",
+      ];
+      const counts: Record<string, number> = {};
+      for (const table of tables) {
+        const result = await client.query<{ count: number }>(
+          `SELECT count(*)::integer AS count FROM ${table} WHERE org_id = $1`,
+          [orgId],
+        );
+        counts[table] = result.rows[0]?.count ?? 0;
+      }
+      return counts;
+    });
+  }
+
   getCycleState(orgId: string): Promise<BudgetCycleState> {
     return this.withClient(async (client) => {
       const result = await client.query<{
