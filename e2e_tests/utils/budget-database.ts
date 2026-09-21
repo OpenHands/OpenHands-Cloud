@@ -266,9 +266,22 @@ export class BudgetDatabase {
             [userId, orgId, email],
           );
           await client.query(
-            `INSERT INTO org_member (org_id, user_id, role_id, _llm_api_key)
-       VALUES ($1,$2,$3,$4)`,
-            [orgId, userId, memberRoleId, `e2e-pagination-${stamp}-${i}`],
+            `INSERT INTO org_member (
+               org_id, user_id, role_id, _llm_api_key,
+               agent_settings_diff, conversation_settings_diff,
+               has_custom_llm_api_key, managed_llm_key_ownership_version
+             )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [
+              orgId,
+              userId,
+              memberRoleId,
+              `e2e-pagination-${stamp}-${i}`,
+              JSON.stringify({}),
+              JSON.stringify({}),
+              false,
+              1,
+            ],
           );
           users.push(userId);
         }
