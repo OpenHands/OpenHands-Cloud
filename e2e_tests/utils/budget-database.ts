@@ -254,12 +254,14 @@ export class BudgetDatabase {
         throw new Error("The 'member' role is absent from the role table");
       }
 
-      const stamp = new Date().getTime().toString(36);
       const users: string[] = [];
       try {
         for (let i = 0; i < count; i += 1) {
+          // Key every unique field off the per-row UUID rather than a shared
+          // millisecond timestamp, so parallel certification runs seeding at
+          // the same instant cannot collide on the user email unique index.
           const userId = crypto.randomUUID();
-          const email = `e2e-pagination-${stamp}-${i}@example.invalid`;
+          const email = `e2e-pagination-${userId}@example.invalid`;
           await client.query(
             `INSERT INTO "user" (id, current_org_id, email)
        VALUES ($1,$2,$3)`,
@@ -276,7 +278,7 @@ export class BudgetDatabase {
               orgId,
               userId,
               memberRoleId,
-              `e2e-pagination-${stamp}-${i}`,
+              `e2e-pagination-${userId}`,
               JSON.stringify({}),
               JSON.stringify({}),
               false,
