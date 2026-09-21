@@ -225,7 +225,13 @@ spec:
       environmentSecrets:
         - litellm-env-secrets
       podAnnotations:
-        checksum/litellm-credentials: 'repl{{ sha256sum (printf "%s|%s|%s" (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key")) }}'
+        # Kubernetes never rolls a pod when an envFrom Secret changes, so this
+        # checksum is the only trigger that restarts LiteLLM after a credential
+        # edit. It must hash every config value feeding litellm-env-secrets.yaml.
+        # litellm_api_key is included too: it reaches the pod as PROXY_MASTER_KEY
+        # via the separate lite-llm-api-key Secret (same no-auto-restart
+        # behavior). scripts/check_litellm_checksum.py enforces this in CI.
+        checksum/litellm-credentials: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOptionData "google_vertex_credentials") (ConfigOption "google_vertex_project_id") (ConfigOption "google_vertex_location") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_tenant_id") (ConfigOption "azure_client_id") (ConfigOption "azure_client_secret") (ConfigOption "azure_endpoint") (ConfigOption "azure_api_version") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_auth_method") (ConfigOption "aws_access_key_id") (ConfigOption "aws_secret_access_key") (ConfigOption "aws_region_name") (ConfigOption "bedrock_model_ids") (ConfigOption "custom_api_key") (ConfigOption "custom_base_url")) }}'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # the Python SSL stack (httpx + requests) at the merged PEM. envVars
       # is a map (merges with proxy/vertex blocks), but volumes/volumeMounts
