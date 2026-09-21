@@ -37,7 +37,7 @@ BASE_URL=https://release-under-test.example.test \
 
 ### Budget certification
 
-`tests/007-budgets.spec.ts` is a destructive, serial certification suite for a
+`tests/009-budgets.spec.ts` is a destructive, serial certification suite for a
 dedicated test organization. It verifies stable cycle-anchored caps,
 authoritative LiteLLM reporting, optional Slack alerts, direct SDK enforcement,
 missing membership recovery, unmapped service identities, and cleanup from

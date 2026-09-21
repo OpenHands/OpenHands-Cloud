@@ -13,6 +13,7 @@ import {
   type LiteLLMMemberState,
   type LiteLLMTeamState,
   type MemberFinancial,
+  type SpendStatus,
   createLiteLLMTestKey,
   deleteLiteLLMTestKey,
   ensureLiteLLMTeamMember,
@@ -85,6 +86,8 @@ interface BudgetEvidence {
   membershipRepairMaintenance: BudgetMaintenanceResult;
   membershipSyncError: string | null;
   memberAfterRemoval: LiteLLMMemberState | null;
+  memberAfterRemovalFinancial: MemberFinancial;
+  memberAfterRemovalSpendStatus: SpendStatus;
   memberAfterMidcycleMaintenance: LiteLLMMemberState | null;
   memberAfterBoundaryRepair: LiteLLMMemberState;
   serviceMemberBefore: LiteLLMMemberState;
@@ -169,21 +172,32 @@ async function generateMinimumDirectSpend(
   for (let attempt = 1; attempt <= maxSpendAttempts; attempt += 1) {
     await generateDirectLiteLLMSpend(config, key);
     const previousSpend = member.lifetime_spend;
+    if (previousSpend === null) {
+      throw new Error(
+        `Direct spend was unobserved for member ${userId} before attempt ${attempt}`,
+      );
+    }
     member = await pollUntil(
       () => api.getMemberFinancial(userId),
-      (candidate) => candidate.lifetime_spend > previousSpend,
+      (candidate) =>
+        candidate.lifetime_spend !== null &&
+        candidate.lifetime_spend > previousSpend,
       {
         description: `direct LiteLLM spend attempt ${attempt}`,
         timeoutMs: 2 * 60_000,
         intervalMs: config.pollIntervalMs,
       },
     );
-    if (member.lifetime_spend - startingSpend >= config.minimumSpendDelta) {
+    if (
+      member.lifetime_spend !== null &&
+      member.lifetime_spend - startingSpend >= config.minimumSpendDelta
+    ) {
       return member;
     }
   }
+  const finalSpend = member.lifetime_spend;
   throw new Error(
-    `Direct LiteLLM spend increased by only ${member.lifetime_spend - startingSpend}; expected at least ${config.minimumSpendDelta}`,
+    `Direct LiteLLM spend increased by only ${finalSpend === null ? "null" : finalSpend - startingSpend}; expected at least ${config.minimumSpendDelta}`,
   );
 }
 
@@ -296,6 +310,11 @@ test.describe("organization budget maintenance @budgets", () => {
       "post-rollover reporting",
     );
     const financialSpendBefore = memberAfterRollover.lifetime_spend;
+    if (financialSpendBefore === null) {
+      throw new Error(
+        "Member spend was unobserved after cycle rollover; direct spend baseline requires a number",
+      );
+    }
     const conversationsBeforeDirectSpend = await api.getConversationCount();
 
     const generatedKey = await createLiteLLMTestKey(config, userId);
@@ -312,6 +331,11 @@ test.describe("organization budget maintenance @budgets", () => {
     const cycleAfterFirstSpend = await database.getCycleState(config.orgId);
     const teamAfterFirstSpend = await getLiteLLMTeamState(config);
     const memberAfterFirstSpend = await api.getMemberFinancial(userId);
+    if (memberAfterFirstSpend.lifetime_spend === null) {
+      throw new Error(
+        "Direct spend was unobserved after the first direct-spend round",
+      );
+    }
 
     await generateMinimumDirectSpend(
       api,
@@ -323,6 +347,12 @@ test.describe("organization budget maintenance @budgets", () => {
     const cycleAfterSecondSpend = await database.getCycleState(config.orgId);
     const teamAfterSecondSpend = await getLiteLLMTeamState(config);
     const memberAfterSecondSpend = await api.getMemberFinancial(userId);
+    if (memberAfterSecondSpend.lifetime_spend === null) {
+      throw new Error(
+        "Direct spend was unobserved after the second direct-spend round",
+      );
+    }
+    const financialSpendAfter = memberAfterSecondSpend.lifetime_spend;
     const reportingAfterDirect = await api.getBudget();
     requireSuccessfulSync(
       reportingAfterDirect,
@@ -349,6 +379,9 @@ test.describe("organization budget maintenance @budgets", () => {
       });
       requireSuccessfulSync(slackConfigured, "Slack budget configuration");
       const alertFinancialSpendBefore = memberAfterSecondSpend.lifetime_spend;
+      if (alertFinancialSpendBefore === null) {
+        throw new Error("Direct spend baseline was unobserved for Slack alert");
+      }
       await generateMinimumDirectSpend(
         api,
         userId,
@@ -377,12 +410,16 @@ test.describe("organization budget maintenance @budgets", () => {
         },
       );
       if (!alert) throw new Error("Slack budget alert was not delivered");
+      const alertFinancialSpendAfter = alertFinancial.lifetime_spend;
+      if (alertFinancialSpendAfter === null) {
+        throw new Error("Direct spend was unobserved for Slack alert");
+      }
       slackEvidence = {
         maintenance: alertMaintenance,
         reportingSpendBefore: reportingSpendAfter,
         reportingSpendAfter: alertReportingSpendAfter,
         financialSpendBefore: alertFinancialSpendBefore,
-        financialSpendAfter: alertFinancial.lifetime_spend,
+        financialSpendAfter: alertFinancialSpendAfter,
         teamSpendBefore: teamAfterSecondSpend.spend,
         teamSpendAfter: alertTeam.spend,
         alertSpend: alert.spend,
@@ -481,6 +518,22 @@ test.describe("organization budget maintenance @budgets", () => {
     managedKeyRepairRequired = true;
     await removeLiteLLMTeamMember(config, userId);
     const memberAfterRemoval = await getLiteLLMMemberState(config, userId);
+    // The member is still an OpenHands org member but no longer present in the
+    // LiteLLM team. This is the exact drift the financial listing must surface
+    // honestly: the spend read succeeds, so the page is 'live', but the removed
+    // member has no observed spend and must read as null - not as a fabricated
+    // zero. Captured before the maintenance below so its own spend snapshot
+    // cannot mask the read.
+    const memberAfterRemovalPage = await api.getMemberFinancialPage(100);
+    const memberAfterRemovalSpendStatus = memberAfterRemovalPage.spend_status;
+    const memberAfterRemovalFinancial = memberAfterRemovalPage.items.find(
+      (item) => item.user_id === userId,
+    );
+    if (!memberAfterRemovalFinancial) {
+      throw new Error(
+        `Member ${userId} was absent from the financial listing while removed from LiteLLM`,
+      );
+    }
     const membershipMissingMaintenance = await runMaintenance(database);
     const missingMembershipBudget = await api.getBudget();
     const membershipSyncError = missingMembershipBudget.litellm_last_sync_error;
@@ -577,6 +630,11 @@ test.describe("organization budget maintenance @budgets", () => {
     const disabledSyncBefore = disabled.litellm_last_sync_at;
     const currentTeam = await getLiteLLMTeamState(config);
     const currentMember = await api.getMemberFinancial(userId);
+    if (currentMember.lifetime_spend === null) {
+      throw new Error(
+        "Member spend was unobserved before disabled-budget cap seeding",
+      );
+    }
     await updateLiteLLMTeamCap(config, currentTeam.spend + 3.21);
     await updateLiteLLMMemberCap(
       config,
@@ -607,7 +665,7 @@ test.describe("organization budget maintenance @budgets", () => {
       reportingSpendBefore,
       reportingSpendAfter,
       financialSpendBefore,
-      financialSpendAfter: memberAfterSecondSpend.lifetime_spend,
+      financialSpendAfter,
       conversationsBeforeDirectSpend,
       conversationsAfterDirectSpend,
       slack: slackEvidence,
@@ -633,6 +691,8 @@ test.describe("organization budget maintenance @budgets", () => {
       membershipRepairMaintenance,
       membershipSyncError,
       memberAfterRemoval,
+      memberAfterRemovalFinancial,
+      memberAfterRemovalSpendStatus,
       memberAfterMidcycleMaintenance,
       memberAfterBoundaryRepair,
       serviceMemberBefore,
@@ -802,14 +862,18 @@ test.describe("organization budget maintenance @budgets", () => {
       afterFirstSpend: evidence!.memberAfterFirstSpend,
       afterSecondSpend: evidence!.memberAfterSecondSpend,
     });
-    expect(
-      evidence!.memberAfterFirstSpend.lifetime_spend -
-        evidence!.memberAfterRollover.lifetime_spend,
-    ).toBeGreaterThanOrEqual(config.minimumSpendDelta);
-    expect(
-      evidence!.memberAfterSecondSpend.lifetime_spend -
-        evidence!.memberAfterFirstSpend.lifetime_spend,
-    ).toBeGreaterThanOrEqual(config.minimumSpendDelta);
+    const rolloverSpend = evidence!.memberAfterRollover.lifetime_spend;
+    const firstSpend = evidence!.memberAfterFirstSpend.lifetime_spend;
+    const secondSpend = evidence!.memberAfterSecondSpend.lifetime_spend;
+    if (rolloverSpend === null || firstSpend === null || secondSpend === null) {
+      throw new Error("Direct spend was unobserved for a member under test");
+    }
+    expect(firstSpend - rolloverSpend).toBeGreaterThanOrEqual(
+      config.minimumSpendDelta,
+    );
+    expect(secondSpend - firstSpend).toBeGreaterThanOrEqual(
+      config.minimumSpendDelta,
+    );
     expect(evidence!.memberAfterFirstSpend.max_budget).toBeCloseTo(
       evidence!.memberAfterRollover.max_budget!,
       closeToPrecision,
@@ -968,6 +1032,27 @@ test.describe("organization budget maintenance @budgets", () => {
     expect(evidence!.membershipMissingMaintenance.status).toBe("COMPLETED");
     expect(evidence!.membershipRepairMaintenance.status).toBe("COMPLETED");
     expect(evidence!.memberAfterBoundaryRepair.userId).toBe(userId);
+  });
+
+  test("member spend missing from LiteLLM is not reported as zero", async () => {
+    expect(evidence).toBeDefined();
+    await attachEvidence("member-financial-unobserved-spend.json", {
+      afterRemoval: evidence!.memberAfterRemoval,
+      afterRemovalFinancial: evidence!.memberAfterRemovalFinancial,
+      afterRemovalSpendStatus: evidence!.memberAfterRemovalSpendStatus,
+    });
+
+    // Precondition: the member really was removed from LiteLLM, so the state
+    // under test is an org member absent from the spend read.
+    expect(evidence!.memberAfterRemoval).toBeNull();
+
+    // PLTF-3562: an unobserved spend is not an observed zero. The read from
+    // LiteLLM succeeded (so the page is 'live'), but it carried no entry for
+    // the removed member, so lifetime_spend and current_budget must be null.
+    // Reporting 0 here is the defect this test exists to catch.
+    expect(evidence!.memberAfterRemovalSpendStatus).toBe("live");
+    expect(evidence!.memberAfterRemovalFinancial.lifetime_spend).toBeNull();
+    expect(evidence!.memberAfterRemovalFinancial.current_budget).toBeNull();
   });
 
   test("unmapped service SDK spend is reported without a conversation or cap rewrite", async () => {
