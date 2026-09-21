@@ -64,6 +64,13 @@ export interface MemberFinancial {
 
 interface MemberFinancialPage {
   items: MemberFinancial[];
+  next_page_id: string | null;
+}
+
+export interface MemberFinancialWalk {
+  items: MemberFinancial[];
+  pageCount: number;
+  nextPageIds: (string | null)[];
 }
 
 export interface LiteLLMTeamState {
@@ -353,20 +360,71 @@ export class BudgetApi {
     );
   }
 
-  async getMemberFinancial(userId: string): Promise<MemberFinancial> {
-    const page = await readJsonWithRetry<MemberFinancialPage>(
+  getMemberFinancialPage(options: {
+    limit: number;
+    pageId?: string | null;
+  }): Promise<MemberFinancialPage> {
+    const params = new URLSearchParams({ limit: String(options.limit) });
+    if (options.pageId != null) {
+      params.set("page_id", options.pageId);
+    }
+    return readJsonWithRetry<MemberFinancialPage>(
       () =>
         this.request.get(
-          `/api/organizations/${this.orgId}/members/financial?limit=100`,
+          `/api/organizations/${this.orgId}/members/financial?${params.toString()}`,
           { headers: this.headers },
         ),
       "get member financial data",
     );
+  }
+
+  async getMemberFinancial(userId: string): Promise<MemberFinancial> {
+    const page = await this.getMemberFinancialPage({ limit: 100 });
     const member = page.items.find((item) => item.user_id === userId);
     if (!member) {
       throw new Error(`Member ${userId} was absent from financial data`);
     }
     return member;
+  }
+
+  /**
+   * Walk the member financial listing one page at a time, following
+   * ``next_page_id`` until the server stops handing one back.
+   *
+   * The listing endpoint returns ``(items, next_page_id)``; the offset for the
+   * next request is carried entirely by ``next_page_id``. A caller that only
+   * ever reads ``items`` (as ``getMemberFinancial`` does with ``limit=100``)
+   * never exercises that hand-off, so a server that always returns
+   * ``next_page_id: null`` looks identical to a correct one. This walk is what
+   * makes the difference observable end to end.
+   */
+  async walkMemberFinancials(pageSize: number): Promise<MemberFinancialWalk> {
+    const items: MemberFinancial[] = [];
+    const nextPageIds: (string | null)[] = [];
+    let pageId: string | null | undefined;
+    // The listing cannot exceed one organization's membership; the cap only
+    // guards against a regression that returns a stable, non-advancing cursor.
+    const maxPages = 1000;
+    for (let page = 0; page < maxPages; page += 1) {
+      const result = await this.getMemberFinancialPage({
+        limit: pageSize,
+        pageId,
+      });
+      items.push(...result.items);
+      nextPageIds.push(result.next_page_id);
+      if (result.next_page_id === null) {
+        return { items, pageCount: nextPageIds.length, nextPageIds };
+      }
+      if (result.next_page_id === pageId) {
+        throw new Error(
+          `member financial pagination did not advance: next_page_id repeated (${pageId})`,
+        );
+      }
+      pageId = result.next_page_id;
+    }
+    throw new Error(
+      `member financial pagination did not terminate within ${maxPages} pages`,
+    );
   }
 
   putOverride(

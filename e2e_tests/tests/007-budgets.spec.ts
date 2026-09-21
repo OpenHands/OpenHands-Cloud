@@ -1001,3 +1001,95 @@ test.describe("organization budget maintenance @budgets", () => {
     );
   });
 });
+
+// The budgets member table (GET /organizations/{id}/members/financial) is
+// offset-paginated: each response carries a `next_page_id` and the client is
+// expected to follow it until it comes back null. A regression bound the
+// store's `has_more` boolean to `total_count` and derived the cursor from
+// `next_offset < total_count`, so `next_page_id` was always null and every
+// member past the first page became unreachable through the API.
+//
+// The rest of this suite reads the listing with `limit=100`, so it only ever
+// sees a single page and cannot observe that break. This test walks the real
+// listing one member at a time and asserts the paged traversal reaches exactly
+// the same members as the single-page view.
+test.describe("organization member listing pagination @budgets", () => {
+  let context: BrowserContext | undefined;
+  let api: BudgetApi | undefined;
+
+  test.beforeEach(({ browser: _browser }, testInfo) => {
+    test.skip(
+      runUser(testInfo) !== "returning",
+      "member listing pagination runs once with the configured returning admin",
+    );
+    test.skip(
+      !config.enabled,
+      "set the complete BUDGET_E2E_* certification contract for a dedicated non-personal test org",
+    );
+  });
+
+  test.beforeAll(async ({ browser }, testInfo) => {
+    const role = testInfo.project.metadata.user;
+    if (role !== "returning" || !config.enabled) return;
+    context = await browser.newContext({
+      baseURL: env.baseUrl,
+      storageState: authReturningFile,
+      ignoreHTTPSErrors: true,
+    });
+    api = new BudgetApi(context.request, config.orgId);
+    await api.switchOrg(config.orgId);
+  });
+
+  test.afterAll(async () => {
+    await context?.close();
+    context = undefined;
+    api = undefined;
+  });
+
+  test("follows next_page_id across the full member financial listing", async () => {
+    if (!api) throw new Error("member listing pagination API is unavailable");
+
+    const baseline = await api.getMemberFinancialPage({ limit: 100 });
+    const baselineIds = baseline.items.map((member) => member.user_id);
+    const baselineSet = new Set(baselineIds);
+
+    const walk = await api.walkMemberFinancials(1);
+    const walkedIds = walk.items.map((member) => member.user_id);
+    const walkedSet = new Set(walkedIds);
+
+    await attachEvidence("member-listing-pagination.json", {
+      memberCount: baselineSet.size,
+      pageCount: walk.pageCount,
+      nextPageIds: walk.nextPageIds,
+      baselineUserIds: baselineIds,
+      walkedUserIds: walkedIds,
+    });
+
+    // Paging never hands the same member back twice.
+    expect(walkedIds.length).toBe(walkedSet.size);
+    // Following next_page_id reaches exactly the members the single-page view
+    // reports — nobody is stranded past the first page. On the regression this
+    // set is just the first member.
+    expect(walkedSet).toEqual(baselineSet);
+
+    if (baselineSet.size >= 2) {
+      // One member per page: the walk needs as many pages as there are members,
+      // every page except the last must advertise a next page, and the last
+      // must close it out. The regression produced a single page whose
+      // next_page_id was null.
+      expect(walk.pageCount).toBe(baselineSet.size);
+      expect(walk.nextPageIds.slice(0, -1).every((id) => id !== null)).toBe(
+        true,
+      );
+      expect(walk.nextPageIds[walk.nextPageIds.length - 1]).toBeNull();
+    } else {
+      test.info().annotations.push({
+        type: "pagination-not-exercised",
+        description:
+          `The budget test org has ${baselineSet.size} member(s); multi-page ` +
+          "pagination was not exercised. Add a second member to the dedicated " +
+          "budget test org to actively guard this regression.",
+      });
+    }
+  });
+});

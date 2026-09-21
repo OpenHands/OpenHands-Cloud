@@ -98,6 +98,15 @@ records the original value and proves maintenance does not rewrite it. When
 Slack verification is enabled, use a test channel because the suite emits a
 real alert.
 
+For the member-listing pagination regression, give the dedicated test org at
+least two members (the returning admin plus one additional inert member with no
+LiteLLM key or spend, so the maintenance and unmapped-spend assertions are
+unaffected). The `organization member listing pagination` test walks the
+`members/financial` listing one member per page and follows `next_page_id`; with
+a single member there is no second page to reach, so it records a
+`pagination-not-exercised` annotation instead of actively guarding the
+regression.
+
 Run the protected `Budget Incident E2E` workflow manually after deploying the
 candidate enterprise image. Download the Playwright artifact and retain the
 JSON evidence with the tested image SHA and release sequence. Scheduled runs
