@@ -9,8 +9,7 @@ env vars only at startup. The only thing that rolls the pod when a provider key
 changes is the pod-template annotation ``checksum/litellm-credentials`` in
 replicated/openhands.yaml: a KOTS-rendered sha256 over the provider config
 values. If a provider field is not part of that hash, changing it in the admin
-console silently has no effect until someone manually restarts the pod
-(PLTF-3560).
+console silently has no effect until someone manually restarts the pod.
 
 This checker keeps the annotation in sync with the Secret template. It is the
 LiteLLM-specific sibling of ``check_secret_checksum.py`` (which guards the
@@ -64,7 +63,7 @@ KNOWN_INDIRECTIONS: dict[str, set[str]] = {
 # never appears in the template this checker parses.
 ALLOWED_EXTRA = {"litellm_api_key"}
 
-# The three inputs the annotation carried before PLTF-3560; asserted present
+# The three inputs the annotation originally carried; asserted present
 # independently of derivation so a refactor can never silently drop one.
 ORIGINAL_INPUTS = {"litellm_api_key", "litellm_admin_password", "litellm_salt_key"}
 

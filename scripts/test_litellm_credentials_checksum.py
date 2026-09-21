@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyYAML", "pytest"]
 # ///
-"""Behavior tests for the LiteLLM credentials checksum guard (PLTF-3560).
+"""Behavior tests for the LiteLLM credentials checksum guard.
 
 Styled after test_replicated_minio_storage.py: plain pytest + PyYAML. The
 static assertions (arity, shape, optionalValues guard, repo coverage) run
