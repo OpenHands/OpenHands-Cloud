@@ -14,6 +14,10 @@ on:
       - '.github/workflows/release-gate.yml'
       - '.github/workflows/publish-release-charts.yml'
       - '.github/workflows/test-scripts.yml'
+      # The LiteLLM checksum guard's wiring assertions live in
+      # test_litellm_credentials_checksum.py and validate this workflow file,
+      # so an edit that only touches the guard workflow must run the tests.
+      - '.github/workflows/check-secret-checksum.yml'
 
 jobs:
   test-scripts:
