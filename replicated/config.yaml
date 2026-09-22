@@ -712,6 +712,12 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: automation_git_sync_secret
+          title: Automation Git Sync Secret
+          help_text: Key that encrypts each organization's git sync token and repository encryption key at rest
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: default_openhands_organization
       title: Default OpenHands Organization
