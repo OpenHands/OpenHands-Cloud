@@ -27,7 +27,18 @@ data:
       fi
     }
 
+    provisioning_token() {
+      curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
+        --data-urlencode client_id=openhands-provisioner \
+        --data-urlencode grant_type=client_credentials \
+        --data-urlencode "client_secret=$KEYCLOAK_ADMIN_PASSWORD" | jq -er '.access_token // empty'
+    }
+
     refresh_access_token() {
+      if [ "${USE_PROVISIONER:-false}" = true ]; then
+        ACCESS_TOKEN=$(provisioning_token) || return 1
+        return 0
+      fi
       if ! TOKEN_RESPONSE=$(curl -sS -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "client_id=admin-cli" \
@@ -93,14 +104,21 @@ data:
         sleep 5
     done
 
-    ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=tmpadmin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
-    if [ "$ACCESS_TOKEN" = "null" ]; then
-      NEW_ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=admin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
-      if [ "$NEW_ACCESS_TOKEN" = "null" ]; then
-        echo "Couldn't login using either the \"admin\" or \"tmpadmin\" accounts."
-        exit 1;
+    USE_PROVISIONER=false
+    if ACCESS_TOKEN=$(provisioning_token) && curl -fsS -o /dev/null \
+      -H "Authorization: Bearer $ACCESS_TOKEN" \
+      "$KEYCLOAK_SERVER_URL/admin/realms/master/users?username=admin&exact=true"; then
+      USE_PROVISIONER=true
+    else
+      ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=tmpadmin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
+      if [ "$ACCESS_TOKEN" = "null" ]; then
+        NEW_ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=admin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
+        if [ "$NEW_ACCESS_TOKEN" = "null" ]; then
+          echo "Couldn't login using either the \"admin\" or \"tmpadmin\" accounts."
+          exit 1;
+        fi
+        ACCESS_TOKEN=$NEW_ACCESS_TOKEN
       fi
-      ACCESS_TOKEN=$NEW_ACCESS_TOKEN
     fi
 
     keycloak_api_call "curl -s \"$KEYCLOAK_SERVER_URL/admin/realms/master/users?username=admin&exact=true\" -H \"Authorization: Bearer $ACCESS_TOKEN\""
@@ -151,6 +169,57 @@ data:
       echo "Created new user \"admin\". The password can be found in the \"keycloak-admin\" secret."
     else
       echo "User already exists: $RESPONSE"
+    fi
+
+    if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
+      umask 077
+      ADMIN_CREDENTIAL_DIR=$(mktemp -d)
+      trap 'rm -rf "$ADMIN_CREDENTIAL_DIR"' EXIT
+      # Keep provisioning credentials stable when the human admin password changes.
+      KC_MASTER="$KEYCLOAK_SERVER_URL/admin/realms/master"
+      if [ "$USE_PROVISIONER" != true ]; then
+        keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
+        if [ "$RESPONSE" != "[]" ]; then
+          if ! provisioning_token >/dev/null; then
+            echo "ERROR: existing openhands-provisioner client could not authenticate." >&2
+            exit 1
+          fi
+        else
+          jq -n --arg secret "$KEYCLOAK_ADMIN_PASSWORD" '{
+            clientId: "openhands-provisioner", secret: $secret,
+            enabled: true, publicClient: false, serviceAccountsEnabled: true,
+            standardFlowEnabled: false, directAccessGrantsEnabled: false,
+            fullScopeAllowed: false, protocol: "openid-connect"
+          }' > "$ADMIN_CREDENTIAL_DIR/provisioner.json"
+          keycloak_write POST "$KC_MASTER/clients" "$ADMIN_CREDENTIAL_DIR/provisioner.json"
+          rm -f "$ADMIN_CREDENTIAL_DIR/provisioner.json"
+        fi
+        keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
+        PROVISIONER_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
+        keycloak_get_optional "$KC_MASTER/clients/$PROVISIONER_ID/service-account-user"
+        PROVISIONER_USER_ID=$(echo "$RESPONSE" | jq -er '.id')
+        keycloak_get_optional "$KC_MASTER/roles/admin"
+        echo "$RESPONSE" | jq '[.]' > "$ADMIN_CREDENTIAL_DIR/role.json"
+        keycloak_write POST "$KC_MASTER/users/$PROVISIONER_USER_ID/role-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+        keycloak_write POST "$KC_MASTER/clients/$PROVISIONER_ID/scope-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+        USE_PROVISIONER=true
+      fi
+      refresh_access_token
+      # Prove independent admin access before replacing the login password.
+      keycloak_get_optional "$KC_MASTER/users?username=admin&exact=true"
+      ADMIN_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
+      CURRENT_TOKEN=$(curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
+        --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \
+        --data-urlencode username=admin --data-urlencode "password=$KEYCLOAK_ADMIN_UI_PASSWORD" | jq -r '.access_token // empty')
+      if [ -z "$CURRENT_TOKEN" ]; then
+        umask 077
+        jq -n --arg password "$KEYCLOAK_ADMIN_UI_PASSWORD" \
+          '{type: "password", value: $password, temporary: false}' > "$ADMIN_CREDENTIAL_DIR/password.json"
+        keycloak_write PUT "$KC_MASTER/users/$ADMIN_ID/reset-password" "$ADMIN_CREDENTIAL_DIR/password.json"
+        rm -f "$ADMIN_CREDENTIAL_DIR/password.json"
+        echo "Updated Keycloak admin console password."
+      fi
+      unset CURRENT_TOKEN
     fi
 
     ERROR_MESSAGE=$(curl -s "$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.error')
