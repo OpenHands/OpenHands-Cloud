@@ -248,4 +248,105 @@ export class BudgetDatabase {
       this.createdTaskIds.length = 0;
     });
   }
+
+  /**
+   * Seed throwaway org members used by the member-financial pagination test.
+   *
+   * Rows are inserted directly so the test does not depend on Keycloak
+   * or provisioning being enabled. The seeded users exist only in the
+   * OpenHands DB, never in LiteLLM, so their spend reads back as a
+   * zeroed default from ``OrgMemberFinancialService``. Callers must
+   * remove them (via ``removeMemberFinancialListingMembers``) before any
+   * budget maintenance runs, or the maintenance reports them as missing
+   * from LiteLLM.
+   *
+   * Returns the seeded user ids (UUID strings.). */
+  seedMemberFinancialListingMembers(
+    orgId: string,
+    count: number,
+  ): Promise<string[]> {
+    return this.withClient(async (client) => {
+      const roleResult = await client.query<{ id: number }>(
+        `SELECT id
+           FROM role
+          WHERE name = 'member'`,
+      );
+      const memberRoleId = roleResult.rows[0]?.id;
+      if (memberRoleId === undefined) {
+        throw new Error("The 'member' role is absent from the role table");
+      }
+
+      const users: string[] = [];
+      try {
+        for (let i = 0; i < count; i += 1) {
+          // Key every unique field off the per-row UUID rather than a shared
+          // millisecond timestamp, so parallel certification runs seeding at
+          // the same instant cannot collide on the user email unique index.
+          const userId = crypto.randomUUID();
+          const email = `e2e-pagination-${userId}@example.invalid`;
+          await client.query(
+            `INSERT INTO "user" (id, current_org_id, email)
+       VALUES ($1,$2,$3)`,
+            [userId, orgId, email],
+          );
+          await client.query(
+            `INSERT INTO org_member (
+               org_id, user_id, role_id, _llm_api_key,
+               agent_settings_diff, conversation_settings_diff,
+               has_custom_llm_api_key, managed_llm_key_ownership_version
+             )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [
+              orgId,
+              userId,
+              memberRoleId,
+              `e2e-pagination-${userId}`,
+              JSON.stringify({}),
+              JSON.stringify({}),
+              false,
+              1,
+            ],
+          );
+          users.push(userId);
+        }
+        return users;
+      } catch (error) {
+        // Do not leave a partially-seeded member behind if a later insert fails.
+        await client.query(
+          `DELETE FROM org_member
+      WHERE org_id = $1
+        AND user_id = ANY($2::uuid[])`,
+          [orgId, users],
+        );
+        if (users.length > 0) {
+          await client.query(
+            `DELETE FROM "user"
+        WHERE id = ANY($1::uuid[])`,
+            [users],
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
+  removeMemberFinancialListingMembers(
+    orgId: string,
+    userIds: string[],
+  ): Promise<void> {
+    if (userIds.length === 0) return Promise.resolve();
+    return this.withClient(async (client) => {
+      await client.query(
+        `DELETE FROM org_member
+          WHERE org_id = $1
+            AND user_id = ANY($2::uuid[])`,
+        [orgId, userIds],
+      );
+      await client.query(
+        `DELETE FROM "user"
+          WHERE id = ANY($1::uuid[])`,
+        [userIds],
+      );
+    });
+  }
 }

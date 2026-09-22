@@ -12,6 +12,7 @@ config:
   postgres_password: ""
   redis_password: ""
   jwt_secret: ""
+  keycloak_admin_ui_password: ""
   keycloak_admin_password: ""
   keycloak_client_secret: ""
   litellm_api_key: ""
@@ -104,6 +105,7 @@ config:
   # Automation secrets
   automation_service_key: ""
   automation_webhook_secret: ""
+  automation_git_sync_secret: ""
   automations_db_password: ""
 
   # TLS certificates

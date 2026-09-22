@@ -74,6 +74,12 @@ spec:
         image: '{{.Values.image.repository}}:{{.Values.image.tag | default .Chart.AppVersion }}'
         env:
         {{- include "openhands.env" . | nindent 8 }}
+        - name: KEYCLOAK_ADMIN_UI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-admin
+              key: admin-ui-password
+              optional: true
         {{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
         {{- /* Keep these init-only; openhands.env already emits .Values.env overrides. */}}
         {{- if not (hasKey (.Values.env | default dict) "ENTERPRISE_SSO_DISPLAY_NAME") }}

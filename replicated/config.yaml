@@ -712,6 +712,12 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: automation_git_sync_secret
+          title: Automation Git Sync Secret
+          help_text: Key that encrypts each organization's git sync token and repository encryption key at rest
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: default_openhands_organization
       title: Default OpenHands Organization
@@ -734,6 +740,15 @@ spec:
           type: bool
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
+
+    - name: keycloak_administration
+      title: Keycloak Administration
+      description: Manage OpenHands users and identity provider account links in Keycloak.
+      items:
+        - name: keycloak_admin_ui_password
+          title: Keycloak Admin Password
+          help_text: 'Sign in as admin at https://{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}/admin/. Set a password here, save, and deploy to apply it to the existing admin account. Leave blank to keep the current password. Manage this password here so future deployments keep the same value.'
+          type: password
 
     - name: authentication_security
       title: Authentication Security
@@ -1329,9 +1344,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.47.0-python
+          help_text: Image tag, e.g. 1.49.4-python
           type: text
-          default: "1.47.0-python"
+          default: "1.49.4-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
@@ -1435,6 +1450,31 @@ spec:
             - name: "DEBUG"
               title: "Debug"
 
+    - name: upgrade_checks
+      title: Upgrade Checks
+      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      items:
+        - name: budget_preflight_mode
+          title: Pre-upgrade Budget Preflight
+          help_text: Read-only check of each organization's budget state before the upgrade applies. Strict blocks the upgrade on missing baselines, members missing from LiteLLM, cap drift, or a failed last sync; Acknowledge only records the findings.
+          type: select_one
+          default: "acknowledge"
+          items:
+            - name: "acknowledge"
+              title: "Acknowledge (default)"
+            - name: "strict"
+              title: "Strict"
+        - name: budget_reconcile_gate_mode
+          title: Post-upgrade Budget Reconciliation Gate
+          help_text: Reconciles every organization's LiteLLM budget policy after the upgrade and verifies it by readback. Strict marks the upgrade failed until reconciliation succeeds; Acknowledge lets the release proceed and records the findings.
+          type: select_one
+          default: "strict"
+          items:
+            - name: "strict"
+              title: "Strict (default)"
+            - name: "acknowledge"
+              title: "Acknowledge"
+
     - name: experimental
       title: Experimental
       description: Preview features that are still in development. Enable at your own risk.
@@ -1518,6 +1558,22 @@ spec:
           help_text: Password for the Automations database role. Leave blank unless you created that role yourself with a different password, in which case enter it here. Note that changing this does not change the password in PostgreSQL.
           type: password
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        - name: automations_sandbox_cleanup_delay_seconds
+          title: Conversation Archive Delay (seconds)
+          help_text: >-
+            How long (in seconds) after an automation run finishes before its
+            conversation is archived and its sandbox deleted. Until then the
+            sandbox is paused, and opening the conversation resumes it. Set to 0
+            (default) to archive as soon as the run finishes. Values above the
+            sandbox Deletion Time have no further effect, because paused
+            sandboxes are deleted at that age regardless.
+          type: text
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer (in seconds)
 
     - name: agent_canvas_configuration
       title: Agent Canvas
