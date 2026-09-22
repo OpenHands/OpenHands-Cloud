@@ -57,8 +57,13 @@ export class ConversationPage extends BasePage {
     this.appRoute = page.getByTestId("app-route");
     this.chatBox = page.getByTestId("interactive-chat-box");
     this.chatInput = page.getByTestId("chat-input");
-    // Canvas ships stable data-testids for both actions; prefer them over the
-    // old fuzzy button-text selectors so a UI copy tweak doesn't break tests.
+    // Both send and stop are icon-only buttons in Canvas — chat-send-button.tsx
+    // and chat-stop-button.tsx render an SVG icon with no aria-label, title,
+    // or visible text, so `getByRole("button", { name: /send|submit|stop/i })`
+    // returns zero matches. testId is the only stable handle until those
+    // components grow an accessible name (worth a separate follow-up in the
+    // OpenHands frontend); we deliberately use it over the old fuzzy
+    // button-text selectors so a UI copy tweak doesn't break tests.
     this.sendButton = page.getByTestId("submit-button");
     this.stopButton = page.getByTestId("stop-button");
     this.errorBanner = page.getByTestId("error-message-banner");
@@ -234,34 +239,25 @@ export class ConversationPage extends BasePage {
   /**
    * Send a message to the agent.
    *
-   * `chat-input` is a `contentEditable` div, not a real input — Playwright's
-   * `.fill()` and `.type()` are unreliable against it (React only re-renders
-   * on an InputEvent with `inputType: "insertText"`, which `.type()` does not
-   * emit). Setting `textContent` and dispatching the event manually mirrors
-   * the pattern used by the SDK's own mock-llm e2e helper `setChatInput`.
+   * Drives the composer with real keyboard events — `click()` to focus, then
+   * `pressSequentially()` to fire per-key keydown/keyup/input events that
+   * Canvas' contentEditable composer processes the same way a human does.
    *
-   * Submit is a real button (`submit-button`), so click it instead of
-   * pressing Enter — Enter can insert a newline in a contentEditable when
-   * the submit-on-enter binding hasn't attached yet.
+   * We deliberately do **not** use the `page.evaluate` + hand-fired
+   * `InputEvent` shim (the pattern used by the SDK's `setChatInput` helper)
+   * for this method: this is the load-bearing "user sends a message" action
+   * of every conversation spec, and the shim keeps the tests green even when
+   * the composer's real key handling, Enter binding, onChange wiring, or
+   * focus management breaks — the exact false-positive these specs exist to
+   * catch. Submit is clicked rather than triggered via Enter, because Enter
+   * can insert a newline in a contentEditable when the submit-on-Enter
+   * binding hasn't attached yet.
    */
   async sendMessage(message: string): Promise<void> {
     await expect(this.chatInput).toBeVisible({ timeout: 30_000 });
 
-    await this.page.evaluate((text) => {
-      const el = document.querySelector('[data-testid="chat-input"]');
-      if (!(el instanceof HTMLElement)) {
-        throw new Error("chat-input not found");
-      }
-      el.focus();
-      el.textContent = text;
-      el.dispatchEvent(
-        new InputEvent("input", {
-          bubbles: true,
-          data: text,
-          inputType: "insertText",
-        }),
-      );
-    }, message);
+    await this.chatInput.click();
+    await this.chatInput.pressSequentially(message);
 
     await expect(this.sendButton).toBeEnabled({ timeout: 15_000 });
     await this.sendButton.click();

@@ -59,6 +59,11 @@ export class HomePage extends BasePage {
     this.homeScreen = page.getByTestId("home-screen");
     this.chatLauncher = page.getByTestId("home-chat-launcher");
     this.chatInput = page.getByTestId("chat-input");
+    // The submit ("send") button is icon-only in Canvas — its component
+    // (chat-send-button.tsx) renders no visible text, no aria-label and no
+    // title, so `getByRole("button", { name: /send|submit/i })` finds
+    // nothing and testId is the only stable handle. If Canvas ever adds an
+    // accessible name here, prefer role-based lookup.
     this.submitButton = page.getByTestId("submit-button");
     this.openRepositoryButton = page.getByTestId("open-repository-button");
 
@@ -135,28 +140,32 @@ export class HomePage extends BasePage {
     const dialog = this.page.getByTestId("open-repository-dialog-body");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
 
-    const search = dialog.getByTestId("cloud-repo-search-input");
-    await search.click();
-    await search.fill(repoName);
+    // The dialog embeds `RepositorySelectionForm`, which renders a
+    // `GitRepoDropdown` (testId `git-repo-dropdown`) as an autocomplete
+    // input and a `GitBranchDropdown` that auto-picks the default branch
+    // once a repo is chosen — see
+    // src/components/features/home/repo-selection-form.tsx in
+    // OpenHands/OpenHands.
+    const repoInput = dialog.getByTestId("git-repo-dropdown");
+    await repoInput.click();
+    await repoInput.pressSequentially(repoName);
 
-    // The dialog renders options as buttons/rows containing the full name.
-    // Prefer role=option (matches the SDK's ARIA combobox output); fall back
-    // to a text match inside the dialog for older revisions.
     const option = dialog
+      .getByTestId("git-repo-dropdown-menu")
       .getByRole("option", { name: new RegExp(repoName, "i") })
       .first();
-    const fallback = dialog.getByText(repoName, { exact: false }).first();
-    const target = (await option.count()) > 0 ? option : fallback;
-    await expect(target).toBeVisible({ timeout: 10_000 });
-    await target.click();
+    await expect(option).toBeVisible({ timeout: 10_000 });
+    await option.click();
 
-    // Confirm the selection so it pins into the launcher's git-control bar.
-    const confirm = dialog.getByRole("button", {
-      name: /^(open|select|confirm)$/i,
-    });
-    if (await confirm.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await confirm.click();
-    }
+    // The dialog's confirm button always renders (labeled "Confirm" when
+    // the form is used with an onConfirm prop, which OpenRepositoryDialog
+    // supplies); it's disabled until a repo+branch are chosen. Wait for
+    // it to enable rather than gate on visibility — that turns a missing
+    // button into a clear "button never enabled" failure instead of a
+    // silent skip.
+    const confirm = dialog.getByTestId("repo-launch-button");
+    await expect(confirm).toBeEnabled({ timeout: 10_000 });
+    await confirm.click();
 
     await expect(
       this.page.getByTestId("home-git-control-bar-preview"),
@@ -168,67 +177,62 @@ export class HomePage extends BasePage {
   /**
    * Start a new conversation from the Canvas home launcher.
    *
-   * Canvas doesn't ship a "launch" button that navigates to a launch route;
+   * Canvas doesn't ship a "launch" button that navigates to a launch route:
    * the composer creates the conversation *and* sends the first user message
-   * atomically (see `home-chat-launcher.tsx::handleSubmit`). Callers pass the
-   * text of the first message (or leave it to a default) — a placeholder is
-   * needed because `submit-button` is disabled while `chat-input` is empty.
+   * atomically (see `home-chat-launcher.tsx::handleSubmit`). Callers must
+   * therefore pass the text of the first message — there is no meaningful
+   * default because whatever we submit is what the agent sees.
    *
-   * The legacy positional `buttonId` argument (e.g. "launch-new-conversation-button")
-   * is retained for source-compatibility with older specs; it is now used only
-   * as a hint that a repo/plugin was already picked (`repo-launch-button`) —
-   * the click target is always `submit-button` in Canvas.
-   *
-   * @param prompt - First user message. Falls back to a benign default.
+   * @param prompt - The first user message. Required.
    */
-  async startNewConversation(prompt: string = "hello"): Promise<void> {
+  async startNewConversation(prompt: string): Promise<void> {
     await expect(this.chatLauncher).toBeVisible({ timeout: 10_000 });
     await expect(this.chatInput).toBeVisible({ timeout: 10_000 });
 
-    // The chat input is a contentEditable div, not a real input. `.fill()`
-    // is unreliable against contentEditables, so set text programmatically
-    // and dispatch an InputEvent — same pattern the SDK's own e2e helpers
-    // use (see `setChatInput` in OpenHands/OpenHands mock-llm helpers).
-    await this.page.evaluate((text) => {
-      const el = document.querySelector('[data-testid="chat-input"]');
-      if (!(el instanceof HTMLElement)) {
-        throw new Error("chat-input not found");
-      }
-      el.focus();
-      el.textContent = text;
-      el.dispatchEvent(
-        new InputEvent("input", {
-          bubbles: true,
-          data: text,
-          inputType: "insertText",
-        }),
-      );
-    }, prompt);
+    // Drive the composer with real keyboard events — click to focus, then
+    // pressSequentially to fire per-key keydown/keyup/input events that
+    // Canvas' contentEditable composer processes the same way a human does.
+    // This deliberately avoids the `page.evaluate` + hand-fired InputEvent
+    // shim used by the SDK's `setChatInput`: that pattern keeps the tests
+    // green even when the composer's real key handling, Enter binding,
+    // onChange wiring, or focus management breaks — exactly the class of
+    // regression these specs exist to catch.
+    await this.chatInput.click();
+    await this.chatInput.pressSequentially(prompt);
 
     await expect(this.submitButton).toBeEnabled({ timeout: 15_000 });
     await this.submitButton.click();
 
-    // The launcher navigates to `/conversations/{id}` once the create-conversation
-    // mutation resolves. Match on the SDK path shape.
-    await this.page
-      .waitForURL(/\/conversations\/[^/]+/, { timeout: 60_000 })
-      .catch(() => {});
+    // Let a failed navigation throw here so the failure points at the
+    // launcher (the real cause) rather than surfacing later as a confusing
+    // "conversation never became ready" error inside waitForConversationReady.
+    await this.page.waitForURL(/\/conversations\/[^/]+/, { timeout: 60_000 });
   }
 
   /**
-   * Open the enterprise account settings.
+   * Navigate to the enterprise account settings screen.
    *
    * The Canvas home has no user avatar or hover-triggered account dropdown —
    * account controls (org selector, API keys, billing, logout) live in the
-   * enterprise Settings shell at `/settings`. Navigating there is the
-   * closest equivalent to the old "open user menu" gesture.
+   * enterprise Settings shell at `/settings`. This is a full `page.goto`
+   * navigation, not the opening of an in-page menu; the name reflects that.
    */
-  async openUserMenu(): Promise<void> {
+  async openAccountSettings(): Promise<void> {
     if (!this.page.url().includes("/settings")) {
       await this.page.goto("/settings");
       await this.page.waitForLoadState("domcontentloaded");
     }
     await expect(this.settingsScreen).toBeVisible({ timeout: 15_000 });
+  }
+
+  /**
+   * @deprecated Use {@link openAccountSettings}. Kept as a thin alias so
+   * out-of-tree callers (and legacy 002/004/006 specs) still compile; the
+   * name is a misnomer under Canvas — this performs a navigation, not a
+   * menu open.
+   */
+  async openUserMenu(): Promise<void> {
+    await this.openAccountSettings();
   }
 
   /**
@@ -240,7 +244,7 @@ export class HomePage extends BasePage {
    * data-testid), and wait for Keycloak to redirect us back to /login.
    */
   async logout(): Promise<void> {
-    await this.openUserMenu();
+    await this.openAccountSettings();
 
     const logoutButton = this.page.getByRole("button", { name: /^logout$/i });
     await expect(logoutButton).toBeVisible({ timeout: 10_000 });

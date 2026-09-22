@@ -118,18 +118,16 @@ test.describe("legacy conversations @conversations", () => {
     await homePage.selectRepository(TEST_REPO_URL);
     console.log(`Selected repository: ${TEST_REPO_URL}`);
 
-    // Start a new conversation with the repo launch button.
-    await homePage.startNewConversation("repo-launch-button");
-
-    await page.waitForTimeout(2000);
-    conversationPage = new ConversationPage(page);
-
-    await conversationPage.waitForConversationReady();
-
+    // Canvas' launcher sends the first user message atomically with the
+    // create-conversation call, so seed the README-edit prompt here rather
+    // than sending it separately once we've navigated to the conversation.
     const prompt =
       "Append the phrase 'Terms and Conditions May Apply!' to the end of README.md in the current working directory (the repo root) — actually edit the file and save it.";
     console.log(`Sending prompt: "${prompt}"`);
-    await conversationPage.sendMessage(prompt);
+    await homePage.startNewConversation(prompt);
+
+    conversationPage = new ConversationPage(page);
+    await conversationPage.waitForConversationReady();
 
     // Wait for the task to start.
     const waitingForTaskText = conversationPage.page.getByText("Running task");
