@@ -37,7 +37,10 @@ interface OrganizationSettings {
 
 interface MemberFinancial {
   user_id: string;
-  lifetime_spend: number;
+  // The endpoint reports null when LiteLLM carried no spend for a member; the
+  // nullish coalescing below treats that unobserved state as a zero baseline,
+  // preserving the original numeric-comparison behavior of this suite.
+  lifetime_spend: number | null;
 }
 
 interface MemberFinancialPage {
@@ -67,7 +70,7 @@ async function json<T>(response: APIResponse, operation: string): Promise<T> {
 async function financialByUser(
   request: APIRequestContext,
   orgId: string,
-): Promise<Map<string, number>> {
+): Promise<Map<string, number | null>> {
   const response = await request.get(
     `/api/organizations/${orgId}/members/financial?limit=100`,
   );
