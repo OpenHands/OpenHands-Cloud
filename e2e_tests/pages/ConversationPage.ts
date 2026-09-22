@@ -57,17 +57,18 @@ export class ConversationPage extends BasePage {
     this.appRoute = page.getByTestId("app-route");
     this.chatBox = page.getByTestId("interactive-chat-box");
     this.chatInput = page.getByTestId("chat-input");
-    this.sendButton = page
-      .locator(
-        'button[type="submit"], button:has-text("Send"), [data-testid*="send"]',
-      )
-      .first();
-    this.stopButton = page
-      .locator('button:has-text("Stop"), [data-testid*="stop"]')
-      .first();
+    // Canvas ships stable data-testids for both actions; prefer them over the
+    // old fuzzy button-text selectors so a UI copy tweak doesn't break tests.
+    this.sendButton = page.getByTestId("submit-button");
+    this.stopButton = page.getByTestId("stop-button");
     this.errorBanner = page.getByTestId("error-message-banner");
     this.waitingMessage = page.locator('[data-testid*="waiting"]').first();
-    this.statusIndicator = page.getByTestId("status-icon");
+    // Canvas renamed `status-icon` to `chat-status-indicator`; the enterprise
+    // conversation view still ships `status-icon`. Match either so tests work
+    // against both shells during the transition.
+    this.statusIndicator = page
+      .getByTestId("chat-status-indicator")
+      .or(page.getByTestId("status-icon"));
   }
 
   /**
@@ -99,16 +100,25 @@ export class ConversationPage extends BasePage {
     // Wait for the chat input to be visible
     await expect(this.chatInput).toBeVisible({ timeout: shellTimeout });
 
-    // Wait for agent to be ready by checking for "Waiting for task" text.
-    // Note: using text search since data-testid is not yet deployed to staging.
+    // Wait for agent to be ready. The old enterprise UI surfaced the string
+    // "Waiting for task"; the Canvas conversation view instead exposes the
+    // status through `chat-status-indicator` (a stable data-testid) and the
+    // active-conversation status pill (`conversation-status-active` /
+    // `conversation-status-working`). We accept any of these signals so the
+    // helper works against both shells during the Canvas migration.
     //
     // The error-banner branch is a sentinel: it only resolves when an error
     // actually appears. On timeout it stays pending (never resolves), so it
     // cannot short-circuit the race — the full timeout budget is left to the
-    // readyText branch. Previously both branches resolved on timeout, so the
-    // 5s error-budget branch always won the race after 5s and the readyText
+    // ready branch. Previously both branches resolved on timeout, so the
+    // 5s error-budget branch always won the race after 5s and the ready
     // branch was abandoned with ~115s of budget unused.
-    const readyText = this.page.getByText(/waiting for task/i);
+    const readyText = this.page
+      .getByText(/waiting for task/i)
+      .or(this.page.getByTestId("chat-status-indicator"))
+      .or(this.page.getByTestId("conversation-status-active"))
+      .or(this.page.getByTestId("conversation-status-working"))
+      .first();
     const outcome = await Promise.race([
       readyText
         .waitFor({ state: "visible", timeout })
@@ -162,13 +172,16 @@ export class ConversationPage extends BasePage {
     // Wait for the chat input to be visible
     await expect(this.chatInput).toBeVisible({ timeout: shellTimeout });
 
-    // Wait for agent to finish by checking for the "Agent has finished the
-    // task" status. Note: using text search since data-testid is not yet
-    // deployed to staging. Regex keeps it tolerant of casing/whitespace.
-    const finishedTaskText = this.page.getByText(
-      /agent has finished the task/i,
-    );
-    await expect(finishedTaskText).toBeVisible({ timeout });
+    // Wait for agent to finish. The enterprise UI surfaces the string
+    // "Agent has finished the task"; Canvas exposes completion via the
+    // `conversation-status-check` testid (rendered by the status pill when
+    // the agent reaches the `finished` state). Accept either signal so the
+    // helper works across both shells during the Canvas migration.
+    const finishedTask = this.page
+      .getByText(/agent has finished the task/i)
+      .or(this.page.getByTestId("conversation-status-check"))
+      .first();
+    await expect(finishedTask).toBeVisible({ timeout });
   }
 
   /**
@@ -219,22 +232,39 @@ export class ConversationPage extends BasePage {
   }
 
   /**
-   * Send a message to the agent
+   * Send a message to the agent.
+   *
+   * `chat-input` is a `contentEditable` div, not a real input — Playwright's
+   * `.fill()` and `.type()` are unreliable against it (React only re-renders
+   * on an InputEvent with `inputType: "insertText"`, which `.type()` does not
+   * emit). Setting `textContent` and dispatching the event manually mirrors
+   * the pattern used by the SDK's own mock-llm e2e helper `setChatInput`.
+   *
+   * Submit is a real button (`submit-button`), so click it instead of
+   * pressing Enter — Enter can insert a newline in a contentEditable when
+   * the submit-on-enter binding hasn't attached yet.
    */
   async sendMessage(message: string): Promise<void> {
-    // Wait for input to be ready
     await expect(this.chatInput).toBeVisible({ timeout: 30_000 });
 
-    // Clear any existing content and type the message
-    await this.chatInput.click();
-    await this.chatInput.fill("");
-    await this.page.keyboard.type(message);
+    await this.page.evaluate((text) => {
+      const el = document.querySelector('[data-testid="chat-input"]');
+      if (!(el instanceof HTMLElement)) {
+        throw new Error("chat-input not found");
+      }
+      el.focus();
+      el.textContent = text;
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: text,
+          inputType: "insertText",
+        }),
+      );
+    }, message);
 
-    // Submit the message
-    await this.page.keyboard.press("Enter");
-
-    // Small delay to ensure message is sent
-    await this.page.waitForTimeout(500);
+    await expect(this.sendButton).toBeEnabled({ timeout: 15_000 });
+    await this.sendButton.click();
   }
 
   /**
