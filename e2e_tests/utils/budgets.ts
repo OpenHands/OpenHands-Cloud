@@ -1,5 +1,7 @@
 import type { APIRequestContext, APIResponse } from "@playwright/test";
 
+export type SpendStatus = "live" | "stale" | "unavailable";
+
 export interface BudgetThreshold {
   percentage: number;
   email_enabled: boolean;
@@ -57,16 +59,21 @@ export interface OrgMember {
 
 export interface MemberFinancial {
   user_id: string;
-  lifetime_spend: number;
-  current_budget: number;
+  // Null when LiteLLM reported no spend for the member (a failed read or a
+  // member absent from a successful read) - an unobserved spend is not a zero.
+  lifetime_spend: number | null;
+  current_budget: number | null;
   max_budget: number | null;
 }
 
-interface MemberFinancialPage {
+export interface MemberFinancialPage {
   items: MemberFinancial[];
   current_page: number;
   per_page: number;
   next_page_id: string | null;
+  // Describes the spend read behind this page, not the row: a row can carry a
+  // null lifetime_spend under "live" when the read simply omitted that member.
+  spend_status: SpendStatus;
 }
 
 export interface LiteLLMTeamState {
