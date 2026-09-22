@@ -1085,4 +1085,71 @@ test.describe("organization budget maintenance @budgets", () => {
       evidence!.serviceConversationsBefore,
     );
   });
+
+  test("member financial listing paginates past its first page", async () => {
+    expect(evidence).toBeDefined();
+    expect(api).toBeDefined();
+    expect(database).toBeDefined();
+
+    // Seed more members than the page size so the walk has to follow
+    // ``next_page_id`` past the first page. The dedicated budget org can be
+    // as small as two members (the returning admin + any counterpart) at the
+    // ``limit=100`` the rest of the suite uses, so a page size of two
+    // guarantees at least two pages when three members are seeded.
+    const seededIds = await database!.seedMemberFinancialListingMembers(
+      config.orgId,
+      3,
+    );
+    try {
+      const pageSize = 2;
+      const collected: string[] = [];
+      let nextPageId: string | undefined;
+      let pagesFetched = 0;
+
+      do {
+        const page = await api!.getMemberFinancialPage(pageSize, nextPageId);
+        // A non-empty page each iteration also guards against a dangling
+        // cursor that points past the end of the listing.
+        expect(page.items.length).toBeGreaterThan(0);
+        nextPageId = page.next_page_id ?? undefined;
+
+        // Every page that hands back a cursor must be exactly full. A server
+        // that returns an oversized page while still setting next_page_id is
+        // the mirror image of the bug this test guards, so assert per_page is
+        // honoured rather than trusting the row count.
+        if (nextPageId) {
+          expect(page.items.length).toBe(pageSize);
+        }
+
+        for (const item of page.items) {
+          collected.push(item.user_id);
+        }
+        pagesFetched += 1;
+        expect(pagesFetched).toBeLessThanOrEqual(10);
+      } while (nextPageId);
+
+      const seen = new Set(collected);
+
+      // A broken cursor that repeats rows would still surface every seeded
+      // member, so assert the walk never returned the same user twice.
+      expect(collected.length).toBe(seen.size);
+
+      // Every seeded member must appear in some page. On the broken
+      // ``next_page_id`` computation (offset < has_more bool) the walk stops
+      // after the first page, so those members are never reached.
+      for (const seededId of seededIds) {
+        expect(seen.has(seededId)).toBeTruthy();
+      }
+
+      // And the walk genuinely spanned more than one page, so the
+      // next_page_id link was actually followed rather than all rows
+      // arriving in a single oversized page.
+      expect(seen.size).toBeGreaterThan(pageSize);
+    } finally {
+      await database!.removeMemberFinancialListingMembers(
+        config.orgId,
+        seededIds,
+      );
+    }
+  });
 });

@@ -45,6 +45,13 @@ fresh database sessions. It will not run unless
 `BUDGET_E2E_MUTATION_CONFIRMED=true`, and it rejects personal or non-test
 organizations by default.
 
+`tests/010-personal-budget-guards.spec.ts` is a non-destructive companion that
+drives every budget entry point against the returning user's own personal
+workspace. Each call must be rejected with `400` and the personal-workspace
+detail message, and (when `BUDGET_E2E_DATABASE_URL` is configured) none of the
+budget tables may gain a row for the personal org afterwards — the same
+invariant the `148_remove_personal_org_budget_settings` migration enforces.
+
 Configure the protected GitHub environment `budget-e2e-staging` with:
 
 | Kind     | Name                                  | Purpose                                                      |

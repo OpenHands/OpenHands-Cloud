@@ -363,7 +363,7 @@ export class BudgetApi {
     );
   }
 
-  getMemberFinancialPage(
+  async getMemberFinancialPage(
     limit: number,
     pageId?: string,
   ): Promise<MemberFinancialPage> {
