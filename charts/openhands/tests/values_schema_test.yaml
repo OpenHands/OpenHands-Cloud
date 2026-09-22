@@ -20,6 +20,41 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "ingress/enabled.*want boolean"
+  - it: rejects orgDefaults.condenser.maxTokens below the minimum
+    set:
+      orgDefaults.condenser.maxTokens: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "orgDefaults/condenser/maxTokens"
+  - it: rejects negative orgDefaults.condenser.maxTokens
+    set:
+      orgDefaults.condenser.maxTokens: -1
+    asserts:
+      - failedTemplate:
+          errorPattern: "orgDefaults/condenser/maxTokens"
+  - it: accepts orgDefaults.condenser.maxTokens above one million
+    set:
+      orgDefaults.condenser.maxTokens: 2000000
+    asserts:
+      - notFailedTemplate: {}
+  - it: rejects a non-integer orgDefaults.condenser.maxTokens
+    set:
+      orgDefaults.condenser.maxTokens: "200000"
+    asserts:
+      - failedTemplate:
+          errorPattern: "orgDefaults/condenser/maxTokens"
+  - it: rejects a non-boolean orgDefaults.condenser.applyToExisting
+    set:
+      orgDefaults.condenser.applyToExisting: "true"
+    asserts:
+      - failedTemplate:
+          errorPattern: "orgDefaults/condenser/applyToExisting.*want boolean"
+  - it: rejects a non-boolean orgDefaults.condenser.overwriteExisting
+    set:
+      orgDefaults.condenser.overwriteExisting: "false"
+    asserts:
+      - failedTemplate:
+          errorPattern: "orgDefaults/condenser/overwriteExisting.*want boolean"
   - it: rejects a non-integer daily conversation limit
     set:
       dailyConversationLimit: "twenty"
@@ -95,5 +130,8 @@ tests:
       enterpriseSSO.idpMetadataUrl: https://idp.example.com/metadata
       filestore.secretAccessKeyKey: secret-key
       laminar.clickhouse.diagnostics.retentionDays: 2
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: true
+      orgDefaults.condenser.overwriteExisting: false
     asserts:
       - notFailedTemplate: {}

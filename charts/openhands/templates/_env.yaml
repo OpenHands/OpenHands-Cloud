@@ -1,5 +1,6 @@
 {{- define "openhands.env.defaults" }}
 {{- $integrations := .Values.integrations | default dict }}
+{{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
   value: remote
 - name: OH_SANDBOX_SPEC_KIND
@@ -33,6 +34,24 @@
 {{- if ne .Values.dailyConversationLimit nil }}
 - name: OH_DAILY_CONVERSATION_LIMIT
   value: {{ .Values.dailyConversationLimit | quote }}
+{{- end }}
+{{- /*
+    Only the app-server startup lifespan reads these, so the copies that land in
+    the maintenance CronJobs sharing this block are inert -- those run standalone
+    `python -m` entrypoints that never start the app.
+   */}}
+{{- if ne $orgCondenser.maxTokens nil }}
+{{- /*
+    int64 before quoting: JSON Schema's integer type accepts YAML floats with a
+    zero fraction, and Go renders 1e6 as "1e+06", which the backend's isdecimal
+    parse rejects by raising out of the startup lifespan.
+   */}}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+  value: {{ $orgCondenser.maxTokens | int64 | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+  value: {{ $orgCondenser.applyToExisting | default false | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+  value: {{ $orgCondenser.overwriteExisting | default false | quote }}
 {{- end }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}

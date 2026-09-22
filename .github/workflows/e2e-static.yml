@@ -3,6 +3,7 @@ name: E2E Static Checks
 on:
   pull_request:
     paths:
+      - ".github/workflows/budget-e2e.yml"
       - ".github/workflows/e2e-static.yml"
       - "e2e_tests/**"
 
@@ -26,6 +27,10 @@ jobs:
         run: npm ci
       - name: Lint and type-check
         run: npm run lint
+      - name: Install Chromium for unit tests
+        run: npx playwright install --with-deps chromium
+      - name: Unit tests
+        run: npm run test:unit
       - name: Discover Chromium tests
         env:
           BASE_URL: https://release-under-test.invalid
