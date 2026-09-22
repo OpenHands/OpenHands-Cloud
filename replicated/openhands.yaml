@@ -719,6 +719,10 @@ spec:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+          env:
+            # Deferred archive of automation conversations (OHE-2833). Quoted
+            # so the chart's `automation.env` receives a string.
+            AUTOMATION_SANDBOX_CLEANUP_DELAY_SECONDS: 'repl{{ ConfigOption "automations_sandbox_cleanup_delay_seconds" }}'
           # Uploaded automation packages must survive pod replacement, so store
           # them on the bundled MinIO (persistent here — minio.persistence
           # above) instead of the pod filesystem.
