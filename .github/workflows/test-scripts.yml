@@ -53,6 +53,8 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Run scripts tests
+        env:
+          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.3.3
         run: >-
           uv run
           --with pytest

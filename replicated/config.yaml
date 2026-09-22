@@ -741,6 +741,15 @@ spec:
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
 
+    - name: keycloak_administration
+      title: Keycloak Administration
+      description: Manage OpenHands users and identity provider account links in Keycloak.
+      items:
+        - name: keycloak_admin_ui_password
+          title: Keycloak Admin Password
+          help_text: 'Sign in as admin at https://{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}/admin/. Set a password here, save, and deploy to apply it to the existing admin account. Leave blank to keep the current password. Manage this password here so future deployments keep the same value.'
+          type: password
+
     - name: authentication_security
       title: Authentication Security
       description: Configure safeguards applied when users sign in.

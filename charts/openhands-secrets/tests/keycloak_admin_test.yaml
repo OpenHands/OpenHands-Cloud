@@ -1,0 +1,25 @@
+suite: Keycloak admin passwords
+templates:
+  - keycloak-admin.yaml
+tests:
+  - it: preserves bootstrap credentials when a console password is set
+    set:
+      config.keycloak_admin_password: bootstrap
+      config.keycloak_admin_ui_password: console
+    asserts:
+      - equal:
+          path: data.admin-password
+          value: Ym9vdHN0cmFw
+      - equal:
+          path: data.admin-ui-password
+          value: Y29uc29sZQ==
+  - it: leaves the console override empty on existing installations
+    set:
+      config.keycloak_admin_password: bootstrap
+    asserts:
+      - equal:
+          path: data.admin-password
+          value: Ym9vdHN0cmFw
+      - equal:
+          path: data.admin-ui-password
+          value: ""

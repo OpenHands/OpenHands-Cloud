@@ -23,7 +23,8 @@ opened in the [core OpenHands repository](github.com/All-Hands-AI/OpenHands).
 # Installation
 
 See [charts/openhands/README.md](./charts/openhands/README.md) for
-full instructions.
+full instructions. See [Keycloak administration](./docs/keycloak-administration.md)
+for configuring admin console access through Replicated.
 
 # Automation
 
