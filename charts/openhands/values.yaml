@@ -15,7 +15,7 @@ image:
   # TEMPORARY (this branch only, for ENABLE_LITELLM fleet testing): pinned to
   # the enterprise-server image built from OpenHands/enterprise#474 so the
   # replicated fleet VMs can exercise the ENABLE_LITELLM flag before it merges.
-  tag: sha-9dc7e70
+  tag: sha-a8024c3
 
 autoscaling:
   enabled: false
