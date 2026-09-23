@@ -3,31 +3,39 @@ import path from "path";
 /**
  * Centralized configuration for the OpenHands Cloud e2e harness.
  *
- * The harness authenticates against Keycloak, which federates identities from
- * GitHub. A single test run exercises the same specs under two user roles:
+ * The harness authenticates against Keycloak. A single test run exercises the
+ * same specs under two user roles:
  *
- *  - "returning" — a GitHub user whose OpenHands account already exists.
- *  - "new-user"  — a GitHub user whose OpenHands account is deleted at the
- *                  start of the run by the Keycloak admin, so they get a fresh
- *                  account (and a fresh user id) on next login.
+ *  - "returning" — a real GitHub user whose OpenHands account already exists.
+ *    Federated through Keycloak's GitHub identity provider; exercises the
+ *    full app ↔ Keycloak ↔ GitHub round-trip on every run.
+ *  - "new-user"  — a *synthetic*, Keycloak-native user (no GitHub link) that
+ *    is deleted and recreated at the start of the run by the Keycloak admin,
+ *    so they get a fresh account and land on the app's first-login onboarding
+ *    path deterministically. GitHub is deliberately not involved: the value
+ *    of this role is exercising the app's own new-user flow (TOS, onboarding
+ *    form, org bootstrap), not GitHub's OAuth screens.
  *
- * Three credential sets are therefore required:
+ * Credential sets required:
  *
- *  1. Keycloak admin (username + password) — used to delete the New User by
- *     email before the New User logs in.
+ *  1. Keycloak admin (username + password) — used to delete + recreate the
+ *     New User in the realm before login.
  *  2. Returning User (GitHub username + password + optional TOTP secret).
- *  3. New User (GitHub username + password + optional TOTP secret).
+ *  3. New User (Keycloak username + password) — a synthetic account managed
+ *     entirely by the harness against a reserved e2e-only email domain.
  *
  * Environment variables
  * ---------------------
  * Deployment:
  *  - BASE_URL                      (required) release environment under test.
  *
- * Keycloak admin (cleanup):
+ * Keycloak admin (cleanup + synthetic user provisioning):
  *  - KEYCLOAK_REALM                realm to administer (default: "allhands").
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
- *  - KEYCLOAK_NEW_USER_EMAIL       email of the New User to delete.
+ *  - KEYCLOAK_NEW_USER_EMAIL       email of the synthetic New User. Must be
+ *                                  under an e2e-only TLD (see
+ *                                  ``assertE2eOnlyEmail``).
  *  - AUTH_BASE_URL                 (optional) explicit HTTP(S) Keycloak server
  *                                  URL. When non-empty it is validated and used;
  *                                  otherwise the URL is derived from BASE_URL by
@@ -55,10 +63,12 @@ import path from "path";
  *  - RETURNING_GITHUB_PASSWORD
  *  - RETURNING_GITHUB_TOTP_SECRET  (optional) 2FA secret.
  *
- * New User (GitHub):
- *  - NEW_GITHUB_USERNAME
- *  - NEW_GITHUB_PASSWORD
- *  - NEW_GITHUB_TOTP_SECRET        (optional) 2FA secret.
+ * New User (synthetic Keycloak-native account):
+ *  - KEYCLOAK_NEW_USER_USERNAME    **required to enable this role**; leave
+ *                                  unset to skip the New User (and Keycloak
+ *                                  cleanup + creation) entirely.
+ *  - KEYCLOAK_NEW_USER_PASSWORD    password to set on the synthetic user and
+ *                                  submit through Keycloak's local login form.
  *
  * Test fixtures (optional overrides):
  *  - TEST_REPO_URL                 repo used in conversations.
@@ -79,17 +89,21 @@ export type RunUser = "returning" | "new-user";
 export const DEFAULT_KEYCLOAK_REALM = "allhands";
 
 /**
- * True when a GitHub username is configured for the given user role.
+ * True when credentials are configured for the given user role.
  *
- * Each role is opt-in via its `*_GITHUB_USERNAME` env var, so a run can omit
- * either user (e.g. a fresh cluster that has no existing users to exercise the
- * "returning" path). When a role is disabled, its setup project skips and the
- * paired test projects match no specs, so the run stays green without that
- * role's credentials.
+ * Each role is opt-in via its own username env var
+ * (``RETURNING_GITHUB_USERNAME`` for the federated GitHub user,
+ * ``KEYCLOAK_NEW_USER_USERNAME`` for the synthetic Keycloak-native user), so a
+ * run can omit either role. When a role is disabled, its setup project skips
+ * and the paired test projects match no specs, so the run stays green without
+ * that role's credentials.
  */
 export function isUserEnabled(user: RunUser): boolean {
-  const prefix = user === "returning" ? "RETURNING_GITHUB" : "NEW_GITHUB";
-  return Boolean(process.env[`${prefix}_USERNAME`]);
+  const envVar =
+    user === "returning"
+      ? "RETURNING_GITHUB_USERNAME"
+      : "KEYCLOAK_NEW_USER_USERNAME";
+  return Boolean(process.env[envVar]);
 }
 
 const fixturesDir = path.resolve(import.meta.dirname, "../fixtures");
@@ -131,18 +145,50 @@ function required(varName: string): string {
 }
 
 /**
- * Resolve and validate the GitHub credentials for a given user role.
+ * Resolve and validate the GitHub credentials for the Returning User role.
  *
- * Only call this for an enabled role (see `isUserEnabled`); it throws if the
- * required env vars are missing, which is the intended failure mode when a run
- * claims to exercise a role without supplying its credentials.
+ * Only call this when the returning-user role is enabled (see
+ * ``isUserEnabled``); it throws if the required env vars are missing, which
+ * is the intended failure mode when a run claims to exercise the role
+ * without supplying its credentials.
+ *
+ * The New User role does *not* use GitHub — see ``newUserCredentials``.
  */
-export function githubCredentialsFor(user: RunUser): GitHubCredentials {
-  const prefix = user === "returning" ? "RETURNING_GITHUB" : "NEW_GITHUB";
-  const username = required(`${prefix}_USERNAME`);
-  const password = required(`${prefix}_PASSWORD`);
-  const totpSecret = process.env[`${prefix}_TOTP_SECRET`] || undefined;
+export function returningGithubCredentials(): GitHubCredentials {
+  const username = required("RETURNING_GITHUB_USERNAME");
+  const password = required("RETURNING_GITHUB_PASSWORD");
+  const totpSecret = process.env.RETURNING_GITHUB_TOTP_SECRET || undefined;
   return { username, password, totpSecret };
+}
+
+/**
+ * Credentials for the synthetic Keycloak-native New User.
+ *
+ * The username and password are what the harness sets on the user via the
+ * Keycloak Admin API and then submits through Keycloak's local login form.
+ * The email is what the Admin API delete-and-recreate step keys on, and is
+ * also what the app's ``provision-user`` endpoint uses to add the account to
+ * an org (see ``006-org-management.spec.ts``).
+ */
+export interface NewUserCredentials {
+  username: string;
+  password: string;
+  email: string;
+}
+
+/**
+ * Resolve and validate the synthetic New User credentials.
+ *
+ * Only call this when the new-user role is enabled (see ``isUserEnabled``).
+ * The email is validated against the e2e-only allowlist so a config typo
+ * cannot point the harness at a namespace that overlaps with real users.
+ */
+export function newUserCredentials(): NewUserCredentials {
+  const username = required("KEYCLOAK_NEW_USER_USERNAME");
+  const password = required("KEYCLOAK_NEW_USER_PASSWORD");
+  const email = required("KEYCLOAK_NEW_USER_EMAIL");
+  assertE2eOnlyEmail(email);
+  return { username, password, email };
 }
 
 /**
@@ -157,7 +203,9 @@ export function superAdminApiKey(): string {
 
 /** Email of the New User (used by org-management to provision them into an org). */
 export function newUserEmail(): string {
-  return required("KEYCLOAK_NEW_USER_EMAIL");
+  const email = required("KEYCLOAK_NEW_USER_EMAIL");
+  assertE2eOnlyEmail(email);
+  return email;
 }
 
 /** Resolve and validate the Keycloak admin config used for New User cleanup. */
@@ -233,6 +281,53 @@ export function runUser(
 /** When true, setup projects reuse existing storage-state files if present. */
 export function skipAuth(): boolean {
   return process.env.AUTH_METHOD === "skip";
+}
+
+/**
+ * Allow-list pattern for e2e-only email addresses. ``.test`` is reserved by
+ * RFC 2606 and can never resolve to a real mailbox, so any address matching
+ * this pattern is provably outside any customer or employee namespace.
+ *
+ * The synthetic New User's email must match this pattern; both the delete-
+ * by-email and create-user paths in ``keycloak-admin.ts`` assert on it before
+ * hitting the Keycloak Admin API. This is defense-in-depth against a
+ * ``KEYCLOAK_NEW_USER_EMAIL`` typo pointing the harness at a real account.
+ */
+export const E2E_EMAIL_PATTERN = /^[^@\s]+@([a-z0-9-]+\.)*e2e\.test$/i;
+
+/**
+ * Throw if the given email is not under the e2e-only ``.test`` TLD.
+ *
+ * This guard runs before any destructive Keycloak Admin API call keyed on
+ * email (delete-by-email, create-user).
+ */
+export function assertE2eOnlyEmail(email: string): void {
+  if (!E2E_EMAIL_PATTERN.test(email)) {
+    throw new Error(
+      `Refusing to use "${email}" as an e2e user address: expected an ` +
+        `address under the reserved .e2e.test namespace (see E2E_EMAIL_PATTERN). ` +
+        `The synthetic new-user cleanup and creation deliberately reject any ` +
+        `namespace that could overlap with real users.`,
+    );
+  }
+}
+
+/**
+ * Throw if the run is targeting the production environment.
+ *
+ * The New User setup deletes and recreates a user in the target Keycloak
+ * realm. That is only safe against non-production targets; production
+ * customer data must never be touched. Call from every setup project that
+ * performs realm-level writes.
+ */
+export function assertNotProduction(): void {
+  if (isEnvironment("production")) {
+    throw new Error(
+      "Refusing to run destructive Keycloak setup against production " +
+        `(BASE_URL=${process.env.BASE_URL}). This setup deletes and recreates ` +
+        "realm users and is intended for staging / disposable clusters only.",
+    );
+  }
 }
 
 /** Shared, non-secret test fixture values with sensible defaults. */
