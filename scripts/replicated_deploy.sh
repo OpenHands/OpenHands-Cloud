@@ -30,6 +30,21 @@ ok()   { jq -e '.success == true' >/dev/null 2>&1; }
 why()  { local b; b="$(cat)"; jq -re '.error // empty' <<<"$b" 2>/dev/null \
            || printf '%s' "${b:-$(tr -s '\n' ' ' <"$ERR")}"; }
 
+# kotsadm's gateway returns a bare 502/503/504 (empty body) for a beat while it
+# restarts mid-upgrade, so the deploy POST can fail on a deploy nothing rejected.
+# Retry only those transient codes on the same cursor and booted upgrade service;
+# a real rejection (.success=false) or anything else still fails at once via why().
+deploy_post() {
+  local delay=10 R
+  while :; do
+    R="$(TMO=120 post "$@" || true)"
+    ok <<<"$R" && { printf '%s' "$R"; return 0; }
+    { grep -Eq 'HTTP (502|503|504)' "$ERR" && waiting; } || { printf '%s' "$R"; return 1; }
+    echo "  deploy POST hit a transient gateway error ($(tr -s '\n' ' ' <"$ERR")); retrying in ${delay}s" >&2
+    sleep "$delay"; delay=$(( delay * 2 )); [ "$delay" -gt 60 ] && delay=60
+  done
+}
+
 # A 401 still sets a cookie, so a non-empty jar proves nothing.
 # Retried: kotsadm is often mid-restart when a release lands back-to-back with
 # the previous one, and a refused connect must not read as a bad password.
@@ -132,7 +147,7 @@ if [ -n "$PENDING_SEQ" ]; then
   # KOTS deploys a downloaded version from its downstream sequence instead.
   echo "deploying: $FROM -> sequence $PENDING_SEQ @ $KOTS_CURSOR (already downloaded)"
   preflight_gate "$DS/sequence/$PENDING_SEQ"
-  R="$(TMO=120 post -d '{}' "$DS/sequence/$PENDING_SEQ/deploy" || true)"
+  R="$(deploy_post -d '{}' "$DS/sequence/$PENDING_SEQ/deploy" || true)"
   ok <<<"$R" || fail "deploy of sequence $PENDING_SEQ rejected: $(why <<<"$R")"
 else
   # --- select --------------------------------------------------------------
@@ -194,7 +209,7 @@ else
   [ "$(jq -r .hasPreflight <<<"$META")" = true ] && preflight_gate "$UP"
 
   # --- deploy --------------------------------------------------------------
-  R="$(TMO=120 post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}' "$UP/deploy" || true)"
+  R="$(deploy_post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}' "$UP/deploy" || true)"
   ok <<<"$R" || fail "deploy rejected: $(why <<<"$R")"
 fi
 
