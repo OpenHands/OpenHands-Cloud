@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.63.0
+  tag: 1.64.0
 
 autoscaling:
   enabled: false
@@ -691,7 +691,7 @@ litellm-helm:
   # (BerriAI/litellm#33424, released in v1.94.0), which addresses the gradual
   # per-worker memory growth seen on 1.93.0.
   image:
-    tag: "1.94.1"
+    tag: "1.100.1@sha256:fc44cf7f72786e636dc4dc1032b4e431818abfec9d54b8e04284fdea7ef03e2a"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
@@ -743,6 +743,8 @@ litellm-helm:
       # When true, LiteLLM forwards client x-* headers and anthropic-beta to upstream LLM providers.
       # Keep false unless you trust callers and need provider-visible custom headers.
       forward_client_headers_to_llm_api: false
+      # Read current budget policy on every request, including after limit removal.
+      user_api_key_cache_ttl: 0
     litellm_settings:
       num_retries: 3
       request_timeout: 600

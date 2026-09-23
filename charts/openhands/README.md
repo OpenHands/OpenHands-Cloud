@@ -700,3 +700,14 @@ helm uninstall openhands -n openhands
 ```
 
 Note: This will not delete any PVCs or secrets created. You'll need to delete those manually if desired.
+
+### Budget policy changes
+
+The bundled LiteLLM proxy uses unmodified 1.100.1 pinned by digest and
+`litellm-helm.proxy_config.general_settings.user_api_key_cache_ttl: 0`.
+Both are required for a budget change (including disabling a user's limit)
+to affect the next request using an existing key. Older proxies can keep enforcing
+a removed limit from cached authorization data, even after a successful save.
+This increases authorization database reads; production throughput has not been
+load-tested. It does not enable or disable LLM response caching. If you use an
+external LiteLLM proxy, configure and validate the same behavior there.

@@ -281,6 +281,8 @@ spec:
           OR_SITE_URL: "https://docs.all-hands.dev"
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
+          # Read current budget policy on every request, including after limit removal.
+          user_api_key_cache_ttl: 0
           # Let admins add/manage models at runtime through the LiteLLM
           # dashboard. DB-stored models are encrypted with LITELLM_SALT_KEY,
           # merge with (never replace) the config-rendered model_list below,
