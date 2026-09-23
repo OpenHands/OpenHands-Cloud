@@ -163,6 +163,14 @@ export class HomePage extends BasePage {
     // it to enable rather than gate on visibility — that turns a missing
     // button into a clear "button never enabled" failure instead of a
     // silent skip.
+    //
+    // Note: `repo-launch-button` is the same testId the old enterprise
+    // home used for its inline "Launch" button. That element is gone from
+    // the Canvas landing, but `RepositorySelectionForm` still tags its
+    // `<BrandButton>` with the same testId (see
+    // src/components/features/home/repo-selection-form.tsx line ~202) — we
+    // scope this lookup to `dialog` so there's no ambiguity with any
+    // future re-introduction of the landing button.
     const confirm = dialog.getByTestId("repo-launch-button");
     await expect(confirm).toBeEnabled({ timeout: 10_000 });
     await confirm.click();
