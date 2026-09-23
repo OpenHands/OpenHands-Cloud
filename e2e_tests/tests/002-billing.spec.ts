@@ -47,14 +47,11 @@ test.describe("Billing @billing", () => {
       description: runUser(testInfo),
     });
 
-    // Navigate to home and open the user menu to reach Billing.
+    // Home is now the Canvas SPA (no user-avatar dropdown → no "Billing"
+    // link on the home page). Billing still lives in the enterprise Settings
+    // shell at /settings/billing, so navigate there directly.
     await homePage.goto();
-    await homePage.openUserMenu();
-
-    const billingLink = page.getByRole("link", { name: /billing/i });
-    await billingLink.click();
-
-    await page.mouse.move(0, 0);
+    await page.goto("/settings/billing");
     await page.waitForURL(/\/settings\/billing/, { timeout: 30_000 });
     await expect(page.getByTestId("billing-settings")).toBeVisible({
       timeout: 10_000,
@@ -131,12 +128,10 @@ test.describe("Billing @billing", () => {
       description: runUser(testInfo),
     });
 
+    // Direct-navigate to the enterprise API Keys page — see the top-of-file
+    // comment on the billing test for why the user-avatar dropdown is gone.
     await homePage.goto();
-    await homePage.openUserMenu();
-
-    const apiKeysLink = page.getByRole("link", { name: /api keys/i });
-    await apiKeysLink.click();
-
+    await page.goto("/settings/api-keys");
     await page.waitForURL(/\/settings\/api-keys/, { timeout: 30_000 });
 
     // The button appears only once `GET /api/keys/llm/byor` stops answering
