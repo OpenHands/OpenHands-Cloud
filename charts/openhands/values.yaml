@@ -12,7 +12,10 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.63.0
+  # TEMPORARY (this branch only, for ENABLE_LITELLM fleet testing): pinned to
+  # the enterprise-server image built from OpenHands/enterprise#474 so the
+  # replicated fleet VMs can exercise the ENABLE_LITELLM flag before it merges.
+  tag: sha-9a08d0a
 
 autoscaling:
   enabled: false
@@ -125,6 +128,10 @@ env:
   OH_SANDBOX_MAX_NUM_SANDBOXES: "0"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
+  # TEMPORARY (this branch only, for ENABLE_LITELLM fleet testing): explicit
+  # so this release is unambiguously "flag on" regardless of the app's own
+  # default. See OpenHands/enterprise#474.
+  ENABLE_LITELLM: "true"
 
 # Legacy location for the agent-server (sandbox) runtime env map. Prefer
 # global.agentServerEnv, which the runtime-api subchart also mirrors into the
