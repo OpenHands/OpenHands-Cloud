@@ -1,0 +1,155 @@
+suite: bundled cache backend selection
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+  # troubleshoot/secrets.yaml renders the bundle specs by including helpers
+  # defined across these files, so they must be compiled alongside it.
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: keeps the cache env on redis at the chart defaults
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_HOST
+            value: openhands-redis-master
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: redis
+                key: redis-password
+
+  - it: points the cache env at valkey when only valkey is enabled
+    set:
+      redis.enabled: false
+      valkey.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_HOST
+            value: openhands-valkey
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PORT
+            value: "6379"
+
+  # If this assertion changes, an install has to create a new secret before it
+  # can enable valkey.
+  - it: reads the password from the same redis secret
+    set:
+      redis.enabled: false
+      valkey.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: redis
+                key: redis-password
+
+  - it: stays on redis when both backends are enabled
+    set:
+      valkey.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_HOST
+            value: openhands-redis-master
+
+  - it: drops the cache env when neither backend is enabled
+    set:
+      redis.enabled: false
+      valkey.enabled: false
+    asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PORT
+            value: "6379"
+
+  - it: analyses redis as a StatefulSet in the support bundle
+    set:
+      replicated.enabled: true
+      replicated.redisPassword: test-password
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "statefulsetStatus:\n\\s+name: openhands-redis-master"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "app.kubernetes.io/name=redis"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "openhands-valkey"
+
+  # Valkey renders a Deployment, not a StatefulSet. A statefulsetStatus analyzer
+  # left pointing at the old workload reports permanently unready.
+  - it: analyses valkey as a Deployment in the support bundle
+    set:
+      redis.enabled: false
+      valkey.enabled: true
+      replicated.enabled: true
+      replicated.redisPassword: test-password
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "deploymentStatus:\n\\s+name: openhands-valkey"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "app.kubernetes.io/name=valkey"
+      # Collector type stays `redis`: Valkey speaks RESP and `default` is the
+      # ACL user the app authenticates as.
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "redis://default:test-password@openhands-valkey"
+
+  # Catches any template still naming `openhands-redis-master`. Laminar ships its
+  # own separate cache and is unaffected.
+  - it: leaves no reference to openhands-redis-master
+    set:
+      redis.enabled: false
+      valkey.enabled: true
+      replicated.enabled: true
+      replicated.redisPassword: test-password
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "openhands-redis-master"

@@ -1,0 +1,101 @@
+{{- $port := int .Values.service.port -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-canvas
+  labels:
+    {{- include "agent-canvas.labels" . | nindent 4 }}
+    app: agent-canvas
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: agent-canvas
+  template:
+    metadata:
+      labels:
+        {{- include "agent-canvas.selectorLabels" . | nindent 8 }}
+        app: agent-canvas
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "agent-canvas.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent-canvas
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The agent-canvas image is the all-in-one combined build.
+          # Override the entrypoint so the container runs ONLY the static
+          # frontend behind static-server.mjs — no agent-server, no
+          # automation. Users connect this UI to their own backends via
+          # the in-app "Manage Backends" screen.
+          command: ["node", "/opt/agent-canvas/static-server.mjs"]
+          args:
+            - --port
+            - {{ $port | quote }}
+            - --host
+            - "::"
+            - --dir
+            - /opt/agent-canvas/frontend
+            - --base-path
+            - {{ .Values.staticServer.basePath | quote }}
+            {{- if .Values.staticServer.authRequired }}
+            - --auth-required
+            {{- end }}
+            {{- with .Values.staticServer.lockToCloud }}
+            - --lock-to-cloud
+            - {{ . | quote }}
+            {{- end }}
+            {{- range .Values.staticServer.rejectPrefixes }}
+            - --reject-prefix
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $port }}
+              protocol: TCP
+          {{- if or .Values.staticServer.disableTelemetry .Values.env }}
+          env:
+            {{- if .Values.staticServer.disableTelemetry }}
+            # static-server.mjs reads this and injects
+            # window.__AGENT_CANVAS_DO_NOT_TRACK__ to disable product telemetry.
+            - name: AGENT_CANVAS_DISABLE_TELEMETRY
+              value: "1"
+            {{- end }}
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.deployment.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}

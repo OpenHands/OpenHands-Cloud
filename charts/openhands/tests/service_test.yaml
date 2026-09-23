@@ -1,0 +1,35 @@
+suite: openhands service
+templates:
+  - service.yaml
+tests:
+  - it: renders the openhands Service routing port 3000 to the app
+    set:
+      enabled: true
+      postgresql.enabled: false
+      runtime-api.enabled: false
+      litellm-helm.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: openhands-service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.selector.app
+          value: openhands
+      - contains:
+          path: spec.ports
+          content:
+            name: openhands
+            port: 3000
+            protocol: TCP
+            targetPort: 3000
+  - it: renders no Services when the chart is disabled
+    set:
+      enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -1,28 +1,56 @@
 {{- /*
   Ingress entry for the integrations-hub service.
 
-  The integrations-hub backend is a single FastAPI container that serves
-  BOTH the Next.js SPA bundle and the /api/* routes from one image. When
-  `(index .Values "integrations-hub" "rootPath")` is set (default
-  `/integrations-hub`), the FastAPI app mounts every route under that
-  prefix -- so `/integrations-hub/api/health`, `/integrations-hub/api/mcp`,
-  and the SPA HTML / `/_next/...` assets all live behind the same path.
-
-  That means this ingress only needs ONE rule covering the prefix; we do
-  not need a separate /api/integrations-hub rewrite, and we deliberately
-  do not configure a `nginx.ingress.kubernetes.io/rewrite-target` -- the
-  backend handles its own prefix.
-
-  The path is read from the integrations-hub subchart so the ingress
-  rule, container probes, and the SPA bundle's baked-in
-  `NEXT_PUBLIC_BASE_PATH` always agree.
+  The browser UI inherits the root ingress annotations so installations can
+  protect it with an OAuth proxy. The API uses a separate Ingress because the
+  Integrations Hub authenticates API keys and session cookies itself. In
+  particular, an OAuth error middleware must not replace the API's intentional
+  401/403 JSON responses (including case-by-case approval requests).
 */}}
-{{- if and .Values.enabled .Values.ingress.enabled (index .Values "integrations-hub" "enabled") }}
-{{- $rootPath := index .Values "integrations-hub" "rootPath" | default "/integrations-hub" }}
+{{- $hub := index .Values "integrations-hub" -}}
+{{- if and .Values.enabled .Values.ingress.enabled $hub.enabled }}
+{{- $rootPath := $hub.rootPath | default "/integrations-hub" }}
+{{- $apiRootPath := $hub.apiRootPath | default "/api/integrations-hub" }}
+{{- $host := tpl .Values.ingress.host . }}
+{{- if .Values.ingress.prefixWithBranch }}
+{{- $host = printf "%s.%s" .Values.branchSanitized $host }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openhands-integrations-hub-api-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+  {{- with .Values.ingress.integrationsHubApi.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ default "traefik" .Values.ingress.class }}
+  {{- if .Values.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $host }}
+    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+  {{- end }}
+  rules:
+  - host: {{ $host }}
+    http:
+      paths:
+      - path: {{ $apiRootPath | quote }}
+        pathType: Prefix
+        backend:
+          service:
+            name: integrations-hub
+            port:
+              number: 80
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-integrations-hub-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
   annotations:
     {{- if .Values.ingress.root.annotations }}
     {{ .Values.ingress.root.annotations | toYaml | nindent 4 }}
@@ -30,23 +58,15 @@ metadata:
     {{ .Values.ingress.annotations | toYaml | nindent 4 }}
     {{- end }}
 spec:
-  ingressClassName: {{ .Values.ingress.class }}
+  ingressClassName: {{ default "traefik" .Values.ingress.class }}
   {{- if .Values.tls.enabled }}
   tls:
   - hosts:
-    {{- if .Values.ingress.prefixWithBranch }}
-    - {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-    {{- else }}
-    - {{ .Values.ingress.host }}
-    {{- end }}
+    - {{ $host }}
     secretName: app-all-hands-{{ .Values.tls.env }}-tls
   {{- end }}
   rules:
-  {{- if .Values.ingress.prefixWithBranch }}
-  - host: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-  {{- else }}
-  - host: {{ .Values.ingress.host }}
-  {{- end }}
+  - host: {{ $host }}
     http:
       paths:
       - path: {{ $rootPath | quote }}

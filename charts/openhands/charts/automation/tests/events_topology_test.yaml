@@ -1,0 +1,27 @@
+suite: events topology spread
+templates:
+  - templates/events-deployment.yaml
+tests:
+  - it: spreads replicas across nodes by default
+    set:
+      events.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints
+          value:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              # ScheduleAnyway, not DoNotSchedule: on a small cluster the second
+              # replica must still schedule even when the spread is imperfect.
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app: automation-events
+
+  - it: omits topology spread when unset
+    set:
+      events.enabled: true
+      events.topologySpreadConstraints: []
+    asserts:
+      - notExists:
+          path: spec.template.spec.topologySpreadConstraints

@@ -1,0 +1,80 @@
+# Non-blocking notice: the openhands chart's appVersion must track its image tag.
+#
+# They drift when a bump PR (edits Chart.yaml .appVersion) has its branch updated
+# from main while a release-please version bump sits on the adjacent line -- the
+# 3-way merge folds both edits into one hunk and can drop the appVersion change.
+# This posts a sticky PR comment when appVersion != image.tag. It never fails the
+# job: the author fixes it or ships anyway (appVersion is metadata, not the
+# deployed tag). Only the openhands chart has this invariant; the other charts
+# pin appVersion to their own version.
+
+name: Check appVersion drift
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - charts/openhands/Chart.yaml
+      - charts/openhands/values.yaml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-appversion-drift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # yq is preinstalled on the runner image.
+      - name: Read appVersion and image tag
+        id: drift
+        run: |
+          echo "appversion=$(yq '.appVersion' charts/openhands/Chart.yaml)" >> "$GITHUB_OUTPUT"
+          echo "imagetag=$(yq '.image.tag' charts/openhands/values.yaml)" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing notice
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- openhands-appversion-drift -->'
+
+      - name: Post drift notice
+        if: steps.drift.outputs.appversion != steps.drift.outputs.imagetag
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            <!-- openhands-appversion-drift -->
+            ### ⚠️ Chart `appVersion` has drifted from the image tag
+
+            The `openhands` chart's `appVersion` no longer matches the deployed image tag. These are meant to stay in sync.
+
+            | Location | Value |
+            | --- | --- |
+            | `charts/openhands/Chart.yaml` → `appVersion` | `${{ steps.drift.outputs.appversion }}` |
+            | `charts/openhands/values.yaml` → `image.tag` | `${{ steps.drift.outputs.imagetag }}` |
+
+            **Fix:** set `appVersion` to `${{ steps.drift.outputs.imagetag }}` in `charts/openhands/Chart.yaml`.
+
+            This is a notice, not a blocking check.
+
+      # Only edit an existing notice back to resolved. Never create one on a PR
+      # that was clean all along.
+      - name: Resolve notice when back in sync
+        if: steps.drift.outputs.appversion == steps.drift.outputs.imagetag && steps.fc.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            <!-- openhands-appversion-drift -->
+            ### ✅ Chart `appVersion` matches the image tag
+
+            `appVersion` and `image.tag` are both `${{ steps.drift.outputs.imagetag }}`.

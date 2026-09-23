@@ -1,0 +1,28 @@
+suite: recommended labels
+templates:
+  - templates/priority-class.yaml
+tests:
+  - it: the node-overprovisioner PriorityClass carries the recommended labels
+    asserts:
+      - isKind:
+          of: PriorityClass
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: image-loader
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: node-overprovisioner
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^image-loader-
+      - isNotEmpty:
+          path: metadata.labels["app.kubernetes.io/version"]

@@ -1,0 +1,37 @@
+suite: recommended labels
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: the integrations-hub Deployment carries the recommended labels and keeps its app selector
+    set:
+      database.url: postgresql://example
+      credentialEncryption.secretName: encryption
+      cron.secretName: cron
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: integrations-hub
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^integrations-hub-
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: integrations-hub
+      - equal:
+          path: spec.template.metadata.labels.app
+          value: integrations-hub
+      # The selector is intentionally left on the legacy app label (immutable field).
+      - equal:
+          path: spec.selector.matchLabels.app
+          value: integrations-hub
+      - notExists:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]

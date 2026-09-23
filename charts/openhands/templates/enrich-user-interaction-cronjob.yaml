@@ -5,6 +5,8 @@ kind: CronJob
 metadata:
   name: {{ .Release.Name | trunc 27 }}-enrich-user-interaction
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: enrich-user-interaction
     app: {{ .Release.Name | trunc 27 }}-enrich-user-interaction
 spec:
   schedule: {{ .Values.enrichUserInteractionData.schedule | quote }}
@@ -17,6 +19,8 @@ spec:
       template:
         metadata:
           labels:
+            {{- include "openhands.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: enrich-user-interaction
             app: {{ .Release.Name | trunc 27 }}-enrich-user-interaction
         spec:
           {{- with .Values.securityContext }}
@@ -28,6 +32,10 @@ spec:
           {{- with .Values.imagePullSecrets }}
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with (include "openhands.affinity" .) }}
+          affinity:
+            {{- . | nindent 12 }}
           {{- end }}
           {{- if .Values.caBundle.enabled }}
           volumes:

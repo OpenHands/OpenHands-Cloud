@@ -1,0 +1,51 @@
+%% Validated against automation @ 83cf621, OpenHands (enterprise) @ 3a2bc72b6, OpenHands-Cloud @ 331257d4c
+%% Live-verified on instance-1 (Unstable release 1206 / v0.22.0), 2026-07-14
+%% Re-verified on instance-1 (Unstable release 1273 / v0.28.0; automation 1.1.5 [identical image], enterprise-server cloud-1.47.1), 2026-07-21
+
+sequenceDiagram
+    autonumber
+    participant Browser
+    participant Automation as Automation Service<br/>(UI + API at /automations, /api/automation)
+    participant OpenHands as OpenHands<br/>(Enterprise Server)
+    participant Keycloak as Keycloak<br/>(auth.app.BASE_DOMAIN)
+
+    Note over Browser,OpenHands: Precondition: user already logged in at app.BASE_DOMAIN.<br/>Browser holds cookie keycloak_auth (+ chunks keycloak_auth_1..7):<br/>an HS256 JWS signed by the Enterprise Server (JWT_SECRET),<br/>payload = Keycloak access_token + refresh_token + accepted_tos.<br/>HttpOnly, Secure, SameSite=strict, Domain=app.BASE_DOMAIN, Path=/ —<br/>so the SAME cookie is sent to /, /automations and /api/automation.
+
+    Note over Browser: User clicks "Automations" in the OpenHands nav.<br/>Plain link href=/automations - full page load, not an SPA route.
+
+    Browser->>Automation: GET /automations<br/>Cookie: keycloak_auth(+chunks)
+    Automation-->>Browser: 307 -> /automations/ (trailing-slash redirect)
+    Browser->>Automation: GET /automations/<br/>Cookie: keycloak_auth(+chunks)
+    Note over Automation: Static SPA mount (_SPAStaticFiles).<br/>NO auth check - index.html is served to anyone.<br/>Auth is enforced at the API layer only.
+    Automation-->>Browser: 200 index.html (Automations SPA boots)
+
+    Note over Browser,OpenHands: SPA liveness + identity checks go to the MAIN app,<br/>not the automation service (same-origin cookie rides along).
+    Browser->>OpenHands: POST /api/authenticate<br/>Cookie: keycloak_auth(+chunks)
+    OpenHands-->>Browser: 200 (401 would delete the cookie)
+    Browser->>OpenHands: GET /api/v1/users/me
+    OpenHands-->>Browser: 200 id, email, org_id, role, permissions
+
+    Note over Browser,Automation: Data fetch - the only call the automation service authenticates.
+    Browser->>Automation: GET /api/automation/v1?limit=50&offset=0<br/>Cookie: keycloak_auth(+chunks)
+
+    Note over Automation: authenticate_request: extract credential<br/>(Bearer > X-Session-API-Key > keycloak_auth cookie,<br/>chunks reassembled). 20s TTL cache on SHA-256 of credential.<br/>No JWT verification, no JWKS, no Keycloak call - delegates upstream.
+
+    Automation->>OpenHands: GET /api/v1/users/me<br/>Cookie: keycloak_auth=(forwarded verbatim)<br/>(AUTOMATION_OPENHANDS_API_BASE_URL)
+    Note over OpenHands: Verify outer JWS signature (JWT_SECRET, HS256).<br/>Decode embedded Keycloak access token WITHOUT<br/>signature check - outer JWS is the trust anchor.
+
+    alt embedded Keycloak access token expired
+        OpenHands->>Keycloak: POST /realms/allhands/protocol/openid-connect/token<br/>grant_type=refresh_token (embedded refresh token)
+        Keycloak-->>OpenHands: new access_token + refresh_token
+        Note over OpenHands: SetAuthCookieMiddleware re-sets a rotated<br/>keycloak_auth cookie on the response. On this<br/>server-to-server hop the rotation is discarded -<br/>the browser's cookie rotates via its own direct calls.
+    end
+
+    OpenHands-->>Automation: 200 id, email, org_id, org_name, role, permissions[]
+
+    Note over Automation: Require "manage_automations" in permissions (else 403).<br/>Scope query: WHERE user_id = id AND org_id = org_id.
+    Automation-->>Browser: 200 automations list (JSON)
+
+    Note over Browser,Automation: Failure mode: expired/invalid cookie -> upstream 401 ->:
+    alt session invalid
+        Automation-->>Browser: 401 "Invalid or expired session cookie" (JSON, no redirect)
+        Note over Browser: Automations SPA (React Query onError) invalidates auth state.<br/>RootLayout: stored login_method? -> auto re-run Keycloak flow<br/>(ReauthModal). Otherwise -> window.location = /login?redirect=path.
+    end

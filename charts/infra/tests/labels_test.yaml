@@ -1,0 +1,102 @@
+suite: recommended labels
+templates:
+  - templates/sysbox-installer.yaml
+  - templates/sandbox-upgrade-coordinator.yaml
+tests:
+  - it: the sysbox DaemonSet carries the recommended labels and keeps its selector
+    template: templates/sysbox-installer.yaml
+    documentIndex: 1
+    set:
+      sysbox.enabled: true
+    asserts:
+      - isKind:
+          of: DaemonSet
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: sysbox-installer
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^infra-
+      - isNotEmpty:
+          path: metadata.labels["app.kubernetes.io/version"]
+      # spec.selector is immutable, so it stays on the workload's own name and
+      # the pod template keeps matching it unchanged.
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: sysbox-installer
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: sysbox-installer
+
+  - it: the sysbox RuntimeClass carries the recommended labels
+    template: templates/sysbox-installer.yaml
+    documentIndex: 0
+    set:
+      sysbox.enabled: true
+    asserts:
+      - isKind:
+          of: RuntimeClass
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: sysbox-installer
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^infra-
+
+  - it: every sandbox-upgrade-coordinator resource carries the recommended labels
+    template: templates/sandbox-upgrade-coordinator.yaml
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 5
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: sandbox-upgrade-coordinator
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: openhands
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^infra-
+      - isNotEmpty:
+          path: metadata.labels["app.kubernetes.io/version"]
+
+  - it: the sandbox-upgrade-coordinator DaemonSet keeps its selector
+    template: templates/sandbox-upgrade-coordinator.yaml
+    documentIndex: 4
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+    asserts:
+      - isKind:
+          of: DaemonSet
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: sandbox-upgrade-coordinator
+            app.kubernetes.io/instance: RELEASE-NAME
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: sandbox-upgrade-coordinator
+            app.kubernetes.io/instance: RELEASE-NAME

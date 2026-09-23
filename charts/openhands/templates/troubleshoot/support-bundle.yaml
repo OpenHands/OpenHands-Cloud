@@ -5,29 +5,34 @@ metadata:
   name: {{ .Release.Name }}-support-bundle
 spec:
   collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
+    {{- /* Presence of admin-configured/optional secrets: a key renders only when its KOTS
+    value is set, so includeValue:false keyExists ⇔ value-set -- presence only, never the value.
+    Always-generated internal secrets are omitted; they'd read "set" unconditionally. */}}
+    {{- $secretKeys := dict
+      "azure-devops-app"          (list "client-id" "client-secret")
+      "bitbucket-data-center-app" (list "host" "client-id" "client-secret" "bot-token")
+      "github-app"                (list "app-id" "app-slug" "client-id" "client-secret" "private-key" "webhook-secret")
+      "gitlab-app"                (list "client-id" "client-secret")
+      "jira-dc-app"               (list "base-url" "client-id" "client-secret" "service-account-email" "service-account-pat")
+      "keycloak-realm"            (list "client-id" "client-secret" "smtp-password")
+      "litellm-env-secrets"       (list "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GOOGLE_API_KEY" "GOOGLE_APPLICATION_CREDENTIALS_JSON" "VERTEXAI_PROJECT" "VERTEXAI_LOCATION" "DEEPSEEK_API_KEY" "MISTRAL_API_KEY" "AZURE_API_KEY" "AZURE_TENANT_ID" "AZURE_CLIENT_ID" "AZURE_CLIENT_SECRET" "AZURE_API_BASE" "AZURE_API_VERSION" "GROQ_API_KEY" "OPENROUTER_API_KEY" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME" "CUSTOM_API_KEY" "CUSTOM_API_BASE")
+      "openhands-env-secrets"     (list "LLM_API_KEY" "LLM_MODEL" "LLM_BASE_URL" "LLM_API_VERSION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME")
+      "openhands-tls"             (list "tls.crt" "ca.crt")
+      "postgres-password"         (list "postgres-password")
+      "redis"                     (list "redis-password")
+      "s3-credentials"            (list "access-key" "secret-key")
+      "sandbox-api-key"           (list "sandbox-api-key")
+      "slack-auth"                (list "client-id" "client-secret" "signing-secret")
+    }}
+    {{- range $name, $keys := $secretKeys }}
+    {{- range $key := $keys }}
     - secret:
-        name: postgres-password
-        namespace: {{ .Release.Namespace }}
-        key: postgres-password
+        name: {{ $name }}
+        namespace: {{ $.Release.Namespace }}
+        key: {{ $key }}
         includeValue: false
-    - secret:
-        name: redis
-        namespace: {{ .Release.Namespace }}
-        key: redis-password
-        includeValue: false
-    - secret:
-        name: sandbox-api-key
-        namespace: {{ .Release.Namespace }}
-        key: sandbox-api-key
-        includeValue: false
-    - secret:
-        name: github-app
-        namespace: {{ .Release.Namespace }}
-        includeValue: false
-    - secret:
-        name: keycloak-realm
-        namespace: {{ .Release.Namespace }}
-        includeValue: false
+    {{- end }}
+    {{- end }}
     # Log volume is bounded by kubelet rotation (~tens of MB/pod), not maxAge,
     # so 336h is free on chatty pods and only adds history on quiet ones.
     # OpenHands main application logs
@@ -54,6 +59,22 @@ spec:
           - app=openhands-mcp
         limits:
           maxAge: 336h
+    # Budget upgrade hook Jobs. The last run of each is kept until the next
+    # upgrade and its log carries the JSON before/after artifact.
+    - logs:
+        name: app/budget-preflight/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app={{ .Release.Name }}-budget-preflight
+        limits:
+          maxAge: 336h
+    - logs:
+        name: app/budget-reconcile-gate/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app={{ .Release.Name }}-budget-reconcile-gate
+        limits:
+          maxAge: 336h
     {{- if .Values.postgresql.enabled }}
     # PostgreSQL logs (Bitnami chart)
     - logs:
@@ -65,13 +86,17 @@ spec:
         limits:
           maxAge: 336h
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- if include "openhands.cache.backend" . }}
+    {{- if eq (include "openhands.cache.backend" .) "valkey" }}
+    # Valkey logs (official valkey chart)
+    {{- else }}
     # Redis logs (Bitnami chart)
+    {{- end }}
     - logs:
-        name: app/{{ .Release.Name }}-redis/logs
+        name: app/{{ .Release.Name }}-{{ include "openhands.cache.backend" . }}/logs
         namespace: {{ .Release.Namespace }}
         selector:
-          - app.kubernetes.io/name=redis
+          - app.kubernetes.io/name={{ include "openhands.cache.backend" . }}
           - app.kubernetes.io/instance={{ .Release.Name }}
         limits:
           maxAge: 336h
@@ -87,7 +112,7 @@ spec:
         limits:
           maxAge: 336h
     {{- end }}
-    {{- if .Values.filestore.ephemeral }}
+    {{- if .Values.minio.enabled }}
     # MinIO logs (MinIO chart)
     - logs:
         name: app/{{ .Release.Name }}-minio/logs
@@ -97,6 +122,56 @@ spec:
           - release={{ .Release.Name }}
         limits:
           maxAge: 336h
+    {{- end }}
+    {{- if .Values.laminar.enabled }}
+    # Laminar ClickHouse pod logs plus read-only system-table diagnostics. The
+    # ClickHouse system tables themselves are TTL-bounded, so this collector
+    # captures table sizes, TTL metadata and the most recent trace rows.
+    - logs:
+        name: app/laminar-clickhouse/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-clickhouse
+        limits:
+          maxAge: 336h
+    # Laminar app-server pod logs
+    - logs:
+        name: app/laminar-app-server/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-app-server
+        limits:
+          maxAge: 336h
+    # Laminar app-server-consumer pod logs
+    - logs:
+        name: app/laminar-app-server-consumer/logs
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-app-server-consumer
+        limits:
+          maxAge: 336h
+    - exec:
+        name: app/laminar-clickhouse-diagnostics
+        collectorName: laminar-clickhouse-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=laminar-clickhouse
+        containerName: clickhouse
+        command: ["/bin/bash", "-ec"]
+        args:
+          - |
+            client=(clickhouse-client --host localhost --port 9000 --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}")
+            run() {
+              echo "== $1 =="
+              if ! "${client[@]}" --query "$2"; then
+                echo "ERROR: query failed"
+              fi
+              echo
+            }
+            run "system diagnostic table sizes and ttl" "SELECT database, name, total_rows, formatReadableSize(total_bytes) AS size, metadata_modification_time, if(position(engine_full, 'TTL ') = 0, 'none', substring(engine_full, position(engine_full, 'TTL '), 160)) AS ttl FROM system.tables WHERE database = 'system' AND name IN ('asynchronous_metric_log','metric_log','query_log','query_thread_log','query_views_log','part_log','session_log','text_log','trace_log','crash_log','opentelemetry_span_log','zookeeper_log','blob_storage_log','processors_profile_log') ORDER BY total_bytes DESC FORMAT JSONEachRow"
+            run "recent trace_log rows" "SELECT event_time, trace_type, thread_name, query_id FROM system.trace_log ORDER BY event_time DESC LIMIT 50 FORMAT JSONEachRow"
+            run "recent text_log rows" "SELECT event_time, level, logger_name, message FROM system.text_log ORDER BY event_time DESC LIMIT 50 FORMAT JSONEachRow"
+        timeout: 30s
     {{- end }}
     {{- if index .Values "runtime-api" "enabled" }}
     # Runtime API logs
@@ -177,6 +252,222 @@ spec:
                 run(label, sql)
             conn.close()
         timeout: 30s
+    # Compare direct Service health with the external ingress path for stale starts.
+    - exec:
+        name: app/{{ .Release.Name }}-runtime-api-ingress
+        collectorName: runtime-api-ingress-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app.kubernetes.io/name=runtime-api
+        containerName: runtime-api
+        command: ["python3", "-c"]
+        args:
+          - |
+            import concurrent.futures, datetime, json, os, re, socket, ssl
+            from urllib.parse import urlsplit
+            import pg8000.dbapi, requests
+            from kubernetes import client, config
+            from utils.id import subdomain_to_url
+
+            def error_text(exc):
+                text = re.sub(r"(https?://)[^/@\s]+@", r"\1<redacted>@", str(exc))
+                return {"type": type(exc).__name__, "message": text}
+
+            def db_connection():
+                kw = dict(
+                    host=os.environ["DB_HOST"], port=int(os.environ.get("DB_PORT", "5432")),
+                    user=os.environ["DB_USER"], password=os.environ.get("DB_PASS", ""),
+                    database=os.environ["DB_NAME"], timeout=5,
+                )
+                mode = (os.environ.get("DB_SSL_MODE") or "").strip().lower()
+                if mode == "require":
+                    kw["ssl_context"] = True
+                elif mode == "disable":
+                    kw["ssl_context"] = False
+                return pg8000.dbapi.connect(**kw)
+
+            def response_status(response, expected_key, expected_value):
+                try:
+                    payload = response.json()
+                    value = payload.get(expected_key) if isinstance(payload, dict) else None
+                except Exception:
+                    value = None
+                final_url = urlsplit(response.url)
+                return {
+                    "ok": response.status_code == 200 and value == expected_value,
+                    "http_status": response.status_code,
+                    "json_value": {expected_key: value},
+                    "final_url": (
+                        f"{final_url.scheme}://{final_url.netloc}{final_url.path}"
+                    ),
+                }
+
+            def route_backend(runtime_id, namespace, networking_api, custom_api):
+                name = f"runtime-{runtime_id}"
+                if os.environ.get("USE_GATEWAY_API", "false").lower() == "true":
+                    route = custom_api.get_namespaced_custom_object(
+                        group="gateway.networking.k8s.io", version="v1",
+                        namespace=namespace, plural="httproutes", name=name,
+                    )
+                    for rule in route.get("spec", {}).get("rules", []):
+                        refs = rule.get("backendRefs", [])
+                        if refs:
+                            return {
+                                "kind": "HTTPRoute", "name": name,
+                                "service_name": refs[0]["name"],
+                                "service_port": refs[0].get("port"),
+                            }
+                    raise RuntimeError("runtime HTTPRoute has no backendRefs")
+
+                ingress = networking_api.read_namespaced_ingress(name, namespace)
+                for rule in ingress.spec.rules or []:
+                    for path in (rule.http.paths if rule.http else []) or []:
+                        backend = path.backend.service
+                        if backend:
+                            return {
+                                "kind": "Ingress", "name": name,
+                                "service_name": backend.name,
+                                "service_port": backend.port.number or backend.port.name,
+                            }
+                raise RuntimeError("runtime Ingress has no Service backend")
+
+            def inspect_runtime(
+                row, core_api, networking_api, custom_api, namespace
+            ):
+                runtime_id, last_state_change, use_fuse_mount = row
+                result = {
+                    "runtime_id": runtime_id,
+                    "last_state_change": str(last_state_change),
+                    "use_fuse_mount": use_fuse_mount,
+                }
+                routing = route_backend(
+                    runtime_id, namespace, networking_api, custom_api
+                )
+                result["routing_resource"] = routing
+                service_name = routing["service_name"]
+                service_port = routing["service_port"]
+                if not isinstance(service_port, int):
+                    service = core_api.read_namespaced_service(service_name, namespace)
+                    service_port = next(
+                        port.port for port in service.spec.ports
+                        if service_port is None or port.name == service_port
+                    )
+                endpoint = "api/init" if use_fuse_mount else "alive"
+                expected_key, expected_value = (
+                    ("state", "ready") if use_fuse_mount else ("status", "ok")
+                )
+                service_url = (
+                    f"http://{service_name}.{namespace}.svc.cluster.local:"
+                    f"{service_port}/{endpoint}"
+                )
+                direct = requests.Session()
+                direct.trust_env = False
+                try:
+                    result["service"] = response_status(
+                        direct.get(service_url, timeout=3), expected_key, expected_value
+                    )
+                except Exception as exc:
+                    result["service"] = {"ok": False, "error": error_text(exc)}
+
+                external_url = f"{subdomain_to_url(runtime_id).rstrip('/')}/{endpoint}"
+                result["external_url"] = external_url
+                parsed = urlsplit(external_url)
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+                try:
+                    addresses = sorted({
+                        entry[4][0] for entry in socket.getaddrinfo(parsed.hostname, port)
+                    })
+                    result["dns"] = {"ok": True, "addresses": addresses}
+                except Exception as exc:
+                    result["dns"] = {"ok": False, "error": error_text(exc)}
+
+                if parsed.scheme == "https":
+                    ca_file = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+                    try:
+                        context = ssl.create_default_context(
+                            cafile=ca_file if ca_file and os.path.isfile(ca_file) else None
+                        )
+                        with socket.create_connection((parsed.hostname, port), timeout=3) as raw:
+                            with context.wrap_socket(raw, server_hostname=parsed.hostname) as tls:
+                                cert = tls.getpeercert()
+                        result["tls"] = {
+                            "ok": True,
+                            "expires": cert.get("notAfter"),
+                            "dns_names": [
+                                value for kind, value in cert.get("subjectAltName", [])
+                                if kind == "DNS"
+                            ],
+                        }
+                    except Exception as exc:
+                        result["tls"] = {"ok": False, "error": error_text(exc)}
+
+                try:
+                    result["external"] = response_status(
+                        requests.get(external_url, timeout=5), expected_key, expected_value
+                    )
+                except Exception as exc:
+                    result["external"] = {"ok": False, "error": error_text(exc)}
+                result["external_alive"] = result["external"]["ok"]
+                return result
+
+            def inspect_runtime_safe(
+                row, core_api, networking_api, custom_api, namespace
+            ):
+                try:
+                    return inspect_runtime(
+                        row, core_api, networking_api, custom_api, namespace
+                    )
+                except Exception as exc:
+                    return {
+                        "runtime_id": row[0],
+                        "last_state_change": str(row[1]),
+                        "external_alive": False,
+                        "diagnostic_error": error_text(exc),
+                    }
+
+            output = {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            try:
+                conn = db_connection()
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute("SET default_transaction_read_only = on")
+                cur.execute(
+                    "SELECT runtime_id, last_state_change, use_fuse_mount FROM runtimes "
+                    "WHERE status = 'starting' "
+                    "AND COALESCE(last_state_change, created_at) < NOW() - INTERVAL '60 seconds' "
+                    "ORDER BY created_at DESC LIMIT 5"
+                )
+                rows = cur.fetchall()
+                conn.close()
+                if not rows:
+                    output.update(overall="not-applicable", runtimes=[])
+                else:
+                    namespace = os.environ.get("K8S_NAMESPACE", "{{ .Release.Namespace }}")
+                    config.load_incluster_config()
+                    networking_api = client.NetworkingV1Api()
+                    core_api = client.CoreV1Api()
+                    custom_api = client.CustomObjectsApi()
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=len(rows)) as pool:
+                        futures = [
+                            pool.submit(
+                                inspect_runtime_safe, row,
+                                core_api, networking_api, custom_api, namespace,
+                            )
+                            for row in rows
+                        ]
+                        results = [future.result() for future in futures]
+                    output.update(
+                        overall=(
+                            "pass" if all(item["external_alive"] for item in results)
+                            else "fail"
+                        ),
+                        runtimes=results,
+                    )
+            except Exception as exc:
+                output.update(overall="collector-error", error=error_text(exc))
+            print(json.dumps(output, indent=2, default=str))
+        timeout: 20s
     {{- end }}
     {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
     # LiteLLM logs
@@ -333,7 +624,7 @@ spec:
             SECRET_PRESENCE = [
                 "BITBUCKET_DATA_CENTER_BOT_TOKEN", "BITBUCKET_DATA_CENTER_CLIENT_SECRET",
                 "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET",
-                "GITLAB_APP_CLIENT_SECRET", "AZURE_DEVOPS_CLIENT_SECRET",
+                "GITLAB_APP_CLIENT_SECRET", "AZURE_DEVOPS_CLIENT_SECRET", "AZURE_DEVOPS_WEBHOOK_SECRET",
                 "JIRA_DC_CLIENT_SECRET", "JIRA_DC_SERVICE_ACCOUNT_PAT",
                 "AUTOMATION_WEBHOOK_SECRET", "AUTOMATIONS_SERVICE_KEY",
                 "LITE_LLM_API_KEY", "SANDBOX_API_KEY", "JWT_SECRET",
@@ -429,17 +720,27 @@ spec:
         namespace: ingress-nginx
         limits:
           maxAge: 336h
-    {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
+    # Replicated embedded clusters use Traefik rather than ingress-nginx.
+    - logs:
+        name: traefik/logs
+        selector:
+          - app.kubernetes.io/name=traefik
+        namespace: traefik
+        limits:
+          maxAge: 336h
+    {{- if and .Values.postgresql.enabled .Values.replicated.enabled .Values.replicated.postgresPassword }}
     - postgresql:
         collectorName: postgresql
         uri: postgresql://{{ .Values.replicated.postgresUsername | urlquery }}:{{ .Values.replicated.postgresPassword | urlquery }}@{{ .Release.Name }}-postgresql.{{ .Release.Namespace }}.svc.cluster.local:5432/{{ .Values.replicated.postgresDatabase }}?sslmode=disable
         tls:
           disabled: true
     {{- end }}
-    {{- if and .Values.redis.enabled .Values.replicated.enabled }}
+    {{- if and (include "openhands.cache.backend" .) .Values.replicated.enabled .Values.replicated.redisPassword }}
+    {{- /* Collector type is `redis` for both backends: Valkey speaks RESP and
+    `default` is its ACL user. */}}
     - redis:
         collectorName: redis
-        uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ .Release.Name }}-redis-master.{{ .Release.Namespace }}.svc.cluster.local:6379
+        uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ include "openhands.cache.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379
     {{- end }}
   analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
     - deploymentStatus:
@@ -484,7 +785,7 @@ spec:
               when: ">= 1"
               message: "OpenHands LiteLLM deployment is ready"
     {{- end }}
-    {{- if .Values.filestore.ephemeral }}
+    {{- if .Values.minio.enabled }}
     - deploymentStatus:
         name: {{ .Release.Name }}-minio
         namespace: {{ .Release.Namespace }}
@@ -507,6 +808,23 @@ spec:
           - pass:
               when: ">= 1"
               message: "OpenHands Runtime API deployment is ready"
+    - textAnalyze:
+        checkName: "Starting Runtime Ingress Reachability"
+        collectorName: app/{{ .Release.Name }}-runtime-api-ingress
+        fileName: "*/*/runtime-api-ingress-diagnostics-stdout.txt"
+        regexGroups: '"overall":\s*"(?P<Overall>[^"]+)"'
+        outcomes:
+          - fail:
+              when: "Overall == fail"
+              message: "A stale starting runtime is not reachable through its external ingress; inspect runtime-api-ingress-diagnostics for DNS, TLS, Service, and HTTP results"
+          - warn:
+              when: "Overall == collector-error"
+              message: "Runtime ingress diagnostics could not complete; inspect runtime-api-ingress-diagnostics for the collector error"
+          - pass:
+              when: "Overall == pass"
+              message: "All stale starting runtimes are reachable through their external ingresses"
+          - pass:
+              message: "No stale starting runtimes required an ingress check"
     {{- end }}
     {{- if .Values.postgresql.enabled }}
     - statefulsetStatus:
@@ -520,7 +838,7 @@ spec:
               when: ">= 1"
               message: "OpenHands PostgreSQL statefulset is ready"
     {{- end }}
-    {{- if .Values.redis.enabled }}
+    {{- if eq (include "openhands.cache.backend" .) "redis" }}
     - statefulsetStatus:
         name: {{ .Release.Name }}-redis-master
         namespace: {{ .Release.Namespace }}
@@ -531,6 +849,18 @@ spec:
           - pass:
               when: ">= 1"
               message: "OpenHands Redis statefulset is ready"
+    {{- end }}
+    {{- if eq (include "openhands.cache.backend" .) "valkey" }}
+    - deploymentStatus:
+        name: {{ .Release.Name }}-valkey
+        namespace: {{ .Release.Namespace }}
+        outcomes:
+          - fail:
+              when: "< 1"
+              message: "OpenHands Valkey deployment is not ready"
+          - pass:
+              when: ">= 1"
+              message: "OpenHands Valkey deployment is ready"
     {{- end }}
     {{- if .Values.keycloak.enabled }}
     - statefulsetStatus:
@@ -568,7 +898,7 @@ spec:
           - fail:
               when: "!= Healthy"
               message: "Pod {{`{{ .Namespace }}/{{ .Name }}`}} is not Healthy: {{`{{ .Status.Reason }}`}}"
-    {{- if and .Values.postgresql.enabled .Values.replicated.enabled }}
+    {{- if and .Values.postgresql.enabled .Values.replicated.enabled .Values.replicated.postgresPassword }}
     - postgresql:
         checkName: "PostgreSQL Database Health"
         collectorName: postgresql
@@ -586,7 +916,7 @@ spec:
               when: "connected == true"
               message: "PostgreSQL database is healthy"
     {{- end }}
-    {{- if and .Values.redis.enabled .Values.replicated.enabled }}
+    {{- if and (include "openhands.cache.backend" .) .Values.replicated.enabled .Values.replicated.redisPassword }}
     - redis:
         checkName: "Redis Cache Health"
         collectorName: redis

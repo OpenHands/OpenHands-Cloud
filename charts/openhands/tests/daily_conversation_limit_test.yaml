@@ -1,0 +1,50 @@
+suite: daily conversation limit env wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: leaves the enterprise application unlimited by default
+    set:
+      enabled: true
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OH_DAILY_CONVERSATION_LIMIT")]
+
+  - it: wires a configured daily conversation limit
+    set:
+      enabled: true
+      dailyConversationLimit: 20
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_DAILY_CONVERSATION_LIMIT
+            value: "20"
+
+  - it: preserves a zero operator override
+    set:
+      enabled: true
+      dailyConversationLimit: 0
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_DAILY_CONVERSATION_LIMIT
+            value: "0"
+
+  - it: preserves a negative operator override
+    set:
+      enabled: true
+      dailyConversationLimit: -1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_DAILY_CONVERSATION_LIMIT
+            value: "-1"

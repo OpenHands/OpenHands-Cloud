@@ -10,62 +10,266 @@ spec:
       items:
         - name: hostname_mode
           title: Hostname Configuration Mode
-          help_text: Choose how to configure hostnames for OpenHands services
+          # One source line per bullet: KOTS renders help_text markdown with
+          # newlines as line breaks, so wrapping a bullet would break the
+          # sentence mid-flow instead of letting it reflow to the panel width.
+          #
+          # The bullet is a literal "•" because markdown list syntax renders no
+          # visible marker in the Admin Console -- a leading "- " is consumed and
+          # nothing takes its place. Inline markdown (bold, backticks) does work.
+          #
+          # The certificate item lists the SANs each layout requires, so these
+          # only have to say how the layouts differ. The Legacy deprecation
+          # notice lives in the label item below, because help_text cannot
+          # reference the item it belongs to -- KOTS lints that as
+          # config-option-is-circular.
+          help_text: |
+            • **Simple** — every hostname sits one subdomain under the base domain.
+            • **Manual** — customize each host name.
+            • **Legacy** — nests Keycloak and sandboxes deeper, at `auth.app.<base>` and `*.runtime.<base>`.
           type: select_one
-          default: "derive"
+          # Option *names* below are stored verbatim in each install's
+          # ConfigValues, so renaming one orphans the stored value of every
+          # install that picked it. Titles are free to change; that is why none
+          # of `wildcard`, `derive` or `custom` matches the title it renders as
+          # (Simple, Legacy, Manual).
+          #
+          # Deliberately `value:` rather than `default:`. KOTS re-renders
+          # `default:` on every config change, so changing a default reaches
+          # installs that never edited the field -- that would move an existing
+          # install's Keycloak to a hostname its certificate does not cover and
+          # re-template the realm's redirect URIs on the next app-pod restart.
+          # A `value:` is written to ConfigValues the first time it renders and
+          # is never overwritten afterwards, and Sequence is 0 only on a fresh
+          # install, so new installs pin `wildcard` while upgrades pin `derive`.
+          # Installs that had explicitly chosen a mode keep it either way.
+          value: '{{repl if eq Sequence 0 }}wildcard{{repl else }}derive{{repl end }}'
           items:
-            - name: "derive"
-              title: "Derive hostnames from domain (recommended)"
+            - name: "wildcard"
+              title: "Simple (default)"
             - name: "custom"
-              title: "Enter all hostnames manually"
+              title: "Manual"
+            - name: "derive"
+              title: "Legacy"
+        # Shown only while Legacy is selected. A `label` renders as text with no
+        # input, and gating a separate item on `when:` is the supported way to
+        # surface a message for one selection -- see the help_text comment above
+        # for why this cannot live on hostname_mode itself.
+        #
+        # The whole message is the title: a label renders its title only, and
+        # ignores help_text entirely.
+        - name: legacy_hostname_mode_notice
+          title: "Legacy is deprecated. Switching to Simple moves Keycloak and the sandbox domain, so update the certificate and DNS records to match first."
+          type: label
+          when: 'repl{{ ConfigOptionEquals "hostname_mode" "derive" }}'
         # Workaround for not being able to template the value of `readonly`
         - name: base_domain
           title: Base Domain
           help_text: The base domain for OpenHands services (e.g., example.com)
           type: text
           readonly: false
-          when: 'repl{{ ConfigOptionEquals "hostname_mode" "derive" }}'
+          # Needed by every mode that derives hostnames, so gate on "not manual"
+          # rather than naming each derived mode.
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
           required: true
+        # No defaults: an example.com placeholder is never a usable hostname, and
+        # as a `default:` it would be silently accepted as if it were entered.
+        # Every one is required -- the install serves all of these, so there is no
+        # configuration where leaving one blank is valid. `required` is not
+        # enforced while an item is hidden by `when:`, so the derived layouts are
+        # unaffected by this.
         - name: app_hostname
           title: Application Hostname
           help_text: The hostname where OpenHands will be accessible
           type: text
-          default: "app.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: analytics_hostname
           title: Analytics Hostname
           help_text: The hostname for the Analytics service
           type: text
-          default: "analytics.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: auth_hostname
           title: Authentication Hostname
           help_text: The hostname for Keycloak authentication service
           type: text
-          default: "auth.app.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: llm_proxy_hostname
           title: LLM Proxy Hostname
           help_text: The hostname for the LiteLLM proxy service
           type: text
-          default: "llm-proxy.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
           required: true
         - name: runtime_api_hostname
           title: Runtime API Hostname
           help_text: The hostname for the Runtime API service
           type: text
-          default: "runtime-api.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+          required: true
         - name: runtime_base_hostname
           title: Runtime Base Hostname
           help_text: The base hostname for runtime containers
           type: text
-          default: "runtime.example.com"
           when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+          required: true
+
+        # Computed hostnames. Every HelmChart CR reads these instead of
+        # re-deriving prefixes, so the DNS layout is defined once, here.
+        #
+        # These are hidden and carry no user input, so KOTS applies the
+        # `default:` -- and it re-renders defaults on every config change, so
+        # editing base_domain or hostname_mode flows through to all of them. Do
+        # not switch these to `value:`: a value is pinned on first render and
+        # would then ignore later base_domain edits.
+        #
+        # Each resolves in the same order: a manually entered hostname wins,
+        # then the wildcard layout, and anything else falls back to the legacy
+        # layout. Falling back to legacy is deliberate -- an install whose
+        # hostname_mode renders empty or unrecognised must keep the layout its
+        # certificate was issued for.
+        - name: computed_app_hostname
+          title: Computed Application Hostname
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "app_hostname" }}{{repl else }}app.{{repl ConfigOption "base_domain" }}{{repl end }}'
+        - name: computed_auth_hostname
+          title: Computed Authentication Hostname
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else if ConfigOptionEquals "hostname_mode" "wildcard" }}auth.{{repl ConfigOption "base_domain" }}{{repl else }}auth.app.{{repl ConfigOption "base_domain" }}{{repl end }}'
+        - name: computed_analytics_hostname
+          title: Computed Analytics Hostname
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "analytics_hostname" }}{{repl else if ConfigOptionEquals "hostname_mode" "wildcard" }}analytics.{{repl ConfigOption "base_domain" }}{{repl else }}analytics.app.{{repl ConfigOption "base_domain" }}{{repl end }}'
+        - name: computed_llm_proxy_hostname
+          title: Computed LLM Proxy Hostname
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "llm_proxy_hostname" }}{{repl else }}llm-proxy.{{repl ConfigOption "base_domain" }}{{repl end }}'
+        - name: computed_runtime_api_hostname
+          title: Computed Runtime API Hostname
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "runtime_api_hostname" }}{{repl else }}runtime-api.{{repl ConfigOption "base_domain" }}{{repl end }}'
+        # The base that sandbox hostnames are built from. In subdomain routing
+        # this is never itself a hostname -- the runtime-api joins the sandbox
+        # ID onto it with computed_runtime_hostname_separator below. In path
+        # routing it is the single shared host every sandbox is served under.
+        #
+        # Simple and Legacy share the one `runtime.<base_domain>` base, so there
+        # is no wildcard branch here. What separates the two is the separator
+        # below, which decides whether a sandbox is a sibling of that base or a
+        # child of it.
+        - name: computed_runtime_base_hostname
+          title: Computed Runtime Base Hostname
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "runtime_base_hostname" }}{{repl else }}runtime.{{repl ConfigOption "base_domain" }}{{repl end }}'
+        # Consumed as the runtime-api's RUNTIME_URL_SEPARATOR. A dash keeps
+        # sandboxes one label deep; the runtime-api treats "/" as a switch into
+        # path routing, so only "-" and "." are valid here.
+        #
+        # Only the Simple layout uses a dash, because there we choose the base
+        # (`runtime.<base_domain>`) and can guarantee the sandboxes still land
+        # under the single `*.<base_domain>` wildcard. Legacy and Manual nest
+        # with a dot: in Manual the base is whatever was entered, so each sandbox
+        # is a child of it.
+        - name: computed_runtime_hostname_separator
+          title: Computed Sandbox Hostname Separator
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "hostname_mode" "wildcard" }}-{{repl else }}.{{repl end }}'
+        # The one wildcard SAN a certificate must carry literally for sandboxes.
+        # A "-" separator makes each sandbox a sibling of the runtime base rather
+        # than a child, so the covering wildcard sits one label above it:
+        # {id}-runtime.example.com is matched by *.example.com, never by
+        # *.runtime.example.com. Mirrors the chart preflight's has_literal check.
+        - name: computed_sandbox_wildcard
+          title: Computed Sandbox Wildcard SAN
+          type: text
+          hidden: true
+          default: '{{repl if eq (ConfigOption "computed_runtime_hostname_separator") "-" }}*.{{repl splitList "." (ConfigOption "computed_runtime_base_hostname") | rest | join "." }}{{repl else }}*.{{repl ConfigOption "computed_runtime_base_hostname" }}{{repl end }}'
+        # Read-only view of the hostnames a derived layout produces, so the
+        # Simple and Legacy modes show the same fields Manual does instead of
+        # leaving the result implicit. `readonly` cannot be templated, so these
+        # are separate items from the editable ones above rather than the same
+        # fields toggled -- only one set is ever visible, and everything declared
+        # between is hidden, so they appear directly under Base Domain.
+        #
+        # Declared after the computed items on purpose: these read them, and
+        # resolving a template that points at a later item is not something we
+        # rely on.
+        #
+        # `value:` and not `default:`, because only `value:` populates the input
+        # box -- a `default:` on a readonly field leaves the box empty and prints
+        # the text underneath it. The cost is that `value:` is stored on first
+        # render and then never re-evaluated, so each is guarded on base_domain
+        # being set: while it is empty the guard renders nothing, and an empty
+        # stored value is not treated as user input, so the item keeps
+        # re-rendering until there is a real hostname to pin.
+        # Titles and help_text are copied verbatim from the editable items above
+        # so a field reads the same in every mode, and switching modes only
+        # changes whether it accepts input.
+        - name: derived_app_hostname
+          title: Application Hostname
+          help_text: The hostname where OpenHands will be accessible
+          type: text
+          readonly: true
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_app_hostname" }}{{repl end }}'
+        - name: derived_analytics_hostname
+          title: Analytics Hostname
+          help_text: The hostname for the Analytics service
+          type: text
+          readonly: true
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_analytics_hostname" }}{{repl end }}'
+        - name: derived_auth_hostname
+          title: Authentication Hostname
+          help_text: The hostname for Keycloak authentication service
+          type: text
+          readonly: true
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}'
+        - name: derived_llm_proxy_hostname
+          title: LLM Proxy Hostname
+          help_text: The hostname for the LiteLLM proxy service
+          type: text
+          readonly: true
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_llm_proxy_hostname" }}{{repl end }}'
+        - name: derived_runtime_api_hostname
+          title: Runtime API Hostname
+          help_text: The hostname for the Runtime API service
+          type: text
+          readonly: true
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_runtime_api_hostname" }}{{repl end }}'
+        - name: derived_runtime_base_hostname
+          title: Runtime Base Hostname
+          help_text: The base hostname for runtime containers
+          type: text
+          readonly: true
+          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_runtime_base_hostname" }}{{repl end }}'
+        - name: additional_cors_origins
+          title: Additional Permitted CORS Origins
+          help_text: >-
+            Optional. Comma-separated list of extra origins allowed to make
+            cross-origin browser requests to OpenHands. Each origin must include
+            the scheme and host (e.g. https://example.com) and may include
+            a port (e.g. https://example.com:8443 or http://localhost:8000);
+            it must NOT include a path or a trailing slash. The application's own
+            origin is always permitted automatically.
+          type: text
+          default: ""
+          validation:
+            regex:
+              pattern: '^\s*(https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?(\s*,\s*https?://(\[[0-9A-Fa-f:.]+\]|[^:/\s,?#]+)(:[0-9]+)?)*)?\s*$'
+              message: 'Must be blank or a comma-separated list of origins like https://example.com or http://localhost:8000, with no paths or trailing slashes.'
 
     - name: tls_configuration
       title: Certificate Configuration
@@ -73,7 +277,21 @@ spec:
       items:
         - name: tls_certificate
           title: TLS Certificate
-          help_text: Upload your TLS certificate file (.crt or .pem)
+          # help_text supports Go templates and the Admin Console re-renders it
+          # on every config change, so this list tracks the hostnames chosen
+          # above instead of restating them. One source line per bullet, since
+          # newlines render as line breaks. A Go comment cannot appear inside
+          # the block scalar: `{{repl` allows no space before one.
+          help_text: |
+            Upload your TLS certificate file (.crt or .pem).
+            {{repl if ConfigOptionEquals "hostname_mode" "wildcard" }}Use a single wildcard SAN:
+            • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl else }}It must cover:
+            • `{{repl ConfigOption "computed_app_hostname" }}`
+            • `{{repl ConfigOption "computed_auth_hostname" }}`
+            • `{{repl ConfigOption "computed_llm_proxy_hostname" }}`
+            • `{{repl ConfigOption "computed_runtime_api_hostname" }}`
+            • `{{repl ConfigOption "computed_analytics_hostname" }}`
+            • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl end }}
           type: file
           required: true
           # Validation runs against the base64-decoded file contents, so we can
@@ -432,11 +650,6 @@ spec:
       description: Configure passwords and secrets for various services
       when: false
       items:
-        - name: admin_password
-          title: Admin Password
-          help_text: Admin password for Runtime API
-          type: password
-          hidden: true
         - name: postgres_username
           title: PostgreSQL Username
           help_text: Username for embedded PostgreSQL database
@@ -541,6 +754,12 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: automation_git_sync_secret
+          title: Automation Git Sync Secret
+          help_text: Key that encrypts each organization's git sync token and repository encryption key at rest
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: default_openhands_organization
       title: Default OpenHands Organization
@@ -563,6 +782,25 @@ spec:
           type: bool
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
+
+    - name: keycloak_administration
+      title: Keycloak Administration
+      description: Manage OpenHands users and identity provider account links in Keycloak.
+      items:
+        - name: keycloak_admin_ui_password
+          title: Keycloak Admin Password
+          help_text: 'Sign in as admin at https://{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}/admin/. Set a password here, save, and deploy to apply it to the existing admin account. Leave blank to keep the current password. Manage this password here so future deployments keep the same value.'
+          type: password
+
+    - name: authentication_security
+      title: Authentication Security
+      description: Configure safeguards applied when users sign in.
+      items:
+        - name: duplicate_email_check
+          title: Prevent Duplicate Base Emails
+          help_text: Reject sign-ins when another user has the same base email after removing a plus-address suffix (for example, name+test@example.com matches name@example.com).
+          type: bool
+          default: "1"
 
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
@@ -646,6 +884,12 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
           required: true
+        - name: azure_devops_webhook_secret
+          title: Azure DevOps Webhook Secret
+          help_text: Shared secret used to verify Azure DevOps service hooks for the resolver. Generated automatically.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
@@ -710,6 +954,22 @@ spec:
           type: password
           when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
+
+    - name: jira_cloud_integration
+      title: Jira Cloud Integration
+      description: Enable the Jira Cloud issue integration. An organization admin finishes setup inside OpenHands and registers the webhook in Jira Cloud.
+      items:
+        - name: jira_cloud_enabled
+          title: Enable Jira Cloud Integration
+          help_text: >-
+            Enable the Jira Cloud issue integration. Users are linked by matching their
+            Jira email to their OpenHands email (their Atlassian profile email visibility
+            must be set to Anyone). After enabling, an organization admin opens Settings > Integrations
+            > Jira in OpenHands to enter the Jira service account email, API token, and a
+            webhook secret, then registers the displayed events URL as a webhook in Jira
+            Cloud using that secret.
+          type: bool
+          default: "0"
 
     - name: github_authentication
       title: GitHub Authentication
@@ -789,6 +1049,32 @@ spec:
           when: 'repl{{ ConfigOptionEquals "gitlab_auth_enabled" "1" }}'
           required: true
 
+    - name: enterprise_sso_authentication
+      title: Enterprise SSO (SAML) Authentication
+      description: Let users sign in with your corporate SAML identity provider.
+      items:
+        - name: enterprise_sso_enabled
+          title: Enable Enterprise SSO Authentication
+          help_text: Add an Enterprise SSO button to the OpenHands login page.
+          type: bool
+          default: "0"
+        - name: enterprise_sso_display_name
+          title: Identity Provider Display Name
+          help_text: Name shown for the identity provider on the sign-in page.
+          type: text
+          default: "Company SSO"
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+        - name: enterprise_sso_idp_metadata_url
+          title: SAML Metadata URL
+          help_text: HTTPS URL of your identity provider's SAML metadata.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+          required: true
+          validation:
+            regex:
+              pattern: '^https://[^[:space:]]+$'
+              message: 'Must be an HTTPS metadata URL.'
+
     - name: slack_configuration
       title: Enable Slack
       description: Enable Slack
@@ -816,6 +1102,58 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "slack_enabled" "1" }}'
           required: true
+
+
+    - name: smtp_configuration
+      title: SMTP Email Delivery
+      description: Configure SMTP for OpenHands email notifications and Keycloak sign-in emails (email verification, account linking, password reset)
+      items:
+        - name: smtp_enabled
+          title: Enable SMTP
+          help_text: Enable SMTP email delivery for budget alerts and admin notifications, and for Keycloak account emails (email verification, account linking, password reset)
+          type: bool
+          default: "0"
+        - name: smtp_host
+          title: SMTP Host
+          help_text: Hostname of the SMTP server
+          type: text
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+          required: true
+        - name: smtp_port
+          title: SMTP Port
+          help_text: Port for the SMTP server
+          type: text
+          default: "587"
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+          required: true
+        - name: smtp_from_email
+          title: SMTP From Email
+          help_text: Sender address for outgoing SMTP email
+          type: text
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+          required: true
+        - name: smtp_use_ssl
+          title: Use SMTP SSL
+          help_text: Use SMTPS (SSL) instead of STARTTLS
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+        - name: smtp_use_tls
+          title: Use SMTP STARTTLS
+          help_text: Enable STARTTLS after connecting
+          type: bool
+          default: "1"
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+        - name: smtp_username
+          title: SMTP Username
+          help_text: Username for SMTP authentication. Leave blank if your SMTP server does not require authentication.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+        - name: smtp_password
+          title: SMTP Password
+          help_text: Password for SMTP authentication
+          type: password
+          when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
 
     - name: database_configuration
       title: Database Configuration
@@ -900,16 +1238,33 @@ spec:
           help_text: Database name for the Runtime API
           type: text
           default: "runtime_api_db"
+        - name: external_postgres_automations_database
+          title: Automations Database
+          help_text: Database name for Automations
+          type: text
+          default: "automations"
 
     - name: sandbox_configuration
       title: Sandbox Configuration
       description: OpenHands conversations run in isolated sandboxes. Configure sandbox resources and lifecycle settings here. Adjust these settings based on your expected workload and the size of your cluster.
       items:
+        - name: sandbox_isolation
+          title: Sandbox Isolation
+          help_text: |
+            The container runtime used to isolate each sandbox.
+            Sysbox (default) provides stronger isolation between sandboxes and enables Docker-in-Docker. It requires Linux kernel 6.3+ (e.g. Ubuntu 24.04).
+          type: select_one
+          default: "sysbox"
+          items:
+            - name: "sysbox"
+              title: "Sysbox (stronger isolation, default)"
+            - name: "runc"
+              title: "runc (standard)"
         - name: runtime_routing_mode
           title: Sandbox Routing Mode
           help_text: |
             How sandbox URLs are constructed.
-            Subdomain routes each sandbox at `{id}.{runtime_base}`. The uploaded TLS cert must have a SAN for `*.{runtime_base}`.
+            Subdomain gives each sandbox its own hostname. On the flat DNS layout that is `{id}-runtime.<base domain>`, covered by a `*.<base domain>` SAN; on the nested layout it is `{id}.{runtime_base}`, which needs a `*.{runtime_base}` SAN.
             Path-based routes every sandbox at `{runtime_base}/{id}`. The uploaded TLS cert must have a SAN for `{runtime_base}`.
           type: select_one
           default: "subdomain"
@@ -931,7 +1286,7 @@ spec:
           title: Deletion Time (seconds)
           help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed.
           type: text
-          default: "86400"
+          default: "864000"
           validation:
             regex:
               pattern: ^[1-9][0-9]*$
@@ -945,6 +1300,15 @@ spec:
             regex:
               pattern: ^[1-9][0-9]*Mi$
               message: Must be a size in Mi (e.g., 10240Mi)
+        - name: sandbox_ephemeral_storage_size
+          title: Ephemeral Storage Size
+          help_text: Ephemeral storage reserved per sandbox. This is a scheduling reservation, so it caps how many sandboxes fit on a node.
+          type: text
+          default: "10Gi"
+          validation:
+            regex:
+              pattern: ^[1-9][0-9]*(Mi|Gi)$
+              message: Must be a size in Mi or Gi (e.g., 10Gi)
         - name: sandbox_memory_request
           title: Memory Request
           help_text: The minimum amount of memory to reserve for each sandbox.
@@ -990,6 +1354,25 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: admin_password
+          title: Runtime API Admin Password
+          help_text: Password for the Runtime API admin endpoints, used to manage warm runtime configurations (for example, running multiple custom sandbox images side by side). A random password is generated at install; to use the admin API, set your own password here and deploy. Changing this password restarts the runtime-api service.
+          type: password
+          value: '{{repl RandomString 32}}'
+        - name: sandbox_max_num_sandboxes
+          title: Max Concurrent Sandboxes
+          help_text: >-
+            Maximum number of concurrent sandboxes the app will start across the
+            cluster. Set to 0 (default) for no cap. Use this to bound resource
+            consumption on shared or memory-constrained clusters; once the cap is
+            reached, new conversations wait for an existing sandbox to be freed
+            rather than spawning a new one.
+          type: text
+          default: "0"
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.
@@ -1003,9 +1386,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.28.0-python
+          help_text: Image tag, e.g. 1.49.4-python
           type: text
-          default: "1.28.0-python"
+          default: "1.49.4-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
@@ -1055,6 +1438,13 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_dedicated_nodes
+          title: Run sandboxes on dedicated nodes
+          help_text: >-
+            Confine sandboxes to nodes joined with the sandbox role. Requires at least
+            1 sandbox node already joined.
+          type: bool
+          default: "0"
 
     - name: proxy_configuration
       title: Proxy Configuration
@@ -1102,6 +1492,31 @@ spec:
             - name: "DEBUG"
               title: "Debug"
 
+    - name: upgrade_checks
+      title: Upgrade Checks
+      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      items:
+        - name: budget_preflight_mode
+          title: Pre-upgrade Budget Preflight
+          help_text: Read-only check of each organization's budget state before the upgrade applies. Strict blocks the upgrade on missing baselines, members missing from LiteLLM, cap drift, or a failed last sync; Acknowledge only records the findings.
+          type: select_one
+          default: "acknowledge"
+          items:
+            - name: "acknowledge"
+              title: "Acknowledge (default)"
+            - name: "strict"
+              title: "Strict"
+        - name: budget_reconcile_gate_mode
+          title: Post-upgrade Budget Reconciliation Gate
+          help_text: Reconciles every organization's LiteLLM budget policy after the upgrade and verifies it by readback. Strict marks the upgrade failed until reconciliation succeeds; Acknowledge lets the release proceed and records the findings.
+          type: select_one
+          default: "strict"
+          items:
+            - name: "strict"
+              title: "Strict (default)"
+            - name: "acknowledge"
+              title: "Acknowledge"
+
     - name: experimental
       title: Experimental
       description: Preview features that are still in development. Enable at your own risk.
@@ -1138,6 +1553,19 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
+        - name: clickhouse_diagnostic_log_retention_days
+          title: ClickHouse Diagnostic Log Retention
+          help_text: Retain Laminar ClickHouse system diagnostic tables such as trace_log, query_log, text_log, metric_log, and part_log for this many days. These logs are useful for recent support investigations but can grow quickly on busy installations.
+          type: select_one
+          default: "3"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
+          items:
+            - name: "1"
+              title: "1 day"
+            - name: "2"
+              title: "2 days"
+            - name: "3"
+              title: "3 days (default)"
 
     - name: automations_configuration
       title: Automations
@@ -1147,12 +1575,70 @@ spec:
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
+          # `value:` not `default:`, for the reason given on hostname_mode above.
+          # Changing a default here would switch automations on for every
+          # existing install at its next upgrade, creating a database and a role
+          # on an external server. A value, once written, is never overwritten,
+          # so turning automations on for an existing install is something an
+          # operator does and a later release cannot.
+          value: '{{repl if eq Sequence 0 }}1{{repl else }}0{{repl end }}'
+        # With automatic creation off the database and role must already exist,
+        # so the operator has to tell us what they named them.
+        - name: automations_db_username
+          title: Automations Database User
+          help_text: PostgreSQL role that Automations connects as. Create it and the Automations database yourself before deploying, if Create Databases Automatically is off. If neither exists, Automations fails to start with a password authentication error.
+          type: text
+          default: "automation_user"
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        # Deliberately not required. Leaving it blank falls back to the external
+        # PostgreSQL password, which is the password an earlier install would
+        # have given this role, so an operator who never chose one is not asked
+        # to invent it. Making this required would stall those upgrades on a
+        # value only the installer knows.
+        - name: automations_db_password
+          title: Automations Database Password
+          help_text: Password for the Automations database role. Leave blank unless you created that role yourself with a different password, in which case enter it here. Note that changing this does not change the password in PostgreSQL.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        - name: automations_sandbox_cleanup_delay_seconds
+          title: Conversation Archive Delay (seconds)
+          help_text: >-
+            How long (in seconds) after an automation run finishes before its
+            conversation is archived and its sandbox deleted. Until then the
+            sandbox is paused, and opening the conversation resumes it. Set to 0
+            (default) to archive as soon as the run finishes. Values above the
+            sandbox Deletion Time have no further effect, because paused
+            sandboxes are deleted at that age regardless.
+          type: text
           default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer (in seconds)
+
+    - name: agent_canvas_configuration
+      title: Agent Canvas
+      description: Configure the Agent Canvas UI
+      items:
+        - name: agent_canvas_enabled
+          title: Enable Agent Canvas
+          help_text: Deploy the Agent Canvas UI, served at /canvas on your application hostname. The UI is locked to this instance's OpenHands backend.
+          type: bool
+          default: "1"
 
     - name: advanced_options
       title: Advanced Options
       description: Optional components and advanced configuration settings
       items:
+        - name: openhands_resolver_label
+          title: OpenHands Resolver Label
+          help_text: >-
+            The OpenHands trigger label and @mention for supported issue and pull
+            request integrations. Defaults to "openhands". Set a custom value so
+            this instance only responds to that label and ignores the default.
+          type: text
+          default: "openhands"
         - name: litellm_forward_client_headers
           title: Enable Forwarding Client Headers Through LiteLLM to LLM Providers
           help_text: >-
@@ -1200,3 +1686,12 @@ spec:
             regex:
               pattern: '^[1-9][0-9]*$'
               message: Must be a positive number of seconds
+        - name: oem_user_creation_flow_enabled
+          title: Enable OEM User Creation Flow
+          help_text: >-
+            Let superadmins create organizations and provision users into them,
+            obtaining an API key to act on each user's behalf. Typically only used
+            by customers who OEM OpenHands Enterprise and integrate it with their
+            own user management system.
+          type: bool
+          default: "0"

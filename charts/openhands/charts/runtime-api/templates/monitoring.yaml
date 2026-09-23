@@ -1,0 +1,16 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "runtime-api.fullname" . }}-monitoring
+  labels:
+    {{- include "runtime-api.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "runtime-api.selectorLabels" . | nindent 6 }}
+  endpoints:
+  - port: 5000
+    interval: 30s
+    path: /metrics
+{{- end }}

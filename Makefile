@@ -19,13 +19,20 @@ CHART_YAMLS := $(shell find $(CHARTDIR) -name 'Chart.yaml')
 # Release metadata: version comes from the openhands chart, channel from the current git branch
 VERSION     ?= $(shell yq .version $(CHARTDIR)/openhands/Chart.yaml)
 REPLICATED_APP ?= openhands
-CHANNEL     := $(shell git branch --show-current)
+BRANCH      := $(shell git branch --show-current)
+CHANNEL     := $(BRANCH)
 ifeq ($(CHANNEL), main)
 	CHANNEL=Unstable
 endif
 
+# Guard: releasing from the main branch (which maps to the Unstable channel)
+# or to the Unstable channel directly is reserved for CI. Require an explicit
+# opt-in flag so a human can't accidentally publish local work to Unstable.
+ALLOW_MAIN_RELEASE ?=
+
 BUILDDIR      := $(PROJECTDIR)/build
 RELEASE_FILES :=
+RELEASE_CHART_PACKAGES = $(filter %.tgz,$(RELEASE_FILES))
 
 # ── Manifest targets ────────────────────────────────────────────────
 # For each replicated manifest, generate a build rule that:
@@ -63,14 +70,28 @@ $(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.
 	@# Rewrite any dependency that points to a remote registry but exists as a
 	@# sibling chart to use a local file:// reference instead. This lets
 	@# `helm package -u` resolve unpublished chart versions during local builds.
-	@cp $(CHARTDIR)/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml.bak
-	@trap 'mv $(CHARTDIR)/$1/Chart.yaml.bak $(CHARTDIR)/$1/Chart.yaml' EXIT; \
+	@# The copy lives outside the chart directory. Held inside it, `helm package`
+	@# picks it up and every released chart ships a Chart.yaml.bak alongside the
+	@# real one, because the restore only runs after packaging.
+	@# Chart.lock is restored for the same reason: `helm package -u` regenerates it
+	@# to match the rewritten repositories, and a lock describing a Chart.yaml that
+	@# no longer exists fails `helm dependency build` with an out-of-sync error.
+	@mkdir -p $(BUILDDIR)/.chartbak/$1
+	@cp $(CHARTDIR)/$1/Chart.yaml $(BUILDDIR)/.chartbak/$1/Chart.yaml
+	@if [ -f $(CHARTDIR)/$1/Chart.lock ]; then cp $(CHARTDIR)/$1/Chart.lock $(BUILDDIR)/.chartbak/$1/Chart.lock; fi
+	@trap 'mv $(BUILDDIR)/.chartbak/$1/Chart.yaml $(CHARTDIR)/$1/Chart.yaml; \
+		if [ -f $(BUILDDIR)/.chartbak/$1/Chart.lock ]; then mv $(BUILDDIR)/.chartbak/$1/Chart.lock $(CHARTDIR)/$1/Chart.lock; fi' EXIT; \
 	for dep in $$$$(yq -r '.dependencies[].name // ""' $(CHARTDIR)/$1/Chart.yaml); do \
 		if [ -d $(CHARTDIR)/$$$$dep ]; then \
 			yq -i "(.dependencies[] | select(.name == \"$$$$dep\")).repository = \"file://../$$$$dep\"" $(CHARTDIR)/$1/Chart.yaml; \
 		fi; \
 	done; \
-	helm package -u $(CHARTDIR)/$1 -d $(BUILDDIR)/
+	n=0; until helm package -u $(CHARTDIR)/$1 -d $(BUILDDIR)/; do \
+		n=$$$$((n+1)); \
+		if [ $$$$n -ge 5 ]; then echo "helm package failed after $$$$n attempts"; exit 1; fi; \
+		echo "helm package failed (likely transient upstream chart download); retry $$$$n/5 in $$$$((n*15))s"; \
+		sleep $$$$((n*15)); \
+	done
 RELEASE_FILES := $(RELEASE_FILES) $(BUILDDIR)/$1-$(VER).tgz
 charts:: $(BUILDDIR)/$1-$(VER).tgz
 endef
@@ -81,20 +102,52 @@ $(BUILDDIR):
 
 # ── Phony targets ───────────────────────────────────────────────────
 
-# Remove the build directory. Runs before lint/release to prevent stale
-# chart tarballs (from previous versions) from conflicting with current ones.
+# Remove generated release output and ignored Helm dependency archives. Runs
+# before lint/release so stale subchart archives cannot contaminate packages.
 .PHONY: clean
 clean:
 	rm -rf $(BUILDDIR)
+	find $(CHARTDIR) -path '*/charts/*.tgz' -type f -exec rm -f {} +
+
+# Fail if any packaged chart contains duplicate archive paths. Duplicate paths
+# let stale dependency contents win during extraction even when sources are new.
+.PHONY: check-duplicate-chart-entries
+check-duplicate-chart-entries: $(RELEASE_CHART_PACKAGES)
+	@set -eu; \
+	for chart in $(RELEASE_CHART_PACKAGES); do \
+		listing=$$(tar tzf "$$chart") || { echo "ERROR: failed to list $$chart"; exit 1; }; \
+		duplicates=$$(printf '%s\n' "$$listing" | sort | uniq -d); \
+		if [ -n "$$duplicates" ]; then \
+			echo "ERROR: $$chart contains duplicate archive paths:"; \
+			echo "$$duplicates"; \
+			exit 1; \
+		fi; \
+	done
 
 # Validate all built manifests and charts with the Replicated linter
 .PHONY: lint
-lint: clean $(RELEASE_FILES)
-	replicated release lint --yaml-dir $(BUILDDIR)
+lint: clean $(RELEASE_FILES) check-duplicate-chart-entries
+	replicated release lint --app $(REPLICATED_APP) --yaml-dir $(BUILDDIR)
+
+# Refuse to release from main or to the Unstable channel unless explicitly
+# allowed via ALLOW_MAIN_RELEASE=1. CI passes this flag; humans should not.
+.PHONY: check-release-guard
+check-release-guard:
+	@if [ -z "$(ALLOW_MAIN_RELEASE)" ] && { [ "$(BRANCH)" = "main" ] || [ "$(CHANNEL)" = "Unstable" ]; }; then \
+		echo "ERROR: refusing to release from 'main' or to the 'Unstable' channel (branch=$(BRANCH) channel=$(CHANNEL))."; \
+		echo "       This is reserved for CI. If you really mean to do this, re-run with ALLOW_MAIN_RELEASE=1."; \
+		exit 1; \
+	fi
+
+# Echo the channel `release` publishes to, so CI can pin a deploy to it without
+# re-deriving the branch mapping.
+.PHONY: print-channel
+print-channel:
+	@echo $(CHANNEL)
 
 # Build everything, lint, then publish a release to the Replicated channel
 .PHONY: release
-release: clean $(RELEASE_FILES) lint
+release: check-release-guard clean $(RELEASE_FILES) check-duplicate-chart-entries lint
 	replicated release create \
 	 	--app $(REPLICATED_APP) \
 		--version $(VERSION) \

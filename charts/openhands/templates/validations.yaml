@@ -1,0 +1,53 @@
+{{/*
+Render-time configuration guards. Emits no resources; each block fails the
+render with a clear message when values are invalid or conflicting, so the
+mistake is caught at install/upgrade instead of producing a broken object.
+Each guard is scoped to .Values.enabled: when the enterprise-server is not
+deployed (enabled=false), the ingress and database env these guards check
+are never rendered, so a server-less release must not trip them.
+*/}}
+{{- if and .Values.enabled .Values.ingress.enabled (not .Values.ingress.host) -}}
+{{- fail "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false." -}}
+{{- end -}}
+{{- if and .Values.enabled (not .Values.postgresql.enabled) (or (not .Values.externalDatabase.host) (not .Values.externalDatabase.username)) -}}
+{{- fail "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database." -}}
+{{- end -}}
+{{- if and .Values.enabled .Values.enterpriseSSO.idpMetadataUrl (not (include "openhands.keycloakProvisionRealm" .)) -}}
+{{- fail "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually." -}}
+{{- end -}}
+{{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict -}}
+{{- if and .Values.enabled (eq $orgCondenser.maxTokens nil) (or $orgCondenser.applyToExisting $orgCondenser.overwriteExisting) -}}
+{{- fail "orgDefaults.condenser.maxTokens must be set before applyToExisting or overwriteExisting can be enabled." -}}
+{{- end -}}
+{{- if and .Values.enabled $orgCondenser.overwriteExisting (not $orgCondenser.applyToExisting) -}}
+{{- fail "orgDefaults.condenser.overwriteExisting requires orgDefaults.condenser.applyToExisting=true because overwrite mode only runs while reconciling existing organizations." -}}
+{{- end -}}
+
+{{/*
+Data-loss guard for the bundled MinIO. Its chart runs the bucket job on
+post-install AND post-upgrade, and purge: true makes that job delete the bucket
+contents before recreating it — so with purge on, every ordinary upgrade of a
+persistent install destroys the conversation and session files. Deliberately NOT
+scoped to .Values.enabled: the bundled store is shared with runtime-api and
+automation, so the data is at risk even in a server-less release. Scoped instead
+to minio.enabled, which is what deploys the bundled store at all, so
+external-S3/GCS releases are unaffected by whatever sits in .Values.minio.
+*/}}
+{{- if .Values.minio.enabled -}}
+{{- range .Values.minio.buckets -}}
+{{- if .purge -}}
+{{- fail (printf "minio.buckets entry %q sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data." .name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Budget upgrade hook modes. An unknown mode would silently run the preflight
+script in its usage-error path, so refuse it at render time instead.
+*/}}
+{{- if and .Values.enabled .Values.budgetPreflight.enabled (not (has (toString .Values.budgetPreflight.mode) (list "strict" "acknowledge"))) -}}
+{{- fail (printf "budgetPreflight.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetPreflight.mode)) -}}
+{{- end -}}
+{{- if and .Values.enabled .Values.budgetReconcileGate.enabled (not (has (toString .Values.budgetReconcileGate.mode) (list "strict" "acknowledge"))) -}}
+{{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
+{{- end -}}

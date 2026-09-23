@@ -199,9 +199,14 @@ class TestBuildAppManifest:
         manifest = build_app_manifest(base_domain="mycompany.com")
         assert manifest["url"] == "https://app.mycompany.com"
 
-    def test_manifest_callback_url_format(self):
-        """Test that callback URL is https://auth.app.BASE_DOMAIN/realms/allhands/broker/github/endpoint."""
+    def test_manifest_callback_url_defaults_to_flat_layout(self):
+        """Test that the callback URL targets auth.BASE_DOMAIN by default."""
         manifest = build_app_manifest(base_domain="mycompany.com")
+        assert manifest["callback_urls"][0] == "https://auth.mycompany.com/realms/allhands/broker/github/endpoint"
+
+    def test_manifest_callback_url_nested_layout(self):
+        """Test that the nested layout targets auth.app.BASE_DOMAIN."""
+        manifest = build_app_manifest(base_domain="mycompany.com", dns_layout="nested")
         assert manifest["callback_urls"][0] == "https://auth.app.mycompany.com/realms/allhands/broker/github/endpoint"
 
     @pytest.mark.parametrize(
@@ -906,7 +911,20 @@ class TestMainWithCallbackServer:
             "my-app",
             callback_port=18080,
             org="OpenHands",
+            dns_layout="flat",
         )
+
+    def test_main_forwards_dns_layout_to_browser_manifest(self):
+        """Test that a nested-layout install builds its callback for auth.app.<base>."""
+        with mock_main_dependencies({"id": 123}) as mocks:
+            main(
+                base_domain="example.com",
+                dry_run=False,
+                app_name="my-app",
+                dns_layout="nested",
+            )
+
+        assert mocks["open_browser"].call_args.kwargs["dns_layout"] == "nested"
 
     def test_main_deletes_temp_manifest_file_after_flow(self, tmp_path):
         """Test that the temporary manifest page is removed once it has been loaded."""

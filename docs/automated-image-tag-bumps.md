@@ -10,21 +10,27 @@ their own release workflow:
 - Workflow: [`.github/workflows/bump-image-tag.yml`](../.github/workflows/bump-image-tag.yml)
 - Edit script: [`scripts/bump_image_tag/bump_image_tag.py`](../scripts/bump_image_tag/bump_image_tag.py)
 
-The caller passes just three things: which **file** to edit, the **path** to the
-tag inside it, and the new **tag**.
+The caller passes a **file** to edit, the **path** to the image tag inside it,
+and the new **tag**. It can also opt into updating a metadata scalar in another
+YAML file to that same tag.
 
 ## What it changes (and what it deliberately doesn't)
 
-The PR changes **only the image tag scalar** — a single line. It does **not**
-bump the chart `version` in `Chart.yaml` and does nothing else.
+The PR changes the image tag scalar. When the caller supplies `metadata_file`,
+it also changes the scalar at `metadata_path` to the same tag. This supports
+charts whose `appVersion` should mirror their default image tag.
 
-Because of that, the **Validate Chart Versions** check (`enforce_version_bump:
-true`) will **fail** on these PRs: a chart file changed without a version bump.
-This is intentional — a maintainer bumps the chart version while reviewing/merging
-the bump.
+It never bumps the chart `version` in `Chart.yaml`; that remains owned by
+release-please.
 
-The edit is path-aware and minimal by design. `runtime-api/values.yaml` has three
-`tag:` keys (`image.tag`, `kvm.image.tag`, `kvm.initImage.tag`); the script edits
+The PR is titled `feat(<component>): bump image tag to <tag>`, so release-please
+categorizes it under Features and folds it into the chart's open release PR. The
+chart `version` in `Chart.yaml` is then bumped automatically when that release PR
+is merged (a minor bump, since feats move the minor for these pre-1.0 charts). No
+manual version bump, and no version-bump CI gate.
+
+The edit is path-aware and minimal by design. `runtime-api/values.yaml` has multiple
+`tag:` keys (`image.tag`, `global.agentServerImage.tag`); the script edits
 exactly the one you name and leaves quoting, comments, and blank lines untouched.
 (`yq -i` strips blank lines; a full `ruamel` re-dump rewrites unrelated scalars
 like `dryRun: False` → `false`; a blanket `sed` hits the wrong `tag:`. The script
@@ -82,7 +88,7 @@ jobs:
     secrets: inherit
     with:
       component: runtime-api
-      chart_file: charts/runtime-api/values.yaml
+      chart_file: charts/openhands/charts/runtime-api/values.yaml
       image_tag_path: .image.tag          # optional — this is the default
       tag: ${{ needs.prepare-tag.outputs.tag }}
 ```
@@ -99,8 +105,27 @@ A ready-to-copy version is in
     secrets: inherit
     with:
       component: automation
-      chart_file: charts/automation/values.yaml
+      chart_file: charts/openhands/charts/automation/values.yaml
       tag: ${{ needs.prepare-tag.outputs.tag }}
+```
+
+### The `openhands` component
+
+The OpenHands chart's `appVersion` is intended to track its default image tag.
+Opt into the paired update explicitly so other components retain their existing
+single-file behavior:
+
+```yaml
+  bump-chart:
+    uses: OpenHands/OpenHands-Cloud/.github/workflows/bump-image-tag.yml@main
+    secrets: inherit
+    with:
+      component: openhands
+      chart_file: charts/openhands/values.yaml
+      image_tag_path: .image.tag
+      metadata_file: charts/openhands/Chart.yaml
+      metadata_path: .appVersion
+      tag: ${{ github.ref_name }}
 ```
 
 ## Inputs
@@ -111,6 +136,8 @@ A ready-to-copy version is in
 | `chart_file` | yes | — | YAML file to edit, relative to the chart repo root. |
 | `tag` | yes | — | New image tag to set. Must match the tag you pushed. |
 | `image_tag_path` | no | `.image.tag` | yq-style path to the tag scalar. Supports nested keys and list indices, e.g. `.warmRuntimes.configs[0].image`. |
+| `metadata_file` | no | empty | Optional YAML file containing a scalar that should track `tag`, such as a chart's `Chart.yaml`. |
+| `metadata_path` | no | `.appVersion` | yq-style path to the optional scalar in `metadata_file`. |
 | `base_branch` | no | `main` | Branch to open the PR against. |
 | `chart_repo` | no | `OpenHands/OpenHands-Cloud` | Repo to update, `owner/name`. |
 | `pr_branch` | no | `bump-image-tag/<component>` | Head branch. The default rolls a single open PR per component, advancing it to the latest tag. Set something tag-specific (e.g. `bump-image-tag/runtime-api/${{ needs.prepare-tag.outputs.tag }}`) to get one PR per release. |
@@ -126,8 +153,9 @@ current and no PR was needed).
 
 ## Behavior notes
 
-- **Idempotent:** if the tag already matches, the script makes no change and no PR
-  is opened.
+- **Idempotent:** if the image tag and optional metadata scalar already match, the
+  scripts make no change and no PR is opened. If the image tag is current but the
+  metadata scalar is stale, the workflow repairs the metadata in its own PR.
 - **One rolling PR per component (default):** a second release before the first PR
   merges updates the same PR to the newer tag. After a PR merges and its branch is
   deleted, the next release opens a fresh PR.
@@ -139,8 +167,11 @@ current and no PR was needed).
 ```bash
 # Dry run against a real chart file (prints old -> new, writes nothing):
 uv run scripts/bump_image_tag/bump_image_tag.py \
-  --file charts/runtime-api/values.yaml --path .image.tag --tag sha-1234567 --dry-run
+  --file charts/openhands/charts/runtime-api/values.yaml --path .image.tag --tag sha-1234567 --dry-run
 
 # Unit tests:
 uv run scripts/bump_image_tag/test_bump_image_tag.py
+
+# Reusable-workflow contract tests:
+uv run --with pytest python -m pytest scripts/test_chart_image_bump_contract.py -q
 ```

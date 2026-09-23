@@ -1,0 +1,115 @@
+# Agent Canvas Helm Chart Values
+#
+# Frontend-only deployment of OpenHands Agent Canvas. This chart runs the
+# pre-built static frontend bundled in the ghcr.io/openhands/agent-canvas
+# image, served by scripts/static-server.mjs in --auth-required mode with
+# /api, /sockets, /server_info, and other backend paths rejected. Users
+# point the UI at their own backend(s) via the in-app "Manage Backends"
+# screen.
+
+image:
+  repository: ghcr.io/openhands/agent-canvas
+  # Pinned to a semver release tag (agent-canvas publishes release-tagged
+  # images via Release Please). Environments that want a specific build can
+  # override this, but the default should track a published release so the
+  # chart ships a known-good version out of the box.
+  tag: "1.23.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 250m
+
+service:
+  port: 8000
+
+# Ingress for the agent-canvas service. The umbrella `openhands` chart renders
+# this path on the host supplied here when this chart is used as a subchart.
+ingress:
+  enabled: false
+  host: ""
+  className: traefik
+  annotations: {}
+  path: /canvas
+  tls:
+    enabled: false
+    secretName: ""
+
+# Static-server runtime flags. By default the deployment runs in
+# frontend-only / auth-required mode and rejects any path that would
+# normally proxy to a local backend (since this deployment has none).
+staticServer:
+  authRequired: true
+  basePath: /canvas
+  # When true, sets AGENT_CANVAS_DISABLE_TELEMETRY=1 on the container, which
+  # static-server.mjs reads to inject window.__AGENT_CANVAS_DO_NOT_TRACK__ so
+  # the pre-built frontend disables all PostHog product telemetry (including the
+  # anonymous install event) at runtime.
+  # Defaults to true because this chart targets self-hosted deployments (e.g.
+  # OHE), which ship with telemetry off. A SaaS deployment that wants telemetry
+  # can override this to false.
+  disableTelemetry: true
+  # When set, passes `--lock-to-cloud <url>` to static-server.mjs, which
+  # injects window.__AGENT_CANVAS_LOCK_TO_CLOUD__ so the UI locks backend
+  # setup to a single OpenHands Cloud host (e.g.
+  # https://app.all-hands.dev). Leave empty for the standard
+  # user-managed "Manage Backends" flow.
+  lockToCloud: ""
+  rejectPrefixes:
+    - /api
+    - /server_info
+    - /sockets
+    - /alive
+    - /health
+    - /ready
+    - /docs
+    - /redoc
+    - /openapi.json
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
+# Pod-level security context
+securityContext:
+  runAsUser: 42420
+  runAsGroup: 42420
+  runAsNonRoot: true
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: agent-canvas-sa
+  annotations: {}
+
+# Liveness / readiness probes hit the static server on / (SPA fallback).
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 5
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 2
+    periodSeconds: 10
+    failureThreshold: 3
+
+# Extra environment variables to pass to the container.
+env: {}
+
+global:
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

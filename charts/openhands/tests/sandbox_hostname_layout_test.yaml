@@ -1,0 +1,56 @@
+suite: sandbox hostname layout defaults
+# The app builds a sandbox URL from RUNTIME_URL_PATTERN; the runtime-api names
+# the ingress that serves it from RUNTIME_BASE_URL joined by
+# RUNTIME_URL_SEPARATOR. If the chart hands down a separator the deployment did
+# not ask for, those two disagree and every sandbox becomes unreachable, so the
+# chart ships the nested form and leaves the separator to the runtime-api's own
+# default. The flat layout is opt-in, and the Replicated installer opts in by
+# setting the separator explicitly.
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+  - charts/runtime-api/templates/deployment.yaml
+tests:
+  - it: leaves the sandbox hostname separator unset by default
+    set:
+      enabled: true
+      runtime-api.env.RUNTIME_BASE_URL: runtime.example.com
+    asserts:
+      - template: charts/runtime-api/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: RUNTIME_URL_SEPARATOR
+      - template: charts/runtime-api/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_BASE_URL
+            value: runtime.example.com
+
+  - it: passes an explicitly configured separator through to the runtime-api
+    set:
+      enabled: true
+      runtime-api.env.RUNTIME_BASE_URL: runtime.example.com
+      runtime-api.env.RUNTIME_URL_SEPARATOR: "-"
+    asserts:
+      - template: charts/runtime-api/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_URL_SEPARATOR
+            value: "-"
+
+  - it: defaults the app to the nested sandbox URL form
+    set:
+      enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_URL_PATTERN
+            value: "https://{runtime_id}.runtime.app.example.com"

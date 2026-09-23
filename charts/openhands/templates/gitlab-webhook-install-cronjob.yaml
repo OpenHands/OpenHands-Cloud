@@ -1,0 +1,57 @@
+{{- if and .Values.enabled .Values.gitlabWebhookInstallation.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-install-gitlab-webhooks
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gitlab-webhook-install
+    app: {{ .Release.Name }}-install-gitlab-webhooks
+spec:
+  schedule: {{ .Values.gitlabWebhookInstallation.schedule | quote }}
+  concurrencyPolicy: {{ .Values.gitlabWebhookInstallation.concurrencyPolicy }}
+  failedJobsHistoryLimit: {{ .Values.gitlabWebhookInstallation.failedJobsHistoryLimit }}
+  successfulJobsHistoryLimit: {{ .Values.gitlabWebhookInstallation.successfulJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.gitlabWebhookInstallation.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "openhands.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: gitlab-webhook-install
+            app: {{ .Release.Name }}-install-gitlab-webhooks
+        spec:
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: OnFailure
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with (include "openhands.affinity" .) }}
+          affinity:
+            {{- . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.caBundle.enabled }}
+          volumes:
+            {{- include "openhands.caBundle.volume" . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: {{ .Release.Name }}-install-gitlab-webhooks
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+              command: ["python", "-m", "sync.install_gitlab_webhooks"]
+              resources:
+                {{- toYaml .Values.gitlabWebhookInstallation.resources | nindent 16 }}
+              {{- if .Values.caBundle.enabled }}
+              volumeMounts:
+                {{- include "openhands.caBundle.volumeMount" . | nindent 16 }}
+              {{- end }}
+              env:
+                {{- include "openhands.env" . | nindent 16 }}
+                {{- include "openhands.caBundle.env" . | nindent 16 }}
+{{- end }}

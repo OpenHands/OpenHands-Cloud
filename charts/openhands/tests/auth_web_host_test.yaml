@@ -1,0 +1,140 @@
+suite: AUTH_WEB_HOST and AUTH_URL follow the keycloak ingress hostname
+# AUTH_WEB_HOST is templated into the Keycloak realm's frontendUrl and redirect
+# URIs on every app-pod restart, so it has to name the host the keycloak Ingress
+# actually serves. Deriving auth.<app host> only holds on the nested DNS layout;
+# on the flat layout Keycloak sits at auth.<base domain> instead.
+#
+# AUTH_URL is the same host as a URL, for the frontend. Without it the frontend
+# prepends "auth." to the browser's host, producing auth.app.<base> on the flat
+# layout. The two must always agree, so every case here asserts both.
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: uses the configured keycloak hostname on the flat layout
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      keycloak.ingress.enabled: true
+      keycloak.ingress.hostname: auth.example.com
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_WEB_HOST
+            value: auth.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_URL
+            value: https://auth.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WEB_HOST
+            value: app.example.com
+
+  - it: uses the configured keycloak hostname on the nested layout
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      keycloak.ingress.enabled: true
+      keycloak.ingress.hostname: auth.app.example.com
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_WEB_HOST
+            value: auth.app.example.com
+      # Legacy installs must keep the hostname the frontend already derived on
+      # its own, so switching to AUTH_URL cannot move their login redirect.
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_URL
+            value: https://auth.app.example.com
+
+  - it: falls back to auth.<app host> when no keycloak hostname is set
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      keycloak.ingress.enabled: false
+      keycloak.ingress.hostname: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_WEB_HOST
+            value: auth.app.example.com
+
+  - it: ignores the keycloak hostname when its ingress is disabled
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      keycloak.ingress.enabled: false
+      keycloak.ingress.hostname: auth.example.com
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_WEB_HOST
+            value: auth.app.example.com
+
+  - it: prefixes the branch onto the fallback but not an explicit hostname
+    set:
+      enabled: true
+      ingress.enabled: true
+      ingress.host: app.example.com
+      ingress.prefixWithBranch: true
+      branchSanitized: mybranch
+      keycloak.ingress.enabled: false
+      keycloak.ingress.hostname: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_WEB_HOST
+            value: mybranch.auth.app.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_URL
+            value: https://mybranch.auth.app.example.com
+
+  - it: keeps the in-cluster keycloak host when no ingress is configured at all
+    set:
+      enabled: true
+      ingress.enabled: false
+      ingress.host: app.example.com
+      keycloak.ingress.enabled: false
+      keycloak.ingress.hostname: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_WEB_HOST
+            value: keycloak
+      # No ingress means no browser-reachable auth host, so AUTH_URL must be
+      # absent rather than pointing the frontend at https://keycloak.
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: AUTH_URL

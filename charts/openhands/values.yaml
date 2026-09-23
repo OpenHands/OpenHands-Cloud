@@ -8,6 +8,12 @@ allowedUsers: null
 # them without the OpenHands app itself.
 enabled: true
 
+image:
+  repository: ghcr.io/openhands/enterprise-server
+  # You must use a stable, semver tag. Do not use sha-based tags.
+  # If you are hotfixing, you MUST create a patch release and use the semver tag.
+  tag: 1.64.0
+
 autoscaling:
   enabled: false
   minReplicas: 1
@@ -27,6 +33,31 @@ appConfig:
   OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
 
+# Maximum conversations a user may start per UTC day. null leaves the
+# enterprise application default unlimited; set an integer to enforce a limit.
+dailyConversationLimit: null
+
+# Reject sign-ins when another identity has the same base email after removing
+# a plus-address suffix (for example, name+test@example.com and name@example.com).
+duplicateEmailCheck: true
+
+# Organization-default condenser settings. These seed newly-created applicable
+# OpenHands org settings. Existing org rows are only reconciled when explicitly
+# enabled below because that mutates persisted database settings.
+orgDefaults:
+  condenser:
+    # Conversation-history size that triggers condensation, NOT an LLM output-token
+    # cap. Named to match the backend's condenser.max_tokens field. Condensation
+    # fires on the smaller of this and the agent LLM's effective input limit, so a
+    # larger value has no effect. Positive integer, or null for app/SDK defaults.
+    maxTokens: null
+    # Mutate existing org rows during reconciliation, which the app server runs on
+    # every start while these values are set -- not just once per rollout.
+    applyToExisting: false
+    # Force existing non-null org-level values to maxTokens during reconciliation.
+    # Destructive and repeated on every app start; see README before enabling.
+    overwriteExisting: false
+
 datadog:
   enabled: false
   env: "dev" # Default environment, can be overridden
@@ -44,6 +75,14 @@ debuggingRoutes:
 userProvisioning:
   enabled: false
 
+# POST /api/organizations org-creation endpoint. By default this endpoint
+# is restricted to @openhands.dev admin users. When enabled, the enterprise
+# app server sets OPEN_ORG_CREATION_ENABLED=true and any authenticated user
+# is allowed to create an organization. This should only be enabled for OHE
+# deployments where end users are expected to self-serve organizations.
+openOrgCreation:
+  enabled: false
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false
@@ -58,6 +97,11 @@ deployment:
     limits:
       memory: 3Gi
 
+# Affinity for the pods this chart owns directly (the app, integrations and MCP
+# Deployments, and the maintenance CronJobs). Overrides
+# global.scheduling.affinity for those pods; leave empty to inherit it.
+affinity: {}
+
 # Security context settings for all pods
 securityContext:
   runAsUser: 42420
@@ -69,13 +113,98 @@ securityContext:
 env:
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
+  # How the app addresses a sandbox. Must agree with the runtime-api's
+  # RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR pair below, which is what names
+  # each sandbox ingress. The default nests sandboxes under the runtime base,
+  # matching the runtime-api's own "." separator.
   RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
+  # Maximum number of concurrent sandboxes the app will start (0 = no cap).
+  # The Replicated installer exposes this as the sandbox_max_num_sandboxes
+  # ConfigOption; leave at 0 here so non-Replicated installs are uncapped by
+  # default and operators opt in to a limit.
+  OH_SANDBOX_MAX_NUM_SANDBOXES: "0"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
+# Legacy location for the agent-server (sandbox) runtime env map. Prefer
+# global.agentServerEnv, which the runtime-api subchart also mirrors into the
+# warm-runtime env so warm pods stay claimable (exact-env matching). Keys set
+# here still reach OH_AGENT_SERVER_ENV (merged on top of the global map) but
+# are NOT mirrored into the warm env.
+agentServerEnv: {}
+
+integrations:
+  resolverLabel: "openhands"
+
+# Object storage for conversation/session files. Always a durable object
+# store: any S3-compatible store (AWS S3, the bundled MinIO, R2, ...) or GCS.
+# To use the bundled MinIO, set minio.enabled: true and type: s3 — with no
+# endpoint or credentials configured, the app targets the bundled instance
+# automatically.
 filestore:
-  ephemeral: false
+  # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
+  # template renders whichever spelling the app natively reads.
+  type: gcs
+
+  # Bucket to store conversation/session files in (both backends).
   bucket: openhands-sessions
+
+  # s3 only. Leave empty for AWS (boto3 targets the regional endpoint) or for
+  # the bundled MinIO (minio.enabled). Set for any other S3-compatible store.
+  # TLS is inferred from the URL scheme — an http:// endpoint renders
+  # AWS_S3_SECURE=false.
+  endpoint: ""
+  # AWS region of the bucket. Required for real AWS S3 (boto3 needs it to sign).
+  region: ""
+
+  # s3 credentials — first match wins:
+  #   1. existingSecret: Secret holding the access key pair (key names below)
+  #   2. accessKey/secretKey: inline, for throwaway/dev environments only
+  #   3. minio.enabled: the bundled MinIO's minio.svcaccts credentials
+  #   4. none: ambient AWS identity (IRSA / Pod Identity / instance profile)
+  # google_cloud always uses ambient identity (Workload Identity / ADC).
+  existingSecret: ""
+  accessKeyIdKey: AWS_ACCESS_KEY_ID
+  secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  accessKey: ""
+  secretKey: ""
+
+  # Optional SHARED_EVENT_STORAGE_PROVIDER override ("aws" | "gcp"); when empty
+  # the app derives the provider from FILE_STORE.
+  provider: ""
+
+# Workspace archiving (app-server, explicit-delete path): before a still-running
+# sandbox is deleted, copy its workspace to object storage so the agent's work
+# survives for eval/dataset creation. Disabled by default — existing deployments
+# are unaffected. The idle/expiry reap is archived separately by the runtime-api
+# cleanup CronJob (see runtime-api.runtimeFileArchive).
+#
+# storeType: "google_cloud" uses the app-server ServiceAccount's Workload
+# Identity (GKE; needs roles/storage.objectAdmin on the bucket). "s3" uses the
+# AWS_S3_*/AWS_*_KEY env populated from values.filestore — so self-hosted
+# installs can archive to the bundled MinIO or any S3-compatible store.
+# Empty = follow filestore.type (s3 -> s3, google_cloud -> google_cloud).
+runtimeFileArchive:
+  enabled: false
+  storeType: "" # s3 | gcs (alias: google_cloud); empty = follow filestore.type
+  # Existing object-storage bucket that receives the archives. The chart does
+  # not create it; provision it and grant the app-server identity write access.
+  bucket: ""
+  prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root).
+  # Safe default: capture BOTH the compact git-delta and a self-contained
+  # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
+  # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
+  format: both # both, git-delta (compact), or tar.gz.
+  required: false # When true, a failed archive blocks the delete (retried later).
+  # Also snapshot the INITIAL workspace (repo as cloned, before setup.sh) — the
+  # "base" state for reconstructing an eval (initial + final). App-server only;
+  # reuses storeType/bucket/prefix above. Awaited inline at conversation start
+  # (bounded by deadline, best-effort), so it adds bounded startup latency.
+  initial:
+    enabled: false
+    format: tar.gz # tar.gz (self-contained base) or git-delta.
+    deadline: 120 # Max seconds to await the snapshot before proceeding without it.
 
 github:
   enabled: false
@@ -109,8 +238,13 @@ bitbucket:
   auth:
     existingSecret: bitbucket-app
 
+# Enterprise SSO (SAML). Enabling this advertises the login provider. When an
+# HTTPS metadata URL is also set, the keycloak-config init container manages the
+# enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
+  displayName: "Company SSO"
+  idpMetadataUrl: ""
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any
 # secret-backed config changes this value, which changes the openhands pod
@@ -147,10 +281,6 @@ gitlabWebhookInstallation:
       memory: 512Mi
       cpu: 200m
 
-image:
-  repository: ghcr.io/openhands/enterprise-server
-  tag: sha-be6f446
-
 ingress:
   enabled: false
   # REQUIRED: Update to a hostname in a DNS domain you own
@@ -166,6 +296,12 @@ ingress:
     annotations: {}
       # Example: Add specific annotations for the root ingress
       # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+
+  # Integrations Hub API routes authenticate API keys and session cookies in
+  # the application. Keep these annotations separate from root/browser OAuth
+  # middleware so API 401/403 JSON responses reach callers unchanged.
+  integrationsHubApi:
+    annotations: {}
 
   integrations:
     annotations: {}
@@ -221,6 +357,20 @@ proactiveConvoClean:
       memory: 512Mi
       cpu: 200m
 
+appConversationStartTaskClean:
+  enabled: true
+  schedule: "0 3 * * *" # Daily at 3 AM UTC
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+
 resendSync:
   enabled: false
   schedule: "0 1 * * *" # Daily at 1 AM
@@ -244,9 +394,10 @@ resendSync:
       cpu: 200m
 
 runtime:
+  # repository/tag fall back to .Values.global.agentServerImage when left empty.
   image:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.28.0-python
+    repository: ""
+    tag: ""
 
 sandbox:
   # REQUIRED: Update so this matches what you have set in the runtime api ingress
@@ -280,6 +431,17 @@ tavily:
   auth:
     existingSecret: tavily-api-key
 
+
+smtp:
+  enabled: false
+  host: ""
+  port: "587"
+  fromEmail: ""
+  useSsl: false
+  useTls: true
+  auth:
+    existingSecret: smtp-credentials
+
 tls:
   enabled: false
 
@@ -306,6 +468,8 @@ uvicorn:
 
 keycloak:
   enabled: false
+  image:
+    repository: bitnamilegacy/keycloak
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
@@ -324,6 +488,8 @@ keycloak:
   # provider (e.g. Bitbucket Data Center) to log in again.
   ssoSessionIdleTimeout: 259200
   ssoSessionMaxLifespan: 604800
+  # Allow self-hosted identity providers to survive brief network stalls.
+  idpHttpSocketTimeoutMillis: "15000"
   url: "http://keycloak"
   fullnameOverride: keycloak
   replicaCount: 1
@@ -365,12 +531,12 @@ keycloak:
       value: "xforwarded"
     - name: KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI
       value: "true"
+    - name: KC_SPI_CONNECTIONS_HTTP_CLIENT__DEFAULT__SOCKET_TIMEOUT_MILLIS
+      value: '{{ .Values.idpHttpSocketTimeoutMillis | default "15000" }}'
     # Bitnami Keycloak renders extraEnvVars with common.tplvalues.render, so
     # this is evaluated in the Keycloak subchart context at render time.
     - name: KC_DB_URL_PROPERTIES
       value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
-  image:
-    repository: bitnamilegacy/keycloak
   waitForDb:
     image: "bitnamilegacy/postgresql:latest"
   initContainers:
@@ -441,6 +607,13 @@ laminar:
   # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
   httpPort: null
 
+  clickhouse:
+    diagnostics:
+      # Retention, in days, for high-volume ClickHouse system diagnostic tables
+      # used by Laminar. The chart applies this with a Helm install/upgrade hook
+      # so it survives Replicated/KOTS reconciliation and upgrades.
+      retentionDays: 3
+
   frontend:
     ingress:
       enabled: true          # required gate in 0.1.8; must be true for any frontend ingress to render
@@ -453,6 +626,20 @@ laminar:
         secretName: "laminar-frontend-tls"
         clusterIssuer: ""
       annotations: {}
+
+  # OpenHands-managed ingress that exposes only Laminar's public ingestion API
+  # paths on the analytics hostname. This avoids exposing the full app-server
+  # surface through the upstream Laminar appServer.ingress, which routes "/".
+  apiIngress:
+    enabled: false
+    hostname: ""
+    className: ""
+    path: /v1
+    pathType: Prefix
+    tls:
+      enabled: false
+      secretName: "laminar-frontend-tls"
+    annotations: {}
 
   appServer:
     # loadBalancer creates an L4 Network Load Balancer Service for the app-server (OTLP trace ingestion).
@@ -494,6 +681,17 @@ litellm-helm:
   # and because it is the most extensively tested scenario. Our automation uses an admin key
   # to do user management for the LiteLLM instance.
   enabled: false
+  # Pin the litellm image tag. The litellm-helm chart's default tag is its
+  # appVersion (currently v1.80.8-nightly), which predates the
+  # --use_v2_migration_resolver arg passed via the Replicated values and so
+  # crashes on startup. Bare semver, no "v" prefix or "-stable" suffix (the
+  # format BerriAI uses for 1.84.x+ stable images).
+  #
+  # 1.94.1 picks up the orphaned prisma query-engine reaping fix
+  # (BerriAI/litellm#33424, released in v1.94.0), which addresses the gradual
+  # per-worker memory growth seen on 1.93.0.
+  image:
+    tag: "1.100.1@sha256:fc44cf7f72786e636dc4dc1032b4e431818abfec9d54b8e04284fdea7ef03e2a"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
@@ -545,6 +743,8 @@ litellm-helm:
       # When true, LiteLLM forwards client x-* headers and anthropic-beta to upstream LLM providers.
       # Keep false unless you trust callers and need provider-visible custom headers.
       forward_client_headers_to_llm_api: false
+      # Read current budget policy on every request, including after limit removal.
+      user_api_key_cache_ttl: 0
     litellm_settings:
       num_retries: 3
       request_timeout: 600
@@ -552,6 +752,13 @@ litellm-helm:
       allowed_fails: 3
 
 minio:
+  # Deploy the bundled in-cluster MinIO (a conditional dependency) — handy for
+  # POC/feature envs and self-contained installs. Durability follows
+  # persistence.enabled below: false here by default, but Replicated installs
+  # override it to true (replicated/openhands.yaml) and hold durable customer
+  # data in a PVC. When enabled and filestore.type is s3 with no endpoint or
+  # credentials configured, the app targets this instance automatically.
+  enabled: false
   replicas: 1
   mode: standalone
   persistence:
@@ -559,8 +766,18 @@ minio:
   buckets:
     - name: openhands-sessions
       policy: none
-      purge: true
+      # MUST stay false. The minio chart runs its bucket job as a
+      # post-install,post-upgrade hook, and purge: true makes that job
+      # "mc rm -r --force" the bucket before recreating it — so every ordinary
+      # upgrade of a persistent install (Replicated sets persistence.enabled:
+      # true) would wipe every conversation and session file. A render-time
+      # guard in templates/validations.yaml rejects true for bundled installs.
+      purge: false
   svcaccts:
+    # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
+    # (separate subchart), so it carries its own matching default in
+    # runtime-api.runtimeFileArchive.s3.{accessKeyId,secretAccessKey}; change
+    # both together, or point the archive at an existingSecret.
     - accessKey: "default"
       secretKey: "notasecret"
       user: root
@@ -573,8 +790,44 @@ minio:
       memory: 512Mi
       cpu: 100m
 
+# Opt-in alternative to the bundled MinIO. RustFS speaks S3, so point the app at
+# it with the ordinary filestore values — no separate wiring:
+#   filestore: {type: s3, endpoint: "http://<release>-rustfs-svc:9000",
+#               existingSecret: <s3 keys>}
+rustfs:
+  enabled: false
+  # The subchart refuses to render without credentials. These match
+  # minio.svcaccts[0] so both bundled stores answer to the same pair.
+  secret:
+    rustfs:
+      access_key: "default"
+      secret_key: "notasecret"
+  replicaCount: 1
+  # The subchart defaults this on, publishing its console at a placeholder host.
+  # The store is only ever reached in-cluster.
+  ingress:
+    enabled: false
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+  storageclass:
+    name: ""
+    dataStorageSize: 100Gi
+    logStorageSize: 1Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+
 postgresql:
   enabled: true
+  image:
+    repository: bitnamilegacy/postgresql
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -586,11 +839,21 @@ postgresql:
     service:
       ports:
         postgresql: 5432
+    # Bitnami defaults to the "nano" resourcesPreset (192Mi memory limit), which
+    # is too small for a real workload — the primary settles around ~250Mi at
+    # idle and gets OOM-killed into a crash loop. Set resourcesPreset: none so
+    # the explicit resources below take effect.
+    resourcesPreset: none
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
     # Add the following if using Karpenter with persistence
     # podAnnotations:
     #   karpenter.sh/do-not-evict: "true"
-  image:
-    repository: bitnamilegacy/postgresql
 
 externalDatabase:
   enabled: false
@@ -600,6 +863,8 @@ externalDatabase:
 
 redis:
   enabled: true
+  image:
+    repository: bitnamilegacy/redis
   architecture: standalone
   auth:
     enabled: true
@@ -607,17 +872,51 @@ redis:
   master:
     persistence:
       enabled: false
+    # Pinned copy of the bitnami "nano" resourcesPreset.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+        ephemeral-storage: 50Mi
+      limits:
+        cpu: 150m
+        memory: 192Mi
+        ephemeral-storage: 2Gi
   replica:
     replicaCount: 0
+
+# Second bundled cache backend. Redis above wins while both are enabled
+# (templates/_cache.tpl).
+valkey:
+  enabled: false
+  image:
+    repository: valkey/valkey
+  auth:
+    enabled: true
+    # The same Secret the redis subchart reads.
+    usersExistingSecret: "redis"
+    aclUsers:
+      default:
+        permissions: "~* &* +@all"
+        passwordKey: "redis-password"
+  dataStorage:
+    enabled: false
+  replica:
+    enabled: false
+  readinessProbe:
+    # Chart default is false. The exec probe runs an unauthenticated
+    # `valkey-cli ping`, which exits 0 even on NOAUTH, so it gates on port
+    # reachability only and cannot flap under ACL auth.
+    enabled: true
   resources:
     requests:
-      memory: 100Mi
       cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 50Mi
     limits:
-      memory: 512Mi
-      cpu: 100m
-  image:
-    repository: bitnamilegacy/redis
+      cpu: 150m
+      memory: 192Mi
+      ephemeral-storage: 2Gi
 
 maintenanceTasks:
   enabled: true
@@ -634,10 +933,65 @@ maintenanceTasks:
       memory: "1Gi"
       cpu: "500m"
 
+budgetMaintenance:
+  enabled: true
+  schedule: "*/15 * * * *" # Run every 15 minutes
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Budget upgrade checks. Both run as Helm hook Jobs on the enterprise image
+# around every `helm upgrade` (never on install, and never under ArgoCD, which
+# renders with `helm template`). mode is "strict" (a blocking finding fails the
+# upgrade) or "acknowledge" (findings are recorded and the upgrade proceeds).
+# Each Job prints one JSON artifact line to its log and the last run is kept
+# until the next upgrade.
+budgetPreflight:
+  enabled: true
+  # Pre-upgrade, read-only: reports each enabled organization's budget state
+  # (missing baselines/members, cap drift, last sync) before enforcement changes.
+  mode: acknowledge
+  # Counts image pull time; must stay under Helm's per-hook wait (600s on Replicated).
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+budgetReconcileGate:
+  enabled: true
+  # Post-upgrade: reconciles every enabled organization's LiteLLM caps and
+  # verifies them by readback; strict marks the release failed until it succeeds.
+  mode: strict
+  activeDeadlineSeconds: 540
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
 runtime-api:
   enabled: true
   replicaCount: 1
   runtimeInSameCluster: true
+  # Namespace runtime-api creates sandbox pods in (surfaced as K8S_NAMESPACE).
+  # NOT where runtime-api itself runs. Empty defaults to the release namespace;
+  # set a dedicated namespace to isolate untrusted sandbox workloads from the
+  # control plane.
+  sandbox_namespace: ""
   imagePullSecrets: []
   securityContext:
     runAsUser: 1000
@@ -655,11 +1009,21 @@ runtime-api:
   warmRuntimes:
     enabled: true
     count: 1
-    configs:
-      - name: default
-        image: "ghcr.io/openhands/agent-server:1.28.0-python"
-        working_dir: "/workspace"
+    # Map form keyed by config name; see runtime-api subchart values for the
+    # legacy `configs` list and precedence rules.
+    configsByName:
+      # Keep the map key stable for existing Helm overrides.
+      default:
+        name: v1_current
+        # image omitted -> defaults to global.agentServerImage (repo:tag).
+        # Must match the app's sandbox spec working_dir, or no warm pod is ever claimable.
+        working_dir: "/workspace/project"
         environment:
+          # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
+          LMNR_BASE_URL: ""
+          LMNR_FORCE_HTTP: ""
+          LMNR_HTTP_PORT: ""
+          LMNR_PROJECT_API_KEY: ""
           LOG_JSON: "1"
           LOG_JSON_LEVEL_KEY: "severity"
           OH_ALLOW_CORS_ORIGINS_0: ""
@@ -687,9 +1051,6 @@ runtime-api:
     auth:
       username: postgres
       existingSecret: postgres-password
-  externalDatabase:
-    enabled: false
-    existingSecret: postgres-password
   ingress:
     enabled: false
     # REQUIRED: Update to a hostname in a DNS domain you own
@@ -705,18 +1066,46 @@ runtime-api:
     PGSSLMODE: "prefer"
     DB_USER: postgres
     DB_NAME: runtime_api_db
-    K8S_NAMESPACE: "openhands"
     RUNTIME_CLASS: ""
-    # REQUIRED: Update to match the host set in the ingress section above
+    # REQUIRED: the base each sandbox hostname is built from, as
+    # {id}{RUNTIME_URL_SEPARATOR}{RUNTIME_BASE_URL}. Must agree with the app's
+    # env.RUNTIME_URL_PATTERN above.
     # RUNTIME_BASE_URL: "runtime.example.com"
+    # Joins the sandbox id to the base. Left unset so the runtime-api applies its
+    # own default of ".", nesting each sandbox under RUNTIME_BASE_URL and needing
+    # a *.RUNTIME_BASE_URL wildcard. Set it to "-" to make sandboxes siblings of
+    # the base instead ({id}-runtime.example.com), which one wildcard a level up
+    # covers. Changing this on a running install moves every sandbox hostname, so
+    # the certificate and DNS records have to move with it.
+    # RUNTIME_URL_SEPARATOR: "-"
     RUNTIME_DISABLE_SSL: "true"
     MEMORY_REQUEST: "3072Mi"
     MEMORY_LIMIT: "3072Mi"
     CPU_REQUEST: "500m"
+    # Default; KOTS overrides via the sandbox_ephemeral_storage_size ConfigOption.
     EPHEMERAL_STORAGE_SIZE: "10Gi"
+    # Off here so it never reaches SaaS (this umbrella chart is shared, and SaaS
+    # is autoscaled where an unschedulable pod is what triggers a node). The
+    # Replicated installer turns it on in replicated/openhands.yaml, since OHE
+    # clusters are fixed-size.
+    RUNTIME_PENDING_REAP_ENABLED: "false"
+
+# squat/generic-device-plugin DaemonSet that advertises host device nodes
+# (/dev/fuse, /dev/kvm) as extended resources, so sandbox pods can request
+# them without being privileged. The DaemonSet must run in the cluster where
+# runtime SANDBOXES are scheduled: enable it here only when sandboxes share
+# this cluster (e.g. the Replicated installer). When sandboxes run in a
+# separate cluster, leave this disabled and install the subchart on its own
+# into that cluster:
+#   helm install device-plugin charts/openhands/charts/device-plugin
+# See the subchart's values.yaml for the full option set (device list,
+# per-device chmod, priority class, images).
+device-plugin:
+  enabled: false
 
 jira:
   enabled: false
+  linkMethod: oauth
 
 jiraDc:
   enabled: false
@@ -852,6 +1241,24 @@ automation:
           cpu: 500m
     uvicorn:
       workers: 2
+    # Keep at least one events pod serving during voluntary disruptions (node
+    # drains / rotations). Only rendered when deployment.replicas > 1 — at one
+    # replica the budget would make the pod unevictable and stall the drain.
+    # Set enabled=false on a single-node cluster, where an evicted pod has
+    # nowhere else to land.
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    # Spread replicas across nodes so a single node failure/drain cannot take
+    # out the whole deployment. ScheduleAnyway keeps scheduling best-effort when
+    # a perfect spread is not possible (e.g. small clusters).
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: automation-events
   
   securityContext:
     runAsUser: 42420
@@ -917,32 +1324,49 @@ automation:
     project: ""
     region: ""
   
-  # File storage configuration (aligned with openhands chart pattern)
-  # Supports multiple backends: gcs, s3, or in-cluster minio for ephemeral environments
+  # Object storage for uploaded automation packages. Packages must outlive the
+  # pod, so this is always a durable object store: any S3-compatible store
+  # (AWS S3, MinIO, ...) or GCS. See the automation subchart's values.yaml for
+  # the full key reference. To use the bundled MinIO, set type: s3 and
+  # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
-    # When true, uses S3-compatible storage (minio) for ephemeral/feature environments
-    # When false, uses cloud storage specified by 'type' (for production)
-    ephemeral: false
-    # Bucket name for storing automation data
-    bucket: automation-data
-    # Storage type when ephemeral=false (e.g., gcs, s3)
+    # "s3" or "gcs"
     type: gcs
-  
-  # Minio configuration for ephemeral storage
-  # When deployed as subchart of openhands, automation uses parent's minio instance
-  minio:
-    # Don't deploy minio as subchart - use parent's minio instance
-    enabled: false
-    # External minio configuration (points to parent chart's minio)
-    external:
-      endpoint: "http://minio:9000"
-      accessKey: "default"
-      secretKey: "notasecret"
+    # Bucket to store packages in (both backends).
+    bucket: automation-data
+    # s3 only. Leave empty for AWS; set for other S3-compatible stores. TLS is
+    # inferred from the URL scheme.
+    endpoint: ""
+    region: ""
+    # s3 only. Create the bucket at startup if nothing else provisions it.
+    createBucket: false
+    # s3 credentials: existingSecret wins, then inline accessKey/secretKey,
+    # then ambient AWS identity (IRSA, instance profile). gcs always uses
+    # ambient identity (Workload Identity / ADC).
+    existingSecret: ""
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKey: ""
+    secretKey: ""
   
   # Service key from K8s secret
   serviceKeyFromSecret:
     name: automation-service-key
     key: automation-service-key
+  
+  # Git sync wrapping key from K8s secret: encrypts each organization's git
+  # token and repo encryption key at rest. Optional in the pod spec, so the
+  # pods start before the secret exists.
+  gitSyncSecretFromSecret:
+    name: automation-git-sync-secret
+    key: git-sync-secret
+  
+  # Node-local scratch space for git sync checkouts, rendered as
+  # AUTOMATION_WORKSPACE_BASE and as the emptyDir mount on both deployments.
+  # sizeLimit caps it so consumer repositories cannot exhaust node storage.
+  workspace:
+    mountPath: /workspace
+    sizeLimit: 10Gi
   
   # Datadog configuration
   datadog:
@@ -951,31 +1375,51 @@ automation:
   # Env vars passed directly to the container (overrides defaults)
   env: {}
   
-  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  # When true, an init container waits for an in-cluster PostgreSQL at
+  # database.host before starting. Disabled here because the service uses
+  # the parent chart's PostgreSQL (no postgres is deployed by this subchart).
   postgresql:
     enabled: false
 
 replicated:
-  enabled: false
-  # Database credentials below are rendered only into the support-bundle Secret
-  # (gated on replicated.enabled), following the same convention as the rest of
-  # replicated/openhands.yaml — the Replicated installer templates ConfigOption
-  # values into Secrets at install time. The troubleshoot v1beta2 redis/postgres
-  # collectors have no secretRef field, so auth must be inlined into the URI.
+  # Deploys the Replicated SDK subchart (license enforcement) and the
+  # troubleshoot preflight/support-bundle Secrets. The SDK's license is
+  # injected by the Replicated registry at chart-pull time, not set here.
+  enabled: true
+  # Database credentials below are rendered only into the support-bundle Secret;
+  # each collector also requires its password to be set. The troubleshoot
+  # v1beta2 redis/postgres collectors have no secretRef field, so auth must be
+  # inlined into the URI.
   redisPassword: ""
   postgresUsername: ""
   postgresPassword: ""
   postgresDatabase: ""
 
 global:
+  # Canonical agent-server image. Defaults the runtime image (runtime.image) and
+  # any warm-runtime configsByName entry that omits its own `image`. Override
+  # either of those for per-use exceptions; set it here to move them together.
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.49.4-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
-
-vertexAI:
-  enabled: false
-  project: ""
+  # Env the app injects into every per-session runtime (LLM provider creds,
+  # proxy vars, CA paths): serialised into OH_AGENT_SERVER_ENV on the app AND
+  # mirrored into each warm-runtime entry's env by the runtime-api subchart —
+  # runtime-api claims warm pods by exact env match, so a key present here but
+  # absent from the warm env would make the pool unclaimable.
+  agentServerEnv: {}
+  scheduling:
+    # Affinity applied to every pod this chart and its OpenHands subcharts own
+    # (Deployments, Jobs and CronJobs alike). Node-level DaemonSets are exempt
+    # so they keep covering every node — the KVM device plugin and the sysbox
+    # installer in charts/infra must run on sandbox nodes too. Vendored
+    # third-party subcharts cannot read this; set each one's own `affinity`
+    # value alongside it. A chart-level `affinity` value wins over this.
+    affinity: {}
 
 # Trust-manager Bundle that fans a CA bundle (public CAs + an optional
 # operator-supplied CA certificate) out as a ConfigMap into the release
@@ -1020,13 +1464,13 @@ caBundle:
 # wait on. The Replicated layer enables this and supplies the list.
 crdCheck:
   enabled: false
-  timeout: 120s
-  backoffLimit: 6
-  crds: []
   image:
     repository: docker.io/rancher/kubectl
     tag: v1.33.0
     pullPolicy: IfNotPresent
+  timeout: 120s
+  backoffLimit: 6
+  crds: []
   imagePullSecrets: []
   resources:
     requests:
@@ -1034,7 +1478,6 @@ crdCheck:
       memory: 64Mi
     limits:
       memory: 128Mi
-  location: ""
 
 # Integrations Hub - Agent context layer with managed connectors and MCP integrations
 integrations-hub:
@@ -1061,6 +1504,10 @@ integrations-hub:
     runAsGroup: 42420
     runAsNonRoot: true
 
+  # Extra init containers rendered verbatim by the integrations-hub subchart.
+  # Kubernetes native sidecars can be supplied here with restartPolicy: Always.
+  extraInitContainers: []
+
   serviceAccount:
     create: true
     name: integrations-hub-sa
@@ -1070,52 +1517,52 @@ integrations-hub:
     startup:
       failureThreshold: 30
       periodSeconds: 10
+      timeoutSeconds: 2
     liveness:
       initialDelaySeconds: 10
       periodSeconds: 30
       failureThreshold: 3
+      timeoutSeconds: 2
     readiness:
       initialDelaySeconds: 5
       periodSeconds: 10
       failureThreshold: 3
+      timeoutSeconds: 2
 
   # Service configuration
   service:
+    # Externally visible Integrations Hub site URL, including rootPath.
+    # Rendered as INTHUB_PUBLIC_BASE_URL for OAuth callback construction.
     baseUrl: ""
     # Port the FastAPI container listens on (matches the integrations-hub
     # Dockerfile's `EXPOSE 8000` on the development branch).
     port: 8000
 
-  # Path prefix that the hub is mounted under. This single value drives
-  # three things at once and they MUST agree:
+  # Path prefix that the hub is mounted under. This value must match:
   #   - The parent chart's `templates/ingress-integrations-hub.yaml`
-  #     routing rule (host-based ingress + this path).
-  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var, which causes
-  #     `backend/app/main.py::build_app` to mount every route under the
-  #     prefix.
-  #   - The Next.js SPA's `NEXT_PUBLIC_BASE_PATH`, which is baked into
-  #     the image at build time (default `/integrations-hub` in the
-  #     project Dockerfile). Override the image's build arg if you set a
-  #     different rootPath here.
+  #     routing rule.
+  #   - The FastAPI container's `INTHUB_ROOT_PATH` env var.
+  #   - The SPA base path baked into the image at build time.
   rootPath: "/integrations-hub"
-
+  # Public API prefix routed to the same service. The application translates
+  # this prefix to its internal /api routes; probes remain internal/unprefixed.
+  apiRootPath: "/api/integrations-hub"
   # Bypass authentication for local development only -- never enable in
   # staging/production. Exposed as INTHUB_DISABLE_AUTH.
   disableAuth: false
 
-  # OpenHands identity provider used to validate session cookies / API keys.
+  ingress:
+    enabled: false
+  # OpenHands identity provider used to validate session cookies.
   openhands:
     # Backend env var: INTHUB_OPENHANDS_BASE_URL (falls back to the global
-    # ingress host when left empty -- see charts/integrations-hub/templates/_env.yaml).
+    # ingress host when left empty -- see charts/openhands/charts/integrations-hub/templates/_env.yaml).
     baseUrl: ""
     # Backend env var: INTHUB_OPENHANDS_AUTH_COOKIE_NAME
     authCookieName: "keycloak_auth"
     # Stable-origin URL used as the OAuth callback proxy for preview
-    # deployments. Backend env var: AUTH_REDIRECT_PROXY_URL.
+    # deployments. Backend env var: INTHUB_OAUTH_REDIRECT_PROXY_URL.
     redirectProxyUrl: ""
-    # Optional callback target for preview deployments paired with
-    # redirectProxyUrl. Backend env var: AUTH_URL.
-    authUrl: ""
 
   # Credential encryption key configuration.
   # Backend env var: INTHUB_CREDENTIAL_ENCRYPTION_KEY.
@@ -1132,7 +1579,7 @@ integrations-hub:
     internalSecretKey: "internal-auth-secret"
 
   # Admin allowlist for /api/admin/* routes.
-  # Backend env var: APP_ADMIN_EMAILS (comma-separated).
+  # Backend env var: INTHUB_APP_ADMIN_EMAILS (comma-separated; JSON array also accepted).
   admin:
     emails: ""
 
@@ -1149,16 +1596,9 @@ integrations-hub:
     name: "integrations_hub"
     secretName: "integrations-hub-db-secret"
     secretKey: "db-password"
-    existingSecret: false
     createDatabaseUser: false
     superuserSecretName: "postgres-password"
     superuserSecretKey: "password"
-
-  # GCP Cloud SQL (leave empty for non-GCP)
-  gcp:
-    dbInstance: ""
-    project: ""
-    region: ""
 
   # Datadog configuration
   datadog:
@@ -1174,17 +1614,17 @@ integrations-hub:
   # Env vars passed directly to the container
   env: {}
 
-  # PostgreSQL subchart - disabled when using parent's PostgreSQL
+  # When true, an init container waits for an in-cluster PostgreSQL at
+  # database.host before starting. Disabled here because the service uses
+  # the parent chart's PostgreSQL (no postgres is deployed by this subchart).
   postgresql:
     enabled: false
 
 # ───────────────────────────────────────────────────────────────────────
 # Agent Canvas (subchart): frontend-only deployment
 # ───────────────────────────────────────────────────────────────────────
-# When enabled, the agent-canvas subchart deploys the static frontend
-# behind its own ingress (rendered by `templates/ingress-agent-canvas.yaml`
-# below). `ingress.host` here is read by that template; the subchart's
-# `ingress.enabled` is left off because the parent renders the Ingress.
+# When enabled, the agent-canvas subchart deploys the static frontend under
+# `/canvas` on the configured Agent Canvas ingress host.
 agent-canvas:
   enabled: false
 
@@ -1194,9 +1634,17 @@ agent-canvas:
 
   ingress:
     enabled: false
-    # Hostname for the agent-canvas ingress, e.g. canvas.openhands.dev
     host: ""
+    className: traefik
+    annotations: {}
+    path: /canvas
     tls:
-      enabled: true
-      secretName: agent-canvas-tls
+      enabled: false
+      secretName: ""
 
+  staticServer:
+    basePath: /canvas
+    # Disable PostHog product telemetry in the pre-built canvas frontend at
+    # runtime, via AGENT_CANVAS_DISABLE_TELEMETRY=1. Defaults to true for
+    # self-hosted deployments; a SaaS deployment can override to false.
+    disableTelemetry: true

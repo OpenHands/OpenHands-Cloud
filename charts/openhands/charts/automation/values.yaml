@@ -1,0 +1,217 @@
+image:
+  repository: ghcr.io/openhands/automation
+  # You must use a stable, semver tag. Do not use sha-based tags.
+  # If you are hotfixing, you MUST create a patch release and use the semver tag.
+  tag: 1.14.0
+
+imagePullSecrets: []
+
+# Mount a trust-manager / user-supplied CA bundle into the automation pods and
+# point the Python TLS stack (httpx + requests) at it. Required when automation
+# makes outbound HTTPS calls to endpoints served by a cert signed by a CA that
+# isn't in the OS trust store — e.g. the OpenHands app at openhandsApiUrl /
+# automationBaseUrl when an operator uploads a self-signed/custom cert.
+# Otherwise TLS verification fails and callbacks/dispatches silently break.
+# The named ConfigMap is created by the parent openhands chart's trust-manager
+# Bundle; this subchart only mounts it.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
+# Node-local scratch space the service writes to (git sync checkouts, one
+# directory per organization). Rendered as AUTOMATION_WORKSPACE_BASE and as
+# the emptyDir mount on both deployments, so the write path and the mount can
+# never drift apart. Pods keep no state across restarts; a fresh pod re-clones.
+workspace:
+  mountPath: /workspace
+  # Caps the emptyDir: clones of consumer repositories are otherwise unbounded
+  # and would exhaust the node's ephemeral storage, evicting the whole pod.
+  sizeLimit: 10Gi
+
+deployment:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+# Separate deployment for handling webhook events
+# Routes /v1/events/* traffic to dedicated pods for better isolation and scalability
+events:
+  enabled: false
+  deployment:
+    replicas: 2
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+  uvicorn:
+    workers: 2
+  # Keep at least one events pod serving during voluntary disruptions (node
+  # drains / rotations). Without this, a single node drain can evict every
+  # replica at once and take /v1/events/* to zero healthy backends.
+  # Only rendered when deployment.replicas > 1 — at one replica the budget would
+  # make the pod unevictable and stall the drain instead. Set enabled=false on a
+  # single-node cluster, where an evicted pod has nowhere else to land.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # Spread replicas across nodes so a single node failure/drain cannot take out
+  # the whole deployment. ScheduleAnyway keeps scheduling best-effort even when
+  # a perfect spread is not possible (e.g. small clusters).
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: automation-events
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
+securityContext:
+  runAsUser: 42420
+  runAsGroup: 42420
+  runAsNonRoot: true
+
+serviceAccount:
+  create: true
+  name: automation-sa
+  annotations: {}
+
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+
+# URL configuration
+# OpenHands API URL for dispatching sandbox runs (e.g., https://staging.all-hands.dev)
+openhandsApiUrl: ""
+# Automation service base URL for completion callbacks (e.g., https://staging.all-hands.dev/api/automation)
+automationBaseUrl: ""
+
+# PostgreSQL database configuration
+database:
+  # Full hostname of the PostgreSQL server
+  # Examples:
+  #   - Cloud SQL: "my-project:us-central1:my-instance"
+  #   - In-cluster: "openhands-main-postgresql"
+  #   - Feature env: "openhands-feature-branch-postgresql"
+  host: ""
+  port: "5432"
+  sslMode: "prefer"
+  user: "automation_user"
+  name: "automations"
+  # Secret containing the automation database password
+  secretName: "automation-db-secret"
+  secretKey: "db-password"
+  # Create database and user in an existing PostgreSQL instance
+  # When true, runs an init container to create the database and user
+  # Useful when sharing a PostgreSQL instance with other services
+  createDatabaseUser: false
+  # Superuser used to create the automation database and user.
+  # Defaults to "postgres" but must be overridden when the external PostgreSQL
+  # admin account uses a different name (e.g. AWS RDS instances).
+  # Only used when createDatabaseUser=true
+  superuserName: "postgres"
+  # Secret containing the postgres superuser password (for creating the automation user)
+  # Only used when createDatabaseUser=true
+  superuserSecretName: "postgres-password"
+  superuserSecretKey: "password"
+
+# GCP Cloud SQL (leave empty for non-GCP)
+gcp:
+  dbInstance: ""
+  project: ""
+  region: ""
+
+# Object storage for uploaded automation packages. Packages must outlive the
+# pod, so this is always a durable object store: any S3-compatible store
+# (AWS S3, MinIO, ...) or GCS.
+filestore:
+  # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
+  # template renders whichever spelling the service natively reads.
+  type: gcs
+
+  # Bucket to store packages in (both backends).
+  bucket: automation-data
+
+  # s3 only. Leave empty for AWS (boto3 targets the regional endpoint); set
+  # for other S3-compatible stores, e.g. an in-cluster MinIO:
+  # http://<release>-minio:9000. TLS is inferred from the URL scheme — an
+  # http:// endpoint renders AWS_S3_SECURE=false.
+  endpoint: ""
+  region: ""
+
+  # s3 only. Create the bucket at startup if nothing else provisions it.
+  createBucket: false
+
+  # s3 credentials — first match wins:
+  #   1. existingSecret: Secret holding the access key pair (key names below)
+  #   2. accessKey/secretKey: inline, for throwaway/dev environments only
+  #   3. neither: ambient AWS identity (IRSA, instance profile)
+  # gcs always uses ambient identity (Workload Identity / ADC).
+  existingSecret: ""
+  accessKeyIdKey: AWS_ACCESS_KEY_ID
+  secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  accessKey: ""
+  secretKey: ""
+
+# Service key from K8s secret (for staging/production)
+# Used by OpenHands SaaS to authenticate requests to the automation service
+serviceKeyFromSecret:
+  name: automation-service-key
+  key: automation-service-key
+
+# Automation webhook secret from K8s secret
+# Used to verify webhook signatures for automation events
+automationWebhookSecretFromSecret:
+  name: automation-webhook-secret
+  key: webhook-secret
+
+# Git sync wrapping key from K8s secret
+# Encrypts each organization's git token and repo encryption key at rest
+gitSyncSecretFromSecret:
+  name: automation-git-sync-secret
+  key: git-sync-secret
+
+# Datadog configuration
+datadog:
+  env: "dev"
+
+# Env vars passed directly to the container
+env: {}
+
+# When true, an init container waits for an in-cluster PostgreSQL at
+# database.host before starting (ephemeral/feature environments that deploy
+# postgres alongside this chart). This chart does not deploy postgres itself.
+postgresql:
+  enabled: false
+
+global:
+  security:
+    # This allows using the bitnamilegacy image repo
+    allowInsecureImages: true
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

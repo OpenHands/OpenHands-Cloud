@@ -71,6 +71,15 @@ def parse_args() -> argparse.Namespace:
         help="Base domain for the GitHub App (e.g., mycompany.com).",
     )
     parser.add_argument(
+        "--dns-layout",
+        choices=("flat", "nested"),
+        default="flat",
+        help="DNS layout of the installation, matching the installer's Hostname "
+        "Configuration Mode. 'flat' (Simple) serves Keycloak at "
+        "auth.<base-domain>; 'nested' (Legacy) serves it at "
+        "auth.app.<base-domain> (default: flat).",
+    )
+    parser.add_argument(
         "--org",
         default=None,
         help="Org to create the app in (default: your personal account).",
@@ -85,19 +94,30 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def keycloak_hostname(base_domain: str, dns_layout: str = "flat") -> str:
+    """Keycloak's hostname for a given DNS layout.
+
+    The OAuth callback has to land on the host Keycloak actually serves, so this
+    must track the installer's DNS Layout setting.
+    """
+    return f"auth.{base_domain}" if dns_layout == "flat" else f"auth.app.{base_domain}"
+
+
 def build_app_manifest(
     base_domain: str,
     app_name: str | None = None,
     callback_port: int = DEFAULT_CALLBACK_PORT,
+    dns_layout: str = "flat",
 ) -> dict[str, Any]:
     """Build the GitHub App manifest configuration."""
     if app_name is None:
         app_name = generate_unique_app_name()
+    auth_host = keycloak_hostname(base_domain, dns_layout)
     return {
         "name": app_name,
         "url": f"https://app.{base_domain}",
         "redirect_url": f"http://localhost:{callback_port}/callback",
-        "callback_urls": [f"https://auth.app.{base_domain}/realms/allhands/broker/github/endpoint"],
+        "callback_urls": [f"https://{auth_host}/realms/allhands/broker/github/endpoint"],
         "public": False,
         "request_oauth_on_install": False,
         "default_permissions": {
@@ -151,9 +171,12 @@ def open_manifest_in_browser(
     app_name: str | None = None,
     callback_port: int = DEFAULT_CALLBACK_PORT,
     org: str | None = None,
+    dns_layout: str = "flat",
 ) -> str:
     """Write manifest HTML to temp file and open in browser. Returns file path."""
-    manifest = build_app_manifest(base_domain, app_name, callback_port=callback_port)
+    manifest = build_app_manifest(
+        base_domain, app_name, callback_port=callback_port, dns_layout=dns_layout
+    )
     html = generate_manifest_html(manifest, org=org)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
         f.write(html)
@@ -325,9 +348,10 @@ def create_github_app(
     base_domain: str,
     github_client: GithubClient,
     app_name: str | None = None,
+    dns_layout: str = "flat",
 ) -> dict:
     """Create a GitHub App using the provided client."""
-    manifest = build_app_manifest(base_domain, app_name)
+    manifest = build_app_manifest(base_domain, app_name, dns_layout=dns_layout)
     return github_client.create_app_from_manifest(manifest)
 
 
@@ -338,6 +362,7 @@ def main(
     app_name: str | None = None,
     callback_port: int = DEFAULT_CALLBACK_PORT,
     org: str | None = None,
+    dns_layout: str = "flat",
 ) -> None:
     """Main entry point for creating a GitHub App."""
     if app_name is None:
@@ -363,6 +388,7 @@ def main(
             app_name,
             callback_port=callback_port,
             org=org,
+            dns_layout=dns_layout,
         )
 
         # Wait for the code to be received via callback
@@ -440,4 +466,5 @@ if __name__ == "__main__":
         app_name=args.app_name,
         callback_port=args.callback_port,
         org=args.org,
+        dns_layout=args.dns_layout,
     )

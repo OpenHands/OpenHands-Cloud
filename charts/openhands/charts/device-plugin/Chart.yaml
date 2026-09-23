@@ -1,0 +1,7 @@
+apiVersion: v2
+name: device-plugin
+description: squat/generic-device-plugin DaemonSet advertising host devices (/dev/fuse, /dev/kvm) to sandbox pods
+# Inert: embedded subchart of the openhands umbrella, not versioned or
+# published on its own. Ships at whatever openhands version bundles it.
+version: 0.0.0
+appVersion: "1.0.0"

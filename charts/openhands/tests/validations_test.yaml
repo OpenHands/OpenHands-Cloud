@@ -1,0 +1,176 @@
+suite: openhands render-time validation guards
+templates:
+  - validations.yaml
+tests:
+  - it: fails when ingress is enabled without a host
+    set:
+      ingress.enabled: true
+      ingress.host: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false."
+  - it: fails when postgresql is disabled without an external database
+    set:
+      postgresql.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "postgresql.enabled is false but the external database is not configured. Set externalDatabase.host and externalDatabase.username, or set postgresql.enabled=true to use the bundled database."
+  - it: renders no resources when ingress has a host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when postgresql is disabled with an external database
+    set:
+      postgresql.enabled: false
+      externalDatabase.host: db.example.com
+      externalDatabase.username: openhands
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips the ingress guard when the release is disabled
+    set:
+      enabled: false
+      ingress.enabled: true
+      ingress.host: ""
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips the postgres guard when the release is disabled
+    set:
+      enabled: false
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: fails when SSO metadata is set without chart-managed realm provisioning
+    set:
+      enterpriseSSO.enabled: true
+      enterpriseSSO.idpMetadataUrl: https://idp.example.com/saml/metadata
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually."
+  - it: allows manually managed SSO with external Keycloak
+    set:
+      enterpriseSSO.enabled: true
+      enterpriseSSO.idpMetadataUrl: ""
+      keycloak.enabled: false
+      keycloak.provisionRealm: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: fails when org condenser rollout flags are set without a threshold
+    set:
+      orgDefaults.condenser.maxTokens: null
+      orgDefaults.condenser.applyToExisting: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "orgDefaults.condenser.maxTokens must be set before applyToExisting or overwriteExisting can be enabled."
+  - it: fails when org condenser overwrite is enabled without applyToExisting
+    set:
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: false
+      orgDefaults.condenser.overwriteExisting: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "orgDefaults.condenser.overwriteExisting requires orgDefaults.condenser.applyToExisting=true because overwrite mode only runs while reconciling existing organizations."
+  - it: allows org condenser overwrite when existing-org reconciliation is enabled
+    set:
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: true
+      orgDefaults.condenser.overwriteExisting: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when the orgDefaults block is null
+    set:
+      orgDefaults: null
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when the org condenser block is null
+    set:
+      orgDefaults:
+        condenser: null
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # The bundled MinIO bucket job runs on post-upgrade too, so purge: true wipes
+  # conversation and session data on every ordinary upgrade of a persistent
+  # install. These cases pin the guard that rejects it.
+  - it: fails when the bundled MinIO bucket sets purge true
+    set:
+      minio.enabled: true
+      minio.buckets:
+        - name: openhands-sessions
+          policy: none
+          purge: true
+    asserts:
+      - failedTemplate:
+          errorMessage: 'minio.buckets entry "openhands-sessions" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
+  - it: fails on a purging bucket even when the enterprise-server is disabled
+    # runtime-api and automation share the bundled store, so the data is at risk
+    # regardless of whether this release runs the server.
+    set:
+      enabled: false
+      minio.enabled: true
+      minio.buckets:
+        - name: openhands-sessions
+          policy: none
+          purge: true
+    asserts:
+      - failedTemplate:
+          errorMessage: 'minio.buckets entry "openhands-sessions" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
+  - it: fails on any purging bucket, not just the first
+    set:
+      minio.enabled: true
+      minio.buckets:
+        - name: openhands-sessions
+          policy: none
+          purge: false
+        - name: scratch
+          policy: none
+          purge: true
+    asserts:
+      - failedTemplate:
+          errorMessage: 'minio.buckets entry "scratch" sets purge: true, which makes the bundled MinIO bucket job delete every object in the bucket on each post-upgrade run. Set purge: false to protect existing conversation and session data.'
+  - it: allows the bundled MinIO with the shipped purge false default
+    set:
+      minio.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: ignores minio values entirely for external-store releases
+    # minio.enabled: false never renders the minio dependency, so leftover
+    # values must not block an external-S3 or GCS install.
+    set:
+      minio.enabled: false
+      minio.buckets:
+        - name: openhands-sessions
+          policy: none
+          purge: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: fails when budgetPreflight.mode is not strict or acknowledge
+    set:
+      budgetPreflight.mode: sometimes
+    asserts:
+      - failedTemplate:
+          errorMessage: 'budgetPreflight.mode must be "strict" or "acknowledge", got "sometimes".'
+  - it: fails when budgetReconcileGate.mode is not strict or acknowledge
+    set:
+      budgetReconcileGate.mode: never
+    asserts:
+      - failedTemplate:
+          errorMessage: 'budgetReconcileGate.mode must be "strict" or "acknowledge", got "never".'
+  - it: renders no resources with the default budget hook modes
+    asserts:
+      - hasDocuments:
+          count: 0

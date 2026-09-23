@@ -4,6 +4,8 @@ kind: Service
 metadata:
   name: openhands-mcp-service
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
     app: openhands-mcp
 spec:
   ports:

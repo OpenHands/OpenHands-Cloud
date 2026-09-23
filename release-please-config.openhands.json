@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bump-minor-pre-major": true,
+  "include-commit-authors": true,
+  "bootstrap-sha": "9a1529f375680a2b928375ad25d13d00c1a9dbfd",
+  "label": "autorelease: openhands pending",
+  "release-label": "autorelease: openhands tagged",
+  "changelog-sections": [
+    { "type": "feat",     "section": "Features" },
+    { "type": "fix",      "section": "Bug Fixes" },
+    { "type": "perf",     "section": "Performance" },
+    { "type": "docs",     "section": "Documentation" },
+    { "type": "build",    "section": "Maintenance" },
+    { "type": "chore",    "section": "Maintenance" },
+    { "type": "ci",       "section": "Maintenance" },
+    { "type": "refactor", "section": "Maintenance" },
+    { "type": "style",    "section": "Maintenance" },
+    { "type": "test",     "section": "Maintenance" },
+    { "type": "revert",   "section": "Maintenance" }
+  ],
+  "packages": {
+    ".": {
+      "release-type": "helm",
+      "component": "openhands",
+      "tag-separator": "/",
+      "include-v-in-tag": false,
+      "changelog-type": "github-scoped",
+      "skip-changelog": true,
+      "exclude-paths": [
+        "charts/crd-check",
+        "charts/image-loader",
+        "charts/openhands-secrets"
+      ],
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "charts/openhands/Chart.yaml",
+          "jsonpath": "$.version"
+        }
+      ]
+    }
+  }
+}

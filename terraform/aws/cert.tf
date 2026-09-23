@@ -18,9 +18,14 @@ resource "acme_certificate" "cert" {
   count = var.provision_cert ? 1 : 0
 
   account_key_pem = acme_registration.reg[0].account_key_pem
-  common_name     = var.base_domain
 
-  subject_alternative_names = [
+  # The wildcard layout collapses to a single name: every service hostname, the
+  # admin console and every {id}-runtime sandbox sits one label under
+  # base_domain, so the wildcard is the common name and there is nothing left to
+  # list as a SAN. Legacy names the apex and enumerates the rest.
+  common_name = var.hostname_mode == "wildcard" ? "*.${var.base_domain}" : var.base_domain
+
+  subject_alternative_names = var.hostname_mode == "wildcard" ? [] : [
     "app.${var.base_domain}",
     "analytics.app.${var.base_domain}",
     "auth.app.${var.base_domain}",

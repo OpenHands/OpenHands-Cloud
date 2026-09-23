@@ -5,8 +5,11 @@ on:
     paths:
       - '.github/workflows/pr-checks.yml'
       - 'charts/**'
+      - 'replicated/config.yaml'
+      - 'replicated/openhands.yaml'
       - 'scripts/test_keycloak_realm_template.py'
       - 'scripts/test_openhands_secrets_template.py'
+      - 'scripts/test_replicated_resolver_label.py'
 
 jobs:
   test-keycloak-realm-template:
@@ -19,7 +22,17 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
-          version: 'latest'
+          # 'latest' falls back to helm v3.9.0 when the release lookup is
+          # rate-limited, which is too old to render the replicated SDK chart.
+          version: 'v3.18.4'
+      - name: Build chart dependencies
+        run: |
+          helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm
+          helm repo add minio https://charts.min.io/
+          helm repo add rustfs https://charts.rustfs.com/
+          helm repo add valkey https://valkey.io/valkey-helm/
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build charts/openhands
       - name: Install test dependencies
         run: python3 -m pip install pytest
       - name: Test chart template invariants
@@ -27,9 +40,4 @@ jobs:
           python3 -m pytest
           scripts/test_keycloak_realm_template.py
           scripts/test_openhands_secrets_template.py
-
-  validate-chart-versions:
-    uses: ./.github/workflows/validate-chart-versions.yml
-    with:
-      base_ref: origin/${{ github.base_ref }}
-      enforce_version_bump: true
+          scripts/test_replicated_resolver_label.py

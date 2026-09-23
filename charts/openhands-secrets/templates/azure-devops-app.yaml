@@ -1,4 +1,4 @@
-{{- if or .Values.config.azure_devops_client_id .Values.config.azure_devops_client_secret }}
+{{- if or .Values.config.azure_devops_client_id .Values.config.azure_devops_client_secret .Values.config.azure_devops_webhook_secret }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -11,5 +11,8 @@ data:
   {{- end }}
   {{- if .Values.config.azure_devops_client_secret }}
   client-secret: {{ .Values.config.azure_devops_client_secret | b64enc | quote }}
+  {{- end }}
+  {{- if .Values.config.azure_devops_webhook_secret }}
+  webhook-secret: {{ .Values.config.azure_devops_webhook_secret | b64enc | quote }}
   {{- end }}
 {{- end }}

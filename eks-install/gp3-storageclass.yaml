@@ -1,0 +1,23 @@
+# gp3 storage class backed by the AWS EBS CSI driver, with expansion enabled.
+#
+# Why not the default "gp2": EKS ships a gp2 StorageClass that uses the
+# deprecated in-tree provisioner (kubernetes.io/aws-ebs) and does NOT set
+# allowVolumeExpansion, so `kubectl patch pvc` to grow a volume is rejected.
+# The EBS CSI driver (installed as an addon) provides real online expansion and
+# enforced capacity, which is the whole point of testing on real cloud.
+#
+# Making this the default class means the chart's PVCs (postgres, minio,
+# keycloak) land on it without touching every subchart. runtime-api sandbox
+# PVCs are named explicitly via runtime-api.env.STORAGE_CLASS in values.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3

@@ -1,0 +1,48 @@
+{{- if and .Values.enabled .Values.appConversationStartTaskClean.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-app-conversation-start-task-clean
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app-conversation-start-task-clean
+    app: {{ .Release.Name }}-app-conversation-start-task-clean
+spec:
+  schedule: {{ .Values.appConversationStartTaskClean.schedule | quote }}
+  concurrencyPolicy: {{ .Values.appConversationStartTaskClean.concurrencyPolicy }}
+  failedJobsHistoryLimit: {{ .Values.appConversationStartTaskClean.failedJobsHistoryLimit }}
+  successfulJobsHistoryLimit: {{ .Values.appConversationStartTaskClean.successfulJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.appConversationStartTaskClean.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "openhands.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: app-conversation-start-task-clean
+            app: {{ .Release.Name }}-app-conversation-start-task-clean
+        spec:
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: OnFailure
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with (include "openhands.affinity" .) }}
+          affinity:
+            {{- . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: {{ .Release.Name }}-app-conversation-start-task-clean
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+              command: ["python", "-m", "sync.clean_app_conversation_start_tasks"]
+              resources:
+                {{- toYaml .Values.appConversationStartTaskClean.resources | nindent 16 }}
+              env:
+                {{- include "openhands.env" . | nindent 16 }}
+{{- end }}

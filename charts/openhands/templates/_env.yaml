@@ -1,6 +1,12 @@
 {{- define "openhands.env.defaults" }}
+{{- $integrations := .Values.integrations | default dict }}
+{{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
   value: remote
+- name: OH_SANDBOX_SPEC_KIND
+  value: openhands.app_server.sandbox.dynamic_remote_sandbox_spec_service.DynamicRemoteSandboxSpecServiceInjector
+- name: OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME
+  value: v1_current
 - name: OPENHANDS_CONFIG_CLS
   value: {{ .Values.appConfig.OPENHANDS_CONFIG_CLS }}
 - name: OPENHANDS_GITHUB_SERVICE_CLS
@@ -25,6 +31,32 @@
   value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
 - name: OPENHANDS_EXPERIMENT_MANAGER_CLS
   value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
+{{- if ne .Values.dailyConversationLimit nil }}
+- name: OH_DAILY_CONVERSATION_LIMIT
+  value: {{ .Values.dailyConversationLimit | quote }}
+{{- end }}
+{{- /*
+    Only the app-server startup lifespan reads these, so the copies that land in
+    the maintenance CronJobs sharing this block are inert -- those run standalone
+    `python -m` entrypoints that never start the app.
+   */}}
+{{- if ne $orgCondenser.maxTokens nil }}
+{{- /*
+    int64 before quoting: JSON Schema's integer type accepts YAML floats with a
+    zero fraction, and Go renders 1e6 as "1e+06", which the backend's isdecimal
+    parse rejects by raising out of the startup lifespan.
+   */}}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+  value: {{ $orgCondenser.maxTokens | int64 | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+  value: {{ $orgCondenser.applyToExisting | default false | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+  value: {{ $orgCondenser.overwriteExisting | default false | quote }}
+{{- end }}
+- name: DUPLICATE_EMAIL_CHECK
+  value: {{ .Values.duplicateEmailCheck | quote }}
+- name: OH_RESOLVER_LABEL
+  value: {{ get $integrations "resolverLabel" | default "openhands" | quote }}
 - name: LOG_JSON # Configure structured logging for Google Cloud
   value: '1'
 - name: LOG_JSON_LEVEL_KEY
@@ -40,26 +72,101 @@
   value: 'true'
 - name: SANDBOX_CLOSE_DELAY
   value: "1800"
-{{- if .Values.filestore.ephemeral }}
+{{- if eq .Values.filestore.type "s3" }}
+{{- /* Empty endpoint targets the bundled MinIO when it is deployed, otherwise
+       real AWS (boto3 uses the regional endpoint). */}}
+{{- $endpoint := .Values.filestore.endpoint }}
+{{- if and (not $endpoint) .Values.minio.enabled }}
+{{- $endpoint = printf "http://%s-minio:9000" $.Release.Name }}
+{{- end }}
 - name: FILE_STORE
   value: s3
+- name: AWS_S3_BUCKET
+  value: {{ .Values.filestore.bucket | quote }}
+{{- with .Values.filestore.region }}
+- name: AWS_REGION
+  value: {{ . | quote }}
+{{- end }}
+{{- if $endpoint }}
+- name: AWS_S3_ENDPOINT
+  value: {{ $endpoint | quote }}
+{{- end }}
+# TLS is inferred from the endpoint scheme; no endpoint (real AWS) means TLS.
+- name: AWS_S3_SECURE
+  value: {{ or (not $endpoint) (hasPrefix "https://" $endpoint) | quote }}
+{{- if .Values.filestore.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else if .Values.filestore.accessKey }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ .Values.filestore.accessKey | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ .Values.filestore.secretKey | quote }}
+{{- else if .Values.minio.enabled }}
+# Bundled MinIO service-account creds — the default when the chart deploys its
+# own MinIO and no explicit credentials are configured.
 - name: AWS_ACCESS_KEY_ID
   value: {{ (index .Values.minio.svcaccts 0).accessKey }}
 - name: AWS_SECRET_ACCESS_KEY
   value: {{ (index .Values.minio.svcaccts 0).secretKey }}
-- name: AWS_S3_ENDPOINT
-  value: {{ printf "http://%s-minio:9000" $.Release.Name }}
-- name: AWS_S3_BUCKET
-  value: {{ .Values.filestore.bucket }}
-- name: AWS_S3_SECURE
-  value: 'false'
-{{- else }}
+{{- end }}
+{{- /* No credential env at all: ambient AWS identity (IRSA / Pod Identity /
+       instance profile). */}}
+{{- else if or (eq .Values.filestore.type "gcs") (eq .Values.filestore.type "google_cloud") }}
+# GCS via ambient identity (Workload Identity / ADC); the bucket comes from
+# FILE_STORE_PATH above. "gcs" is the charts' canonical spelling; the app's
+# native FILE_STORE value is "google_cloud", so both normalize to it here.
 - name: FILE_STORE
-  value: {{ .Values.filestore.type }}
+  value: google_cloud
+{{- else }}
+{{- fail (printf "filestore.type must be \"s3\", \"gcs\", or \"google_cloud\", got %q" .Values.filestore.type) }}
 {{- end }}
 {{- if .Values.filestore.provider }}
 - name: SHARED_EVENT_STORAGE_PROVIDER
   value: {{ .Values.filestore.provider }}
+{{- end }}
+{{- if .Values.runtimeFileArchive.enabled }}
+{{- $archiveStore := .Values.runtimeFileArchive.storeType | default (ternary "s3" "google_cloud" (eq .Values.filestore.type "s3")) }}
+{{- /* "gcs" normalizes to the archive code's native "google_cloud". */}}
+{{- if eq $archiveStore "gcs" }}{{- $archiveStore = "google_cloud" }}{{- end }}
+# Archive a sandbox's workspace before an explicit delete. Empty storeType
+# follows filestore.type. The s3 store reuses the AWS_S3_*/AWS_*_KEY connection
+# env populated from values.filestore above (bundled MinIO, external S3, or the
+# pod's ambient AWS identity). google_cloud uses the pod ServiceAccount's
+# Workload Identity. See values.runtimeFileArchive.
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
+  value: {{ $archiveStore | quote }}
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PATH
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_REQUIRED
+  value: {{ .Values.runtimeFileArchive.required | default false | quote }}
+{{- if .Values.runtimeFileArchive.initial.enabled }}
+# Also snapshot the INITIAL workspace (repo as cloned, before setup.sh) — the
+# eval "base" state. Reuses STORE_TYPE/BUCKET/PREFIX above; awaited inline at
+# conversation start (bounded by INITIAL_DEADLINE, best-effort).
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_FORMAT
+  value: {{ .Values.runtimeFileArchive.initial.format | default "tar.gz" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_INITIAL_DEADLINE
+  value: {{ .Values.runtimeFileArchive.initial.deadline | default 120 | quote }}
+{{- end }}
 {{- end }}
 {{- if .Values.runtime.runAsRoot }}
 - name: SANDBOX_USER_ID
@@ -75,9 +182,9 @@
 - name: NO_SETUP
   value: 'true'
 - name: AGENT_SERVER_IMAGE_REPOSITORY
-  value: "{{ .Values.runtime.image.repository }}"
+  value: "{{ .Values.runtime.image.repository | default .Values.global.agentServerImage.repository }}"
 - name: AGENT_SERVER_IMAGE_TAG
-  value: "{{ .Values.runtime.image.tag }}"
+  value: "{{ .Values.runtime.image.tag | default .Values.global.agentServerImage.tag }}"
 - name: SANDBOX_REMOTE_RUNTIME_API_URL
   value: {{ .Values.sandbox.apiHostname }}
 - name: SANDBOX_API_KEY
@@ -100,16 +207,16 @@
 - name: GITHUB_USERS_SHEET_ID
   value: {{ .Values.allowedUsersSheet }}
 {{- end }}
-{{- if .Values.redis.enabled }}
+{{- if include "openhands.cache.backend" . }}
 - name: REDIS_HOST
-  value: {{ .Release.Name }}-redis-master
+  value: {{ include "openhands.cache.host" . }}
 - name: REDIS_PORT
   value: "6379"
 - name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.redis.auth.existingSecret }}
-      key: redis-password
+      name: {{ include "openhands.cache.secretName" . }}
+      key: {{ include "openhands.cache.passwordKey" . }}
 {{- end }}
 - name: KEYCLOAK_SERVER_URL
   value: {{ .Values.keycloak.url }}
@@ -236,10 +343,20 @@
       name: {{ .Values.azureDevOps.auth.existingSecret }}
       key: client-secret
       optional: false
+- name: AZURE_DEVOPS_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: webhook-secret
+      optional: true
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
-  value: http://{{ .Release.Name }}-litellm:4000
+  # FQDN (not the bare Service name) so it resolves from any namespace. This URL
+  # is persisted into each user's LLM profile at first use, so it must be
+  # resolvable from sandboxes that run in a separate namespace. No-op for
+  # same-namespace installs.
+  value: http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}.svc.cluster.local:4000
 {{- else }}
 - name: LITE_LLM_API_URL
   value: {{ .Values.litellm.url }}
@@ -280,6 +397,32 @@
       name: {{ .Values.resend.auth.existingSecret }}
       key: resend-api-key
 {{- end }}
+{{- if .Values.smtp.enabled }}
+- name: SMTP_HOST
+  value: {{ .Values.smtp.host | quote }}
+- name: SMTP_PORT
+  value: {{ .Values.smtp.port | quote }}
+- name: SMTP_FROM_EMAIL
+  value: {{ .Values.smtp.fromEmail | quote }}
+- name: SMTP_USE_SSL
+  value: {{ .Values.smtp.useSsl | default false | quote }}
+- name: SMTP_USE_TLS
+  value: {{ .Values.smtp.useTls | default true | quote }}
+{{- /* Optional: the smtp-credentials secret only renders the keys that were
+       provided, and servers that accept unauthenticated relay need neither. */}}
+- name: SMTP_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.smtp.auth.existingSecret }}
+      key: smtp-username
+      optional: true
+- name: SMTP_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.smtp.auth.existingSecret }}
+      key: smtp-password
+      optional: true
+{{- end }}
 {{- if .Values.tavily.enabled }}
 - name: TAVILY_API_KEY
   valueFrom:
@@ -287,29 +430,56 @@
       name: {{ .Values.tavily.auth.existingSecret }}
       key: tavily-api-key
 {{- end }}
+{{- /* Keycloak's public hostname. An explicitly configured keycloak ingress
+       hostname wins: that is the host the keycloak Ingress serves, and the
+       realm's frontendUrl and redirect URIs are templated from this value, so
+       the two have to agree or login fails on a redirect_uri mismatch. The
+       auth.<app host> fallback only holds for the nested DNS layout. */}}
+{{- $kcIngress := (.Values.keycloak | default dict).ingress | default dict }}
+{{- $authWebHost := "" }}
+{{- if and $kcIngress.enabled $kcIngress.hostname }}
+{{- $authWebHost = $kcIngress.hostname }}
+{{- end }}
+{{- if not $authWebHost }}
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.prefixWithBranch }}
+{{- $authWebHost = printf "%s.auth.%s" .Values.branchSanitized .Values.ingress.host }}
+{{- else }}
+{{- $authWebHost = printf "auth.%s" .Values.ingress.host }}
+{{- end }}
+{{- else }}
+{{- $authWebHost = "keycloak" }}
+{{- end }}
+{{- end }}
 {{- if .Values.ingress.enabled }}
 {{- if .Values.ingress.prefixWithBranch }}
 - name: WEB_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
-- name: AUTH_WEB_HOST
-  value: {{ .Values.branchSanitized }}.auth.{{ .Values.ingress.host }}
 - name: MCP_HOST
   value: {{ .Values.branchSanitized }}.{{ .Values.ingress.host }}
 {{- else }}
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
-- name: AUTH_WEB_HOST
-  value: auth.{{ .Values.ingress.host }}
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
 {{- end }}
 {{- else }}
 - name: WEB_HOST
   value: {{ .Values.ingress.host }}
-- name: AUTH_WEB_HOST
-  value: keycloak
 - name: MCP_HOST
   value: {{ .Values.ingress.host }}
+{{- end }}
+- name: AUTH_WEB_HOST
+  value: {{ $authWebHost }}
+{{- if .Values.ingress.enabled }}
+{{- /* The frontend builds its Keycloak redirect from AUTH_URL when it is set,
+       and otherwise prepends "auth." to whatever host the browser is on --
+       which yields auth.app.<base> on the flat layout, a hostname nothing
+       serves. Only emitted when an ingress exists, because without one
+       AUTH_WEB_HOST is the in-cluster service name and no browser can reach
+       it. See generate-auth-url.ts in the enterprise repo. */}}
+- name: AUTH_URL
+  value: https://{{ $authWebHost }}
 {{- end }}
 
 {{- if .Values.slack.enabled }}
@@ -345,6 +515,11 @@
 
 {{- if .Values.userProvisioning.enabled }}
 - name: USER_PROVISIONING_ENABLED
+  value: "true"
+{{- end }}
+
+{{- if .Values.openOrgCreation.enabled }}
+- name: OPEN_ORG_CREATION_ENABLED
   value: "true"
 {{- end }}
 
@@ -418,10 +593,9 @@
 {{- end }}
 - name: LMNR_FORCE_HTTP
   value: {{ if and .Values.laminar.enabled .Values.laminar.forceHttp }}{{ .Values.laminar.forceHttp | quote }}{{ else }}""{{ end }}
-{{- if and .Values.laminar.enabled .Values.laminar.httpPort }}
+# Always emit (="" when off) so the LMNR_* request env matches the warm-runtime pool.
 - name: LMNR_HTTP_PORT
-  value: {{ .Values.laminar.httpPort | quote }}
-{{- end }}
+  value: {{ if and .Values.laminar.enabled .Values.laminar.httpPort }}{{ .Values.laminar.httpPort | quote }}{{ else }}""{{ end }}
 {{- if and .Values.laminar.enabled .Values.laminar.frontend.ingress.hostname }}
 - name: LAMINAR_WEB_HOST
   value: {{ .Values.laminar.frontend.ingress.hostname }}
@@ -437,6 +611,9 @@
 {{- if .Values.jira.enabled }}
 - name: ENABLE_JIRA
   value: "true"
+{{- if eq .Values.jira.linkMethod "oauth" }}
+- name: JIRA_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -447,6 +624,14 @@
     secretKeyRef:
       name: jira-app
       key: client-secret
+{{- else }}
+{{- /* Email match: no Atlassian OAuth app; admins configure the workspace in
+the app UI and webhook users are matched by email. */}}
+- name: JIRA_ENABLE_OAUTH
+  value: "0"
+- name: JIRA_WEBHOOKS_ENABLED
+  value: "1"
+{{- end }}
 {{- end }}
 
 {{- if .Values.jiraDc.enabled }}
@@ -503,6 +688,11 @@
     secretKeyRef:
       name: linear-app
       key: client-secret
+{{- end }}
+
+{{- if .Values.enterpriseSSO.enabled }}
+- name: ENABLE_ENTERPRISE_SSO
+  value: "true"
 {{- end }}
 
 {{- if .Values.automationServiceKey.enabled }}
@@ -604,25 +794,48 @@
 */}}
 {{- define "openhands.env" }}
 {{- $defaults := include "openhands.env.defaults" . | fromYamlArray }}
+{{- /*
+    Effective env-var overrides. Start from .Values.env, then fold the
+    structured agent-server env map into OH_AGENT_SERVER_ENV: the map is
+    merged on top of any JSON string already present at
+    .Values.env.OH_AGENT_SERVER_ENV and re-serialised to JSON. This lets callers
+    (e.g. replicated/openhands.yaml) assemble OH_AGENT_SERVER_ENV from a
+    recursively-merged map of individual keys instead of repeating a hand-written
+    JSON blob in every optionalValues block. The map lives at
+    .Values.global.agentServerEnv so the runtime-api subchart can mirror the
+    same keys into the warm-runtime env (exact-env matching); the legacy
+    .Values.agentServerEnv is still merged on top for compatibility. When both
+    are empty, .Values.env passes through unchanged.
+   */}}
+{{- $envOverrides := .Values.env | default dict }}
+{{- $agentServerEnv := dict }}
+{{- if .Values.global }}
+{{- $agentServerEnv = deepCopy ((get .Values.global "agentServerEnv") | default dict) }}
+{{- end }}
+{{- $agentServerEnv = mergeOverwrite $agentServerEnv (deepCopy (.Values.agentServerEnv | default dict)) }}
+{{- if $agentServerEnv }}
+{{- $envOverrides = deepCopy $envOverrides }}
+{{- $base := dict }}
+{{- with (get $envOverrides "OH_AGENT_SERVER_ENV") }}
+{{- $base = mustFromJson (. | toString) }}
+{{- end }}
+{{- $_ := set $envOverrides "OH_AGENT_SERVER_ENV" (mustToJson (mergeOverwrite $base $agentServerEnv)) }}
+{{- end }}
 {{- /* Build a lookup dict of override keys for O(1) membership checks */}}
 {{- $overrideKeys := dict }}
-{{- if .Values.env }}
-{{- range $key, $_ := .Values.env }}
+{{- range $key, $_ := $envOverrides }}
 {{- $_ := set $overrideKeys $key true }}
 {{- end }}
-{{- end }}
-{{- /* Keep only default entries that are NOT overridden by .Values.env */}}
+{{- /* Keep only default entries that are NOT overridden by the effective overrides */}}
 {{- $filtered := list }}
 {{- range $entry := $defaults }}
 {{- if not (hasKey $overrideKeys (get $entry "name")) }}
 {{- $filtered = append $filtered $entry }}
 {{- end }}
 {{- end }}
-{{- /* Append user overrides from .Values.env (these take precedence) */}}
-{{- if .Values.env }}
-{{- range $key, $value := .Values.env }}
+{{- /* Append overrides (these take precedence) */}}
+{{- range $key, $value := $envOverrides }}
 {{- $filtered = append $filtered (dict "name" $key "value" ($value | toString)) }}
-{{- end }}
 {{- end }}
 {{- $filtered | toYaml }}
 {{- end }}

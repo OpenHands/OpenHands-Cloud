@@ -1,0 +1,12 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+    extraPortMappings:
+      # Traefik NodePorts -> host 80/443 so the browser and OAuth callbacks
+      # can reach the cluster at the base domain (which resolves to 127.0.0.1).
+      - containerPort: 30080
+        hostPort: 80
+      - containerPort: 30443
+        hostPort: 443

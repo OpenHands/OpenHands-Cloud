@@ -18,9 +18,40 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### Organization condenser defaults
+
+Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Any positive integer is accepted. Condensation triggers on the smaller of this value and the agent LLM's effective input limit, so a value above that limit has no effect; it does not change the model context window, and event-count condensation may still occur first.
+
+These values only take effect from the app version that reads the `OPENHANDS_ORG_DEFAULTS_CONDENSER_*` environment variables, which is tracked in [OpenHands/enterprise#337](https://github.com/OpenHands/enterprise/pull/337). The current chart `appVersion` does not include that reader, so on it these values render into the pod and do nothing.
+
+```yaml
+orgDefaults:
+  condenser:
+    maxTokens: 200000
+    applyToExisting: true
+    overwriteExisting: true
+```
+
+New applicable OpenHands org settings receive the configured value. Existing org rows are only updated when `applyToExisting: true`; existing non-null values are only replaced when `overwriteExisting: true`. Missing and JSON-null `condenser.max_tokens` values are treated as unset.
+
+Reconciliation is triggered from the app server's startup lifespan, so it runs once per `saas_server` worker process every time one starts, and it stays armed for as long as these values remain in the release. The maintenance CronJobs that share this env block never trigger it, because they run standalone `python -m` entrypoints that do not start the app. A concurrent database lock serializes overlapping runs, so repeated runs converge on the same result rather than conflicting.
+
+The practical consequence is that this is not a rollout-scoped, one-time operation. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction re-applies it and overwrites org-admin UI changes made since the last start. Remove `applyToExisting`/`overwriteExisting` once the rollout completes. Then remove `orgDefaults.condenser.maxTokens` as well if you want to stop future defaulting and reconciliation.
+
+`overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
+
 ### Email (Resend)
 
 To enable organization invitation emails via Resend, set `resend.enabled: true` and create a Kubernetes secret named `resend-api-key` with key `resend-api-key` containing your Resend API key. The secret name can be overridden with `resend.auth.existingSecret`.
+
+### Laminar ClickHouse diagnostics
+
+When Laminar analytics is enabled, the chart applies bounded retention to
+high-volume ClickHouse diagnostic tables such as `system.trace_log`. Replicated
+installs expose this as **Analytics Configuration → ClickHouse Diagnostic Log
+Retention**, defaulting to 3 days. See
+[ClickHouse diagnostic log retention](../../docs/clickhouse-diagnostic-log-retention.md)
+for cleanup commands and support-bundle details.
 
 ### TLS and Certificate Configuration
 
@@ -273,6 +304,39 @@ Bitbucket Data Center is the self-hosted version of Bitbucket. The setup is diff
      host: <your-bitbucket-data-center-host>
    ```
 
+#### Enterprise SSO (SAML)
+
+Enterprise SSO signs users in with a corporate SAML identity provider through the bundled Keycloak.
+
+1. Register Keycloak with your identity provider using these SAML values:
+
+   - ACS URL `https://auth.openhands.example.com/realms/allhands/broker/enterprise_sso/endpoint`
+   - Entity ID `https://auth.openhands.example.com/realms/allhands`
+
+2. Update site-values.yaml file:
+
+   ```yaml
+   enterpriseSSO:
+     enabled: true
+     displayName: "Company SSO"          # optional, defaults to "Company SSO"
+     idpMetadataUrl: "https://idp.example.com/saml/metadata"
+   # When idpMetadataUrl is provided, the chart automatically creates and keeps updated the
+   # enterprise_sso SAML identity provider in the bundled Keycloak on every pod start.
+   # The managed provider validates SAML signatures, trusts the assertion email for account
+   # linking, and stores an ownership marker in Keycloak. Turning enabled off disables only
+   # a provider with that marker, even if idpMetadataUrl is cleared in the same rollout.
+   # Leave idpMetadataUrl empty to configure the provider manually in the Keycloak admin
+   # console instead; the chart does not disable providers without its ownership marker.
+   ```
+
+   For manual setup, also add this identity-provider mapper to `enterprise_sso`:
+
+   - Name: `identity-provider`
+   - Mapper type: `hardcoded-attribute-idp-mapper`
+   - Attribute: `identity_provider`
+   - Value: `enterprise_sso:saml`
+   - Sync mode: `FORCE`
+
 ### LiteLLM configuration
 
 > [!IMPORTANT]
@@ -454,29 +518,32 @@ To use an external PostgreSQL database instead of deploying one with the chart:
 
 ### Bring Your Own S3-Compatible Storage
 
-To use an external S3-compatible storage instead of MinIO:
+To use an external S3 (or S3-compatible) store instead of the bundled MinIO,
+disable the bundled MinIO and configure the connection:
 
-1. Disable the ephemeral filestore:
+```yaml
+minio:
+  enabled: false            # stops deploying the in-cluster MinIO
+filestore:
+  type: s3
+  bucket: your-bucket-name
+  region: your-s3-region
+  # endpoint: https://your-s3-endpoint   # only for S3-compatible stores (MinIO/R2/…); omit for AWS S3
+  #                                      # TLS is inferred from the URL scheme
+  existingSecret: s3-credentials         # omit to use IRSA / Pod Identity instead
+```
 
-   ```yaml
-   filestore:
-     ephemeral: false
-   ```
+Create the credentials secret (keys match the AWS SDK env var names):
 
-2. Configure the S3 connection:
+```bash
+kubectl create secret generic s3-credentials -n openhands \
+  --from-literal=AWS_ACCESS_KEY_ID=<your-access-key-id> \
+  --from-literal=AWS_SECRET_ACCESS_KEY=<your-secret-access-key>
+```
 
-   ```yaml
-   filestore:
-     ephemeral: false
-     bucket: your-bucket-name
-     endpoint: https://your-s3-endpoint
-     region: your-s3-region
-     existingSecret: s3-credentials
-   # Make sure the secret exists with the correct credentials
-   # kubectl create secret generic s3-credentials \
-   #   --from-literal=access-key=<your-access-key> \
-   #   --from-literal=secret-key=<your-secret-key>
-   ```
+For AWS S3 on EKS you can skip the secret entirely and use a pod-level AWS
+identity: omit `existingSecret` and grant the app ServiceAccount an IAM role
+(via IRSA or EKS Pod Identity) with access to the bucket. Keep `region` set.
 
 ### Bring Your Own Redis
 
@@ -500,6 +567,45 @@ To use an external Redis instance:
    # kubectl create secret generic redis \
    #   --from-literal=redis-password=<your-redis-password>
    ```
+
+### Switching the Bundled Cache to Valkey
+
+The bundled cache is Redis by default. Bitnami's license change froze the free
+Redis chart and images, so they receive no further CVE patches, and the
+replacement is the official Valkey chart. It ships with this chart but is off
+until you turn it on.
+
+Cut over by disabling Redis and enabling Valkey in the same upgrade:
+
+```yaml
+redis:
+  enabled: false
+valkey:
+  enabled: true
+```
+
+Redis remains the active cache while both are enabled, so enabling Valkey on its
+own deploys it without moving anything.
+
+The cache is discarded at cutover. Conversations continue, and sign-in sessions
+are unaffected because they do not live in the cache. Rate limiting briefly
+allows requests it would otherwise have counted.
+
+**Nothing else changes.** The app still reads `REDIS_HOST`, `REDIS_PORT` and
+`REDIS_PASSWORD`, and the password still comes from the existing `redis` Secret's
+`redis-password` key, so no secret has to be created before upgrading or kept in
+order to revert. To revert, restore the two values above.
+
+If you pin cache resources or persistence, translate the keys you set — a
+leftover `redis:` block is not read once Redis is disabled, and its sizing will
+not be applied:
+
+| Redis key | Valkey key |
+|---|---|
+| `redis.master.resources` | `valkey.resources` |
+| `redis.master.persistence.enabled` | `valkey.dataStorage.enabled` |
+| `redis.replica.replicaCount: 0` | `valkey.replica.enabled: false` |
+| `redis.auth.existingSecret` | `valkey.auth.usersExistingSecret` |
 
 ### Storage Class Configuration
 
@@ -594,3 +700,14 @@ helm uninstall openhands -n openhands
 ```
 
 Note: This will not delete any PVCs or secrets created. You'll need to delete those manually if desired.
+
+### Budget policy changes
+
+The bundled LiteLLM proxy uses unmodified 1.100.1 pinned by digest and
+`litellm-helm.proxy_config.general_settings.user_api_key_cache_ttl: 0`.
+Both are required for a budget change (including disabling a user's limit)
+to affect the next request using an existing key. Older proxies can keep enforcing
+a removed limit from cached authorization data, even after a successful save.
+This increases authorization database reads; production throughput has not been
+load-tested. It does not enable or disable LLM response caching. If you use an
+external LiteLLM proxy, configure and validate the same behavior there.

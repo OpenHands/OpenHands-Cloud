@@ -13,6 +13,9 @@ spec:
   additionalNamespaces:
     - openhands
     - cert-manager
+    # The Sysbox installer DaemonSet runs in kube-system (privileged, host
+    # namespaces), so KOTS must provision the image pull secret there too.
+    - kube-system
 
   statusInformers:
     # openhands
@@ -28,6 +31,9 @@ spec:
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/deployment/automation{{repl end}}'
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/service/automation{{repl end}}'
     - '{{repl if ConfigOptionEquals "automations_enabled" "1" }}openhands/ingress/openhands-automation-ingress{{repl end}}'
+    - '{{repl if ConfigOptionEquals "agent_canvas_enabled" "1" }}openhands/deployment/agent-canvas{{repl end}}'
+    - '{{repl if ConfigOptionEquals "agent_canvas_enabled" "1" }}openhands/service/agent-canvas{{repl end}}'
+    - '{{repl if ConfigOptionEquals "agent_canvas_enabled" "1" }}openhands/ingress/openhands-agent-canvas-ingress{{repl end}}'
 
     # keycloak
     - openhands/statefulset/keycloak
@@ -37,10 +43,6 @@ spec:
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-app-server{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-app-server-consumer{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-frontend{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-query-engine{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-quickwit-control-plane{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-quickwit-janitor{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-quickwit-metastore{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/deployment/laminar-redis{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-app-server-consumer-service{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-app-server-service{{repl end}}'
@@ -49,16 +51,10 @@ spec:
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-frontend-service{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-postgres-headless{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-postgres-service{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-query-engine-service{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-quickwit-control-plane{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-quickwit-headless{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-quickwit-indexer{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-quickwit-janitor{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-quickwit-metastore{{repl end}}'
-    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-quickwit-searcher{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-rabbitmq-headless{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-rabbitmq-service{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/service/laminar-redis-service{{repl end}}'
+    - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/ingress/laminar-api-ingress{{repl end}}'
     - '{{repl if ConfigOptionEquals "analytics_enabled" "1" }}openhands/ingress/laminar-frontend-ingress{{repl end}}'
 
     # postgres

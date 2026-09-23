@@ -1,0 +1,51 @@
+suite: support bundle exec RBAC
+templates:
+  - troubleshoot/support-bundle-exec-rbac.yaml
+tests:
+  - it: grants pods/exec create to the SDK service account when enabled
+    set:
+      enabled: true
+      replicated.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        isKind:
+          of: Role
+      - documentIndex: 0
+        equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: ["pods/exec"]
+              verbs: ["create"]
+      - documentIndex: 1
+        isKind:
+          of: RoleBinding
+      - documentIndex: 1
+        equal:
+          path: roleRef.name
+          value: RELEASE-NAME-support-bundle-exec
+      - documentIndex: 1
+        equal:
+          path: subjects[0].name
+          value: replicated
+
+  - it: honours an overridden SDK service account name
+    set:
+      enabled: true
+      replicated.enabled: true
+      replicated.serviceAccountName: custom-sdk-sa
+    asserts:
+      - documentIndex: 1
+        equal:
+          path: subjects[0].name
+          value: custom-sdk-sa
+
+  - it: renders nothing when the Replicated SDK is disabled
+    set:
+      enabled: true
+      replicated.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

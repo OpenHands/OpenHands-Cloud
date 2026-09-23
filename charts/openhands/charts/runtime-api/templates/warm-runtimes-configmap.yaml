@@ -1,0 +1,71 @@
+{{- if .Values.warmRuntimes.enabled }}
+{{- /*
+  Normalize warm-runtime configs into a list of entries. The legacy list form
+  (.configs) wins when non-empty, for backwards compatibility; otherwise the map
+  form (.configsByName) is used, promoting each key to the entry's "name".
+  Prefer the map: maps merge cleanly across values layers, so a consumer can
+  override one field of one entry without re-declaring the whole list.
+*/ -}}
+{{- $configs := .Values.warmRuntimes.configs }}
+{{- if not $configs }}
+{{- $configs = list }}
+{{- range $name, $config := .Values.warmRuntimes.configsByName }}
+{{- $entry := deepCopy $config }}
+{{- if not (hasKey $entry "name") }}
+{{- $_ := set $entry "name" $name }}
+{{- end }}
+{{- $configs = append $configs $entry }}
+{{- end }}
+{{- end }}
+{{- /* Default image for any entry that omits one: the global agent-server image. */ -}}
+{{- $agentServerImage := printf "%s:%s" .Values.global.agentServerImage.repository .Values.global.agentServerImage.tag }}
+{{- /*
+  The app injects global.agentServerEnv (LLM provider creds, proxy vars, CA
+  paths) into every per-session runtime request, and runtime-api claims warm
+  pods only on an exact env match — so those keys must be in the warm env too,
+  or the pool is never claimable and every conversation cold-starts.
+*/ -}}
+{{- $globalAgentEnv := dict }}
+{{- if .Values.global }}
+{{- $globalAgentEnv = (get .Values.global "agentServerEnv") | default dict }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.warmRuntimes.configMapName }}
+  labels:
+    {{- include "runtime-api.labels" . | nindent 4 }}
+data:
+  warm-runtimes.json: |
+    {
+      "count": {{ .Values.warmRuntimes.count }},
+      "configs": [
+        {{- range $index, $config := $configs }}
+        {{- if $index }},{{ end }}
+        {
+          "name": {{ $config.name | quote }},
+          "image": {{ $config.image | default $agentServerImage | quote }},
+          "working_dir": {{ $config.working_dir | quote }},
+          {{- with $config.count }}
+          "count": {{ $config.count }},
+          {{- end }}
+          {{- /* Omitted when false/unset: the loader defaults fuse_s3_mount to false. */}}
+          {{- with $config.fuse_s3_mount }}
+          "fuse_s3_mount": {{ . }},
+          {{- end }}
+          "command": {{ $config.command | toJson }},
+          "environment": {{ mergeOverwrite (deepCopy ($config.environment | default dict)) (deepCopy $globalAgentEnv) | toJson }}
+          {{- with $config.run_as_user }},
+          "run_as_user": {{ $config.run_as_user }}
+          {{- end }}
+          {{- with $config.run_as_group }},
+          "run_as_group": {{ $config.run_as_group }}
+          {{- end }}
+          {{- with $config.fs_group }},
+          "fs_group": {{ $config.fs_group }}
+          {{- end }}
+        }
+        {{- end }}
+      ]
+    }
+{{- end }}

@@ -1,0 +1,60 @@
+{{- if .Values.warmRuntimes.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "runtime-api.fullname" . }}-warm-runtimes
+  labels:
+    {{- include "runtime-api.labels" . | nindent 4 }}
+spec:
+  schedule: "* * * * *"  # Run every minute
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.jobSettings.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.jobSettings.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.jobSettings.activeDeadlineSeconds }}
+      {{- /* No selectorLabels on the job pods: they would match the
+      runtime-api Service selector. Jobs track their pods by controller-uid,
+      so no pod labels are needed (the other cronjobs set none either). */}}
+      template:
+        spec:
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: OnFailure
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12}}
+          {{- end }}
+          {{- with (include "runtime-api.affinity" .) }}
+          affinity:
+            {{- . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: warm-runtimes
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["python", "/app/warm_runtimes.py"]
+              env:
+                {{- include "runtime-api.env" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.jobSettings.resources | nindent 16 }}
+              volumeMounts:
+                - name: warm-runtimes-config
+                  mountPath: /config
+                {{- if .Values.ingressBase.enabled }}
+                - name: ingress-base-config
+                  mountPath: /ingress-base
+                {{- end }}
+          volumes:
+            - name: warm-runtimes-config
+              configMap:
+                name: {{ .Values.warmRuntimes.configMapName }}
+            {{- if .Values.ingressBase.enabled }}
+            - name: ingress-base-config
+              configMap:
+                name: {{ include "runtime-api.fullname" . }}-ingress-base
+            {{- end }}
+{{- end }}

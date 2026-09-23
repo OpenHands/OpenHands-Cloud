@@ -1,0 +1,68 @@
+name: Test scripts
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      # Several suites here assert contracts that span the chart and the
+      # Replicated manifests, so they have to run when either side moves and
+      # not only when the test itself is edited.
+      - 'charts/**'
+      - 'replicated/**'
+      - '.github/workflows/deploy-replicated.yml'
+      - '.github/workflows/e2e-replicated.yml'
+      - '.github/workflows/release-gate.yml'
+      - '.github/workflows/publish-release-charts.yml'
+      - '.github/workflows/test-scripts.yml'
+      # The LiteLLM checksum guard's wiring assertions live in
+      # test_litellm_credentials_checksum.py and validate this workflow file,
+      # so an edit that only touches the guard workflow must run the tests.
+      - '.github/workflows/check-secret-checksum.yml'
+
+jobs:
+  test-scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          # 'latest' falls back to helm v3.9.0 when the release lookup is
+          # rate-limited, which is too old to render the replicated SDK chart.
+          version: 'v3.18.4'
+
+      - name: Build OpenHands chart dependencies
+        run: |
+          helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm
+          helm repo add minio https://charts.min.io/
+          helm repo add rustfs https://charts.rustfs.com/
+          helm repo add valkey https://valkey.io/valkey-helm/
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build charts/openhands
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run scripts tests
+        env:
+          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.3.3
+        run: >-
+          uv run
+          --with pytest
+          --with requests
+          --with PyGithub
+          --with fastapi
+          --with uvicorn
+          --with httpx
+          --with ruamel.yaml
+          --with PyYAML
+          python -m pytest scripts -q

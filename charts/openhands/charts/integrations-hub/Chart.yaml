@@ -1,0 +1,8 @@
+apiVersion: v2
+name: integrations-hub
+description: OpenHands Integrations Hub - Agent context layer with managed connectors and MCP integrations
+type: application
+# Inert: embedded subchart of the openhands umbrella, not versioned or
+# published on its own. Ships at whatever openhands version bundles it.
+version: 0.0.0
+appVersion: "0.1.0"

@@ -1,0 +1,77 @@
+# Environment-specific values, rendered by install.sh via envsubst.
+# Mirrors the minimal usable install documented at
+# docs.openhands.dev/enterprise/k8s-install/installation.
+ingress:
+  enabled: true
+  host: app.${BASE_DOMAIN}
+  class: traefik
+
+tls:
+  enabled: false # TLS terminates at traefik's default certificate (create-cluster.sh)
+
+github:
+  enabled: true
+
+keycloak:
+  ingress:
+    enabled: true
+    hostname: auth.${BASE_DOMAIN}
+    tls: false
+
+sandbox:
+  # In-cluster service URL: on a local cluster the external runtime-api
+  # hostname resolves to 127.0.0.1, which pods cannot use to reach each other.
+  apiHostname: http://openhands-runtime-api:5000
+
+env:
+  # Must agree with the runtime-api's RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR
+  # pair below, which is what actually names each sandbox ingress.
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtime.${BASE_DOMAIN}"
+  LITELLM_DEFAULT_MODEL: litellm_proxy/${LLM_MODEL}
+
+runtime-api:
+  ingress:
+    enabled: true
+    host: runtime-api.${BASE_DOMAIN}
+    tls: false
+  env:
+    RUNTIME_BASE_URL: runtime.${BASE_DOMAIN}
+    # Dash separator keeps each sandbox one label under ${BASE_DOMAIN}
+    # ({id}-runtime.${BASE_DOMAIN}), so a single *.${BASE_DOMAIN} wildcard
+    # covers them.
+    RUNTIME_URL_SEPARATOR: "-"
+    RUNTIME_DISABLE_SSL: "false"
+    STORAGE_CLASS: standard
+
+# Chart defaults filestore.type to gcs (needs GCP creds this cluster lacks) and
+# ships minio disabled; s3 + bundled MinIO give the file/event store a local target.
+filestore:
+  type: s3
+minio:
+  enabled: true
+  persistence:
+    enabled: true
+
+litellm-helm:
+  proxy_config:
+    model_list:
+      - model_name: ${LLM_MODEL}
+        litellm_params:
+          model: anthropic/${LLM_MODEL}
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+# lockToCloud points the UI at this instance's backend so users skip the "Manage
+# Backends" prompt; tls off because traefik serves the default cert (create-cluster.sh).
+agent-canvas:
+  enabled: true
+  ingress:
+    enabled: true
+    host: app.${BASE_DOMAIN}
+    className: traefik
+    path: /canvas
+    tls:
+      enabled: false
+  staticServer:
+    basePath: /canvas
+    authRequired: false
+    lockToCloud: https://app.${BASE_DOMAIN}

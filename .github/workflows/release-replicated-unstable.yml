@@ -1,0 +1,120 @@
+name: Release Replicated to Unstable
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'replicated/**'
+      - 'charts/**'
+      - 'Makefile'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      kots_cursor: ${{ steps.cursor.outputs.kots_cursor }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.18.4'
+
+      - name: Install yq
+        uses: mikefarah/yq@v4
+
+      - name: Install Replicated CLI
+        run: |
+          curl -s https://api.github.com/repos/replicatedhq/replicated/releases/latest \
+            | grep "browser_download_url.*linux_amd64.tar.gz" \
+            | cut -d : -f 2,3 \
+            | tr -d \" \
+            | wget -qi -
+          mkdir -p /tmp/replicated-cli
+          tar -xzf replicated_*_linux_amd64.tar.gz -C /tmp/replicated-cli replicated
+          sudo mv /tmp/replicated-cli/replicated /usr/local/bin/
+
+      - name: Build and release to Replicated
+        id: release
+        shell: bash
+        env:
+          REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
+          REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+        run: |
+          # shell: bash runs with -o pipefail, so a failing `make` fails the step
+          # even though its output is piped to tee. main maps to the Unstable
+          # channel in the Makefile.
+          make release ALLOW_MAIN_RELEASE=1 2>&1 | tee release.log
+          # `replicated release create` prints `SEQUENCE: <n>` for the release it
+          # created — the global release sequence the vendor portal URL uses.
+          SEQUENCE=$(grep -oE 'SEQUENCE:[[:space:]]*[0-9]+' release.log | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$SEQUENCE" ]; then
+            echo "::warning::Could not parse a release SEQUENCE from the Replicated CLI output — skipping the vendor-portal link."
+            exit 0
+          fi
+          echo "sequence=${SEQUENCE}" >> "$GITHUB_OUTPUT"
+
+          # Generate replicated URL for sequence release
+          APP_SLUG=openhands
+          URL="https://vendor.replicated.com/apps/${APP_SLUG}/releases/${SEQUENCE}/overview"
+          echo "::notice title=Replicated Unstable release ${SEQUENCE}::${URL}"
+          {
+            echo "### Replicated Unstable release published"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Channel | Unstable |"
+            echo "| Sequence | ${SEQUENCE} |"
+            echo "| Vendor portal | [Release ${SEQUENCE} overview](${URL}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve the KOTS cursor for this release
+        id: cursor
+        env:
+          REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
+          REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+          SEQUENCE: ${{ steps.release.outputs.sequence }}
+        run: |
+          # KOTS selects by channelSequence (404); the CLI's `sequence` is the
+          # app-level release sequence (1451). Join them to pin the deploy to
+          # this build -- a channel can gain releases while one is deploying.
+          # Channel comes from the Makefile, which derives it from the branch:
+          # a dispatch on a feature branch publishes to that branch's channel,
+          # not Unstable.
+          [ -n "$SEQUENCE" ] || { echo "::error::no release sequence to pin the deploy to"; exit 1; }
+          # Newest first, paginated; the release just created is on page 0.
+          CHANNEL=$(make -s print-channel)
+          CURSOR=$(replicated channel releases "$CHANNEL" --app "$REPLICATED_APP" --output json --page 0 --page-size 20 \
+            | jq -r --argjson rs "$SEQUENCE" \
+                'map(select(.sequence == $rs)) | max_by(.channelSequence) | .channelSequence // empty')
+          [ -n "$CURSOR" ] || { echo "::error::no channelSequence on $CHANNEL for release $SEQUENCE"; exit 1; }
+          echo "kots_cursor=${CURSOR}" >> "$GITHUB_OUTPUT"
+          echo "release ${SEQUENCE} is channelSequence ${CURSOR} on $CHANNEL"
+
+  deploy:
+    needs: release
+    if: needs.release.outputs.kots_cursor != ''
+    uses: ./.github/workflows/deploy-replicated.yml
+    with:
+      instance: unstable
+      kots_cursor: ${{ needs.release.outputs.kots_cursor }}
+    secrets:
+      kots_password: ${{ secrets.KOTS_PASSWORD_UNSTABLE }}
+
+  e2e:
+    name: E2E Replicated
+    needs: deploy
+    uses: ./.github/workflows/e2e-replicated.yml
+    with:
+      instance: unstable
+    # A called workflow gets no secrets unless the call site passes them, and
+    # they reach only the workflow called directly. Nesting this under the
+    # deploy workflow left the environment's Argo token empty at dispatch.
+    secrets: inherit

@@ -20,6 +20,7 @@ Create a GitHub App configured for the Replicated self-hosted install of OpenHan
 | Option | Description |
 |--------|-------------|
 | `--base-domain` | **(Required)** Base domain for your OHE installation (e.g., `mycompany.com`) |
+| `--dns-layout` | `flat` (default) puts Keycloak at `auth.<base-domain>`; `nested` puts it at `auth.app.<base-domain>`. Must match the installer's Hostname Configuration Mode (Simple vs Legacy) |
 | `--app-name` | Custom name for the GitHub App (default: `openhands-<random>`) |
 | `--org` | GitHub organization to create the app in (default: your personal account) |
 | `--callback-port` | Local port for the app-creation callback server (default: `9876`) |
@@ -78,6 +79,7 @@ The app is configured with:
 
 - **Homepage URL**: `https://app.<base-domain>`
 - **Redirect URL** (for app creation): `http://localhost:9876/callback` (local callback server)
-- **Callback URL** (for OAuth): `https://auth.app.<base-domain>/realms/allhands/broker/github/endpoint`
+- **Callback URL** (for OAuth): `https://auth.<base-domain>/realms/allhands/broker/github/endpoint`, or
+  `https://auth.app.<base-domain>/...` with `--dns-layout nested`
 - **Webhook URL**: `https://app.<base-domain>/integration/github/events`
 - **OAuth on install**: Disabled (Keycloak handles user OAuth at login time)

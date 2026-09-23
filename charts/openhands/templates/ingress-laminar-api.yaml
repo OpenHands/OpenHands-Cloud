@@ -1,0 +1,39 @@
+{{- $apiIngress := .Values.laminar.apiIngress | default dict -}}
+{{- $tls := $apiIngress.tls | default dict -}}
+{{- $env := .Values.env | default dict -}}
+{{- $laminarBaseUrl := get $env "LMNR_BASE_URL" | default "" -}}
+{{- $laminarBaseHost := (urlParse $laminarBaseUrl).host | default "" -}}
+{{- $laminarServiceName := (splitList ":" $laminarBaseHost | first) | default "laminar-app-server-service" -}}
+{{- if and .Values.laminar.enabled $apiIngress.enabled $apiIngress.hostname }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: laminar-api-ingress
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+  {{ with $apiIngress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $apiIngress.className }}
+  ingressClassName: {{ $apiIngress.className }}
+  {{- end }}
+  {{- if $tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $apiIngress.hostname }}
+      secretName: {{ $tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $apiIngress.hostname }}
+      http:
+        paths:
+          - path: {{ $apiIngress.path | default "/v1" }}
+            pathType: {{ $apiIngress.pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $laminarServiceName }}
+                port:
+                  number: {{ .Values.laminar.httpPort | default 8000 }}
+{{- end }}

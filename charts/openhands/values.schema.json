@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "OpenHands chart values",
+  "description": "Validates the type and shape of the values operators set. Only the listed keys are checked; all other keys pass through.",
+  "type": "object",
+  "required": ["image"],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "dailyConversationLimit": { "type": ["integer", "null"] },
+    "duplicateEmailCheck": { "type": "boolean" },
+    "orgDefaults": {
+      "type": ["object", "null"],
+      "properties": {
+        "condenser": {
+          "type": ["object", "null"],
+          "properties": {
+            "maxTokens": { "type": ["integer", "null"], "minimum": 1 },
+            "applyToExisting": { "type": "boolean" },
+            "overwriteExisting": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "targetMemoryUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "securityContext": {
+      "type": "object",
+      "properties": {
+        "runAsUser": { "type": "integer", "minimum": 0 },
+        "runAsGroup": { "type": "integer", "minimum": 0 },
+        "fsGroup": { "type": "integer", "minimum": 0 },
+        "runAsNonRoot": { "type": "boolean" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "class": { "type": "string" }
+      }
+    },
+    "enterpriseSSO": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "displayName": { "type": "string" },
+        "idpMetadataUrl": {
+          "type": "string",
+          "pattern": "^$|^https://[^\\s]+$"
+        }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "properties": {
+        "apiHostname": { "type": "string" }
+      }
+    },
+    "litellm": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "teamId": { "type": "string" }
+      }
+    },
+    "databaseMigrations": {
+      "type": "object",
+      "properties": {
+        "waitForDatabase": { "type": "boolean" },
+        "createDatabases": { "type": "boolean" },
+        "migrate": { "type": "boolean" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      }
+    },
+    "uvicorn": {
+      "type": "object",
+      "properties": {
+        "workers": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "filestore": {
+      "type": "object",
+      "properties": {
+        "bucket": { "type": "string" },
+        "type": { "type": "string", "enum": ["s3", "gcs", "google_cloud"] },
+        "provider": { "type": "string" },
+        "region": { "type": "string" },
+        "endpoint": { "type": "string" },
+        "existingSecret": { "type": "string" },
+        "accessKeyIdKey": { "type": "string" },
+        "secretAccessKeyKey": { "type": "string" },
+        "accessKey": { "type": "string" },
+        "secretKey": { "type": "string" }
+      }
+    },
+    "minio": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "laminar": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clickhouse": {
+          "type": "object",
+          "properties": {
+            "diagnostics": {
+              "type": "object",
+              "properties": {
+                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

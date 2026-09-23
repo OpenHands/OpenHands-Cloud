@@ -1,0 +1,131 @@
+{{- define "runtime-api.env" }}
+{{- $dbSslMode := (get .Values.env "DB_SSL_MODE") | default (.Values.database.sslMode | default "prefer") }}
+{{- range $key, $value := .Values.env }}
+- name: {{ $key }}
+  value: {{ $value | quote }}
+{{- end }}
+{{- if not (hasKey .Values.env "DB_SSL_MODE") }}
+- name: DB_SSL_MODE
+  value: {{ $dbSslMode | quote }}
+{{- end }}
+{{- if not (hasKey .Values.env "PGSSLMODE") }}
+- name: PGSSLMODE
+  value: {{ $dbSslMode | quote }}
+{{- end }}
+{{- if not (hasKey .Values.env "K8S_NAMESPACE") }}
+# Namespace runtime-api creates sandboxes in (not where runtime-api itself
+# runs). Defaults to the release namespace (sandbox_namespace empty); set
+# sandbox_namespace to create sandboxes in a dedicated one.
+- name: K8S_NAMESPACE
+  value: {{ .Values.sandbox_namespace | default .Release.Namespace | quote }}
+{{- end }}
+- name: RUNTIME_IDLE_SECONDS
+  value: {{ .Values.cleanup.idle_seconds | default 1200 | quote }}
+- name: RUNTIME_DEAD_SECONDS
+  value: {{ printf "%.0f" .Values.cleanup.dead_seconds | quote }}
+{{- if .Values.runtimeFileArchive.enabled }}
+# Archive the workspace before the cleanup CronJob pauses/stops a runtime. See
+# values.runtimeFileArchive. s3 targets the in-cluster minio (or external S3);
+# google_cloud uses the cleanup ServiceAccount's Workload Identity. "gcs"
+# normalizes to the archive code's native "google_cloud".
+{{- $archiveStore := .Values.runtimeFileArchive.storeType | default "google_cloud" }}
+{{- if eq $archiveStore "gcs" }}{{- $archiveStore = "google_cloud" }}{{- end }}
+- name: RUNTIME_FILE_ARCHIVE_ENABLED
+  value: "true"
+- name: RUNTIME_FILE_ARCHIVE_STORE_TYPE
+  value: {{ $archiveStore | quote }}
+- name: RUNTIME_FILE_ARCHIVE_BUCKET
+  value: {{ .Values.runtimeFileArchive.bucket | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PREFIX
+  value: {{ .Values.runtimeFileArchive.prefix | default "workspace-archives" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_PATH
+  value: {{ .Values.runtimeFileArchive.path | default "/workspace/project" | quote }}
+- name: RUNTIME_FILE_ARCHIVE_FORMAT
+  value: {{ .Values.runtimeFileArchive.format | default "both" | quote }}
+{{- if eq $archiveStore "s3" }}
+{{- with .Values.runtimeFileArchive.s3.endpoint }}
+- name: AWS_S3_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- /* AWS_S3_SECURE is never emitted: the cleanup client infers TLS from the
+       endpoint scheme, and an endpoint-less real-AWS store defaults to TLS. */}}
+{{- with .Values.runtimeFileArchive.s3.region }}
+- name: AWS_REGION
+  value: {{ . | quote }}
+{{- end }}
+{{- if .Values.runtimeFileArchive.s3.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.runtimeFileArchive.s3.existingSecret }}
+      key: {{ .Values.runtimeFileArchive.s3.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.runtimeFileArchive.s3.existingSecret }}
+      key: {{ .Values.runtimeFileArchive.s3.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else if .Values.runtimeFileArchive.s3.accessKeyId }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ .Values.runtimeFileArchive.s3.accessKeyId | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ .Values.runtimeFileArchive.s3.secretAccessKey | quote }}
+{{- end }}
+{{- /* No credential env at all: ambient AWS identity. */}}
+{{- end }}
+{{- end }}
+{{- if .Values.runtimeInSameCluster }}
+- name: RUNTIME_IN_SAME_CLUSTER
+  value: "true"
+{{- end }}
+{{- if .Values.ingressBase.enabled }}
+- name: INGRESS_BASE
+  value: "/ingress-base/base-ingress.yaml"
+{{- end }}
+{{- if .Values.certificate.enabled }}
+- name: RUNTIME_CERT_SECRET
+  value: {{ .Values.certificate.secretName }}
+{{- end }}
+{{- if .Values.datadog.enabled }}
+# Datadog environment variables
+- name: DD_AGENT_HOST
+  value: "datadog-agent.all-hands-system.svc.cluster.local"
+- name: DD_TRACE_AGENT_PORT
+  value: "8126"
+- name: DD_DOGSTATSD_PORT
+  value: "8125"
+- name: DD_SERVICE
+  value: "runtime-api"
+- name: DD_ENV
+  value: {{ .Values.datadog.env | default "dev" | quote }}
+- name: DD_LOGS_INJECTION
+  value: "true"
+- name: DD_TRACE_ENABLED
+  value: "true"
+- name: DD_TRACE_SAMPLING_RULES
+  value: '[{"resource": "GET /health", "sample_rate": 0.0}, {"resource": "GET /internal/metrics", "sample_rate": 0.0}]'
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+- name: DB_HOST
+  value: "{{ .Release.Name }}-postgresql"
+- name: DB_PORT
+  value: "{{ .Values.postgresql.primary.service.ports.postgresql | default 5432 }}"
+- name: DB_USER
+  value: "{{ .Values.postgresql.auth.username }}"
+- name: DB_NAME
+  value: "{{ .Values.postgresql.auth.database }}"
+{{- else if .Values.database.create }} # should only be true for AWS deploys
+- name: DB_HOST
+  value: "{{.Values.database.host}}"
+- name: DB_PORT
+  value: "{{.Values.database.port}}"
+- name: DB_USER
+  value: "{{.Values.database.new_user}}"
+- name: DB_NAME
+  value: "{{.Values.database.name}}"
+{{- end }}
+- name: DB_PASS
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.postgresql.auth.existingSecret }}
+      key: password
+{{- end }}

@@ -1,0 +1,374 @@
+image:
+  repository: ghcr.io/openhands/runtime-api
+  # You must use a stable, semver tag. Do not use sha-based tags.
+  # If you are hotfixing, you MUST create a patch release and use the semver tag.
+  tag: 0.10.0
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+# Extra pod-template annotations, e.g. a checksum of secret-backed config so a
+# credential change forces a rollout (env from secretKeyRef is not live-reloaded).
+podAnnotations: {}
+
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: false
+  migrate: true
+
+imagePullSecrets:
+  - name: ghcr-login-secret
+
+serviceAccount:
+  create: true
+  name: runtime-api-sa
+  annotations: {}
+  createRBAC: true
+
+runtimeInSameCluster: false
+defaultAPIKeySecretName: default-api-key
+
+# Namespace runtime-api creates sandbox pods (and their Service, Ingress, PVC)
+# in, surfaced to the pod as K8S_NAMESPACE. This is NOT where runtime-api
+# itself runs. Empty defaults to the release namespace. Point it at a dedicated
+# namespace to isolate untrusted sandbox workloads from the control plane.
+# Ignored if env.K8S_NAMESPACE is set.
+sandbox_namespace: ""
+
+# Mount a trust-manager / user-supplied CA bundle into the runtime-api pod and
+# point the Python TLS stack (httpx + requests) at it. Required when the
+# runtime ingress serves a cert signed by a CA that isn't in the OS trust
+# store — `runtimes.check_alive_with_ingress` uses requests.get and silently
+# returns False on TLS failures, leaving runtimes stuck in `starting`.
+caBundle:
+  enabled: false
+  name: openhands-ca-bundle
+  key: ca-bundle.crt
+  mountPath: /etc/openhands/ca-bundle
+
+service:
+  type: ClusterIP
+  port: 5000
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+  DEV_MODE: "false"
+  ARTIFACT_REGISTRY_REPOSITORY: "runtime-api-docker-repo"
+  ARTIFACT_REGISTRY_LOCATION: "us-central1"
+  GCP_REGION: "us-central1"
+  STORAGE_CLASS: "standard-rwo"
+  INCLUDE_START_PROBE: "true"
+  INCLUDE_LIVENESS_PROBE: "true"
+  RUNTIME_CLASS: "sysbox-runc"
+
+resources:
+  limits:
+    cpu: 1
+    memory: 4Gi
+  requests:
+    cpu: 100m
+    memory: 100Mi
+
+deployment:
+  minReadySeconds: 10
+  strategy:
+    maxUnavailable: 0
+    maxSurge: 1
+
+probes:
+  liveness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    path: /health
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    enabled: true
+    path: /health
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 12
+
+# Unified job settings for both jobs and cronjobs
+jobSettings:
+  # Resource configuration
+  resources:
+    limits:
+      cpu: 1
+      memory: 3Gi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+  # Timeout settings (30 minutes)
+  activeDeadlineSeconds: 1800
+  # History limits
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
+securityContext: {}
+
+# The KVM device plugin that used to live here (smarter-device-manager,
+# .kvm.*) moved to the sibling device-plugin subchart, which advertises
+# /dev/kvm via squat/generic-device-plugin as <domain>/kvm (squat.ai/kvm
+# with the subchart defaults). Point the runtime-api's KVM_DEVICE_RESOURCE
+# env var at that resource name when enabling SANDBOX_KVM_ENABLED.
+
+postgresql:
+  enabled: false
+  primary:
+    service:
+      ports:
+        postgresql: 5432
+  auth:
+    username: postgres
+    existingSecret: postgres-password
+    database: runtime_api_db
+
+# External database configuration (used when postgresql.enabled=false)
+database:
+  create: false # Will only be true for AWS as it can't create the DB in terraform
+  secretName: runtime-api-db-credentials # Secret containing external database credentials
+  port: "5432"
+  sslMode: "prefer"
+  poolSize:
+    api: 5 # Pool size for API deployment (default)
+    cronjobs: 2 # Pool size for cronjobs (default)
+  maxOverflow:
+    api: 10 # Max overflow for API deployment (default)
+    cronjobs: 5 # Max overflow for cronjobs (default)
+
+certificate:
+  enabled: false
+
+ingress:
+  enabled: false
+  host: chart-example.local
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  path: /
+  pathType: Prefix
+  tls: true
+
+# Base ingress configuration for runtime ingress inheritance
+# Only metadata (labels and annotations) will be inherited, not the spec
+ingressBase:
+  enabled: false
+  apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    name: base-ingress
+    labels:
+      app: runtime-api
+      environment: production
+      team: platform
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+
+# Shared Gateway API Gateway for path-based sandbox routing.
+# When enabled, renders a gateway.networking.k8s.io/v1 Gateway that the
+# runtime-api attaches HTTPRoutes to (one per sandbox). The name must match
+# the GATEWAY_NAME env var passed to the runtime-api container.
+sandboxGateway:
+  enabled: false
+  name: sandbox-gateway
+  gatewayClassName: traefik
+  hostname: ""
+  # Internal port the Gateway listener binds to. Must match the gateway
+  # controller's entrypoint port — NOT the external port clients dial.
+  # Traefik's websecure entrypoint listens on 8443 by default (NodePort/
+  # Service 443 maps to container 8443), so 8443 is the right default here.
+  listenerPort: 8443
+  tlsSecretName: openhands-tls
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+
+cleanup:
+  enabled: true
+  schedule: "*/5 * * * *" # legacy: used by run_cleanup() if cleanup.jobs is absent
+  idle_seconds: 1200 # Default to 20 minutes
+  dead_seconds: 5184000 # Default to 60 days (stopgap until workspace archiving ships; runtime-api#624)
+  # Split per-phase CronJobs. Each phase runs in its own pod so a problem in
+  # one can't starve the others, and each gets its own schedule, deadline and
+  # concurrency policy. The phases map 1:1 to the run_* entrypoints in
+  # cleanup.py and are invoked as `python cleanup.py <phase>`.
+  #
+  # reaper       — pause/stop/remove idle runtimes. Highest urgency, tight cadence.
+  # k8s-garbage  — reap pods stuck terminating, then their stuck PVCs (serial:
+  #                pods before PVCs, a mounted PVC can't finish deleting).
+  # snapshotter  — snapshot + delete PVCs for long-paused runtimes. Own deadline.
+  # retention    — delete dead runtimes + expired fuse workspaces. Hourly.
+  #
+  # Stagger the two K8s-list-heavy jobs (reaper, k8s-garbage) to avoid
+  # simultaneous full namespace pod/PVC lists against the apiserver.
+  jobs:
+    reaper:
+      enabled: true
+      schedule: "*/5 * * * *"
+      activeDeadlineSeconds: 900 # 15 min; reaper must stay responsive
+    k8s-garbage:
+      enabled: true
+      schedule: "2-59/5 * * * *" # offset ~2 min from the reaper to stagger apiserver lists
+      activeDeadlineSeconds: 600 # 10 min; light, fast K8s reaps
+    snapshotter:
+      enabled: true
+      schedule: "*/10 * * * *" # slower than the reaper; snapshots lag pause by design
+      activeDeadlineSeconds: 1200 # 20 min; must exceed SNAPSHOT_WAIT_DEADLINE_SECONDS (300)
+    retention:
+      enabled: true
+      schedule: "0 */1 * * *" # hourly; long-horizon sweeps
+      activeDeadlineSeconds: 1800 # 30 min; DB + object-storage heavy
+
+# Workspace archiving (primary, pause/reap path): before the cleanup CronJob
+# pauses/stops a runtime — while its pod is still reachable — copy the workspace
+# to object storage so it survives PVC deletion (eval/dataset creation).
+# Best-effort: a failed archive never blocks the reap. Disabled by default.
+#
+# storeType=google_cloud uses the cleanup ServiceAccount's Workload Identity
+# (GKE; needs roles/storage.objectAdmin on the bucket). storeType=s3 uses the
+# s3 block below — for self-hosted installs archiving to the in-cluster minio
+# (endpoint defaults to http://<release>-minio:9000) or any S3-compatible store.
+runtimeFileArchive:
+  enabled: false
+  storeType: google_cloud # s3 | gcs (alias: google_cloud)
+  # Existing object-storage bucket that receives the archives. The chart does
+  # not create it; provision it and grant the cleanup identity write access.
+  bucket: ""
+  prefix: workspace-archives # Key prefix within the bucket.
+  path: /workspace/project # Source path to archive (git repo root).
+  tmpDir: /archive-tmp # Mount path for the archive scratch volume (reaper phase only).
+  tmpSizeLimit: 10Gi # Size limit for the archive scratch emptyDir.
+  # Safe default: capture BOTH the compact git-delta and a self-contained
+  # tar.gz. git-delta alone is lossy (respects .gitignore, needs the base tree
+  # to reconstruct); narrow to git-delta only with a bucket lifecycle policy.
+  format: both # both, git-delta (compact), or tar.gz.
+  # S3-compatible connection — only used when storeType=s3.
+  s3:
+    # Leave empty for AWS (boto3 targets the regional endpoint); set for any
+    # other S3-compatible store, e.g. the parent chart's bundled MinIO:
+    # http://<release>-minio:9000. TLS is inferred from the URL scheme.
+    endpoint: ""
+    region: "" # AWS region of the bucket; required for real AWS S3.
+    # Credentials — first match wins: existingSecret, inline
+    # accessKeyId/secretAccessKey, else the pod's ambient AWS identity
+    # (IRSA / Pod Identity / instance profile). For the bundled MinIO, set the
+    # inline pair to the parent chart's minio.svcaccts credentials.
+    existingSecret: "" # Secret with AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY keys.
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKeyId: ""
+    secretAccessKey: ""
+
+warmRuntimes:
+  enabled: false
+  configMapName: warm-runtimes-config
+  count: 0
+  # Legacy list form. Kept for backwards compatibility: when non-empty it takes
+  # precedence over configsByName. Prefer configsByName for new configuration.
+  configs: []
+  # Canonical map form. Each key becomes the config name unless the entry sets
+  # `name` explicitly. Maps merge cleanly across values layers.
+  # Set `fuse_s3_mount: true` on an entry for fusey warm pods: dormant startup,
+  # /workspace FUSE-mounted from object storage instead of a PVC. Needs the
+  # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
+  # device-plugin subchart).
+  configsByName:
+    # Keep the map key stable for existing Helm overrides.
+    default:
+      name: v1_current
+      # image omitted -> defaults to global.agentServerImage (repo:tag).
+      working_dir: "/workspace/project"
+      environment:
+        # LMNR_* mirror the always-emit request env (="" when Laminar off) so warm matching succeeds.
+        LMNR_BASE_URL: ""
+        LMNR_FORCE_HTTP: ""
+        LMNR_HTTP_PORT: ""
+        LMNR_PROJECT_API_KEY: ""
+        LOG_JSON: "1"
+        LOG_JSON_LEVEL_KEY: "severity"
+        OH_ALLOW_CORS_ORIGINS_0: ""
+        OH_BASH_EVENTS_DIR: "/workspace/bash_events"
+        OH_CONVERSATIONS_PATH: "/workspace/conversations"
+        OH_ENABLE_VNC: "0"
+        OH_VSCODE_PORT: "60001"
+        OH_WEBHOOKS_0_BASE_URL: ""
+        OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
+        VSCODE_PORT: "60001"
+        WORKER_1: "12000"
+        WORKER_2: "12001"
+      command:
+        - /usr/local/bin/openhands-agent-server
+        - "--port"
+        - "60000"
+      run_as_user: 10001
+      run_as_group: 10001
+      fs_group: 10001
+
+# Database cleanup CronJob configuration
+dbCleanup:
+  enabled: true
+  schedule: "0 0 * * *" # Run daily at midnight
+  retentionDays: 90 # Number of days to retain runtime objects
+
+# Test API Keys cleanup CronJob configuration
+testKeysCleanup:
+  enabled: false # Disabled by default, enabled only in feature and staging environments
+  schedule: "0 0 * * *" # Run daily at midnight
+  retentionDays: 2 # Number of days to retain test API keys
+
+# Pod Status Logger configuration
+podStatusLogger:
+  enabled: true
+  schedule: "*/5 * * * *" # Run every 5 minutes
+
+monitoring:
+  enabled: false
+
+datadog:
+  enabled: false
+  env: "dev"
+
+replicated:
+  enabled: false
+
+global:
+  # Canonical agent-server image. Defaults any warm-runtime configsByName entry
+  # that omits its own `image`. In the openhands umbrella the parent chart's
+  # global wins; this default only applies when rendering the subchart alone.
+  agentServerImage:
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.49.4-python
+  security:
+    # This allows using the bitnamilegacy image repo.
+    # See: https://github.com/bitnami/containers/issues/83267
+    allowInsecureImages: true
+  # Env the app injects into every per-session runtime (LLM provider creds,
+  # proxy vars, CA paths). Mirrored into each warm-runtime entry's env so
+  # runtime-api's exact-env matching can claim warm pods.
+  agentServerEnv: {}
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

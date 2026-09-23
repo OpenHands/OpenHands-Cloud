@@ -29,16 +29,24 @@ application chart runs.
   `crdCheck.enabled: true` and is used by the trust-manager release to wait
   for cert-manager CRDs to reach the `Established` condition before
   applying trust-manager's webhook resources.
+- `templates/sysbox-installer.yaml` renders, only when `sysbox.enabled: true`,
+  a privileged DaemonSet plus a `sysbox` RuntimeClass. The DaemonSet runs
+  `files/install-sysbox.sh` on each host (via `nsenter --target 1`) to install
+  Sysbox and register the `sysbox` containerd runtime through a k0s
+  containerd drop-in. It targets Embedded Cluster (k0s) and discovers the
+  containerd config path at runtime, so it works regardless of the EC
+  `--data-dir`. Requires a Debian/Ubuntu host with internet access.
 
 ## Releases
 
-Two Replicated HelmChart manifests reference this chart with different
+Three Replicated HelmChart manifests reference this chart with different
 toggles:
 
-| Manifest                              | `cert-manager.enabled` | `trust-manager.enabled` | `crdCheck.enabled` | KOTS weight |
-|---------------------------------------|------------------------|-------------------------|--------------------|-------------|
-| `replicated/infra-cert-manager.yaml`  | `true`                 | `false`                 | `false`            | 5           |
-| `replicated/infra-trust-manager.yaml` | `false`                | `true`                  | `true`             | 6           |
+| Manifest                              | `cert-manager.enabled` | `trust-manager.enabled` | `crdCheck.enabled` | `sysbox.enabled`              | KOTS weight |
+|---------------------------------------|------------------------|-------------------------|--------------------|-------------------------------|-------------|
+| `replicated/infra-cert-manager.yaml`  | `true`                 | `false`                 | `false`            | `false`                       | 5           |
+| `replicated/infra-trust-manager.yaml` | `false`                | `true`                  | `true`             | `false`                       | 6           |
+| `replicated/infra-sysbox.yaml`        | `false`                | `false`                 | `false`            | `true` when Sandbox Isolation = Sysbox | 7           |
 
 The trust-manager release runs the CRD check before applying its own
 resources, because `helm install --wait` only waits for pods to become

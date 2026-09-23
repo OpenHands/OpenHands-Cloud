@@ -4,6 +4,8 @@ kind: Service
 metadata:
   name: openhands-service
   labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
     app: openhands
 spec:
   ports:
@@ -21,6 +23,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: oh-main-runtime-api
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -38,6 +42,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: oh-main-postgresql
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   sessionAffinity: None
@@ -57,6 +63,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: oh-main-lite-llm
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   internalTrafficPolicy: Cluster

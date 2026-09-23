@@ -1,0 +1,201 @@
+{{- define "automation.env.defaults" }}
+# OpenHands API base URL (for dispatching sandbox runs)
+{{- if .Values.openhandsApiUrl }}
+- name: AUTOMATION_OPENHANDS_API_BASE_URL
+  value: {{ .Values.openhandsApiUrl | quote }}
+{{- end }}
+# Automation service base URL (for completion callbacks from sandboxes)
+{{- if .Values.automationBaseUrl }}
+- name: AUTOMATION_BASE_URL
+  value: {{ .Values.automationBaseUrl | quote }}
+{{- end }}
+# Scratch directory for git sync checkouts; the same value mounts the
+# workspace emptyDir, so the write path and the mount cannot drift apart.
+- name: AUTOMATION_WORKSPACE_BASE
+  value: {{ .Values.workspace.mountPath | quote }}
+# PostgreSQL database configuration
+- name: AUTOMATION_DB_HOST
+  value: {{ .Values.database.host | quote }}
+- name: AUTOMATION_DB_PORT
+  value: {{ .Values.database.port | quote }}
+- name: AUTOMATION_DB_SSL_MODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
+- name: PGSSLMODE
+  value: {{ .Values.database.sslMode | default "prefer" | quote }}
+- name: AUTOMATION_DB_USER
+  value: {{ .Values.database.user | quote }}
+- name: AUTOMATION_DB_NAME
+  value: {{ .Values.database.name | quote }}
+- name: AUTOMATION_DB_PASS
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.database.secretName }}
+      key: {{ .Values.database.secretKey }}
+{{- if .Values.gcp.dbInstance }}
+- name: AUTOMATION_GCP_DB_INSTANCE
+  value: {{ .Values.gcp.dbInstance | quote }}
+- name: AUTOMATION_GCP_PROJECT
+  value: {{ .Values.gcp.project | quote }}
+- name: AUTOMATION_GCP_REGION
+  value: {{ .Values.gcp.region | quote }}
+{{- end }}
+# Uploaded-package storage (see values.filestore). "google_cloud" normalizes
+# to "gcs", the service's native FILE_STORE value.
+{{- $store := .Values.filestore.type }}
+{{- if eq $store "google_cloud" }}{{- $store = "gcs" }}{{- end }}
+- name: FILE_STORE
+  value: {{ $store | quote }}
+{{- if eq $store "s3" }}
+- name: AWS_S3_BUCKET
+  value: {{ .Values.filestore.bucket | quote }}
+{{- with .Values.filestore.endpoint }}
+- name: AWS_S3_ENDPOINT
+  value: {{ . | quote }}
+# The service refuses an AWS_S3_SECURE value that contradicts the endpoint
+# scheme, so it is derived rather than configurable.
+- name: AWS_S3_SECURE
+  value: {{ hasPrefix "https://" . | quote }}
+{{- end }}
+{{- with .Values.filestore.region }}
+- name: AWS_REGION
+  value: {{ . | quote }}
+{{- end }}
+{{- if .Values.filestore.createBucket }}
+- name: AWS_S3_AUTO_CREATE_BUCKET
+  value: "true"
+{{- end }}
+{{- if .Values.filestore.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.filestore.existingSecret }}
+      key: {{ .Values.filestore.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else if .Values.filestore.accessKey }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ .Values.filestore.accessKey | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ .Values.filestore.secretKey | quote }}
+{{- end }}
+{{- else if eq $store "gcs" }}
+- name: GCS_BUCKET_NAME
+  value: {{ .Values.filestore.bucket | quote }}
+{{- else }}
+{{- fail (printf "filestore.type must be \"s3\", \"gcs\", or \"google_cloud\", got %q" .Values.filestore.type) }}
+{{- end }}
+# Admin API key for issuing per-user automation API keys
+{{- if .Values.adminApiKeyFromSecret }}
+- name: AUTOMATION_ADMIN_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.adminApiKeyFromSecret.name }}
+      key: {{ .Values.adminApiKeyFromSecret.key }}
+{{- end }}
+# Service key for authenticating requests from OpenHands SaaS
+{{- if .Values.serviceKeyFromSecret }}
+- name: AUTOMATION_SERVICE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.serviceKeyFromSecret.name }}
+      key: {{ .Values.serviceKeyFromSecret.key }}
+{{- end }}
+# Automation webhook secret for verifying webhook signatures
+{{- if .Values.automationWebhookSecretFromSecret }}
+- name: AUTOMATION_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.automationWebhookSecretFromSecret.name }}
+      key: {{ .Values.automationWebhookSecretFromSecret.key }}
+{{- end }}
+# Git sync wrapping key: encrypts each organization's git token and repo
+# encryption key at rest. Optional so pods start before the secret exists;
+# until then the service refuses to store git sync secrets (503) rather than
+# fall back to a per-pod key file the other replicas could not read.
+{{- if .Values.gitSyncSecretFromSecret }}
+- name: AUTOMATION_GIT_SYNC_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.gitSyncSecretFromSecret.name }}
+      key: {{ .Values.gitSyncSecretFromSecret.key }}
+      optional: true
+{{- end }}
+# Laminar (Laminar) monitoring/analytics
+{{- if .Values.lmnrApiKeyFromSecret }}
+- name: LMNR_PROJECT_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.lmnrApiKeyFromSecret.name }}
+      key: {{ .Values.lmnrApiKeyFromSecret.key }}
+      optional: true
+{{- end }}
+{{- if .Values.lmnrBaseUrlFromSecret }}
+- name: LMNR_BASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.lmnrBaseUrlFromSecret.name }}
+      key: {{ .Values.lmnrBaseUrlFromSecret.key }}
+      optional: true
+{{- end }}
+{{- if .Values.lmnrForceHttp }}
+- name: LMNR_FORCE_HTTP
+  value: {{ .Values.lmnrForceHttp | quote }}
+{{- end }}
+# Datadog configuration
+- name: DD_AGENT_HOST
+  value: "datadog-agent.all-hands-system.svc.cluster.local"
+- name: DD_TRACE_AGENT_PORT
+  value: "8126"
+- name: DD_SERVICE
+  value: "automation"
+- name: DD_ENV
+  value: {{ .Values.datadog.env | quote }}
+- name: DD_TRACE_ENABLED
+  value: "true"
+{{- end }}
+
+{{/*
+  automation.env — Deduplicated environment variable list.
+
+  This wrapper renders the default env vars from "automation.env.defaults",
+  then removes any entries whose name conflicts with a key in .Values.env,
+  and finally appends the .Values.env overrides. The result is a clean list
+  with no duplicate names, which prevents:
+    - Helm warnings about duplicate env vars
+    - Strategic Merge Patch conflicts during helm upgrade
+      ("The order in patch list doesn't match $setElementOrder list")
+
+  How it works:
+    1. Render "automation.env.defaults" via include (evaluates all conditionals)
+    2. Parse the rendered YAML list into Go objects with fromYamlArray
+    3. Filter out any default entries whose name appears in .Values.env
+    4. Append .Values.env entries (user overrides always win)
+    5. Re-render the deduplicated list with toYaml
+*/}}
+{{- define "automation.env" }}
+{{- $defaults := include "automation.env.defaults" . | fromYamlArray }}
+{{- /* Build a lookup dict of override keys for O(1) membership checks */}}
+{{- $overrideKeys := dict }}
+{{- if .Values.env }}
+{{- range $key, $_ := .Values.env }}
+{{- $_ := set $overrideKeys $key true }}
+{{- end }}
+{{- end }}
+{{- /* Keep only default entries that are NOT overridden by .Values.env */}}
+{{- $filtered := list }}
+{{- range $entry := $defaults }}
+{{- if not (hasKey $overrideKeys (get $entry "name")) }}
+{{- $filtered = append $filtered $entry }}
+{{- end }}
+{{- end }}
+{{- /* Append user overrides from .Values.env (these take precedence) */}}
+{{- if .Values.env }}
+{{- range $key, $value := .Values.env }}
+{{- $filtered = append $filtered (dict "name" $key "value" ($value | toString)) }}
+{{- end }}
+{{- end }}
+{{- $filtered | toYaml }}
+{{- end }}
