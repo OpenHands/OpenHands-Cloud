@@ -39,8 +39,6 @@ export class ConversationPage extends BasePage {
   // Chat input elements
   readonly chatInput: Locator;
 
-  readonly sendButton: Locator;
-
   readonly stopButton: Locator;
 
   // Message elements
@@ -57,17 +55,21 @@ export class ConversationPage extends BasePage {
     this.appRoute = page.getByTestId("app-route");
     this.chatBox = page.getByTestId("interactive-chat-box");
     this.chatInput = page.getByTestId("chat-input");
-    this.sendButton = page
-      .locator(
-        'button[type="submit"], button:has-text("Send"), [data-testid*="send"]',
-      )
-      .first();
-    this.stopButton = page
-      .locator('button:has-text("Stop"), [data-testid*="stop"]')
-      .first();
+    // `stop-button` is icon-only in Canvas — chat-stop-button.tsx renders
+    // a `<PauseIcon />` inside a `<button>` with no aria-label, title, or
+    // visible text, so `getByRole("button", { name: /stop/i })` returns
+    // zero matches. testId is the only stable handle until that component
+    // grows an accessible name (worth a follow-up in the OpenHands
+    // frontend).
+    this.stopButton = page.getByTestId("stop-button");
     this.errorBanner = page.getByTestId("error-message-banner");
     this.waitingMessage = page.locator('[data-testid*="waiting"]').first();
-    this.statusIndicator = page.getByTestId("status-icon");
+    // Canvas renamed `status-icon` to `chat-status-indicator`; the enterprise
+    // conversation view still ships `status-icon`. Match either so tests work
+    // against both shells during the transition.
+    this.statusIndicator = page
+      .getByTestId("chat-status-indicator")
+      .or(page.getByTestId("status-icon"));
   }
 
   /**
@@ -99,16 +101,25 @@ export class ConversationPage extends BasePage {
     // Wait for the chat input to be visible
     await expect(this.chatInput).toBeVisible({ timeout: shellTimeout });
 
-    // Wait for agent to be ready by checking for "Waiting for task" text.
-    // Note: using text search since data-testid is not yet deployed to staging.
+    // Wait for agent to be ready. The old enterprise UI surfaced the string
+    // "Waiting for task"; the Canvas conversation view instead exposes the
+    // status through `chat-status-indicator` (a stable data-testid) and the
+    // active-conversation status pill (`conversation-status-active` /
+    // `conversation-status-working`). We accept any of these signals so the
+    // helper works against both shells during the Canvas migration.
     //
     // The error-banner branch is a sentinel: it only resolves when an error
     // actually appears. On timeout it stays pending (never resolves), so it
     // cannot short-circuit the race — the full timeout budget is left to the
-    // readyText branch. Previously both branches resolved on timeout, so the
-    // 5s error-budget branch always won the race after 5s and the readyText
+    // ready branch. Previously both branches resolved on timeout, so the
+    // 5s error-budget branch always won the race after 5s and the ready
     // branch was abandoned with ~115s of budget unused.
-    const readyText = this.page.getByText(/waiting for task/i);
+    const readyText = this.page
+      .getByText(/waiting for task/i)
+      .or(this.page.getByTestId("chat-status-indicator"))
+      .or(this.page.getByTestId("conversation-status-active"))
+      .or(this.page.getByTestId("conversation-status-working"))
+      .first();
     const outcome = await Promise.race([
       readyText
         .waitFor({ state: "visible", timeout })
@@ -162,148 +173,16 @@ export class ConversationPage extends BasePage {
     // Wait for the chat input to be visible
     await expect(this.chatInput).toBeVisible({ timeout: shellTimeout });
 
-    // Wait for agent to finish by checking for the "Agent has finished the
-    // task" status. Note: using text search since data-testid is not yet
-    // deployed to staging. Regex keeps it tolerant of casing/whitespace.
-    const finishedTaskText = this.page.getByText(
-      /agent has finished the task/i,
-    );
-    await expect(finishedTaskText).toBeVisible({ timeout });
-  }
-
-  /**
-   * Wait for the agent to be ready to receive input
-   */
-  async waitForAgentReady(timeout: number = 90_000): Promise<void> {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
-      // Check if there's an error
-      if (await this.hasError()) {
-        const errorMsg = await this.getErrorMessage();
-        throw new Error(`Agent error: ${errorMsg}`);
-      }
-
-      // Check if input is enabled (agent is ready)
-      const isInputEnabled = await this.isChatInputEnabled();
-      if (isInputEnabled) {
-        return;
-      }
-
-      // Wait a bit before checking again
-      await this.page.waitForTimeout(1000);
-    }
-
-    throw new Error(`Agent not ready within ${timeout}ms timeout`);
-  }
-
-  /**
-   * Check if the chat input is enabled
-   */
-  async isChatInputEnabled(): Promise<boolean> {
-    try {
-      // contentEditable divs don't have a disabled state, check for pointer-events or class
-      const isVisible = await this.chatInput.isVisible();
-      if (!isVisible) return false;
-
-      // Check if there's a loading state or disabled class
-      const classes = await this.chatInput.getAttribute("class");
-      if (classes?.includes("disabled") || classes?.includes("loading")) {
-        return false;
-      }
-
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Send a message to the agent
-   */
-  async sendMessage(message: string): Promise<void> {
-    // Wait for input to be ready
-    await expect(this.chatInput).toBeVisible({ timeout: 30_000 });
-
-    // Clear any existing content and type the message
-    await this.chatInput.click();
-    await this.chatInput.fill("");
-    await this.page.keyboard.type(message);
-
-    // Submit the message
-    await this.page.keyboard.press("Enter");
-
-    // Small delay to ensure message is sent
-    await this.page.waitForTimeout(500);
-  }
-
-  /**
-   * Wait for agent to respond (agent starts processing)
-   */
-  async waitForAgentProcessing(timeout: number = 10_000): Promise<void> {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
-      // Check if agent is processing (input disabled or loading indicator visible)
-      const isProcessing = await this.isAgentProcessing();
-      if (isProcessing) {
-        return;
-      }
-
-      await this.page.waitForTimeout(500);
-    }
-
-    // It's okay if we don't see processing state - agent might have already finished
-  }
-
-  /**
-   * Check if agent is currently processing
-   */
-  async isAgentProcessing(): Promise<boolean> {
-    // Check for loading indicators or disabled input
-    const loadingIndicator = this.page
-      .locator(
-        '[data-testid*="loading"], [class*="loading"], [class*="spinner"]',
-      )
+    // Wait for agent to finish. The enterprise UI surfaces the string
+    // "Agent has finished the task"; Canvas exposes completion via the
+    // `conversation-status-check` testid (rendered by the status pill when
+    // the agent reaches the `finished` state). Accept either signal so the
+    // helper works across both shells during the Canvas migration.
+    const finishedTask = this.page
+      .getByText(/agent has finished the task/i)
+      .or(this.page.getByTestId("conversation-status-check"))
       .first();
-    if (
-      await loadingIndicator.isVisible({ timeout: 1_000 }).catch(() => false)
-    ) {
-      return true;
-    }
-
-    // Check if input is disabled (indicates processing)
-    const isInputEnabled = await this.isChatInputEnabled();
-    return !isInputEnabled;
-  }
-
-  /**
-   * Wait for agent to complete processing and return to ready state
-   */
-  async waitForAgentComplete(timeout: number = 120_000): Promise<void> {
-    const startTime = Date.now();
-
-    // First, wait for processing to start
-    await this.waitForAgentProcessing(10_000).catch(() => {});
-
-    // Then wait for processing to complete
-    while (Date.now() - startTime < timeout) {
-      // Check for errors
-      if (await this.hasError()) {
-        const errorMsg = await this.getErrorMessage();
-        throw new Error(`Agent error during processing: ${errorMsg}`);
-      }
-
-      // Check if agent is back to ready state
-      const isInputEnabled = await this.isChatInputEnabled();
-      if (isInputEnabled) {
-        return;
-      }
-
-      await this.page.waitForTimeout(1000);
-    }
-
-    throw new Error(`Agent did not complete within ${timeout}ms timeout`);
+    await expect(finishedTask).toBeVisible({ timeout });
   }
 
   /**
@@ -388,40 +267,5 @@ export class ConversationPage extends BasePage {
       await this.stopButton.click();
       await this.page.waitForTimeout(1000);
     }
-  }
-
-  /**
-   * Verify no error messages are displayed
-   */
-  async verifyNoErrors(): Promise<void> {
-    const hasError = await this.hasError();
-    if (hasError) {
-      const errorMsg = await this.getErrorMessage();
-      throw new Error(`Unexpected error message: ${errorMsg}`);
-    }
-  }
-
-  /**
-   * Execute a complete conversation flow:
-   * 1. Wait for agent to be ready
-   * 2. Send message
-   * 3. Wait for completion
-   * 4. Verify no errors
-   */
-  async executePrompt(
-    message: string,
-    timeout: number = 120_000,
-  ): Promise<void> {
-    // Ensure agent is ready
-    await this.waitForAgentReady(30_000);
-
-    // Send the message
-    await this.sendMessage(message);
-
-    // Wait for completion
-    await this.waitForAgentComplete(timeout);
-
-    // Verify no errors
-    await this.verifyNoErrors();
   }
 }
