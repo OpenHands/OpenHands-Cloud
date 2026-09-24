@@ -1155,6 +1155,37 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
 
+    - name: object_storage
+      title: Object Storage
+      description: Persistent storage for conversation files and sandbox archives.
+      items:
+        - name: minio_storage_size
+          title: Bundled object storage size
+          type: text
+          default: "100Gi"
+          when: '{{repl empty (Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio") }}'
+          help_text: >-
+            Choose a storage request for a new installation, such as 100Gi or 1Ti.
+            Existing installations retain their current claim size; contact support
+            to plan a storage change. OpenEBS hostpath does not reserve this much
+            physical disk or enforce a usage limit. Leave disk space for the OS,
+            databases, logs, and sandboxes, and monitor actual free space.
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*(Mi|Gi|Ti)$'
+              message: Use a positive whole number followed by Mi, Gi, or Ti (for example, 100Gi).
+
+        - name: minio_existing_storage_size
+          title: Installed object storage claim size
+          type: text
+          readonly: true
+          when: '{{repl not (empty (Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio")) }}'
+          default: '{{repl with Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio" }}{{repl .spec.resources.requests.storage }}{{repl end }}'
+          help_text: >-
+            Upgrades preserve this claim size. OpenEBS hostpath does not guarantee
+            this much physical disk space. Monitor the backing filesystem and
+            contact support before changing installed storage.
+
     - name: database_configuration
       title: Database Configuration
       description: Configure PostgreSQL database settings
