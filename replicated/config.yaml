@@ -1344,9 +1344,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.49.4-python
+          help_text: Image tag, e.g. d159e4c-python
           type: text
-          default: "1.49.4-python"
+          default: "d159e4c-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
