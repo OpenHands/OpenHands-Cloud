@@ -3,13 +3,16 @@ import { HomePage, ConversationPage } from "../pages";
 import { env, runUser } from "../utils/config";
 
 /**
- * Legacy conversation controls specs.
+ * Conversation controls specs.
  *
  * Ported from saas_deploy's `e2e_tests/tests/smoke.spec.ts` (the conversation
- * launch, repository/VSCode, navigation, and Tavily search flows). These
- * exercise the legacy chat controls — launch button, repo selector, recent
- * conversations list, and the agent's prompt/response loop — rather than the
- * newer canvas UI.
+ * launch, repository/VSCode, navigation, and Tavily search flows). Originally
+ * written against the enterprise "legacy" launcher (a separate button that
+ * navigated to a launch route); Canvas replaced that with an atomic composer
+ * — `home-chat-launcher` creates the conversation *and* sends the first user
+ * message in one gesture — so these specs pass the prompt directly to
+ * `HomePage.startNewConversation()` instead of sending it through the chat
+ * input after navigation.
  *
  * The suite runs serially within a role because several tests depend on a
  * conversation created by an earlier one (e.g. "navigate to a running
@@ -46,22 +49,20 @@ test.describe("legacy conversations @conversations", () => {
 
     await homePage.goto();
 
-    // Start a new conversation using the launch button.
-    await homePage.startNewConversation("launch-new-conversation-button");
+    // Canvas' `home-chat-launcher` sends the first user message atomically
+    // with the create-conversation call, so pass the prompt to
+    // startNewConversation() rather than sending it separately once we've
+    // navigated to the conversation page.
+    const prompt = "Reverse the word 'hello'";
+    console.log(`Sending prompt: "${prompt}"`);
+    await homePage.startNewConversation(prompt);
 
-    // Allow navigation to complete.
-    await page.waitForTimeout(2000);
     conversationPage = new ConversationPage(page);
-
     await conversationPage.waitForConversationReady();
 
     await page.screenshot({
       path: "test-results/screenshots/conversation-ready.png",
     });
-
-    const prompt = "Reverse the word 'hello'";
-    console.log(`Sending prompt: "${prompt}"`);
-    await conversationPage.executePrompt(prompt, 120_000);
 
     const message = await conversationPage.waitForMessageContaining(
       "olleh",
@@ -83,6 +84,19 @@ test.describe("legacy conversations @conversations", () => {
   test("should be able to select repository and use VSCode integration", async ({
     page,
   }, testInfo) => {
+    // TODO(canvas): the enterprise VSCode-iframe integration (the
+    // `conversation-tab-vscode` tab, the `file-diff-viewer-outer` +
+    // `changes-refresh-button` git-changes panel) has no equivalent yet in
+    // the Canvas conversation view — its Files panel is a separate story
+    // (`use-canvas-extensions-*` module) that renders a filesystem tree
+    // without the diff/editor iframe this test asserts on. Skip until Canvas
+    // ships an equivalent surface (or an explicit "open in VSCode Web" tab)
+    // that we can drive; the "reverse a string" and "Tavily search" tests
+    // still exercise the launch → sandbox → agent-reply path end to end.
+    test.skip(
+      true,
+      "Canvas conversation view has no VSCode-tab / diff-viewer equivalent yet",
+    );
     test.info().annotations.push({
       type: "user",
       description: runUser(testInfo),
@@ -104,18 +118,16 @@ test.describe("legacy conversations @conversations", () => {
     await homePage.selectRepository(TEST_REPO_URL);
     console.log(`Selected repository: ${TEST_REPO_URL}`);
 
-    // Start a new conversation with the repo launch button.
-    await homePage.startNewConversation("repo-launch-button");
-
-    await page.waitForTimeout(2000);
-    conversationPage = new ConversationPage(page);
-
-    await conversationPage.waitForConversationReady();
-
+    // Canvas' launcher sends the first user message atomically with the
+    // create-conversation call, so seed the README-edit prompt here rather
+    // than sending it separately once we've navigated to the conversation.
     const prompt =
       "Append the phrase 'Terms and Conditions May Apply!' to the end of README.md in the current working directory (the repo root) — actually edit the file and save it.";
     console.log(`Sending prompt: "${prompt}"`);
-    await conversationPage.sendMessage(prompt);
+    await homePage.startNewConversation(prompt);
+
+    conversationPage = new ConversationPage(page);
+    await conversationPage.waitForConversationReady();
 
     // Wait for the task to start.
     const waitingForTaskText = conversationPage.page.getByText("Running task");
@@ -241,17 +253,16 @@ test.describe("legacy conversations @conversations", () => {
 
     await homePage.goto();
 
-    await homePage.startNewConversation("launch-new-conversation-button");
-
-    await page.waitForTimeout(2000);
-    conversationPage = new ConversationPage(page);
-
-    await conversationPage.waitForConversationReady();
-
+    // See the "reverse a string" test above — Canvas' launcher sends the
+    // first user message with the create-conversation call, so pass the
+    // prompt directly to startNewConversation().
     const prompt =
       "Using Tavily search, please tell me who is the prime minister of Ireland. Use the default search parameters — do not set a topic/category field (Tavily only accepts 'general', and other values are rejected).";
     console.log(`Sending prompt: "${prompt}"`);
-    await conversationPage.executePrompt(prompt, 180_000);
+    await homePage.startNewConversation(prompt);
+
+    conversationPage = new ConversationPage(page);
+    await conversationPage.waitForConversationReady();
 
     // Match the name with a regex so accent ("Micheál" vs "Micheal") and casing
     // variants in the agent's response don't cause spurious failures.
