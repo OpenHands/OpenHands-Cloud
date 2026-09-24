@@ -511,8 +511,13 @@ spec:
         limits:
           cpu: "2"
           memory: 2Gi
+      # Preserve the existing server/client bytes when changing registries.
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/ohe-minio'
+        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279'
+      mcImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/ohe-minio-mc'
+        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
     # sha256 of every secret (password) config value. Changing any secret in the
@@ -794,7 +799,9 @@ spec:
             repository: '{{repl LocalRegistryNamespace }}/redis'
         minio:
           image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/ohe-minio'
+          mcImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/ohe-minio-mc'
         litellm-helm:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/litellm-database'
@@ -1344,6 +1351,12 @@ spec:
       enabled: true
     minio:
       enabled: true
+      image:
+        repository: ghcr.io/openhands/ohe-minio
+        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279'
+      mcImage:
+        repository: ghcr.io/openhands/ohe-minio-mc
+        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
     postgresql:
       enabled: true
     redis:
