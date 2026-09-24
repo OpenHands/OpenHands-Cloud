@@ -1322,7 +1322,7 @@ spec:
           enabled: true
           image:
             repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-canvas'
-            tag: sha-c0641c4
+            tag: sha-db3cb8b
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
           ingress:

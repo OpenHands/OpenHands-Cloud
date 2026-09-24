@@ -1628,7 +1628,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
-    tag: sha-c0641c4
+    tag: sha-db3cb8b
     # tag: supplied at deploy time via the OpenHands deploy workflow.
 
   ingress:
