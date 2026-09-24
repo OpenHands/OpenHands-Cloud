@@ -455,6 +455,7 @@ spec:
           labels:
             app: runtime-api
           annotations:
+            cert-manager.io/cluster-issuer: null
             kubernetes.io/ingress.class: traefik
     # Advertises /dev/kvm (and /dev/fuse) to sandbox pods via the
     # squat/generic-device-plugin DaemonSet. Replaces the smarter-device-manager
