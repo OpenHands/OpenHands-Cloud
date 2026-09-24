@@ -90,7 +90,7 @@ def keycloak():
         )
 
 
-def reconcile(url, password="", success=True):
+def reconcile(url, password="", success=True, client_id="", client_secret=""):
     template = (
         ROOT / "charts/openhands/templates/keycloak-config-script.yaml"
     ).read_text()
@@ -102,6 +102,8 @@ def reconcile(url, password="", success=True):
         KEYCLOAK_SERVER_URL=url,
         KEYCLOAK_ADMIN_PASSWORD=BOOTSTRAP_PASSWORD,
         KEYCLOAK_ADMIN_UI_PASSWORD=password,
+        KEYCLOAK_ADMIN_CLIENT_ID=client_id,
+        KEYCLOAK_ADMIN_CLIENT_SECRET=client_secret,
     )
     result = subprocess.run(
         ["sh"], input=script, env=env, text=True, capture_output=True, check=False
@@ -159,14 +161,23 @@ def test_fresh_install_with_custom_password(keycloak):
     assert login(keycloak, "replacement-admin-password")[0] == 200
 
 
-def test_application_service_account_exists_without_console_password(keycloak):
-    reconcile(keycloak)
+@pytest.mark.parametrize(
+    "client_id,client_secret",
+    [
+        ("openhands-provisioner", ""),
+        ("custom provisioner & review", "separate + & secret"),
+    ],
+)
+def test_application_service_account_exists_without_console_password(
+    keycloak, client_id, client_secret
+):
+    reconcile(keycloak, client_id=client_id, client_secret=client_secret)
     status, auth = request(
         keycloak + "/realms/master/protocol/openid-connect/token",
         {
-            "client_id": "openhands-provisioner",
+            "client_id": client_id,
             "grant_type": "client_credentials",
-            "client_secret": BOOTSTRAP_PASSWORD,
+            "client_secret": client_secret or BOOTSTRAP_PASSWORD,
         },
     )
     assert status == 200
@@ -174,10 +185,23 @@ def test_application_service_account_exists_without_console_password(keycloak):
         request(keycloak + "/admin/realms/master", token=auth["access_token"])[0] == 200
     )
     assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 200
-    reconcile(keycloak)
+    reconcile(keycloak, client_id=client_id, client_secret=client_secret)
     assert (
         request(keycloak + "/admin/realms/master", token=auth["access_token"])[0] == 200
     )
+
+    if client_secret:
+        reconcile(
+            keycloak,
+            "changed-console-password",
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+        assert login(keycloak, "changed-console-password")[0] == 200
+        reconcile(
+            keycloak, "changed-again", client_id=client_id, client_secret=client_secret
+        )
+        assert login(keycloak, "changed-again")[0] == 200
 
 
 @pytest.mark.parametrize("matching_secret", [True, False])
@@ -265,3 +289,39 @@ def test_console_password_is_only_passed_to_provisioning_container():
         assert not any(
             item["name"] == "KEYCLOAK_ADMIN_UI_PASSWORD" for item in container["env"]
         )
+
+
+def test_unconfigured_install_does_not_create_or_reconcile_service_client(keycloak):
+    reconcile(keycloak)
+    _, auth = login(keycloak, BOOTSTRAP_PASSWORD)
+    url = keycloak + "/admin/realms/master/clients"
+    _, clients = request(
+        url + "?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    assert clients == []
+    assert (
+        request(
+            url,
+            token=auth["access_token"],
+            method="POST",
+            json_body={
+                "clientId": "openhands-provisioner",
+                "enabled": True,
+                "secret": "unrelated-service-secret",
+                "serviceAccountsEnabled": True,
+                "publicClient": False,
+                "fullScopeAllowed": False,
+            },
+        )[0]
+        == 201
+    )
+    reconcile(keycloak)
+    assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 200
+    _, clients = request(
+        url + "?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    client_url = url + "/" + clients[0]["id"]
+    _, secret = request(client_url + "/client-secret", token=auth["access_token"])
+    assert secret["value"] == "unrelated-service-secret"
+    _, roles = request(client_url + "/scope-mappings/realm", token=auth["access_token"])
+    assert not any(role["name"] == "admin" for role in roles)
