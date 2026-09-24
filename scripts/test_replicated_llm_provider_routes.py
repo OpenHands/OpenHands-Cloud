@@ -112,6 +112,8 @@ PROVIDERS = {
 def _to_helm(template: str) -> str:
     """Rewrite KOTS template syntax into a plain Helm template."""
     template = template.replace("{{repl ", "{{ ").replace("repl{{", "{{")
+    # Helm offline lookups return empty, matching this fresh-install fixture.
+    template = template.replace('Lookup "', 'lookup "')
     template = re.sub(
         r'ConfigOptionEquals "([^"]+)" "([^"]*)"',
         r'(eq (index $.Values.cfg "\1") "\2")',
