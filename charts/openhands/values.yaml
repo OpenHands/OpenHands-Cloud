@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.63.0
+  tag: sha-d8205d0
 
 autoscaling:
   enabled: false
@@ -1628,6 +1628,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
+    tag: sha-8a90d25
     # tag: supplied at deploy time via the OpenHands deploy workflow.
 
   ingress:
