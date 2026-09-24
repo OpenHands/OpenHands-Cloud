@@ -504,6 +504,8 @@ spec:
       persistence:
         enabled: true
         storageClass: openebs-hostpath
+        # Preserve installed claims even if saved config contains a smaller value.
+        size: '{{repl $claim := Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio" }}{{repl if $claim }}{{repl $claim.spec.resources.requests.storage }}{{repl else }}{{repl ConfigOption "minio_storage_size" | default "100Gi" }}{{repl end }}'
       resources:
         requests:
           cpu: "1"
