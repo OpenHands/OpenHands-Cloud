@@ -83,6 +83,19 @@
 {{- else }}
 {{- fail (printf "filestore.type must be \"s3\", \"gcs\", or \"google_cloud\", got %q" .Values.filestore.type) }}
 {{- end }}
+# Run behavior (see values.runBehavior). Rendered explicitly rather than left
+# to the service defaults, which auto-disable after 3 permanent failures.
+- name: AUTOMATION_FAILURE_DISABLE_THRESHOLD
+  value: {{ .Values.runBehavior.failureDisableThreshold | quote }}
+{{- with .Values.runBehavior.consecutiveFailureDisableThreshold }}
+- name: AUTOMATION_CONSECUTIVE_FAILURE_DISABLE_THRESHOLD
+  value: {{ . | quote }}
+# Only meaningful alongside the threshold above, so it renders with it.
+- name: AUTOMATION_CONSECUTIVE_FAILURE_DISABLE_WINDOW_HOURS
+  value: {{ $.Values.runBehavior.consecutiveFailureDisableWindowHours | quote }}
+{{- end }}
+- name: AUTOMATION_SANDBOX_CLEANUP_DELAY_SECONDS
+  value: {{ .Values.runBehavior.sandboxCleanupDelaySeconds | quote }}
 # Admin API key for issuing per-user automation API keys
 {{- if .Values.adminApiKeyFromSecret }}
 - name: AUTOMATION_ADMIN_API_KEY

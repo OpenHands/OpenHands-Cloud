@@ -177,6 +177,23 @@ automationWebhookSecretFromSecret:
   name: automation-webhook-secret
   key: webhook-secret
 
+# Automation run behavior. All defaults below are disabled by default, meaning
+# no automation is ever auto-disabled
+runBehavior:
+  # Consecutive permanent failures (bad credential, revoked token, etc.) before an
+  # automation is auto-disabled. 0 never auto-disables.
+  failureDisableThreshold: 0
+  # Consecutive failures of any kind before an automation is auto-disabled.
+  # Empty never auto-disables; setting a number is what turns the rule on.
+  consecutiveFailureDisableThreshold: ""
+  # Only read when consecutiveFailureDisableThreshold is set: the rule fires
+  # only if nothing succeeded in this many hours, so shorter outages ride out.
+  consecutiveFailureDisableWindowHours: 24
+  # Seconds after a run ends before its sandbox is deleted; until then it is
+  # paused, so the run's conversation stays resumable. 0 deletes immediately.
+  # Requires automation image >= 1.12.0; ignored by older images.
+  sandboxCleanupDelaySeconds: 0
+
 # Datadog configuration
 datadog:
   env: "dev"

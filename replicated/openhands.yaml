@@ -708,6 +708,14 @@ spec:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+          # Auto-disable and sandbox cleanup, from the Automations config group.
+          # Their defaults there are the off settings, so this block is inert
+          # until an operator changes one.
+          runBehavior:
+            failureDisableThreshold: '{{repl ConfigOption "automations_failure_disable_threshold" }}'
+            consecutiveFailureDisableThreshold: '{{repl ConfigOption "automations_consecutive_failure_disable_threshold" }}'
+            consecutiveFailureDisableWindowHours: '{{repl ConfigOption "automations_consecutive_failure_disable_window_hours" }}'
+            sandboxCleanupDelaySeconds: '{{repl ConfigOption "automations_sandbox_cleanup_delay_seconds" }}'
           # Uploaded automation packages must survive pod replacement, so store
           # them on the bundled MinIO (persistent here — minio.persistence
           # above) instead of the pod filesystem.

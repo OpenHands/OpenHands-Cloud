@@ -1317,6 +1317,24 @@ automation:
     name: automation-service-key
     key: automation-service-key
   
+  # Automation run behavior. Every knob below ships off: no automation is ever
+  # auto-disabled, and a run's sandbox is deleted the moment the run ends.
+  # See the automation subchart's values.yaml for the full key reference.
+  runBehavior:
+    # Consecutive permanent failures (bad credential, revoked token) before an
+    # automation is auto-disabled. 0 never auto-disables.
+    failureDisableThreshold: 0
+    # Consecutive failures of any kind before an automation is auto-disabled.
+    # Empty never auto-disables; setting a number is what turns the rule on.
+    consecutiveFailureDisableThreshold: ""
+    # Only read when consecutiveFailureDisableThreshold is set: the rule fires
+    # only if nothing succeeded in this many hours.
+    consecutiveFailureDisableWindowHours: 24
+    # Seconds after a run ends before its sandbox is deleted; until then it is
+    # paused, so the run's conversation stays resumable. 0 deletes immediately.
+    # Requires automation image >= 1.12.0; ignored by older images.
+    sandboxCleanupDelaySeconds: 0
+
   # Datadog configuration
   datadog:
     env: "dev"

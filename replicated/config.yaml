@@ -1519,6 +1519,51 @@ spec:
           type: password
           when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
 
+        # Auto-disable and sandbox cleanup. Every default below is the off
+        # setting, so an upgrade never starts disabling an operator's
+        # automations or holding their sandboxes on its own.
+        - name: automations_failure_disable_threshold
+          title: Auto-disable After Permanent Failures
+          help_text: Consecutive permanent failures (bad credential, revoked token) before an automation is disabled automatically. 0, the default, never disables one.
+          type: text
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^[0-9]+$
+              message: Must be a whole number of failures (0 to never auto-disable).
+        - name: automations_consecutive_failure_disable_threshold
+          title: Auto-disable After Consecutive Failures
+          help_text: Consecutive failures of any kind before an automation is disabled automatically. Blank, the default, never disables one; entering a number is what turns the rule on.
+          type: text
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^[0-9]*$
+              message: Must be blank (never auto-disable) or a whole number of failures.
+        # Shown only once the rule above is on, because nothing reads it until then.
+        - name: automations_consecutive_failure_disable_window_hours
+          title: Consecutive Failure Window (Hours)
+          help_text: The consecutive-failure rule fires only if nothing has succeeded in this many hours, which is what stops a provider outage shorter than the window from disabling healthy automations.
+          type: text
+          default: "24"
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (not (ConfigOptionEquals "automations_consecutive_failure_disable_threshold" "")) }}'
+          validation:
+            regex:
+              pattern: ^[0-9]+(\.[0-9]+)?$
+              message: Must be a number of hours.
+        - name: automations_sandbox_cleanup_delay_seconds
+          title: Sandbox Cleanup Delay (Seconds)
+          help_text: How long after a run ends before its sandbox is deleted. The sandbox is paused meanwhile, so the run's conversation stays open and resumable instead of showing as archived. 0, the default, deletes it immediately. Requires the Automations image 1.12.0 or newer.
+          type: text
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^[0-9]+$
+              message: Must be a whole number of seconds (0 to delete immediately).
+
     - name: agent_canvas_configuration
       title: Agent Canvas
       description: Configure the Agent Canvas UI
