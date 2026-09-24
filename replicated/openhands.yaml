@@ -47,6 +47,7 @@ spec:
       mode: 'repl{{ ConfigOption "budget_reconcile_gate_mode" }}'
 
     env:
+      KEYCLOAK_ADMIN_CLIENT_ID: openhands-provisioner
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
       # other providers' optionalValues blocks below override this env var).
