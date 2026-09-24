@@ -171,42 +171,42 @@ data:
       echo "User already exists: $RESPONSE"
     fi
 
-    if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
-      umask 077
-      ADMIN_CREDENTIAL_DIR=$(mktemp -d)
-      trap 'rm -rf "$ADMIN_CREDENTIAL_DIR"' EXIT
-      # Keep provisioning credentials stable when the human admin password changes.
-      KC_MASTER="$KEYCLOAK_SERVER_URL/admin/realms/master"
-      if [ "$USE_PROVISIONER" != true ]; then
-        keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
-        if [ "$RESPONSE" != "[]" ]; then
-          if ! provisioning_token >/dev/null; then
-            echo "ERROR: existing openhands-provisioner client could not authenticate." >&2
-            exit 1
-          fi
-        else
-          jq -n --arg secret "$KEYCLOAK_ADMIN_PASSWORD" '{
-            clientId: "openhands-provisioner", secret: $secret,
-            enabled: true, publicClient: false, serviceAccountsEnabled: true,
-            standardFlowEnabled: false, directAccessGrantsEnabled: false,
-            fullScopeAllowed: false, protocol: "openid-connect"
-          }' > "$ADMIN_CREDENTIAL_DIR/provisioner.json"
-          keycloak_write POST "$KC_MASTER/clients" "$ADMIN_CREDENTIAL_DIR/provisioner.json"
-          rm -f "$ADMIN_CREDENTIAL_DIR/provisioner.json"
+    umask 077
+    ADMIN_CREDENTIAL_DIR=$(mktemp -d)
+    trap 'rm -rf "$ADMIN_CREDENTIAL_DIR"' EXIT
+    # Application admin calls always need this account, even without a console password override.
+    KC_MASTER="$KEYCLOAK_SERVER_URL/admin/realms/master"
+    if [ "$USE_PROVISIONER" != true ]; then
+      keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
+      if [ "$RESPONSE" != "[]" ]; then
+        if ! provisioning_token >/dev/null; then
+          echo "ERROR: existing openhands-provisioner client could not authenticate." >&2
+          exit 1
         fi
-        keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
-        PROVISIONER_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
-        keycloak_get_optional "$KC_MASTER/clients/$PROVISIONER_ID/service-account-user"
-        PROVISIONER_USER_ID=$(echo "$RESPONSE" | jq -er '.id')
-        keycloak_get_optional "$KC_MASTER/roles/admin"
-        echo "$RESPONSE" | jq '[.]' > "$ADMIN_CREDENTIAL_DIR/role.json"
-        keycloak_write POST "$KC_MASTER/users/$PROVISIONER_USER_ID/role-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
-        keycloak_write POST "$KC_MASTER/clients/$PROVISIONER_ID/scope-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
-        USE_PROVISIONER=true
+      else
+        jq -n --arg secret "$KEYCLOAK_ADMIN_PASSWORD" '{
+          clientId: "openhands-provisioner", secret: $secret,
+          enabled: true, publicClient: false, serviceAccountsEnabled: true,
+          standardFlowEnabled: false, directAccessGrantsEnabled: false,
+          fullScopeAllowed: false, protocol: "openid-connect"
+        }' > "$ADMIN_CREDENTIAL_DIR/provisioner.json"
+        keycloak_write POST "$KC_MASTER/clients" "$ADMIN_CREDENTIAL_DIR/provisioner.json"
+        rm -f "$ADMIN_CREDENTIAL_DIR/provisioner.json"
       fi
-      refresh_access_token
-      # Prove independent admin access before replacing the login password.
-      keycloak_get_optional "$KC_MASTER/users?username=admin&exact=true"
+      keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
+      PROVISIONER_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
+      keycloak_get_optional "$KC_MASTER/clients/$PROVISIONER_ID/service-account-user"
+      PROVISIONER_USER_ID=$(echo "$RESPONSE" | jq -er '.id')
+      keycloak_get_optional "$KC_MASTER/roles/admin"
+      echo "$RESPONSE" | jq '[.]' > "$ADMIN_CREDENTIAL_DIR/role.json"
+      keycloak_write POST "$KC_MASTER/users/$PROVISIONER_USER_ID/role-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+      keycloak_write POST "$KC_MASTER/clients/$PROVISIONER_ID/scope-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+      USE_PROVISIONER=true
+    fi
+    refresh_access_token
+    # Prove independent admin access before replacing the login password.
+    keycloak_get_optional "$KC_MASTER/users?username=admin&exact=true"
+    if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
       ADMIN_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
       CURRENT_TOKEN=$(curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
         --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \

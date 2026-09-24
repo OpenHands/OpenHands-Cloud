@@ -159,10 +159,45 @@ def test_fresh_install_with_custom_password(keycloak):
     assert login(keycloak, "replacement-admin-password")[0] == 200
 
 
+def test_application_service_account_exists_without_console_password(keycloak):
+    reconcile(keycloak)
+    status, auth = request(
+        keycloak + "/realms/master/protocol/openid-connect/token",
+        {
+            "client_id": "openhands-provisioner",
+            "grant_type": "client_credentials",
+            "client_secret": BOOTSTRAP_PASSWORD,
+        },
+    )
+    assert status == 200
+    assert (
+        request(keycloak + "/admin/realms/master", token=auth["access_token"])[0] == 200
+    )
+    assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 200
+    reconcile(keycloak)
+    assert (
+        request(keycloak + "/admin/realms/master", token=auth["access_token"])[0] == 200
+    )
+
+
 @pytest.mark.parametrize("matching_secret", [True, False])
 def test_partial_provisioner_setup_and_client_collision(keycloak, matching_secret):
     reconcile(keycloak)
     _, auth = login(keycloak, BOOTSTRAP_PASSWORD)
+    # Replace only the fixture's client to simulate an incomplete/colliding setup.
+    _, clients = request(
+        keycloak + "/admin/realms/master/clients?clientId=openhands-provisioner",
+        token=auth["access_token"],
+    )
+    for client in clients:
+        assert (
+            request(
+                keycloak + "/admin/realms/master/clients/" + client["id"],
+                token=auth["access_token"],
+                method="DELETE",
+            )[0]
+            == 204
+        )
     assert (
         request(
             keycloak + "/admin/realms/master/clients",
