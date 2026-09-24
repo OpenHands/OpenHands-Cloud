@@ -1,0 +1,69 @@
+suite: run behavior env wiring
+templates:
+  - templates/deployment.yaml
+tests:
+  - it: ships auto-disable off and immediate sandbox cleanup
+    asserts:
+      # 0, not the service's own default of 3 — the chart must not auto-disable.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_FAILURE_DISABLE_THRESHOLD
+            value: "0"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_SANDBOX_CLEANUP_DELAY_SECONDS
+            value: "0"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_CONSECUTIVE_FAILURE_DISABLE_THRESHOLD
+            value: ""
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_CONSECUTIVE_FAILURE_DISABLE_WINDOW_HOURS
+            value: "24"
+
+  - it: renders the window only once the consecutive threshold turns the rule on
+    set:
+      runBehavior.consecutiveFailureDisableThreshold: 5
+      runBehavior.consecutiveFailureDisableWindowHours: 48
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_CONSECUTIVE_FAILURE_DISABLE_THRESHOLD
+            value: "5"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_CONSECUTIVE_FAILURE_DISABLE_WINDOW_HOURS
+            value: "48"
+
+  - it: lets an operator opt into delayed sandbox cleanup
+    set:
+      runBehavior.sandboxCleanupDelaySeconds: 3600
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_SANDBOX_CLEANUP_DELAY_SECONDS
+            value: "3600"
+
+  - it: lets .Values.env win over the rendered defaults
+    set:
+      env:
+        AUTOMATION_FAILURE_DISABLE_THRESHOLD: 3
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_FAILURE_DISABLE_THRESHOLD
+            value: "3"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_FAILURE_DISABLE_THRESHOLD
+            value: "0"
