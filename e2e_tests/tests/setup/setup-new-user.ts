@@ -1,35 +1,45 @@
 import { test as setup } from "@playwright/test";
 import fs from "fs";
 import {
-  githubCredentialsFor,
-  isUserEnabled,
-  skipAuth,
+  assertNotProduction,
   authNewUserFile,
+  isUserEnabled,
+  keycloakAdminConfig,
+  newUserCredentials,
+  skipAuth,
 } from "../../utils/config";
 import {
-  authenticateWithGitHub,
   checkIfAuthenticated,
   completeLoginAndOnboard,
+  loginWithKeycloakPassword,
 } from "../../utils/auth-helpers";
+import { createRealmUser } from "../../utils/keycloak-admin";
 
 /**
  * New User setup.
  *
- * Depends on the keycloak-cleanup project (see playwright.config.ts), which
- * deletes any existing user matching the New User's email so this login
- * exercises the fresh-account onboarding path.
+ * Depends on the ``keycloak-cleanup`` project (see ``playwright.config.ts``),
+ * which deletes any prior user matching the New User's email. This project
+ * then creates a fresh Keycloak-native user via the Admin API, drives
+ * Keycloak's local login form as that user, and completes the app's TOS +
+ * onboarding flow, so the storage state we save represents a first-login
+ * account on the app.
  *
- * Logs the New User in via GitHub and saves the authenticated storage state to
- * fixtures/auth.new-user.json. When AUTH_METHOD=skip is set and that file
- * already exists, the login is skipped and the existing state is reused.
+ * GitHub is deliberately not involved. The value of the new-user role is
+ * exercising the *app's* first-login provisioning (TOS, onboarding form, org
+ * bootstrap, first landing on the home screen). Driving real GitHub OAuth
+ * for that has repeatedly broken on GitHub-side product changes that are
+ * not our regression (2FA reminder page variants, verified-device screen,
+ * first-time consent form races); the returning-user role continues to
+ * exercise the app ↔ Keycloak ↔ GitHub round-trip on every run.
  *
- * When NEW_GITHUB_USERNAME is unset, this project (and its dependent test
- * projects) are skipped entirely — the run simply doesn't exercise the New
- * User role. This is useful for fresh clusters where there are no pre-existing
- * users to delete and re-onboard.
+ * When ``KEYCLOAK_NEW_USER_USERNAME`` is unset, this project (and its
+ * dependent test projects) are skipped entirely. When ``AUTH_METHOD=skip`` is
+ * set and the storage-state file already exists, the login is skipped and
+ * the existing state is reused.
  */
 setup("authenticate new user", async ({ page, baseURL }) => {
-  setup.skip(!isUserEnabled("new-user"), "NEW_GITHUB_USERNAME not set");
+  setup.skip(!isUserEnabled("new-user"), "KEYCLOAK_NEW_USER_USERNAME not set");
 
   if (skipAuth() && fs.existsSync(authNewUserFile)) {
     console.log(
@@ -37,6 +47,23 @@ setup("authenticate new user", async ({ page, baseURL }) => {
     );
     return;
   }
+
+  // Refuse to run destructive Keycloak realm writes against production.
+  assertNotProduction();
+
+  const creds = newUserCredentials();
+  const adminConfig = keycloakAdminConfig();
+
+  // Recreate the synthetic user with a known password. The prior
+  // ``keycloak-cleanup`` project has already deleted any earlier instance,
+  // so this is a fresh create.
+  await createRealmUser(adminConfig, {
+    email: creds.email,
+    username: creds.username,
+    password: creds.password,
+    firstName: "E2E",
+    lastName: "New User",
+  });
 
   await page.goto(baseURL || "/");
 
@@ -46,8 +73,7 @@ setup("authenticate new user", async ({ page, baseURL }) => {
     return;
   }
 
-  const creds = githubCredentialsFor("new-user");
-  await authenticateWithGitHub(page, creds);
+  await loginWithKeycloakPassword(page, creds);
   await completeLoginAndOnboard(page, creds.username);
 
   await page.context().storageState({ path: authNewUserFile });
