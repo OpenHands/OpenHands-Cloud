@@ -16,8 +16,12 @@ import { BasePage } from "./BasePage";
  * management) are unchanged and remain reachable at their existing URLs
  * (`/settings`, `/settings/api-keys`, `/settings/billing`, …). The
  * `openUserMenu`/`logout` helpers therefore navigate to `/settings` — which is
- * where the account nav and Logout button live — rather than hovering an
- * avatar dropdown on the (Canvas) home page.
+ * where the account nav lives — rather than hovering an avatar dropdown on
+ * the (Canvas) home page. On `/settings`, the sidebar's user footer is a
+ * dropdown trigger (`settings-nav-user-menu`, labelled "`$email` Account");
+ * Logout is a menuitem revealed by clicking it. Reach it via
+ * `openAccountMenu()` (or, for a full logout, `logout()`), not by matching
+ * "Logout" against the initial /settings DOM.
  */
 export class HomePage extends BasePage {
   // Canvas home containers
@@ -244,20 +248,47 @@ export class HomePage extends BasePage {
   }
 
   /**
+   * Locator for the Logout entry revealed by the account-menu dropdown.
+   *
+   * The Settings sidebar's user footer is a dropdown trigger labelled
+   * "``$email`` Account"; Logout is only reachable *after* clicking it.
+   * The revealed entry has no stable ``data-testid`` on the frontend, so
+   * this matches by role + accessible name. ``.or()`` covers both plausible
+   * roles (``menuitem`` for a proper ARIA menu; ``button`` when the app
+   * renders the entry with role="button" instead), so the locator survives
+   * a menu-shell refactor between the two.
+   */
+  get logoutMenuItem(): Locator {
+    return this.page
+      .getByRole("menuitem", { name: /^logout$/i })
+      .or(this.page.getByRole("button", { name: /^logout$/i }));
+  }
+
+  /**
+   * Open the account dropdown in the Settings sidebar user footer.
+   *
+   * Preferred over calling ``settingsNavUserMenu.click()`` directly: this
+   * navigates first (idempotent), then reveals the menu, and asserts on
+   * Logout being visible — a positive readiness signal for callers that
+   * want the menu open (assertion, screenshot, click into a menuitem).
+   */
+  async openAccountMenu(): Promise<void> {
+    await this.openAccountSettings();
+    await this.settingsNavUserMenu.click();
+    await expect(this.logoutMenuItem).toBeVisible({ timeout: 10_000 });
+  }
+
+  /**
    * Log out via the Settings screen and wait for the login page.
    *
-   * Canvas moved the Logout entry into the Settings sidebar's user footer
-   * (see the /settings screenshot). We navigate there, click the "Logout"
-   * button (matched by accessible name — the button doesn't have a stable
-   * data-testid), and wait for Keycloak to redirect us back to /login.
+   * The Settings sidebar's user footer became a dropdown trigger
+   * ("``$email`` Account") that hides the Logout entry behind a click; the
+   * button is no longer inline. Reveal the menu, click Logout, wait for
+   * Keycloak to redirect us back to /login.
    */
   async logout(): Promise<void> {
-    await this.openAccountSettings();
-
-    const logoutButton = this.page.getByRole("button", { name: /^logout$/i });
-    await expect(logoutButton).toBeVisible({ timeout: 10_000 });
-    await logoutButton.click();
-
+    await this.openAccountMenu();
+    await this.logoutMenuItem.click();
     await this.page.waitForURL(/\/login/, { timeout: 30_000 });
   }
 
