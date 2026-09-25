@@ -7,9 +7,9 @@ This directory contains the Playwright harness and release-level end-to-end test
 - Node.js 20 or newer
 - A supported Playwright browser
 - An explicit non-production or intentionally selected release target
-- Three credential sets: Keycloak admin, Returning User (GitHub), and New User (GitHub) — or pre-generated Playwright storage states for the two user roles
+- Three credential sets: Keycloak admin, Returning User (GitHub), and New User (synthetic Keycloak-native) — or pre-generated Playwright storage states for the two user roles
 
-> **Opt-in roles:** Each user role is enabled by setting its `*_GITHUB_USERNAME` env var. Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
+> **Opt-in roles:** Each user role is enabled by setting its own username env var (`RETURNING_GITHUB_USERNAME` for the federated GitHub user, `KEYCLOAK_NEW_USER_USERNAME` for the synthetic Keycloak-native user). Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
 
 ## Install
 
@@ -176,14 +176,16 @@ OpenHands Cloud uses Keycloak as its identity provider, federating identities fr
 
 Three credential sets are required before any test run:
 
-| Role           | Provider | Credentials                                | Purpose                                                                                                                           |
-| -------------- | -------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Keycloak admin | Keycloak | username + password                        | Administers Keycloak; deletes the New User before each run                                                                        |
-| Super admin    | API key  | unbound superadmin API key                 | Creates orgs and provisions users via the REST API (org-management specs)                                                         |
-| Returning User | GitHub   | username + password + optional TOTP secret | A user whose OpenHands account already exists                                                                                     |
-| New User       | GitHub   | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
+| Role           | Provider          | Credentials                                | Purpose                                                                                                                           |
+| -------------- | ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Keycloak admin | Keycloak          | username + password                        | Administers Keycloak; deletes and recreates the synthetic New User before each run                                                |
+| Super admin    | API key           | unbound superadmin API key                 | Creates orgs and provisions users via the REST API (org-management specs)                                                         |
+| Returning User | GitHub (via Keycloak IdP) | username + password + optional TOTP secret | An existing federated user; exercises the full app ↔ Keycloak ↔ GitHub round-trip on every run                             |
+| New User       | Keycloak (native) | Keycloak username + password + reserved e2e-only email | A synthetic account the harness deletes and recreates each run; exercises the app's first-login onboarding path deterministically |
 
-The New User's Keycloak account is identified by email. At the start of a run, the Keycloak admin logs in and deletes any existing user whose email matches `KEYCLOAK_NEW_USER_EMAIL`. The New User then logs in via GitHub and is provisioned from scratch, exercising the onboarding path.
+The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
+
+`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `.e2e.test` namespace (RFC 2606 reserves `.test` from being a real TLD). Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
 
 ### Environment variables
 
@@ -196,7 +198,7 @@ Keycloak admin (cleanup):
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
 - `KEYCLOAK_ADMIN_PASSWORD` — admin password.
-- `KEYCLOAK_NEW_USER_EMAIL` — email of the New User to delete.
+- `KEYCLOAK_NEW_USER_EMAIL` — email of the synthetic New User. Must be under the reserved `.e2e.test` namespace (RFC 2606); enforced by `assertE2eOnlyEmail`.
 
 The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
 
@@ -210,11 +212,11 @@ Returning User (GitHub):
 - `RETURNING_GITHUB_PASSWORD` — required when the role is enabled.
 - `RETURNING_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
 
-New User (GitHub):
+New User (synthetic Keycloak-native account):
 
-- `NEW_GITHUB_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup) entirely.
-- `NEW_GITHUB_PASSWORD` — required when the role is enabled.
-- `NEW_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
+- `KEYCLOAK_NEW_USER_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup + creation) entirely.
+- `KEYCLOAK_NEW_USER_PASSWORD` — required when the role is enabled. Set on the user by the Admin API and submitted through Keycloak's local login form.
+- `KEYCLOAK_NEW_USER_EMAIL` — required when the role is enabled (see above). Also used by `006-org-management.spec.ts` to provision the user into a test org via the REST API.
 
 Test fixtures (optional overrides):
 
