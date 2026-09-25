@@ -4,6 +4,38 @@ metadata:
   name: openhands-config
 spec:
   groups:
+    # EXPERIMENTAL. Must stay the first group so it renders at the top of the
+    # Admin Console config screen -- it decides which components the rest of the
+    # config even applies to.
+    #
+    # `enterprise` deploys the full OpenHands platform (the historical, and only
+    # supported, behaviour). `sandbox_service` deploys nothing but runtime-api
+    # and the infrastructure runtime-api itself needs (database, TLS secret,
+    # CA bundle, sysbox/cert-manager infra). The app, Keycloak, LiteLLM, Redis,
+    # MinIO and every optional integration are switched off, and the config
+    # groups that only feed those components are hidden (see the `when:` on each
+    # enterprise-only group below).
+    - name: deployment_profile
+      title: Deployment Profile
+      description: Choose which OpenHands components this installation deploys.
+      items:
+        - name: deployment_profile
+          title: Deployment Profile
+          help_text: |
+            • **OpenHands Enterprise** — the full OpenHands platform.
+            • **OpenHands Sandbox Service (experimental)** — deploys only the runtime-api sandbox orchestrator and the infrastructure it requires. The web app, authentication, LLM proxy and integrations are not installed.
+
+            **Experimental:** the Sandbox Service profile is a preview. Do not change this on an existing installation -- switching profiles adds or removes core components.
+          type: select_one
+          # `default` (not `value`): existing installs have no stored value for
+          # this new option, so they resolve to `enterprise` and are unchanged,
+          # while an operator's explicit choice in ConfigValues still wins.
+          default: "enterprise"
+          items:
+            - name: "enterprise"
+              title: "OpenHands Enterprise"
+            - name: "sandbox_service"
+              title: "OpenHands Sandbox Service (experimental)"
     - name: domain_configuration
       title: Domain Configuration
       description: Configure hostnames and domains for OpenHands services
@@ -328,6 +360,7 @@ spec:
     - name: llm_configuration
       title: LLM Configuration
       description: Configure your Large Language Model provider
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: llm_provider
           title: LLM Provider
@@ -638,6 +671,7 @@ spec:
     - name: litellm_admin_console
       title: LiteLLM Admin Console
       description: Configure credentials for the bundled LiteLLM Admin UI.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: litellm_admin_password
           title: LiteLLM Admin Password
@@ -764,6 +798,7 @@ spec:
     - name: default_openhands_organization
       title: Default OpenHands Organization
       description: 'Bootstrap a default OpenHands organization for this instance. Note: this config is additive and never deletes organizations, removes members, or demotes users; these actions can be done in the app.'
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: default_openhands_org_enabled
           title: Enable Default OpenHands Organization
@@ -786,6 +821,7 @@ spec:
     - name: keycloak_administration
       title: Keycloak Administration
       description: Manage OpenHands users and identity provider account links in Keycloak.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: keycloak_admin_ui_password
           title: Keycloak Admin Password
@@ -795,6 +831,7 @@ spec:
     - name: authentication_security
       title: Authentication Security
       description: Configure safeguards applied when users sign in.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: duplicate_email_check
           title: Prevent Duplicate Base Emails
@@ -805,6 +842,7 @@ spec:
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
       description: Configure Bitbucket Data Center OAuth for user authentication
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: bitbucket_data_center_auth_enabled
           title: Enable Bitbucket Data Center Authentication
@@ -855,6 +893,7 @@ spec:
     - name: azure_devops_authentication
       title: Azure DevOps Authentication
       description: Configure Azure DevOps OAuth through Microsoft Entra ID
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: azure_devops_auth_enabled
           title: Enable Azure DevOps Authentication
@@ -894,6 +933,7 @@ spec:
     - name: jira_data_center_integration
       title: Jira Data Center Integration
       description: Enable the Jira Data Center issue integration. Configure the Jira server, linking method, and service account for this OpenHands Enterprise deployment.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: jira_data_center_enabled
           title: Enable Jira Data Center Integration
@@ -958,6 +998,7 @@ spec:
     - name: jira_cloud_integration
       title: Jira Cloud Integration
       description: Enable the Jira Cloud issue integration. An organization admin finishes setup inside OpenHands and registers the webhook in Jira Cloud.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: jira_cloud_enabled
           title: Enable Jira Cloud Integration
@@ -974,6 +1015,7 @@ spec:
     - name: github_authentication
       title: GitHub Authentication
       description: Configure GitHub App integration for user authentication. Note that this is a GitHub App and NOT a GitHub OAuth app.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: github_auth_enabled
           title: Enable GitHub Authentication
@@ -1024,6 +1066,7 @@ spec:
     - name: gitlab_authentication
       title: GitLab Authentication
       description: Configure GitLab OAuth and App integration for user authentication
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: gitlab_auth_enabled
           title: Enable GitLab Authentication
@@ -1052,6 +1095,7 @@ spec:
     - name: enterprise_sso_authentication
       title: Enterprise SSO (SAML) Authentication
       description: Let users sign in with your corporate SAML identity provider.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: enterprise_sso_enabled
           title: Enable Enterprise SSO Authentication
@@ -1078,6 +1122,7 @@ spec:
     - name: slack_configuration
       title: Enable Slack
       description: Enable Slack
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: slack_enabled
           title: Enable Slack Integration
@@ -1107,6 +1152,7 @@ spec:
     - name: smtp_configuration
       title: SMTP Email Delivery
       description: Configure SMTP for OpenHands email notifications and Keycloak sign-in emails (email verification, account linking, password reset)
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: smtp_enabled
           title: Enable SMTP
@@ -1551,6 +1597,7 @@ spec:
     - name: experimental
       title: Experimental
       description: Preview features that are still in development. Enable at your own risk.
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: plugin_directory_enabled
           title: Enable Plugin Directory
@@ -1571,6 +1618,7 @@ spec:
     - name: analytics_configuration
       title: Analytics Configuration
       description: Configure LLM observability and tracing with Laminar
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: analytics_enabled
           title: Enable Analytics
@@ -1601,6 +1649,7 @@ spec:
     - name: automations_configuration
       title: Automations
       description: Configure the Automations UI and backend
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: automations_enabled
           title: Enable Automations
@@ -1651,6 +1700,7 @@ spec:
     - name: agent_canvas_configuration
       title: Agent Canvas
       description: Configure the Agent Canvas UI
+      when: 'repl{{ ne (ConfigOption "deployment_profile") "sandbox_service" }}'
       items:
         - name: agent_canvas_enabled
           title: Enable Agent Canvas
