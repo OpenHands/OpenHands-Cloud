@@ -204,7 +204,9 @@ The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain wi
 
 Super admin (org management):
 
-- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by the org-management specs (`006-org-management.spec.ts`) to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
+- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by `006-org-management.spec.ts` and `011-automations.spec.ts` to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
+
+The `011-automations` suite also probes `/api/automation/v1?limit=1` for reachability and skips the whole suite when the automation subchart is not deployed on the target cluster; no additional env var is required.
 
 Returning User (GitHub):
 
