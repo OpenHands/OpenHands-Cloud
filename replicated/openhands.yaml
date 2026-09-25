@@ -10,6 +10,13 @@ spec:
   weight: 10
   helmUpgradeFlags: ["--wait", "--timeout", "600s", "--force-conflicts"]
   values:
+    # EXPERIMENTAL deployment-profile switch. In the `sandbox_service` profile
+    # the umbrella chart's own templates (the app deployment, its ingresses,
+    # cronjobs, TLSStore, etc.) are skipped and only runtime-api + its required
+    # infra stay enabled below. `enterprise` keeps the historical behaviour, so
+    # existing installs (which resolve deployment_profile to `enterprise`) are
+    # unchanged.
+    enabled: repl{{ ConfigOptionEquals "deployment_profile" "enterprise" }}
     global:
       imageRegistry: 'images.r9.all-hands.dev'
       imagePullSecrets:
@@ -134,7 +141,8 @@ spec:
       env: '{{repl Namespace }}'
 
     keycloak:
-      enabled: true
+      # Enterprise-only: the sandbox_service profile ships no app to authenticate.
+      enabled: repl{{ ConfigOptionEquals "deployment_profile" "enterprise" }}
       url: 'http://keycloak'
       ssoSessionIdleTimeout: 'repl{{ ConfigOption "keycloak_sso_session_idle_timeout" }}'
       ssoSessionMaxLifespan: 'repl{{ ConfigOption "keycloak_sso_session_max_lifespan" }}'
@@ -208,7 +216,8 @@ spec:
       url: 'http://openhands-litellm:4000'
 
     litellm-helm:
-      enabled: true
+      # Enterprise-only: the LLM proxy is not part of the sandbox_service profile.
+      enabled: repl{{ ConfigOptionEquals "deployment_profile" "enterprise" }}
       db:
         # TODO: should the fallback be openhands-postgresql here?
         endpoint: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
@@ -491,7 +500,9 @@ spec:
     postgresql:
       enabled: repl{{ ConfigOptionEquals "postgres_type" "embedded_postgres" }}
     redis:
-      enabled: true
+      # Enterprise-only: runtime-api has no Redis dependency (it reads none of
+      # the redis env), so the sandbox_service profile omits it.
+      enabled: repl{{ ConfigOptionEquals "deployment_profile" "enterprise" }}
       image:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
       auth:
@@ -502,7 +513,10 @@ spec:
     filestore:
       type: s3
     minio:
-      enabled: true
+      # Enterprise-only: the bundled object store backs the app's conversation
+      # filestore. runtime-api's optional file archive is off by default, so the
+      # sandbox_service profile omits MinIO.
+      enabled: repl{{ ConfigOptionEquals "deployment_profile" "enterprise" }}
       persistence:
         enabled: true
         storageClass: openebs-hostpath
