@@ -25,6 +25,7 @@ safely. Value paths:
                            lives one level up; "." (nested, the runtime-api's own
                            default) puts them under it.
   analyticsEnabled ....... laminar.enabled
+  llmEnabled ............. litellm-helm.enabled
   probeImage ............. proxy base of image.repository + docker.io/alpine/openssl,
                            so the pull uses the proxy (and the pull secret KOTS
                            injects onto runPods) instead of Docker Hub directly.
@@ -33,7 +34,9 @@ safely. Value paths:
 {{- $kcIng := (.Values.keycloak | default dict).ingress | default dict -}}
 {{- $secrets := $kcIng.secrets | default list -}}
 {{- $cert := "" -}}{{- if $secrets -}}{{- $cert = (index $secrets 0).certificate | toString -}}{{- end -}}
-{{- $llmIng := (index .Values "litellm-helm" | default dict).ingress | default dict -}}
+{{- $llmChart := index .Values "litellm-helm" | default dict -}}
+{{- $llmEnabled := $llmChart.enabled | default false -}}
+{{- $llmIng := $llmChart.ingress | default dict -}}
 {{- $llmHosts := $llmIng.hosts | default list -}}
 {{- $llmHost := "" -}}{{- if $llmHosts -}}{{- $llmHost = (index $llmHosts 0).host -}}{{- end -}}
 {{- $rtApi := index .Values "runtime-api" | default dict -}}
@@ -51,6 +54,7 @@ analyticsHost: {{ $lamFrontIng.hostname | default "" | quote }}
 routingMode: {{ $rtApiEnv.RUNTIME_ROUTING_MODE | default "" | quote }}
 rtSeparator: {{ $rtApiEnv.RUNTIME_URL_SEPARATOR | default "." | quote }}
 analyticsEnabled: {{ $lam.enabled | default false }}
+llmEnabled: {{ $llmEnabled }}
 probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/openhands/enterprise-server" $repo) | quote }}
 {{- end -}}
 
@@ -131,7 +135,12 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
 
               check_san APP   "$H_APP";   check_dns APP   "$H_APP"
               check_san AUTH  "$H_AUTH";  check_dns AUTH  "$H_AUTH"
-              check_san LLM   "$H_LLM";   check_dns LLM   "$H_LLM"
+
+              # LiteLLM ingress only exists when the litellm-helm subchart is enabled.
+              if [ "$LLM_ON" = "1" ]; then
+                check_san LLM "$H_LLM"; check_dns LLM "$H_LLM"
+              fi
+
               check_san RTAPI "$H_RTAPI"; check_dns RTAPI "$H_RTAPI"
 
               # Runtime base: path routing serves {base}/{id}, needing the exact
@@ -169,6 +178,8 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
               value: {{ $p.rtSeparator | quote }}
             - name: ANALYTICS_ON
               value: {{ if $p.analyticsEnabled }}"1"{{ else }}"0"{{ end }}
+            - name: LLM_ON
+              value: {{ if $p.llmEnabled }}"1"{{ else }}"0"{{ end }}
             - name: H_APP
               value: {{ $p.appHost | quote }}
             - name: H_AUTH
@@ -241,7 +252,8 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
       - warn:
           when: "false"
           message: '{{ $p.authHost }} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress before users connect.'
-# --- LiteLLM proxy ---
+{{- if $p.llmEnabled }}
+# --- LiteLLM proxy — only present/checked when litellm-helm is enabled ---
 - textAnalyze:
     checkName: "TLS certificate covers the LLM proxy hostname"
     fileName: tls-hostname-check/tls-hostname-check.log
@@ -264,6 +276,7 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
       - warn:
           when: "false"
           message: '{{ $p.llmHost }} did not resolve from inside the cluster. Create a DNS record pointing it at the ingress.'
+{{- end }}
 # --- Runtime API ---
 - textAnalyze:
     checkName: "TLS certificate covers the runtime API hostname"

@@ -79,9 +79,25 @@
         "apiHostname": { "type": "string" }
       }
     },
+    "defaultLlm": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "model": { "type": "string" },
+        "baseUrl": { "type": "string" },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "secretKey": { "type": "string" }
+          }
+        }
+      }
+    },
     "litellm": {
       "type": "object",
       "properties": {
+        "enabled": { "type": "boolean" },
         "url": { "type": "string" },
         "teamId": { "type": "string" }
       }
