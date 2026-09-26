@@ -1030,10 +1030,7 @@ runtime-api:
           OH_BASH_EVENTS_DIR: "/workspace/bash_events"
           OH_CONVERSATIONS_PATH: "/workspace/conversations"
           OH_ENABLE_VNC: "0"
-          OH_VSCODE_PORT: "60001"
           OH_WEBHOOKS_0_BASE_URL: ""
-          OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
-          VSCODE_PORT: "60001"
           WORKER_1: "12000"
           WORKER_2: "12001"
         command:

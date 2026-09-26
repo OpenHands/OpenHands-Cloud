@@ -425,10 +425,7 @@ spec:
               OH_BASH_EVENTS_DIR: "/workspace/bash_events"
               OH_CONVERSATIONS_PATH: "/workspace/conversations"
               OH_ENABLE_VNC: "0"
-              OH_VSCODE_PORT: "60001"
               OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
-              OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
-              VSCODE_PORT: "60001"
               WORKER_1: "12000"
               WORKER_2: "12001"
               CURL_CA_BUNDLE: "/etc/openhands/ca-bundle/ca-bundle.crt"
