@@ -1,4 +1,15 @@
 {{- $port := int .Values.service.port -}}
+{{- $cloudProxy := .Values.cloudProxy | default dict -}}
+{{- $cloudProxyEnabled := (index $cloudProxy "enabled") | default false -}}
+{{- $cloudProxyPort := (index $cloudProxy "agentServerPort") | default 18000 -}}
+{{- $env := deepCopy (.Values.env | default dict) -}}
+{{- if $cloudProxyEnabled -}}
+{{- $_ := set $env "AGENT_CANVAS_ENABLE_SDK_CLOUD_PROXY" "1" -}}
+{{- $_ := set $env "AGENT_CANVAS_SDK_CLOUD_PROXY_PORT" (toString $cloudProxyPort) -}}
+{{- end -}}
+{{- if .Values.staticServer.disableTelemetry -}}
+{{- $_ := set $env "AGENT_CANVAS_DISABLE_TELEMETRY" "1" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -64,15 +75,9 @@ spec:
             - name: http
               containerPort: {{ $port }}
               protocol: TCP
-          {{- if or .Values.staticServer.disableTelemetry .Values.env }}
+          {{- with $env }}
           env:
-            {{- if .Values.staticServer.disableTelemetry }}
-            # static-server.mjs reads this and injects
-            # window.__AGENT_CANVAS_DO_NOT_TRACK__ to disable product telemetry.
-            - name: AGENT_CANVAS_DISABLE_TELEMETRY
-              value: "1"
-            {{- end }}
-            {{- range $k, $v := .Values.env }}
+            {{- range $k, $v := . }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
