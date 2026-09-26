@@ -6,7 +6,7 @@ fails `helm upgrade` and is what Replicated and native Helm report as release
 health. Weight 5 keeps it ahead of the laminar retention job (weight 10). Gated
 on .Release.IsUpgrade for the same reasons as budget-preflight-job.yaml.
 */ -}}
-{{- if and .Values.enabled .Values.budgetReconcileGate.enabled .Release.IsUpgrade }}
+{{- if and .Values.enabled .Values.litellm.enabled .Values.budgetReconcileGate.enabled .Release.IsUpgrade }}
 apiVersion: batch/v1
 kind: Job
 metadata:

@@ -392,6 +392,27 @@ litellm:
   teamId: "<TEAM_ID>"
 ```
 
+#### Running without LiteLLM
+
+Set `litellm.enabled: false` (with `litellm-helm.enabled: false`) to run with no LLM gateway. OpenHands then sets `ENABLE_LITELLM=false` and no `LITE_LLM_*` env, skips the LiteLLM init container and budget jobs, and disables budgets, managed LLM keys and OpenHands-managed models. Users configure their own LLM keys in Settings.
+
+To give new users a working default model, set `defaultLlm`. The model is called directly with the key from the referenced secret; `baseUrl` is only needed for custom endpoints.
+
+```yaml
+litellm:
+  enabled: false
+litellm-helm:
+  enabled: false
+defaultLlm:
+  enabled: true
+  model: anthropic/claude-sonnet-4-5-20250929
+  auth:
+    existingSecret: litellm-env-secrets
+    secretKey: ANTHROPIC_API_KEY
+```
+
+This is an install-time choice; switching an existing install on or off is not supported yet.
+
 ### Install OpenHands
 
 Now we can install the helm chart.
