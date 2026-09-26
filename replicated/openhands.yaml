@@ -99,8 +99,9 @@ spec:
       # BYOK: whether users may configure their own LLM providers/keys in
       # their settings, in addition to the admin-managed proxy models.
       # Enterprise reads the FEATURE_FLAGS-prefixed name; bare name kept for OSS.
-      OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
-      OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
+      # Forced on without LiteLLM: BYOK is then the only way to add models.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ or (ConfigOptionEquals "allow_user_llm_configuration" "1") (ConfigOptionEquals "enable_litellm" "0") }}'
+      OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ or (ConfigOptionEquals "allow_user_llm_configuration" "1") (ConfigOptionEquals "enable_litellm" "0") }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
@@ -205,10 +206,12 @@ spec:
           readOnly: true
 
     litellm:
+      # Off: no gateway at all (no LiteLLM env, pod or database).
+      enabled: repl{{ ConfigOptionEquals "enable_litellm" "1" }}
       url: 'http://openhands-litellm:4000'
 
     litellm-helm:
-      enabled: true
+      enabled: repl{{ ConfigOptionEquals "enable_litellm" "1" }}
       db:
         # TODO: should the fallback be openhands-postgresql here?
         endpoint: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}oh-main-postgresql{{repl end}}'
@@ -1145,6 +1148,81 @@ spec:
         litellm-helm:
           proxy_config:
             model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "gemini_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "gemini/%s" $m) "api_key" "os.environ/GOOGLE_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # LiteLLM off: the selected provider becomes every new user's default model,
+    # called directly with the admin's key (first line of its models textarea).
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "anthropic") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'anthropic/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "anthropic_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first | default "claude-sonnet-4-5-20250929" }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: ANTHROPIC_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "openai") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'openai/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "openai_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: OPENAI_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini")) }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'gemini/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "gemini_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: GOOGLE_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "deepseek") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'deepseek/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "deepseek_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: DEEPSEEK_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "mistral") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'mistral/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "mistral_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: MISTRAL_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "groq") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'groq/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "groq_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: GROQ_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "openrouter") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'openrouter/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "openrouter_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: OPENROUTER_API_KEY
+    - when: '{{repl and (ConfigOptionEquals "enable_litellm" "0") (ConfigOptionEquals "llm_provider" "custom") }}'
+      recursiveMerge: true
+      values:
+        defaultLlm:
+          enabled: true
+          model: 'repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "custom_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ if contains "/" $first }}repl{{ $first }}repl{{ else }}openai/repl{{ $first }}repl{{ end }}'
+          baseUrl: '{{repl ConfigOption "custom_base_url" }}'
+          auth:
+            existingSecret: litellm-env-secrets
+            secretKey: CUSTOM_API_KEY
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs

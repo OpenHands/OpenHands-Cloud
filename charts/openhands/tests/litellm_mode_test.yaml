@@ -1,0 +1,129 @@
+suite: litellm gateway modes (bundled, external, none)
+templates:
+  - deployment.yaml
+  - litellm-config-script.yaml
+  - budget-maintenance-cronjob.yaml
+  - validations.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  # troubleshoot/secrets.yaml renders the bundle specs by including helpers
+  # defined across these files, so they must be compiled alongside it.
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: wires the external gateway by default
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITE_LLM_API_URL
+            value: https://llm-proxy.example.com
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers
+          content:
+            name: litellm-config
+          any: true
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_LITELLM
+            value: "false"
+      - template: litellm-config-script.yaml
+        hasDocuments:
+          count: 1
+      - template: budget-maintenance-cronjob.yaml
+        hasDocuments:
+          count: 1
+
+  - it: sets no gateway env and skips the LiteLLM init container when disabled
+    set:
+      litellm.enabled: false
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_LITELLM
+            value: "false"
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITE_LLM_API_URL
+          any: true
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITE_LLM_API_KEY
+          any: true
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.initContainers
+          content:
+            name: litellm-config
+          any: true
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.metadata.annotations["checksum/litellm-config"]
+      - template: litellm-config-script.yaml
+        hasDocuments:
+          count: 0
+      - template: budget-maintenance-cronjob.yaml
+        hasDocuments:
+          count: 0
+
+  # The volume would reference a ConfigMap that no longer renders and block pod start.
+  - it: drops the LiteLLM script volume when disabled
+    set:
+      litellm.enabled: false
+      keycloak.enabled: true
+    asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: litellm-config-script
+          any: true
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content:
+            name: keycloak-config-script
+          any: true
+
+  - it: lets an explicit env override win over the derived ENABLE_LITELLM
+    set:
+      litellm.enabled: false
+      env.ENABLE_LITELLM: "1"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_LITELLM
+            value: "1"
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_LITELLM
+            value: "false"
+
+  - it: refuses the bundled LiteLLM subchart when the gateway is disabled
+    set:
+      litellm.enabled: false
+      litellm-helm.enabled: true
+    asserts:
+      - template: validations.yaml
+        failedTemplate:
+          errorMessage: "litellm.enabled is false (no LLM gateway) but litellm-helm.enabled is true. Set litellm-helm.enabled=false, or litellm.enabled=true to use the bundled LiteLLM."

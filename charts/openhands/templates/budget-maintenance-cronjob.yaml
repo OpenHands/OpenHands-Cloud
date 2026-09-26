@@ -1,4 +1,4 @@
-{{- if and .Values.enabled .Values.budgetMaintenance.enabled }}
+{{- if and .Values.enabled .Values.litellm.enabled .Values.budgetMaintenance.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:

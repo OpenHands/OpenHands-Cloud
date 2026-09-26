@@ -15,6 +15,15 @@ are never rendered, so a server-less release must not trip them.
 {{- if and .Values.enabled .Values.enterpriseSSO.idpMetadataUrl (not (include "openhands.keycloakProvisionRealm" .)) -}}
 {{- fail "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually." -}}
 {{- end -}}
+{{- if and (not .Values.litellm.enabled) (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") -}}
+{{- fail "litellm.enabled is false (no LLM gateway) but litellm-helm.enabled is true. Set litellm-helm.enabled=false, or litellm.enabled=true to use the bundled LiteLLM." -}}
+{{- end -}}
+{{- if and .Values.enabled .Values.defaultLlm.enabled (not .Values.defaultLlm.model) -}}
+{{- fail "defaultLlm.enabled is true but defaultLlm.model is empty. Set defaultLlm.model to an SDK model string (e.g. anthropic/claude-sonnet-4-5-20250929)." -}}
+{{- end -}}
+{{- if and .Values.enabled .Values.defaultLlm.auth.existingSecret (not .Values.defaultLlm.auth.secretKey) -}}
+{{- fail "defaultLlm.auth.existingSecret is set but defaultLlm.auth.secretKey is empty. Set the key that holds the provider API key." -}}
+{{- end -}}
 {{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict -}}
 {{- if and .Values.enabled (eq $orgCondenser.maxTokens nil) (or $orgCondenser.applyToExisting $orgCondenser.overwriteExisting) -}}
 {{- fail "orgDefaults.condenser.maxTokens must be set before applyToExisting or overwriteExisting can be enabled." -}}
