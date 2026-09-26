@@ -10,9 +10,8 @@ enabled: true
 
 image:
   repository: ghcr.io/openhands/enterprise-server
-  # You must use a stable, semver tag. Do not use sha-based tags.
-  # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.64.0
+  # TEMPORARY (fleet-test branch only, never merge): OpenHands/enterprise#538 head.
+  tag: sha-e225546
 
 autoscaling:
   enabled: false
