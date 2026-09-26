@@ -94,3 +94,13 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: renders nothing on upgrade when the LiteLLM gateway is disabled
+    release:
+      upgrade: true
+    set:
+      enabled: true
+      litellm.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

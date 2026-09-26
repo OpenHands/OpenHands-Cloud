@@ -327,7 +327,20 @@ integrationEvents:
   uvicorn:
     workers: 2
 
+# Install-time default model seeded into new users' settings and called directly, bypassing any gateway.
+defaultLlm:
+  enabled: false
+  # SDK model string, e.g. anthropic/claude-sonnet-4-5-20250929.
+  model: ""
+  # Empty uses the model provider's own endpoint.
+  baseUrl: ""
+  auth:
+    existingSecret: ""
+    secretKey: ""
+
 litellm:
+  # false = no LLM gateway: sets ENABLE_LEGACY_LITELLM=false and no LITE_LLM_* env. Requires litellm-helm.enabled=false.
+  enabled: true
   # NOTE: to set the LLM model, set the LITELLM_DEFAULT_MODEL variable in the env section above.
   # REQUIRED: Update to match the hostname set in the litellm-helm ingress section
   url: "https://llm-proxy.example.com"
