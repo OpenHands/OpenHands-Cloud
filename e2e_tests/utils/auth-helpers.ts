@@ -1,6 +1,6 @@
 import { Page, Locator, expect } from "@playwright/test";
 import { generate } from "otplib";
-import type { GitHubCredentials } from "./config";
+import type { GitHubCredentials, NewUserCredentials } from "./config";
 
 /**
  * Shared authentication helpers used by the per-user setup projects.
@@ -107,6 +107,76 @@ export async function authenticateWithGitHub(
   await handleOAuthAuthorization(page);
 
   console.log("GitHub authentication flow completed");
+}
+
+/**
+ * Drive Keycloak's local username/password login form for a synthetic
+ * Keycloak-native user.
+ *
+ * The new-user setup project creates a fresh, non-federated user in the
+ * ``allhands`` realm via the Keycloak Admin API and then calls this helper to
+ * establish a browser session as that user. GitHub is deliberately not
+ * involved: driving the real OAuth flow against github.com is what made the
+ * previous new-user setup fragile (see the commit history of
+ * ``dismissTwoFactorReminder``), and the returning-user path already covers
+ * the app ↔ Keycloak ↔ GitHub round-trip.
+ *
+ * The Keycloak login page renders a native Sign-In form alongside the
+ * "Log in with GitHub" social button; this helper fills the native form's
+ * ``#username`` / ``#password`` inputs (Keycloak stable ids) and submits.
+ */
+export async function loginWithKeycloakPassword(
+  page: Page,
+  creds: NewUserCredentials,
+): Promise<void> {
+  console.log("Starting Keycloak-native login for new user...");
+
+  // The app's "Log in with GitHub" button sends the browser to Keycloak with
+  // ``kc_idp_hint=github``, which makes Keycloak 302 straight to GitHub OAuth
+  // and skip its own login form. We want the local form, so intercept the
+  // request to Keycloak's ``/protocol/openid-connect/auth`` endpoint and
+  // strip the hint before it reaches the server. Everything else (client_id,
+  // redirect_uri, state, PKCE) is left untouched, so the eventual callback
+  // still passes the app's state validation.
+  //
+  // Uses ``route.fallback`` rather than ``route.continue`` so any
+  // previously-registered handler (unit-test fixtures, cross-cutting fixtures
+  // added by the caller) still runs — ``route.continue`` sends the request
+  // straight to the network and would short-circuit them.
+  //
+  // The ``**`` glob matches the auth host regardless of environment
+  // (staging vs. self-hosted vs. an explicit AUTH_BASE_URL).
+  await page.route(
+    "**/realms/*/protocol/openid-connect/auth**",
+    async (route) => {
+      const url = new URL(route.request().url());
+      if (!url.searchParams.has("kc_idp_hint")) {
+        await route.fallback();
+        return;
+      }
+      url.searchParams.delete("kc_idp_hint");
+      await route.fallback({ url: url.toString() });
+    },
+  );
+
+  const githubButton = page.getByRole("button", {
+    name: "Log in with GitHub",
+  });
+  await githubButton.click();
+
+  // With the hint stripped Keycloak renders its own Sign-In form. The input
+  // ids are stable across Keycloak versions (they come from the built-in
+  // ``login.ftl`` template).
+  const usernameField = page.locator("#username");
+  const passwordField = page.locator("#password");
+  const signInButton = page.locator("#kc-login");
+
+  await usernameField.waitFor({ state: "visible", timeout: 30_000 });
+  await usernameField.fill(creds.username);
+  await passwordField.fill(creds.password);
+  await signInButton.click();
+
+  console.log("Keycloak-native login form submitted.");
 }
 
 /**

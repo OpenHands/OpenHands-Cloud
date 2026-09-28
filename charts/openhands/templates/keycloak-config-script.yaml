@@ -27,11 +27,16 @@ data:
       fi
     }
 
+    KEYCLOAK_ADMIN_CLIENT_ID=$(printf '%s' "${KEYCLOAK_ADMIN_CLIENT_ID:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    PROVISIONER_CLIENT_ID=${KEYCLOAK_ADMIN_CLIENT_ID:-openhands-provisioner}
+    PROVISIONER_CLIENT_QUERY=$(printf '%s' "$PROVISIONER_CLIENT_ID" | jq -sRr @uri)
+    PROVISIONER_SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-$KEYCLOAK_ADMIN_PASSWORD}
+
     provisioning_token() {
       curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
-        --data-urlencode client_id=openhands-provisioner \
+        --data-urlencode "client_id=$PROVISIONER_CLIENT_ID" \
         --data-urlencode grant_type=client_credentials \
-        --data-urlencode "client_secret=$KEYCLOAK_ADMIN_PASSWORD" | jq -er '.access_token // empty'
+        --data-urlencode "client_secret=$PROVISIONER_SECRET" | jq -er '.access_token // empty'
     }
 
     refresh_access_token() {
@@ -171,22 +176,21 @@ data:
       echo "User already exists: $RESPONSE"
     fi
 
-    if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
+    if [ -n "$KEYCLOAK_ADMIN_CLIENT_ID" ] || [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
       umask 077
       ADMIN_CREDENTIAL_DIR=$(mktemp -d)
       trap 'rm -rf "$ADMIN_CREDENTIAL_DIR"' EXIT
-      # Keep provisioning credentials stable when the human admin password changes.
       KC_MASTER="$KEYCLOAK_SERVER_URL/admin/realms/master"
       if [ "$USE_PROVISIONER" != true ]; then
-        keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
+        keycloak_get_optional "$KC_MASTER/clients?clientId=$PROVISIONER_CLIENT_QUERY"
         if [ "$RESPONSE" != "[]" ]; then
           if ! provisioning_token >/dev/null; then
-            echo "ERROR: existing openhands-provisioner client could not authenticate." >&2
+            echo "ERROR: existing provisioning client could not authenticate." >&2
             exit 1
           fi
         else
-          jq -n --arg secret "$KEYCLOAK_ADMIN_PASSWORD" '{
-            clientId: "openhands-provisioner", secret: $secret,
+          jq -n --arg clientId "$PROVISIONER_CLIENT_ID" --arg secret "$PROVISIONER_SECRET" '{
+            clientId: $clientId, secret: $secret,
             enabled: true, publicClient: false, serviceAccountsEnabled: true,
             standardFlowEnabled: false, directAccessGrantsEnabled: false,
             fullScopeAllowed: false, protocol: "openid-connect"
@@ -194,7 +198,7 @@ data:
           keycloak_write POST "$KC_MASTER/clients" "$ADMIN_CREDENTIAL_DIR/provisioner.json"
           rm -f "$ADMIN_CREDENTIAL_DIR/provisioner.json"
         fi
-        keycloak_get_optional "$KC_MASTER/clients?clientId=openhands-provisioner"
+        keycloak_get_optional "$KC_MASTER/clients?clientId=$PROVISIONER_CLIENT_QUERY"
         PROVISIONER_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
         keycloak_get_optional "$KC_MASTER/clients/$PROVISIONER_ID/service-account-user"
         PROVISIONER_USER_ID=$(echo "$RESPONSE" | jq -er '.id')
@@ -207,19 +211,21 @@ data:
       refresh_access_token
       # Prove independent admin access before replacing the login password.
       keycloak_get_optional "$KC_MASTER/users?username=admin&exact=true"
-      ADMIN_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
-      CURRENT_TOKEN=$(curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
-        --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \
-        --data-urlencode username=admin --data-urlencode "password=$KEYCLOAK_ADMIN_UI_PASSWORD" | jq -r '.access_token // empty')
-      if [ -z "$CURRENT_TOKEN" ]; then
-        umask 077
-        jq -n --arg password "$KEYCLOAK_ADMIN_UI_PASSWORD" \
-          '{type: "password", value: $password, temporary: false}' > "$ADMIN_CREDENTIAL_DIR/password.json"
-        keycloak_write PUT "$KC_MASTER/users/$ADMIN_ID/reset-password" "$ADMIN_CREDENTIAL_DIR/password.json"
-        rm -f "$ADMIN_CREDENTIAL_DIR/password.json"
-        echo "Updated Keycloak admin console password."
+      if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
+        ADMIN_ID=$(echo "$RESPONSE" | jq -er '.[0].id')
+        CURRENT_TOKEN=$(curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
+          --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \
+          --data-urlencode username=admin --data-urlencode "password=$KEYCLOAK_ADMIN_UI_PASSWORD" | jq -r '.access_token // empty')
+        if [ -z "$CURRENT_TOKEN" ]; then
+          umask 077
+          jq -n --arg password "$KEYCLOAK_ADMIN_UI_PASSWORD" \
+            '{type: "password", value: $password, temporary: false}' > "$ADMIN_CREDENTIAL_DIR/password.json"
+          keycloak_write PUT "$KC_MASTER/users/$ADMIN_ID/reset-password" "$ADMIN_CREDENTIAL_DIR/password.json"
+          rm -f "$ADMIN_CREDENTIAL_DIR/password.json"
+          echo "Updated Keycloak admin console password."
+        fi
+        unset CURRENT_TOKEN
       fi
-      unset CURRENT_TOKEN
     fi
 
     ERROR_MESSAGE=$(curl -s "$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.error')

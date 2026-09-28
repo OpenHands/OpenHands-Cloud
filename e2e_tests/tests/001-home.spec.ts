@@ -12,11 +12,12 @@ import { runUser } from "../utils/config";
  *
  * The old enterprise home rendered a `user-avatar` and a hover-triggered
  * `user-context-menu`. The Canvas home has neither — account controls moved
- * into the enterprise Settings shell at `/settings`. We keep the same two
- * assertions ("logged in" + "account menu reachable") but express them in
- * Canvas terms: (1) the Canvas home-screen composer paints, and (2)
- * `/settings` opens and shows the settings-nav user footer with a Logout
- * button.
+ * into the enterprise Settings shell at `/settings`, where the sidebar's
+ * user footer is a dropdown trigger (`settings-nav-user-menu`) that reveals
+ * a Logout menuitem. We keep the same two assertions ("logged in" +
+ * "account menu reachable") but express them in Canvas terms: (1) the
+ * Canvas home-screen composer paints, and (2) `/settings` opens and the
+ * account dropdown reveals a Logout entry.
  */
 
 test.describe("home screen", () => {
@@ -49,12 +50,13 @@ test.describe("home screen", () => {
     });
 
     await homePage.goto();
-    await homePage.openUserMenu();
-
+    // openAccountMenu() navigates to /settings, clicks the user-footer
+    // dropdown trigger, and asserts on the revealed Logout menuitem — the
+    // concrete equivalent of "hover the avatar and see the account menu"
+    // from the pre-Canvas UI. Reaching the menuitem exercises the whole
+    // "menu is reachable" guarantee end to end.
+    await homePage.openAccountMenu();
     await expect(homePage.settingsScreen).toBeVisible();
-    // The user footer (with the Logout button) is the concrete equivalent of
-    // the old avatar dropdown; assert it renders so the "menu is reachable"
-    // guarantee is exercised end to end.
-    await expect(page.getByRole("button", { name: /^logout$/i })).toBeVisible();
+    await expect(homePage.logoutMenuItem).toBeVisible();
   });
 });

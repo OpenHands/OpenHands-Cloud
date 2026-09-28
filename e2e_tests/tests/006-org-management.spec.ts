@@ -16,7 +16,7 @@ import {
  * (outside the browser) using a super-admin API key, then verifies the UI
  * reflects the newly provisioned org. It runs **only for the "new-user" role**:
  * the returning-user role is skipped inside each test (via ``runUser``) so a
- * run without ``NEW_GITHUB_USERNAME`` is unaffected.
+ * run without ``KEYCLOAK_NEW_USER_USERNAME`` is unaffected.
  *
  * Flow:
  *  1. ``POST /api/organizations`` (superadmin) — create an e2e test org and

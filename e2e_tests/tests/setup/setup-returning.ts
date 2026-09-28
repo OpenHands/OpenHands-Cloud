@@ -1,7 +1,7 @@
 import { test as setup } from "@playwright/test";
 import fs from "fs";
 import {
-  githubCredentialsFor,
+  returningGithubCredentials,
   isUserEnabled,
   skipAuth,
   authReturningFile,
@@ -42,7 +42,7 @@ setup("authenticate returning user", async ({ page, baseURL }) => {
     return;
   }
 
-  const creds = githubCredentialsFor("returning");
+  const creds = returningGithubCredentials();
   await authenticateWithGitHub(page, creds);
   await completeLoginAndOnboard(page, creds.username);
 

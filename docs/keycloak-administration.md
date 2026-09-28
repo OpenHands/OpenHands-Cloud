@@ -20,9 +20,18 @@ this restart automatically through its secrets checksum.
 ## Upgrade and recovery behavior
 
 The hidden `keycloak_admin_password` setting remains the installation's original
-bootstrap credential. Do not change it to reset the console password. When the
-console override is first set, provisioning creates a confidential
-`openhands-provisioner` client in the master realm using that stable credential.
+bootstrap credential. Do not change it to reset the console password. Replicated
+sets `KEYCLOAK_ADMIN_CLIENT_ID=openhands-provisioner` so provisioning creates the
+service account even before a console password is configured. Direct Helm installs
+opt in by setting `env.KEYCLOAK_ADMIN_CLIENT_ID` on the `openhands` chart, or by
+configuring a console password. Without either, provisioning keeps password
+authentication and does not create a privileged client.
+
+Provisioning uses the configured client ID, falling back to `openhands-provisioner`
+for console-password-only installations. The application and provisioning script
+accept `KEYCLOAK_ADMIN_CLIENT_SECRET` through their environment; when omitted,
+both use the stable bootstrap credential. Supply a separate secret consistently
+to both containers when using an independently managed service credential.
 Its service account receives the master `admin` role with an explicit role scope;
 browser and password login flows are disabled for this client. The installer
 verifies service-account administration access before changing the human admin
