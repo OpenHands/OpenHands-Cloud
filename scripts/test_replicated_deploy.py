@@ -50,7 +50,9 @@ def make_handler(state):
             total = len(state["config_paths"])
             if state["config_502_then"] and total <= state["config_502_then"]:
                 return self.reply(502, None)
-            return self.reply(state["config_status"], {"success": True})
+            if state["config_status"] != 200:
+                return self.reply(state["config_status"], state["config_body"])
+            return self.reply(200, {"success": True})
 
         def do_POST(self):
             if self.path.endswith("/start-upgrade-service"):
@@ -58,6 +60,8 @@ def make_handler(state):
                 total = len(state["boot_paths"])
                 if state["boot_502_then"] and total <= state["boot_502_then"]:
                     return self.reply(502, None)
+                if state["boot_status"] != 200:
+                    return self.reply(state["boot_status"], state["boot_body"])
                 return self.reply(200, {"success": True})
             if self.path.endswith("/deploy"):
                 state["deploy_paths"].append(self.path)
@@ -116,7 +120,8 @@ def kots():
     state = {"deployed": "489", "pending": False, "past": [], "polls": 0,
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
              "deploy_body": None, "deploy_502_then": 0, "deploy_paths": [],
-             "config_status": 200, "config_502_then": 0, "config_paths": [],
+             "config_status": 200, "config_body": None, "config_502_then": 0,
+             "config_paths": [], "boot_status": 200, "boot_body": None,
              "boot_502_then": 0, "boot_paths": [], "apps_status": 200,
              "configurable": False, "apps_fail_after_deploy": False,
              "apps_dark": False, "current_status": "deployed", "extra_env": {}}
@@ -268,3 +273,59 @@ def test_a_transient_502_on_booting_the_upgrade_service_is_retried(kots):
     assert "KOTS gateway hit a transient error" in r.stderr
     assert len(kots["boot_paths"]) == 2
     assert kots["deploy_paths"], "a retried boot must not block the deploy"
+
+
+def test_a_real_deploy_rejection_is_not_retried(kots):
+    """retry_gateway is deliberately narrow: only a bare 502/503/504 is transient.
+    A real .success:false / non-5xx must fail at once, or a broadened classifier
+    silently turns a fast, clear rejection into a retry-until-deadline hang."""
+    kots["deploy_status"] = 400
+    kots["deploy_body"] = {"error": "preflight checks have not completed"}
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert "preflight checks have not completed" in r.stdout
+    assert kots["deploy_paths"] == [
+        "/api/v1/upgrade-service/app/openhands/deploy"
+    ], "a non-5xx rejection must fail at once, not be retried"
+
+
+def test_a_real_config_rejection_is_not_retried(kots):
+    """The config PUT this PR routes through retry_gateway must still fail fast on a
+    real rejection — the narrowness is unexercised for this callsite otherwise."""
+    kots["configurable"] = True
+    kots["config_status"] = 400
+    kots["config_body"] = {"error": "a required item has no default"}
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert "config rejected: a required item has no default" in r.stdout
+    assert kots["config_paths"] == [
+        "/api/v1/upgrade-service/app/openhands/config"
+    ], "a non-5xx config rejection must fail at once, not be retried"
+
+
+def test_a_real_boot_rejection_is_not_retried(kots):
+    """start-upgrade-service now goes through retry_gateway too; a real rejection
+    (a cursor/license-channel mismatch) must still fail at once, not be retried."""
+    kots["boot_status"] = 400
+    kots["boot_body"] = {"error": "license channel mismatch"}
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert "start-upgrade-service rejected: license channel mismatch" in r.stdout
+    assert kots["boot_paths"] == [
+        "/api/v1/app/openhands/start-upgrade-service"
+    ], "a non-5xx boot rejection must fail at once, not be retried"
+
+
+def test_a_permanent_gateway_5xx_gives_up_at_the_deadline(kots):
+    """The `&& waiting` conjunct keeps retries inside the run deadline. Without it a
+    gateway stuck at 5xx would retry forever and surface as an opaque CI timeout
+    instead of the script's own "gave up" failure. Drive a gateway that never
+    recovers and assert the job retries, then still terminates at the deadline."""
+    kots["deploy_502_then"] = 999  # never recovers
+    # A seconds-granularity budget makes the deadline fire after one ~10s backoff
+    # rather than the whole-minute budget the other tests run under.
+    kots["extra_env"] = {"TIMEOUT_SECONDS": "3"}
+    r = kots["run"]()
+    assert r.returncode == 1, r.stderr
+    assert "KOTS gateway hit a transient error" in r.stderr
+    assert len(kots["deploy_paths"]) >= 2, "must retry, then give up at the deadline"
