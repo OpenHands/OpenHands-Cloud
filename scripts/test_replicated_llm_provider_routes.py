@@ -122,6 +122,14 @@ PROVIDERS = {
 def _to_helm(template: str) -> str:
     """Rewrite KOTS template syntax into a plain Helm template."""
     template = template.replace("{{repl ", "{{ ").replace("repl{{", "{{")
+    # `Lookup` is a KOTS-only builtin (cluster queries have no Helm equivalent),
+    # so a template that uses it cannot be rendered by `helm template` as-is and
+    # aborts with `function "Lookup" not defined`. Substitute the same empty
+    # fixture the config's `when` conditions resolve to, so the render stays a
+    # faithful exercise of the surrounding template logic.
+    template = re.sub(
+        r'Lookup "v1" "PersistentVolumeClaim" "[^"]*" "[^"]*"', "dict", template
+    )
     template = re.sub(
         r'ConfigOptionEquals "([^"]+)" "([^"]*)"',
         r'(eq (index $.Values.cfg "\1") "\2")',
