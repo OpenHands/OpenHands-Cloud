@@ -29,7 +29,7 @@ def make_handler(state):
         pend = [{"updateCursor": CURSOR, "sequence": 110}] if state["pending"] and c != CURSOR else []
         return {
             "currentVersion": {"updateCursor": c, "sequence": 110 if c == CURSOR else 109,
-                               "status": "deployed", "versionLabel": "0.67.0"},
+                               "status": state["current_status"], "versionLabel": "0.67.0"},
             "pendingVersions": pend,
             "pastVersions": state["past"],
         }
@@ -93,7 +93,8 @@ def make_handler(state):
 def kots():
     state = {"deployed": "489", "pending": False, "past": [], "polls": 0,
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
-             "deploy_body": None, "deploy_paths": [], "apps_status": 200}
+             "deploy_body": None, "deploy_paths": [], "apps_status": 200,
+             "current_status": "deployed"}
     port = free_port()
     server = HTTPServer(("127.0.0.1", port), make_handler(state))
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -171,3 +172,11 @@ def test_an_unreadable_app_state_names_the_reason(kots):
     assert "could not read app state" in r.stdout
     assert "missing authorization token" in r.stdout
     assert "never became an available update" not in r.stdout
+
+
+def test_a_failed_deploy_names_the_cursor_and_sequence(kots):
+    kots["current_status"] = "failed"
+    kots["deployed"] = CURSOR
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert f"cursor {CURSOR} (sequence 110) failed" in r.stdout
