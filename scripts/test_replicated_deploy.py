@@ -46,11 +46,24 @@ def make_handler(state):
             self.wfile.write(body)
 
         def do_PUT(self):
-            self.reply(200, {"success": True})
+            state["config_paths"].append(self.path)
+            total = len(state["config_paths"])
+            if state["config_502_then"] and total <= state["config_502_then"]:
+                return self.reply(502, None)
+            return self.reply(state["config_status"], {"success": True})
 
         def do_POST(self):
+            if self.path.endswith("/start-upgrade-service"):
+                state["boot_paths"].append(self.path)
+                total = len(state["boot_paths"])
+                if state["boot_502_then"] and total <= state["boot_502_then"]:
+                    return self.reply(502, None)
+                return self.reply(200, {"success": True})
             if self.path.endswith("/deploy"):
                 state["deploy_paths"].append(self.path)
+                total = len(state["deploy_paths"])
+                if state["deploy_502_then"] and total <= state["deploy_502_then"]:
+                    return self.reply(502, None)
                 if state["deploy_status"] != 200:
                     return self.reply(state["deploy_status"], state["deploy_body"])
                 state["deployed"] = CURSOR
@@ -88,7 +101,8 @@ def make_handler(state):
             if "/task/upgrade-service" in p:
                 return self.reply(200, {"status": ""})
             if p.endswith("/upgrade-service/app/openhands"):
-                return self.reply(200, {"success": True, "isConfigurable": False, "hasPreflight": True})
+                return self.reply(200, {"success": True, "isConfigurable": state["configurable"],
+                                        "hasPreflight": True})
             if p.endswith("/status"):
                 return self.reply(200, {"appstatus": {"state": "ready", "sequence": 110,
                                                       "resourceStates": []}})
@@ -101,9 +115,11 @@ def make_handler(state):
 def kots():
     state = {"deployed": "489", "pending": False, "past": [], "polls": 0,
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
-             "deploy_body": None, "deploy_paths": [], "apps_status": 200,
-             "apps_fail_after_deploy": False, "apps_dark": False,
-             "current_status": "deployed", "extra_env": {}}
+             "deploy_body": None, "deploy_502_then": 0, "deploy_paths": [],
+             "config_status": 200, "config_502_then": 0, "config_paths": [],
+             "boot_502_then": 0, "boot_paths": [], "apps_status": 200,
+             "configurable": False, "apps_fail_after_deploy": False,
+             "apps_dark": False, "current_status": "deployed", "extra_env": {}}
     port = free_port()
     server = HTTPServer(("127.0.0.1", port), make_handler(state))
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -218,3 +234,37 @@ def test_a_timeout_with_a_dark_console_reports_the_sentinel(kots):
     assert r.returncode == 1
     assert f"timed out waiting for cursor {CURSOR} to deploy" in r.stdout
     assert "last state: <console unreachable, waiting>" in r.stdout
+
+
+def test_a_transient_502_on_the_deploy_post_is_retried(kots):
+    """kotsadm's gateway blips a bare 502 while it restarts mid-upgrade."""
+    kots["deploy_502_then"] = 1
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "KOTS gateway hit a transient error" in r.stderr
+    assert "retrying" in r.stderr
+    assert kots["deploy_paths"] == [
+        "/api/v1/upgrade-service/app/openhands/deploy",
+        "/api/v1/upgrade-service/app/openhands/deploy",
+    ]
+
+
+def test_a_transient_502_on_the_config_put_is_retried(kots):
+    """The config write hits the same restart window; it must not redden the job."""
+    kots["config_502_then"] = 1
+    kots["configurable"] = True
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "KOTS gateway hit a transient error" in r.stderr
+    assert len(kots["config_paths"]) == 2
+    assert kots["deploy_paths"], "a retried config must not block the deploy"
+
+
+def test_a_transient_502_on_booting_the_upgrade_service_is_retried(kots):
+    """start-upgrade-service goes through the same gateway restart window."""
+    kots["boot_502_then"] = 1
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "KOTS gateway hit a transient error" in r.stderr
+    assert len(kots["boot_paths"]) == 2
+    assert kots["deploy_paths"], "a retried boot must not block the deploy"
