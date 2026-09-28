@@ -10,9 +10,12 @@ set -euo pipefail
 
 APP="${APP:-openhands}"
 : "${KOTS_BASE:?}" "${KOTS_PASSWORD:?}" "${KOTS_CURSOR:?}"
-# Whole-run budget in minutes; every wait loop below shares this one deadline.
+# Whole-run budget; every wait loop below shares this one deadline. Production
+# sets whole minutes; TIMEOUT_SECONDS is a seconds-granularity override so tests
+# can drive a wait loop to time out in a couple of seconds.
 TIMEOUT_MINUTES="${TIMEOUT_MINUTES:-25}"
-DEADLINE=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-$(( TIMEOUT_MINUTES * 60 ))}"
+DEADLINE=$(( $(date +%s) + TIMEOUT_SECONDS ))
 waiting() { [ "$(date +%s)" -lt "$DEADLINE" ]; }
 
 UP="$KOTS_BASE/api/v1/upgrade-service/app/$APP"
@@ -96,7 +99,7 @@ wait_deployed() {
         fail "instance reported the deploy of cursor $KOTS_CURSOR (sequence $(jq -r '.sequence // "n/a"' <<<"${CUR:-\{\}}" 2>/dev/null || echo n/a)) failed — see the admin console version history"
       ;;
     esac
-    sleep 10
+    sleep "${DEPLOY_POLL_SECONDS:-10}"
   done
   [ "$DONE" ] || fail "timed out waiting for cursor $KOTS_CURSOR to deploy; last state: ${LAST:-unavailable}"
 }
