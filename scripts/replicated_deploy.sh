@@ -34,16 +34,20 @@ why()  { local b; b="$(cat)"; jq -re '.error // empty' <<<"$b" 2>/dev/null \
            || printf '%s' "${b:-$(tr -s '\n' ' ' <"$ERR")}"; }
 
 # kotsadm's gateway returns a bare 502/503/504 (empty body) for a beat while it
-# restarts mid-upgrade, so the deploy POST can fail on a deploy nothing rejected.
-# Retry only those transient codes on the same cursor and booted upgrade service;
-# a real rejection (.success=false) or anything else still fails at once via why().
-deploy_post() {
-  local delay=10 R
+# restarts mid-upgrade, so an upgrade-service call can fail on a request nothing
+# rejected. Every POST/PUT during the window (start-upgrade-service, config,
+# deploy, resume-deploy) goes through this, reusing the same cursor and booted
+# upgrade service and backing off inside the existing run deadline. Retry only
+# those transient codes; a real rejection (.success=false) or anything else still
+# fails at once via why().
+
+retry_gateway() {
+  local delay=10 R verb="$1"; shift
   while :; do
-    R="$(TMO=120 post "$@" || true)"
+    R="$(TMO=120 api -H 'Content-Type: application/json' -X "$verb" "$@" || true)"
     ok <<<"$R" && { printf '%s' "$R"; return 0; }
     { grep -Eq 'HTTP (502|503|504)' "$ERR" && waiting; } || { printf '%s' "$R"; return 1; }
-    echo "  deploy POST hit a transient gateway error ($(tr -s '\n' ' ' <"$ERR")); retrying in ${delay}s" >&2
+    echo "  KOTS gateway hit a transient error ($(tr -s '\n' ' ' <"$ERR")); retrying in ${delay}s" >&2
     sleep "$delay"; delay=$(( delay * 2 )); [ "$delay" -gt 60 ] && delay=60
   done
 }
@@ -153,7 +157,7 @@ if [ -n "$PENDING_SEQ" ]; then
   # KOTS deploys a downloaded version from its downstream sequence instead.
   echo "deploying: $FROM -> sequence $PENDING_SEQ @ $KOTS_CURSOR (already downloaded)"
   preflight_gate "$DS/sequence/$PENDING_SEQ"
-  R="$(deploy_post -d '{}' "$DS/sequence/$PENDING_SEQ/deploy" || true)"
+  R="$(retry_gateway POST -d '{}' "$DS/sequence/$PENDING_SEQ/deploy" || true)"
   ok <<<"$R" || fail "deploy of sequence $PENDING_SEQ rejected: $(why <<<"$R")"
 else
   # --- select --------------------------------------------------------------
@@ -182,7 +186,7 @@ else
   echo "deploying: $FROM -> $(jq -r .versionLabel <<<"$TARGET") @ $KOTS_CURSOR"
 
   # --- boot the upgrade service -------------------------------------------
-  R="$(post --data "$(jq -c '{versionLabel, updateCursor, channelId}' <<<"$TARGET")" \
+  R="$(retry_gateway POST -d "$(jq -c '{versionLabel, updateCursor, channelId}' <<<"$TARGET")" \
     "$KOTS_BASE/api/v1/app/$APP/start-upgrade-service" || true)"
   if ! ok <<<"$R"; then
     # Read the reason before the license call below overwrites $ERR.
@@ -207,7 +211,7 @@ else
   # --- config: read values, write them straight back -----------------------
   if [ "$(jq -r .isConfigurable <<<"$META")" = true ]; then
     TMO=60 api "$UP/config" | jq -c '{configGroups}' >/tmp/cfg.json
-    R="$(TMO=60 api -H 'Content-Type: application/json' -X PUT --data-binary @/tmp/cfg.json "$UP/config" || true)"
+    R="$(retry_gateway PUT --data-binary @/tmp/cfg.json "$UP/config" || true)"
     ok <<<"$R" || fail "config rejected: $(why <<<"$R") — new release likely added a required item with no default"
   fi
 
@@ -215,7 +219,7 @@ else
   [ "$(jq -r .hasPreflight <<<"$META")" = true ] && preflight_gate "$UP"
 
   # --- deploy --------------------------------------------------------------
-  R="$(deploy_post -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}' "$UP/deploy" || true)"
+  R="$(retry_gateway POST -d '{"isSkipPreflights":false,"continueWithFailedPreflights":false}' "$UP/deploy" || true)"
   ok <<<"$R" || fail "deploy rejected: $(why <<<"$R")"
 fi
 
