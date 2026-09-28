@@ -32,12 +32,11 @@
       - fail:
           when: "count() < 1"
           message: "At least 1 node is required"
+      {{/* memoryCapacity is post-kernel-reservation: an AWS m8i.2xlarge (nominal 32GiB) reports
+           ~30.8GiB. Threshold sits below the recommendation so correct sizing doesn't warn. */}}
       - warn:
-          when: "min(memoryCapacity) < 8Gi"
-          message: "At least 8GB of memory per node is recommended for OpenHands with dependencies"
-      - warn:
-          when: "min(memoryCapacity) < 32Gi"
-          message: "At least 32GB of memory per node is recommended for optimal performance"
+          when: "min(memoryCapacity) < 30Gi"
+          message: "At least 32GiB of memory per node is recommended for optimal performance"
       - warn:
           when: "min(cpuCapacity) < 4"
           message: "At least 4 CPU cores per node is recommended for OpenHands"
