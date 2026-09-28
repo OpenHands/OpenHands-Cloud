@@ -29,7 +29,7 @@ def make_handler(state):
         pend = [{"updateCursor": CURSOR, "sequence": 110}] if state["pending"] and c != CURSOR else []
         return {
             "currentVersion": {"updateCursor": c, "sequence": 110 if c == CURSOR else 109,
-                               "status": "deployed", "versionLabel": "0.67.0"},
+                               "status": state["current_status"], "versionLabel": "0.67.0"},
             "pendingVersions": pend,
             "pastVersions": state["past"],
         }
@@ -54,11 +54,19 @@ def make_handler(state):
                 if state["deploy_status"] != 200:
                     return self.reply(state["deploy_status"], state["deploy_body"])
                 state["deployed"] = CURSOR
+                # Simulate the console going dark right after the deploy lands, so
+                # wait_deployed() reaches its loop and then can't read /apps.
+                if state["apps_fail_after_deploy"]:
+                    state["apps_dark"] = True
             self.reply(200, {"success": True})
 
         def do_GET(self):
             p = self.path
             if p.endswith("/api/v1/apps"):
+                if state["apps_dark"]:
+                    # kotsadm restarting: a bare 5xx with no body, so the read
+                    # yields nothing and the loop falls back to the sentinel.
+                    return self.reply(503, None)
                 if state["apps_status"] != 200:
                     return self.reply(state["apps_status"],
                                       {"error": "missing authorization token", "success": False})
@@ -93,14 +101,18 @@ def make_handler(state):
 def kots():
     state = {"deployed": "489", "pending": False, "past": [], "polls": 0,
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
-             "deploy_body": None, "deploy_paths": [], "apps_status": 200}
+             "deploy_body": None, "deploy_paths": [], "apps_status": 200,
+             "apps_fail_after_deploy": False, "apps_dark": False,
+             "current_status": "deployed", "extra_env": {}}
     port = free_port()
     server = HTTPServer(("127.0.0.1", port), make_handler(state))
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    base_env = {"PATH": "/usr/bin:/bin:/usr/local/bin",
+                "KOTS_BASE": f"http://127.0.0.1:{port}", "KOTS_PASSWORD": "x",
+                "KOTS_CURSOR": CURSOR, "TIMEOUT_MINUTES": "1"}
     state["run"] = lambda: subprocess.run(
         ["bash", str(SCRIPT)], capture_output=True, text=True, timeout=180,
-        env={"PATH": "/usr/bin:/bin:/usr/local/bin", "KOTS_BASE": f"http://127.0.0.1:{port}",
-             "KOTS_PASSWORD": "x", "KOTS_CURSOR": CURSOR, "TIMEOUT_MINUTES": "1"})
+        env={**base_env, **state["extra_env"]})
     yield state
     server.shutdown()
 
@@ -171,3 +183,38 @@ def test_an_unreadable_app_state_names_the_reason(kots):
     assert "could not read app state" in r.stdout
     assert "missing authorization token" in r.stdout
     assert "never became an available update" not in r.stdout
+
+
+def test_a_failed_deploy_names_the_cursor_and_sequence(kots):
+    kots["current_status"] = "failed"
+    kots["deployed"] = CURSOR
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert f"cursor {CURSOR} (sequence 110) failed" in r.stdout
+
+
+def test_a_timeout_reports_the_last_observed_downstream_state(kots):
+    """A cursor that stalls at a non-terminal status never reaches deployed or
+    failed, so wait_deployed() times out. The verdict must carry the state it
+    last saw rather than dropping it — that state is the triage signal."""
+    # Deploy succeeds, but the target cursor stays "deploying" forever.
+    kots["current_status"] = "deploying"
+    # A seconds-granularity budget and a 1s poll exercise the timeout in ~5s
+    # instead of the whole-minute budget the other tests run under.
+    kots["extra_env"] = {"TIMEOUT_SECONDS": "5", "DEPLOY_POLL_SECONDS": "1"}
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert f"timed out waiting for cursor {CURSOR} to deploy" in r.stdout
+    assert "last state:" in r.stdout
+    assert '"status":"deploying"' in r.stdout
+
+
+def test_a_timeout_with_a_dark_console_reports_the_sentinel(kots):
+    """If /apps is unreachable on the last loop, the last-state suffix falls back
+    to the sentinel rather than an empty string."""
+    kots["apps_fail_after_deploy"] = True
+    kots["extra_env"] = {"TIMEOUT_SECONDS": "5", "DEPLOY_POLL_SECONDS": "1"}
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert f"timed out waiting for cursor {CURSOR} to deploy" in r.stdout
+    assert "last state: <console unreachable, waiting>" in r.stdout

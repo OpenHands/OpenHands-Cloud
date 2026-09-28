@@ -10,9 +10,12 @@ set -euo pipefail
 
 APP="${APP:-openhands}"
 : "${KOTS_BASE:?}" "${KOTS_PASSWORD:?}" "${KOTS_CURSOR:?}"
-# Whole-run budget in minutes; every wait loop below shares this one deadline.
+# Whole-run budget; every wait loop below shares this one deadline. Production
+# sets whole minutes; TIMEOUT_SECONDS is a seconds-granularity override so tests
+# can drive a wait loop to time out in a couple of seconds.
 TIMEOUT_MINUTES="${TIMEOUT_MINUTES:-25}"
-DEADLINE=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-$(( TIMEOUT_MINUTES * 60 ))}"
+DEADLINE=$(( $(date +%s) + TIMEOUT_SECONDS ))
 waiting() { [ "$(date +%s)" -lt "$DEADLINE" ]; }
 
 UP="$KOTS_BASE/api/v1/upgrade-service/app/$APP"
@@ -83,19 +86,22 @@ preflight_gate() {
 # The task stays empty for the whole deploy; downstream currentVersion is the
 # only progress signal. An unreachable console means kotsadm is restarting.
 wait_deployed() {
-  local DONE="" CUR
+  local DONE="" CUR LAST=""
   while waiting; do
     [ "$(TMO=10 api "$DS/task/upgrade-service" 2>/dev/null | jq -r '.status // ""')" = upgrade-failed ] \
       && fail "upgrade-failed"
     CUR="$(TMO=10 api "$KOTS_BASE/api/v1/apps" 2>/dev/null | jq -c '.apps[0].downstream.currentVersion | {updateCursor, sequence, status}' || true)"
-    echo "  ${CUR:-<console unreachable, waiting>}"
+    LAST="${CUR:-<console unreachable, waiting>}"
+    echo "  ${LAST}"
     case "$(jq -r '"\(.updateCursor) \(.status)"' <<<"${CUR:-\{\}}" 2>/dev/null)" in
       "$KOTS_CURSOR deployed") DONE=1; break ;;
-      "$KOTS_CURSOR failed")   fail "instance reported the deploy failed — see the admin console version history" ;;
+      "$KOTS_CURSOR failed")
+        fail "instance reported the deploy of cursor $KOTS_CURSOR (sequence $(jq -r '.sequence // "n/a"' <<<"${CUR:-\{\}}" 2>/dev/null || echo n/a)) failed — see the admin console version history"
+      ;;
     esac
-    sleep 10
+    sleep "${DEPLOY_POLL_SECONDS:-10}"
   done
-  [ "$DONE" ] || fail "timed out waiting for cursor $KOTS_CURSOR to deploy"
+  [ "$DONE" ] || fail "timed out waiting for cursor $KOTS_CURSOR to deploy; last state: ${LAST:-unavailable}"
 }
 
 # Response key is "appstatus", all lowercase.
