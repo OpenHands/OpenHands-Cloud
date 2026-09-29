@@ -103,8 +103,15 @@ spec:
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       # BYOR: whether users may retrieve the managed LiteLLM key from
       # Settings → API Keys for use with agent-server runtimes outside this
-      # cluster. enterprise-server's _get_feature_flags() reads the bare
-      # ENABLE_BYOR_EXPORT env var and defaults it off.
+      # cluster. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # Backend route gating (server/constants.py, OrgService.check_byor_export_enabled)
+      # reads the bare ENABLE_BYOR_EXPORT. The web client's LlmApiKeyManager
+      # instead gates on feature_flags.enable_byor_export, which the app server
+      # builds from OH_WEB_CLIENT_FEATURE_FLAGS_* envs; once any of those is set
+      # (this chart always sets several), the _get_feature_flags() default
+      # factory that would read the bare env is bypassed and enable_byor_export
+      # falls back to the WebClientFeatureFlags model default (False).
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
       ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
 
     integrations:
