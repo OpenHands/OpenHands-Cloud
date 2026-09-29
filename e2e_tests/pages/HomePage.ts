@@ -18,7 +18,7 @@ import { BasePage } from "./BasePage";
  * `openUserMenu`/`logout` helpers therefore navigate to `/settings` — which is
  * where the account nav lives — rather than hovering an avatar dropdown on
  * the (Canvas) home page. On `/settings`, the sidebar's user footer is a
- * dropdown trigger (`settings-nav-user-menu`, labelled "`$email` Account");
+ * dropdown trigger (a button labelled "`$email` Account");
  * Logout is a menuitem revealed by clicking it. Reach it via
  * `openAccountMenu()` (or, for a full logout, `logout()`), not by matching
  * "Logout" against the initial /settings DOM.
@@ -78,7 +78,13 @@ export class HomePage extends BasePage {
     this.conversationCards = page.getByTestId("conversation-card");
 
     this.settingsScreen = page.getByTestId("settings-screen");
-    this.settingsNavUserMenu = page.getByTestId("settings-nav-user-menu");
+    // The settings shell mounts the user menu twice (desktop <aside> and a
+    // CSS-hidden mobile drawer <nav>), so the shared testId is ambiguous.
+    // Role queries skip the hidden copy, and scoping to the sidebar landmark
+    // keeps page content like "Link account" buttons out of the match.
+    this.settingsNavUserMenu = page
+      .getByRole("complementary")
+      .getByRole("button", { name: /account$/i });
     this.userAvatar = this.settingsNavUserMenu;
     this.accountSettingsMenu = this.settingsScreen;
   }
@@ -210,7 +216,14 @@ export class HomePage extends BasePage {
     // onChange wiring, or focus management breaks — exactly the class of
     // regression these specs exist to catch.
     await this.chatInput.click();
-    await this.chatInput.pressSequentially(prompt);
+    // Enter submits the composer, so line breaks are typed as Shift+Enter —
+    // the same keystroke a user uses to write a multi-line message.
+    const lines = prompt.split("\n");
+    for (const [index, line] of lines.entries()) {
+      if (index > 0) await this.chatInput.press("Shift+Enter");
+      if (line) await this.chatInput.pressSequentially(line);
+    }
+    await expect(this.chatInput).toHaveText(prompt, { useInnerText: true });
 
     await expect(this.submitButton).toBeEnabled({ timeout: 15_000 });
     await this.submitButton.click();
