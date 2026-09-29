@@ -48,7 +48,7 @@ tests:
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
-          pattern: "sandboxes started per user \\(30d\\)"
+          pattern: "sandboxes started per user \\(14d\\)"
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
         matchRegex:
@@ -63,4 +63,31 @@ tests:
         documentIndex: 1
         notMatchRegex:
           path: stringData.support-bundle-spec
-          pattern: "runtimes history \\(30d\\)|sandbox owners \\(30d\\)"
+          pattern: "sandbox owners"
+
+  - it: exports 14-day timelines without identifiers, capped
+    set:
+      replicated.enabled: true
+      runtime-api.enabled: true
+      automation.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "runtimes timeline \\(14d, no ids\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "automation_runs timeline \\(14d, no ids\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "ORDER BY created_at LIMIT 50000"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "interval '30 days'"
