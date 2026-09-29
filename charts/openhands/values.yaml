@@ -922,11 +922,7 @@ maintenanceTasks:
   enabled: true
   schedule: "0 6 * * *" # Run daily at 1AM Eastern Time (6AM UTC)
   concurrencyPolicy: Forbid
-  # Hard cap on a single run so a wedged task cannot starve the schedule
-  # indefinitely (concurrencyPolicy: Forbid means one stuck run blocks every
-  # later one). 30 min sits above normal runtime and below the ~1h Cloud SQL
-  # cert-refresh starvation window. Provider-agnostic safety net for the class
-  # of hangs in OpenHands/enterprise#565.
+  # Cap a single run so a hung one can't block every later run under Forbid.
   activeDeadlineSeconds: 1800
   failedJobsHistoryLimit: 3
   successfulJobsHistoryLimit: 3
@@ -943,11 +939,7 @@ budgetMaintenance:
   enabled: true
   schedule: "*/15 * * * *" # Run every 15 minutes
   concurrencyPolicy: Forbid
-  # Hard cap on a single run so a wedged task cannot starve the schedule
-  # indefinitely (concurrencyPolicy: Forbid means one stuck run blocks every
-  # later one). 30 min sits above normal runtime and below the ~1h Cloud SQL
-  # cert-refresh starvation window. Provider-agnostic safety net for the class
-  # of hangs in OpenHands/enterprise#565.
+  # Cap a single run so a hung one can't block every later run under Forbid.
   activeDeadlineSeconds: 1800
   failedJobsHistoryLimit: 3
   successfulJobsHistoryLimit: 3
