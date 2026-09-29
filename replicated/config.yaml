@@ -1405,15 +1405,16 @@ spec:
           type: password
           value: '{{repl RandomString 32}}'
         - name: sandbox_max_num_sandboxes
-          title: Max Concurrent Sandboxes
+          title: Max Running Sandboxes per User
           help_text: >-
-            Maximum number of concurrent sandboxes the app will start across the
-            cluster. Set to 0 (default) for no cap. Use this to bound resource
-            consumption on shared or memory-constrained clusters; once the cap is
-            reached, new conversations wait for an existing sandbox to be freed
-            rather than spawning a new one.
+            Maximum sandboxes one user can have running at once. When a user
+            starts another, their oldest running sandbox is paused. Automations
+            count against the account that owns them, so raise this to the number
+            of automation runs you expect at once. 0 means the default of 10. This
+            is not a cluster-wide limit: how many sandboxes the cluster can run is
+            set by node CPU, memory and ephemeral storage.
           type: text
-          default: "0"
+          default: "10"
           validation:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
