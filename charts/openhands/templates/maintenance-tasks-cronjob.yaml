@@ -14,6 +14,7 @@ spec:
   successfulJobsHistoryLimit: {{ .Values.maintenanceTasks.successfulJobsHistoryLimit }}
   jobTemplate:
     spec:
+      activeDeadlineSeconds: {{ .Values.maintenanceTasks.activeDeadlineSeconds }}
       backoffLimit: {{ .Values.maintenanceTasks.backoffLimit }}
       ttlSecondsAfterFinished: 3600
       template:
