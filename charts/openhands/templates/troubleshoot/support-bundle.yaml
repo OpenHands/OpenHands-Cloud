@@ -5,6 +5,7 @@ metadata:
   name: {{ .Release.Name }}-support-bundle
 spec:
   collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
+    {{- include "troubleshoot.collectors.sandboxCapacity" . | nindent 4 }}
     {{- /* Presence of admin-configured/optional secrets: a key renders only when its KOTS
     value is set, so includeValue:false keyExists ⇔ value-set -- presence only, never the value.
     Always-generated internal secrets are omitted; they'd read "set" unconditionally. */}}
@@ -247,6 +248,26 @@ spec:
                  "created_at, stopped_at, last_state_change, cpu_millicores, memory_mb, "
                  "storage_gb, running_time, paused_time, run_as_user, run_as_group, fs_group "
                  "FROM runtimes ORDER BY created_at DESC LIMIT 50"),
+                # Sizing history. Each runtime counts from creation for its accumulated
+                # running_time, so later pause/resume cycles are approximated.
+                ("runtimes daily peak concurrent (approx, 30d, 10-min samples)",
+                 "WITH iv AS (SELECT created_at AS s, CASE WHEN status IN ('running', 'starting') "
+                 "THEN now() ELSE created_at + make_interval(secs => COALESCE(running_time, 0)) END AS e "
+                 "FROM runtimes WHERE created_at > now() - interval '31 days'), "
+                 "t AS (SELECT generate_series(date_trunc('hour', now() - interval '30 days'), now(), "
+                 "interval '10 minutes') AS t) "
+                 "SELECT t::date AS day, MAX(n) AS peak_concurrent FROM (SELECT t, COUNT(*) AS n "
+                 "FROM t JOIN iv ON iv.s <= t AND iv.e > t GROUP BY t) x GROUP BY 1 ORDER BY 1"),
+                ("runtimes session length minutes (30d, finished)",
+                 "SELECT COUNT(*) AS n, "
+                 "ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY running_time) / 60)::numeric, 1) AS p50, "
+                 "ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY running_time) / 60)::numeric, 1) AS p90, "
+                 "ROUND((MAX(running_time) / 60)::numeric, 1) AS max FROM runtimes "
+                 "WHERE created_at > now() - interval '30 days' AND status NOT IN ('running', 'starting')"),
+                ("runtimes history (30d)",
+                 "SELECT runtime_id, session_id, (api_key_name IS NULL) AS warm, status, created_at, "
+                 "stopped_at, last_state_change, running_time, paused_time FROM runtimes "
+                 "WHERE created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 5000"),
             ]
             for label, sql in queries:
                 run(label, sql)
@@ -585,6 +606,15 @@ spec:
                  "conversation_settings->>'max_iterations' AS max_iterations, "
                  "(_llm_api_key IS NOT NULL) AS org_llm_api_key_set, "
                  "(llm_profiles IS NOT NULL) AS has_llm_profiles FROM org ORDER BY name"),
+                # The per-user sandbox cap counts by owner; id joins runtimes.session_id.
+                ("sandboxes started per user (30d)",
+                 "SELECT created_by_user_id, SUM(n) AS sandboxes, MAX(n) AS max_started_in_one_hour "
+                 "FROM (SELECT created_by_user_id, date_trunc('hour', created_at) AS h, COUNT(*) AS n "
+                 "FROM v1_remote_sandbox WHERE created_at > now() - interval '30 days' GROUP BY 1, 2) x "
+                 "GROUP BY 1 ORDER BY 3 DESC LIMIT 50"),
+                ("sandbox owners (30d)",
+                 "SELECT id, created_by_user_id, created_at FROM v1_remote_sandbox "
+                 "WHERE created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 5000"),
             ]
             for label, sql in queries:
                 run(label, sql)
@@ -613,6 +643,7 @@ spec:
                 "AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_TENANT_ID",
                 "GITHUB_APP_ID", "GITHUB_APP_SLUG",
                 "SANDBOX_CLOSE_DELAY", "SANDBOX_KEEP_RUNTIME_ALIVE",
+                "OH_SANDBOX_MAX_NUM_SANDBOXES",
                 "FILE_STORE", "SHARED_EVENT_STORAGE_PROVIDER",
                 "LITE_LLM_API_URL", "LITE_LLM_TEAM_ID",
                 "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_SSL_MODE",
@@ -705,6 +736,32 @@ spec:
                      "SELECT id, automation_id, status, conversation_id, sandbox_id, "
                      "created_at, started_at, completed_at FROM automation_runs "
                      "ORDER BY created_at DESC LIMIT 50"),
+                    ("automation_runs daily peak concurrent (30d, 5-min samples)",
+                     "WITH iv AS (SELECT r.started_at AS s, COALESCE(r.completed_at, CASE WHEN "
+                     "r.status IN ('PENDING', 'RUNNING') THEN now() ELSE r.started_at END) AS e, a.user_id "
+                     "FROM automation_runs r JOIN automations a ON a.id = r.automation_id "
+                     "WHERE r.started_at > now() - interval '31 days'), "
+                     "t AS (SELECT generate_series(date_trunc('hour', now() - interval '30 days'), now(), "
+                     "interval '5 minutes') AS t) "
+                     "SELECT t::date AS day, MAX(n) AS peak_concurrent_runs FROM (SELECT t, COUNT(*) AS n "
+                     "FROM t JOIN iv ON iv.s <= t AND iv.e > t GROUP BY t) x GROUP BY 1 ORDER BY 1"),
+                    ("automation_runs peak concurrent per owner (30d)",
+                     "WITH iv AS (SELECT r.started_at AS s, COALESCE(r.completed_at, CASE WHEN "
+                     "r.status IN ('PENDING', 'RUNNING') THEN now() ELSE r.started_at END) AS e, a.user_id "
+                     "FROM automation_runs r JOIN automations a ON a.id = r.automation_id "
+                     "WHERE r.started_at > now() - interval '31 days'), "
+                     "t AS (SELECT generate_series(date_trunc('hour', now() - interval '30 days'), now(), "
+                     "interval '5 minutes') AS t) "
+                     "SELECT user_id, MAX(n) AS peak_concurrent_runs FROM (SELECT t, user_id, COUNT(*) AS n "
+                     "FROM t JOIN iv ON iv.s <= t AND iv.e > t GROUP BY t, user_id) x "
+                     "GROUP BY 1 ORDER BY 2 DESC LIMIT 20"),
+                    ("automation_runs duration minutes (30d, finished)",
+                     "SELECT COUNT(*) AS n, ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY "
+                     "EXTRACT(EPOCH FROM completed_at - started_at)) / 60)::numeric, 1) AS p50, "
+                     "ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY "
+                     "EXTRACT(EPOCH FROM completed_at - started_at)) / 60)::numeric, 1) AS p90 "
+                     "FROM automation_runs WHERE started_at > now() - interval '30 days' "
+                     "AND completed_at IS NOT NULL"),
                 ]
                 for label, sql in queries:
                     await run(label, sql)
@@ -743,6 +800,7 @@ spec:
         uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ include "openhands.cache.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379
     {{- end }}
   analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
+    {{- include "troubleshoot.analyzers.sandboxCapacity" . | nindent 4 }}
     - deploymentStatus:
         name: openhands
         namespace: {{ .Release.Namespace }}

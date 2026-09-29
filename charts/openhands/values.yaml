@@ -1412,6 +1412,19 @@ replicated:
   postgresUsername: ""
   postgresPassword: ""
   postgresDatabase: ""
+  # Support-bundle data for sandbox sizing: kubelet usage per node plus a
+  # short-lived read-only probe pod per node (cgroup peaks/OOM kills/throttling).
+  sandboxCapacity:
+    enabled: true
+    # Probe image; empty uses the app image, which is already cached and has python3.
+    image:
+      repository: ""
+      tag: ""
+    timeout: 180s
+    # Host directory of local-PV workspaces to size with du; empty skips it.
+    # The Replicated installer sets it on Embedded Cluster.
+    localVolumePath: ""
+    volumeScanSeconds: 90
 
 global:
   # Canonical agent-server image. Defaults the runtime image (runtime.image) and

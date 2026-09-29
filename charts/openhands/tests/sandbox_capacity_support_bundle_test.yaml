@@ -1,0 +1,147 @@
+suite: sandbox capacity support bundle data
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+  - troubleshoot/_sandbox-nodes.tpl
+  - troubleshoot/_sandbox-capacity.tpl
+release:
+  name: openhands
+  namespace: openhands
+tests:
+  - it: collects kubelet usage and runs a read-only per-node cgroup probe
+    set:
+      replicated.enabled: true
+      imagePullSecrets:
+        - name: registry-creds
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "- nodeMetrics: \\{\\}"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "runDaemonSet:\\n\\s+name: sandbox-capacity-node-probe\\n\\s+namespace: openhands"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'image: "ghcr.io/openhands/enterprise-server:'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "imagePullSecrets:\\n\\s+- name: registry-creds"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "path: /sys/fs/cgroup\\n\\s+type: Directory"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "mountPath: /host/cgroup\\n\\s+readOnly: true"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'drop: \["ALL"\]'
+      # Without a configured volume root there is no second hostPath.
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "mountPath: /host/local-volumes|- name: local-volumes"
+
+  - it: sizes local workspace volumes when a host volume root is set
+    set:
+      replicated.enabled: true
+      replicated.sandboxCapacity.localVolumePath: /var/lib/embedded-cluster/openebs-local
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "path: /var/lib/embedded-cluster/openebs-local\\n\\s+type: Directory"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "mountPath: /host/local-volumes\\n\\s+readOnly: true"
+
+  - it: lets the probe image be overridden
+    set:
+      replicated.enabled: true
+      replicated.sandboxCapacity.image.repository: registry.example.com/probe
+      replicated.sandboxCapacity.image.tag: "1.0"
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'image: "registry.example.com/probe:1.0"'
+
+  - it: adds capacity analyzers
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "reason: FailedScheduling\\n\\s+regex: 'Insufficient \\(cpu\\|memory\\|ephemeral-storage\\)'"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "reason: Evicted"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "fileName: sandbox-capacity-node-probe/\\*\\.log\\n\\s+regexGroups: '\"oom_kill_pods\": \\(\\?P<OomPods>"
+
+  - it: records sizing history and the per-user sandbox cap
+    set:
+      replicated.enabled: true
+      runtime-api.enabled: true
+      automation.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "runtimes daily peak concurrent"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "sandboxes started per user \\(30d\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "automation_runs peak concurrent per owner"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '"OH_SANDBOX_MAX_NUM_SANDBOXES",'
+
+  - it: drops all capacity collectors when disabled
+    set:
+      replicated.enabled: true
+      replicated.sandboxCapacity.enabled: false
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "nodeMetrics|sandbox-capacity-node-probe|reason: FailedScheduling"
