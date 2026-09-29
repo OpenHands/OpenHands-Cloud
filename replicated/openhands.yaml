@@ -101,6 +101,11 @@ spec:
       # Enterprise reads the FEATURE_FLAGS-prefixed name; bare name kept for OSS.
       OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
+      # BYOR: whether users may retrieve the managed LiteLLM key from
+      # Settings → API Keys for use with agent-server runtimes outside this
+      # cluster. enterprise-server's _get_feature_flags() reads the bare
+      # ENABLE_BYOR_EXPORT env var and defaults it off.
+      ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'

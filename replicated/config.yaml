@@ -634,6 +634,20 @@ spec:
           # Default off: self-hosted installs are admin-governed, so BYOK is an
           # explicit opt-in. Existing installs keep whatever value they set.
           default: "0"
+        - name: enable_byor_export
+          title: Enable LLM Key Export (BYOR)
+          help_text: |
+            When enabled, users see a "Refresh API Key" affordance in
+            Settings → API Keys and can retrieve the managed LiteLLM key
+            for use with agent-server runtimes outside this cluster.
+
+            Leave off unless you intentionally want to expose the internal
+            LiteLLM key to end users.
+          type: bool
+          # Default off matches the enterprise-server codebase default in
+          # _get_feature_flags() and does not silently opt existing installs
+          # into exposing the LiteLLM key to end users.
+          default: "0"
 
     - name: litellm_admin_console
       title: LiteLLM Admin Console
