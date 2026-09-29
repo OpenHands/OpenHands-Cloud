@@ -32,8 +32,8 @@
       - fail:
           when: "count() < 1"
           message: "At least 1 node is required"
-      {{/* memoryCapacity is post-kernel-reservation: an AWS m8i.2xlarge (nominal 32GiB) reports
-           ~30.8GiB. Threshold sits below the recommendation so correct sizing doesn't warn. */}}
+      {{/* memoryCapacity is post-kernel-reservation: a node built with a nominal 32GiB of RAM
+           reports ~30.8GiB. Threshold sits below the recommendation so correct sizing doesn't warn. */}}
       - warn:
           when: "min(memoryCapacity) < 30Gi"
           message: "At least 32GiB of memory per node is recommended for optimal performance"
