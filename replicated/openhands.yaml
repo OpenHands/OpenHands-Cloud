@@ -587,9 +587,6 @@ spec:
       image:
         registry: images.r9.all-hands.dev
         repository: library/replicated-sdk-image
-      # Embedded Cluster's openebs-hostpath root, so the bundle can size workspaces.
-      sandboxCapacity:
-        localVolumePath: /var/lib/embedded-cluster/openebs-local
 
     crdCheck:
       enabled: true

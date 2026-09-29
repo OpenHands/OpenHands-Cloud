@@ -5,7 +5,6 @@ metadata:
   name: {{ .Release.Name }}-support-bundle
 spec:
   collectors: {{- include "troubleshoot.collectors.shared" .  | nindent 4 }}
-    {{- include "troubleshoot.collectors.sandboxCapacity" . | nindent 4 }}
     {{- /* Presence of admin-configured/optional secrets: a key renders only when its KOTS
     value is set, so includeValue:false keyExists ⇔ value-set -- presence only, never the value.
     Always-generated internal secrets are omitted; they'd read "set" unconditionally. */}}
@@ -264,10 +263,6 @@ spec:
                  "ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY running_time) / 60)::numeric, 1) AS p90, "
                  "ROUND((MAX(running_time) / 60)::numeric, 1) AS max FROM runtimes "
                  "WHERE created_at > now() - interval '30 days' AND status NOT IN ('running', 'starting')"),
-                ("runtimes history (30d)",
-                 "SELECT runtime_id, session_id, (api_key_name IS NULL) AS warm, status, created_at, "
-                 "stopped_at, last_state_change, running_time, paused_time FROM runtimes "
-                 "WHERE created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 5000"),
             ]
             for label, sql in queries:
                 run(label, sql)
@@ -606,15 +601,12 @@ spec:
                  "conversation_settings->>'max_iterations' AS max_iterations, "
                  "(_llm_api_key IS NOT NULL) AS org_llm_api_key_set, "
                  "(llm_profiles IS NOT NULL) AS has_llm_profiles FROM org ORDER BY name"),
-                # The per-user sandbox cap counts by owner; id joins runtimes.session_id.
+                # The per-user sandbox cap counts by owner.
                 ("sandboxes started per user (30d)",
                  "SELECT created_by_user_id, SUM(n) AS sandboxes, MAX(n) AS max_started_in_one_hour "
                  "FROM (SELECT created_by_user_id, date_trunc('hour', created_at) AS h, COUNT(*) AS n "
                  "FROM v1_remote_sandbox WHERE created_at > now() - interval '30 days' GROUP BY 1, 2) x "
                  "GROUP BY 1 ORDER BY 3 DESC LIMIT 50"),
-                ("sandbox owners (30d)",
-                 "SELECT id, created_by_user_id, created_at FROM v1_remote_sandbox "
-                 "WHERE created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 5000"),
             ]
             for label, sql in queries:
                 run(label, sql)
