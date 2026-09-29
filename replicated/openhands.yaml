@@ -36,6 +36,9 @@ spec:
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
+      # TEMP (PR #566 A/B treatment): pin enterprise-server to the PR head image.
+      # Revert this after the test.
+      tag: 'sha-0848215'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
