@@ -118,11 +118,12 @@ env:
   # each sandbox ingress. The default nests sandboxes under the runtime base,
   # matching the runtime-api's own "." separator.
   RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
-  # Maximum number of concurrent sandboxes the app will start (0 = no cap).
-  # The Replicated installer exposes this as the sandbox_max_num_sandboxes
-  # ConfigOption; leave at 0 here so non-Replicated installs are uncapped by
-  # default and operators opt in to a limit.
-  OH_SANDBOX_MAX_NUM_SANDBOXES: "0"
+  # Max sandboxes one user can have running at once; when they start another,
+  # their oldest running sandbox is paused. Automations count against the
+  # account that owns them. 0 falls back to the app default of 10; this is not
+  # a cluster-wide cap. The Replicated installer exposes this as the
+  # sandbox_max_num_sandboxes ConfigOption.
+  OH_SANDBOX_MAX_NUM_SANDBOXES: "10"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 

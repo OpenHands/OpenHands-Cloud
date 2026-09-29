@@ -48,7 +48,7 @@ tests:
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
-          pattern: "sandboxes started per user \\(14d\\)"
+          pattern: "sandboxes started per user, top 50 by peak-hour burst \\(14d\\)"
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
         matchRegex:
