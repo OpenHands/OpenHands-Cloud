@@ -303,6 +303,7 @@ def recommend(a: dict) -> list[str]:
                         'reservation; do not lower it.')
 
     # Memory: what the node needs if n sandboxes run at observed levels.
+    has_peak = any(s['mem_peak'] for s in rows)
     peaks = [s['mem_peak'] or s['mem_ws'] for s in rows if (s['mem_peak'] or s['mem_ws'])]
     typical = pct([s['mem_ws'] for s in rows], 50)
     total_mem = sum(nd['mem_total'] or nd['alloc']['memory'] for nd in nodes)
@@ -310,8 +311,9 @@ def recommend(a: dict) -> list[str]:
     if peaks and total_mem:
         busy = baseline + n * pct(peaks, 95)
         steady = baseline + n * (typical or 0)
-        line = (f'At {n} sandboxes, memory need is about {gib(steady)} typical and {gib(busy)} if all hit the '
-                f'observed p95 peak ({mib(pct(peaks, 95))} each), against {gib(total_mem)} on the nodes.')
+        basis = 'observed p95 peak' if has_peak else 'p95 current usage (no peak data in this bundle)'
+        line = (f'At {n} sandboxes, memory need is about {gib(steady)} typical and {gib(busy)} if all reach the '
+                f'{basis} ({mib(pct(peaks, 95))} each), against {gib(total_mem)} on the nodes.')
         if busy > 0.9 * total_mem:
             line += f' Add about {gib(busy - 0.9 * total_mem)} of memory, or cap concurrency, for the busy case.'
         recs.append(line)
