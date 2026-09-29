@@ -52,6 +52,8 @@ def make_bundle(root: pathlib.Path, sandboxes=5, cap='0', eph_used=200 * MI, oom
                          labels={'runtime_id': 'p'}, phase='Pending'))
     _write(root, 'b/cluster-resources/pods/openhands.json', {'items': pods})
     _write(root, 'b/cluster-resources/pods/empty.json', {'items': None})
+    _write(root, 'b/kots/x/last-preflight-result/cluster-resources/pods/openhands.json', {'items': pods})
+    _write(root, 'b/kots/x/last-preflight-result/cluster-resources/nodes.json', {'items': [{'metadata': {'name': 'old'}}]})
     _write(root, 'b/cluster-resources/pvs.json', {'items': pvs})
     _write(root, f'b/node-metrics/{node}.json', {
         'node': {'nodeName': node, 'memory': {'workingSetBytes': 10 * GI},
@@ -91,7 +93,7 @@ def test_quantity():
 
 
 def test_sections_handles_dict_list_and_error_rows():
-    text = '== a ==\n["x", "y"]\n{"x": 1, "y": 2}\n\n== b ==\n["x"]\n[3]\nERROR: nope\n'
+    text = '== a ==\n["x", "y"]\n{"x": 1, "y": 2}\n\n== b ==\n["x"]\n[3]\nERROR: nope\nPULL_SECRETS=x\n'
     assert report.sections(text) == {'a': [{'x': 1, 'y': 2}], 'b': [{'x': 3}]}
 
 
@@ -112,7 +114,7 @@ def test_analyze_for_target(tmp_path):
     assert 'cap sandboxes at 18 by ephemeral storage' in recs
     assert 'Lowering Ephemeral Storage Size to 2Gi' in recs
     assert 'OOM-killed' in recs
-    assert 'effectively 10 per user' in recs and 'at least 30' in recs
+    assert 'per User is effectively 10' in recs and 'at least 30' in recs
     assert 'Raising Memory Request' in recs
     assert '1 sandbox pod(s) were Pending' in recs
 
@@ -127,7 +129,7 @@ def test_no_ephemeral_cut_when_usage_is_high(tmp_path):
 def test_explicit_cap_meeting_target_is_quiet(tmp_path):
     a = report.analyze(report.Bundle(str(make_bundle(tmp_path, cap='40'))), 30)
     assert a['per_user_cap'] == 40
-    assert 'per user' not in '\n'.join(report.recommend(a))
+    assert 'per User' not in '\n'.join(report.recommend(a))
 
 
 def test_reads_tarball_and_renders(tmp_path, capsys):

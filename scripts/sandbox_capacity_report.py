@@ -75,7 +75,9 @@ class Bundle:
         self.root = path
 
     def find(self, pattern: str) -> list[str]:
-        return sorted(glob.glob(os.path.join(self.root, '**', pattern), recursive=True))
+        # KOTS bundles embed a stale copy of the last preflight's cluster resources.
+        paths = glob.glob(os.path.join(self.root, '**', pattern), recursive=True)
+        return sorted(p for p in paths if '/last-preflight-result/' not in p)
 
     def json(self, pattern: str):
         files = self.find(pattern)
@@ -85,19 +87,22 @@ class Bundle:
             return json.load(f)
 
     def items(self, pattern: str) -> list[dict]:
-        out = []
+        out = {}
         for path in self.find(pattern):
             with open(path) as f:
                 data = json.load(f)
-            out.extend((data.get('items') if isinstance(data, dict) else data) or [])
-        return out
+            for item in (data.get('items') if isinstance(data, dict) else data) or []:
+                meta = item.get('metadata', {})
+                out[meta.get('uid') or meta.get('name') or id(item)] = item
+        return list(out.values())
 
     def text(self, pattern: str) -> str:
-        files = self.find(pattern)
-        if not files:
-            return ''
-        with open(files[0]) as f:
-            return f.read()
+        # All matches: a bundle may merge the app spec with a standalone capacity spec.
+        parts = []
+        for path in self.find(pattern):
+            with open(path) as f:
+                parts.append(f.read())
+        return '\n'.join(parts)
 
 
 def sections(text: str) -> dict[str, list[dict]]:
@@ -110,9 +115,12 @@ def sections(text: str) -> dict[str, list[dict]]:
             label, cols = m.group(1), None
             out[label] = []
             continue
-        if label is None or not line.strip() or line.startswith('ERROR'):
+        if label is None or not line.strip():
             continue
-        row = json.loads(line)
+        try:
+            row = json.loads(line)
+        except ValueError:  # ERROR lines and collector preambles
+            continue
         if cols is None and isinstance(row, list):
             cols = row
             continue
@@ -340,7 +348,7 @@ def recommend(a: dict) -> list[str]:
     h = a['history']
     owner_peak = max(h.get('automation_owner_peak_30d') or 0, h.get('user_max_started_one_hour') or 0)
     if target and cap < target:
-        recs.append(f'Max Concurrent Sandboxes is effectively {cap} per user. If one account (for example the '
+        recs.append(f'Max Running Sandboxes per User is effectively {cap}. If one account (for example the '
                     f'owner of automations) runs the {target} workloads, its oldest sandboxes get paused. '
                     f'Set it to at least {target}.' + (f' Observed per-owner peak: {owner_peak}.' if owner_peak else ''))
     if a['pending_sandboxes']:
