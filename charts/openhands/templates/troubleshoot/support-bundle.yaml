@@ -264,12 +264,13 @@ spec:
                  "ROUND((MAX(running_time) / 60)::numeric, 1) AS max FROM runtimes "
                  "WHERE created_at > now() - interval '14 days' AND status NOT IN ('running', 'starting')"),
                 # Per-sandbox timeline without identifiers, for percentiles and incident timing.
+                # `unclaimed` is api_key_name IS NULL — current unclaimed state, not warm-pool origin.
                 ("runtimes timeline (14d, no ids)",
                  "SELECT EXTRACT(EPOCH FROM created_at)::bigint AS created, "
                  "EXTRACT(EPOCH FROM stopped_at)::bigint AS stopped, "
                  "EXTRACT(EPOCH FROM last_state_change)::bigint AS last_change, "
                  "ROUND(running_time)::bigint AS running_s, ROUND(paused_time)::bigint AS paused_s, "
-                 "status, (api_key_name IS NULL) AS warm FROM runtimes "
+                 "status, (api_key_name IS NULL) AS unclaimed FROM runtimes "
                  "WHERE created_at > now() - interval '14 days' ORDER BY created_at LIMIT 50000"),
             ]
             for label, sql in queries:
@@ -609,8 +610,9 @@ spec:
                  "conversation_settings->>'max_iterations' AS max_iterations, "
                  "(_llm_api_key IS NOT NULL) AS org_llm_api_key_set, "
                  "(llm_profiles IS NOT NULL) AS has_llm_profiles FROM org ORDER BY name"),
-                # The per-user sandbox cap counts by owner.
-                ("sandboxes started per user (14d)",
+                # The per-user sandbox cap counts by owner. Sorted by peak-hour burst
+                # (the useful signal for sizing the cap), not by total volume.
+                ("sandboxes started per user, top 50 by peak-hour burst (14d)",
                  "SELECT created_by_user_id, SUM(n) AS sandboxes, MAX(n) AS max_started_in_one_hour "
                  "FROM (SELECT created_by_user_id, date_trunc('hour', created_at) AS h, COUNT(*) AS n "
                  "FROM v1_remote_sandbox WHERE created_at > now() - interval '14 days' GROUP BY 1, 2) x "
@@ -762,6 +764,8 @@ spec:
                      "EXTRACT(EPOCH FROM completed_at - started_at)) / 60)::numeric, 1) AS p90 "
                      "FROM automation_runs WHERE started_at > now() - interval '14 days' "
                      "AND completed_at IS NOT NULL"),
+                    # Timeline windows on created_at (not started_at like the peak query above)
+                    # so PENDING runs that never started are visible for queue-lag analysis.
                     ("automation_runs timeline (14d, no ids)",
                      "SELECT EXTRACT(EPOCH FROM created_at)::bigint AS created, "
                      "EXTRACT(EPOCH FROM started_at)::bigint AS started, "
