@@ -48,9 +48,11 @@ organizations by default.
 `tests/010-personal-budget-guards.spec.ts` is a non-destructive companion that
 drives every budget entry point against the returning user's own personal
 workspace. Each call must be rejected with `400` and the personal-workspace
-detail message, and (when `BUDGET_E2E_DATABASE_URL` is configured) none of the
-budget tables may gain a row for the personal org afterwards — the same
-invariant the `148_remove_personal_org_budget_settings` migration enforces.
+detail message. When `BUDGET_E2E_DATABASE_URL` is configured, the test also
+verifies that none of the budget tables gained a row for the personal org — the
+same invariant the `148_remove_personal_org_budget_settings` migration enforces.
+The database verification is optional; the functional API rejection tests provide
+high confidence even without database access.
 
 Configure the protected GitHub environment `budget-e2e-staging` with:
 
