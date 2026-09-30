@@ -68,10 +68,6 @@ jobs:
     needs: dispatch
     runs-on: ubuntu-24.04
     timeout-minutes: 50
-    # No `environment:` - this job only reads, so it takes the repo-level
-    # read-only gate token. The e2e-replicated token's name-scoped template
-    # `get` never matches: Argo Server checks this GET without a name.
-    #
     # A newer revision supersedes this one; only the newest needs a run.
     concurrency:
       group: e2e-test-revision-pin-wait
