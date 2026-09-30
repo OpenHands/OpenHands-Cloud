@@ -168,6 +168,35 @@ export interface NewRealmUser {
  * guard, so this helper cannot be pointed at a namespace that overlaps with
  * real users.
  */
+function postRealmUser(
+  config: KeycloakAdminConfig,
+  token: string,
+  user: NewRealmUser,
+): Promise<Response> {
+  return fetch(`${config.keycloakUrl}/admin/realms/${config.realm}/users`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      username: user.username,
+      email: user.email,
+      emailVerified: true,
+      enabled: true,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      credentials: [
+        {
+          type: "password",
+          value: user.password,
+          temporary: false,
+        },
+      ],
+    }),
+  });
+}
+
 export async function createRealmUser(
   config: KeycloakAdminConfig,
   user: NewRealmUser,
@@ -175,31 +204,21 @@ export async function createRealmUser(
   assertE2eOnlyEmail(user.email);
   const token = await getAdminToken(config);
 
-  const res = await fetch(
-    `${config.keycloakUrl}/admin/realms/${config.realm}/users`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: user.username,
-        email: user.email,
-        emailVerified: true,
-        enabled: true,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        credentials: [
-          {
-            type: "password",
-            value: user.password,
-            temporary: false,
-          },
-        ],
-      }),
-    },
-  );
+  let res = await postRealmUser(config, token, user);
+
+  // A run that fails after this create (e.g. a login timeout) leaves the user
+  // behind, so the setup's retry would ``409`` here. Delete the stale user(s)
+  // and recreate rather than turning one flake into an unrecoverable failure.
+  if (res.status === 409) {
+    console.log(
+      `[keycloak-cleanup] User ${user.email} already exists (409 Conflict); deleting and recreating.`,
+    );
+    const existing = await findUsersByEmail(config, token);
+    for (const u of existing) {
+      await deleteUser(config, token, u.id);
+    }
+    res = await postRealmUser(config, token, user);
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");

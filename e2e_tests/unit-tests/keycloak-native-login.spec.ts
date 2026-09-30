@@ -44,6 +44,18 @@ const kcLoginHtml = `<!doctype html><html><body>
   </form>
 </body></html>`;
 
+/** Keycloak's Sign-In form re-rendered with the invalid-credentials error,
+ * served under ``/realms/`` like the real server so the helper's failure path
+ * (error shown, no redirect away) is exercised. */
+const kcLoginErrorHtml = `<!doctype html><html><body>
+  <span id="input-error">Invalid username or password.</span>
+  <form id="kc-form-login" action="${KC_LOGIN_ACTION_URL}" method="post">
+    <input id="username" name="username" type="text" />
+    <input id="password" name="password" type="password" />
+    <button id="kc-login" name="login" type="submit">Sign In</button>
+  </form>
+</body></html>`;
+
 /** Fake the Keycloak GitHub-redirect that would occur if the hint were not
  * stripped: 302 straight to github.com. If ``kc_idp_hint`` reaches the server
  * the test lands here and both assertions fail loudly. */
@@ -77,12 +89,22 @@ async function routeKeycloak(page: Page): Promise<{
   let submitted: URLSearchParams | undefined;
   await page.route(`${KC_LOGIN_ACTION_URL}**`, (route) => {
     submitted = new URLSearchParams(route.request().postData() ?? "");
+    // 302 off ``/realms/`` like real Keycloak so the helper's success signal
+    // (leaving ``/realms/``) fires instead of the request hanging.
     return route.fulfill({
+      status: 302,
+      headers: { location: `${APP_ORIGIN}/oauth/keycloak/callback?code=fake` },
+      body: "",
+    });
+  });
+
+  await page.route(`${APP_ORIGIN}/oauth/keycloak/callback**`, (route) =>
+    route.fulfill({
       status: 200,
       contentType: "text/html",
       body: "<!doctype html><html><body><h1>Logged in</h1></body></html>",
-    });
-  });
+    }),
+  );
 
   return { submittedForm: () => submitted };
 }
@@ -105,6 +127,45 @@ test("strips kc_idp_hint and submits the native Keycloak form", async ({
   // fill-and-submit behaviors.
   const form = submittedForm();
   expect(form).toBeDefined();
-  expect(form?.get("username")).toBe("e2e-new-user");
+  // Email-as-username realm: the login identifier is the email, so the helper
+  // must submit ``creds.email`` here, not the separate ``creds.username``.
+  expect(form?.get("username")).toBe("e2e-new-user@e2e.test");
   expect(form?.get("password")).toBe("hunter2");
+});
+
+test("throws a clear error when Keycloak rejects the credentials", async ({
+  page,
+}) => {
+  await page.route(`${APP_LOGIN_URL}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: appLoginHtml,
+    }),
+  );
+  await page.route(`${KC_AUTHORIZE_URL}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: kcLoginHtml,
+    }),
+  );
+  await page.route(`${KC_LOGIN_ACTION_URL}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: kcLoginErrorHtml,
+    }),
+  );
+
+  await page.goto(APP_LOGIN_URL);
+
+  // Must throw on the visible error, not return and let the caller burn 60s.
+  await expect(
+    loginWithKeycloakPassword(page, {
+      username: "e2e-new-user",
+      password: "wrong-password",
+      email: "e2e-new-user@e2e.test",
+    }),
+  ).rejects.toThrow(/invalid username or password/i);
 });

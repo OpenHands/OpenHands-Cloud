@@ -172,9 +172,40 @@ export async function loginWithKeycloakPassword(
   const signInButton = page.locator("#kc-login");
 
   await usernameField.waitFor({ state: "visible", timeout: 30_000 });
-  await usernameField.fill(creds.username);
+  // This realm is email-as-username (``registrationEmailAsUsername`` in
+  // ``allhands-realm-github-provider.json.tmpl``), so the login identifier is
+  // the email; a bare username is ``user_not_found``.
+  await usernameField.fill(creds.email);
   await passwordField.fill(creds.password);
   await signInButton.click();
+
+  // A rejected login otherwise burns the 60s navigation wait in
+  // ``completeLoginAndOnboard``. Success leaves Keycloak's ``/realms/`` pages;
+  // failure re-renders the form with this error.
+  const invalidCredsError = page.getByText(/invalid username or password/i);
+  const outcome = await Promise.race([
+    page
+      .waitForURL((url) => !url.toString().includes("/realms/"), {
+        timeout: 30_000,
+      })
+      .then(() => "left-keycloak" as const)
+      .catch(() => "timeout" as const),
+    invalidCredsError
+      .waitFor({ state: "visible", timeout: 30_000 })
+      .then(() => "invalid-credentials" as const)
+      .catch(() => "no-error" as const),
+  ]);
+
+  if (outcome === "invalid-credentials") {
+    throw new Error(
+      `Keycloak rejected the new-user login for "${creds.email}" ` +
+        `("Invalid username or password"). The allhands realm uses ` +
+        `email-as-username (registrationEmailAsUsername=true, ` +
+        `loginWithEmailAllowed=false), so the account's login identifier is ` +
+        `its email. Verify the user was created and that its email matches ` +
+        `KEYCLOAK_NEW_USER_EMAIL.`,
+    );
+  }
 
   console.log("Keycloak-native login form submitted.");
 }
