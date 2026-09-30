@@ -1,0 +1,234 @@
+suite: openhands task queue worker deployments
+templates:
+  - task-queue-worker-deployments.yaml
+tests:
+  - it: renders nothing by default
+    set:
+      enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when the chart is disabled
+    set:
+      enabled: false
+      taskQueue.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a business and an ops Deployment running the worker
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-task-queue-business
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-task-queue-ops
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["python", "-m", "server.task_queue.worker"]
+      - equal:
+          path: spec.replicas
+          value: 2
+
+  - it: sets the role per Deployment
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_ROLE
+            value: business
+        documentIndex: 0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_ROLE
+            value: ops
+        documentIndex: 1
+
+  - it: keeps scheduling off until cutover turns it on
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_SCHEDULING_ENABLED
+            value: "0"
+
+  - it: turns scheduling on when requested
+    set:
+      enabled: true
+      taskQueue.enabled: true
+      taskQueue.schedulingEnabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_SCHEDULING_ENABLED
+            value: "1"
+
+  - it: gives business a grace period longer than the longest run
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 300
+        documentIndex: 0
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 1Gi
+        documentIndex: 0
+
+  - it: maps each job's values to its worker env
+    set:
+      enabled: true
+      taskQueue.enabled: true
+      taskQueue.jobs.enrich_user_interaction_data.enabled: true
+      taskQueue.jobs.enrich_user_interaction_data.schedule: "*/15 * * * *"
+      taskQueue.jobs.enrich_user_interaction_data.budgetSeconds: 300
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_ENRICH_USER_INTERACTION_DATA_ENABLED
+            value: "1"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_ENRICH_USER_INTERACTION_DATA_SCHEDULE
+            value: "*/15 * * * *"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_ENRICH_USER_INTERACTION_DATA_BUDGET_SECONDS
+            value: "300"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_CLEAN_APP_CONVERSATION_START_TASKS_ENABLED
+            value: "1"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_CLEAN_PROACTIVE_CONVO_TABLE_ENABLED
+            value: "0"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_CLEAN_PROACTIVE_CONVO_TABLE_BUDGET_SECONDS
+          any: true
+
+  - it: passes the catch-up window and watchdog settings
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_MAX_DELAY_SECONDS
+            value: "93600"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_WATCHDOG_GRACE_SECONDS
+            value: "60"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_PROBE_PORT
+            value: "8080"
+
+  - it: probes liveness from the watchdog with a probe-level grace period
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value:
+            path: /healthz
+            port: probe
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.terminationGracePeriodSeconds
+          value: 30
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 8080
+
+  - it: omits the probe-level grace period when set to null
+    set:
+      enabled: true
+      taskQueue.enabled: true
+      taskQueue.probeTerminationGracePeriodSeconds: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe.terminationGracePeriodSeconds
+      - exists:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+
+  - it: carries the app's database env
+    set:
+      enabled: true
+      taskQueue.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+          any: true
+
+  - it: rolls the pods when secrets change
+    set:
+      enabled: true
+      taskQueue.enabled: true
+      secretsChecksum: abc123
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["checksum/config-secrets"]
+          value: abc123
+
+  - it: mounts the CA bundle when enabled
+    set:
+      enabled: true
+      taskQueue.enabled: true
+      caBundle.enabled: true
+    asserts:
+      - exists:
+          path: spec.template.spec.volumes
+      - exists:
+          path: spec.template.spec.containers[0].volumeMounts
+      - exists:
+          path: spec.template.metadata.annotations
+
+  - it: appends extraEnv
+    set:
+      enabled: true
+      taskQueue.enabled: true
+      taskQueue.extraEnv:
+        - name: TASK_QUEUE_LISTEN_NOTIFY
+          value: "0"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_QUEUE_LISTEN_NOTIFY
+            value: "0"

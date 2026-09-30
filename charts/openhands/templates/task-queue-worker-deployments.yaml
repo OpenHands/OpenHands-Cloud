@@ -1,0 +1,111 @@
+{{- if and .Values.enabled .Values.taskQueue.enabled }}
+{{- $tq := .Values.taskQueue }}
+{{- range $role := list "business" "ops" }}
+{{- $cfg := index $tq $role }}
+{{- $name := printf "%s-task-queue-%s" ($.Release.Name | trunc 27) $role }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "openhands.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: task-queue-{{ $role }}
+    app: {{ $name }}
+spec:
+  replicas: {{ $cfg.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: task-queue-{{ $role }}
+        app: {{ $name }}
+      {{- $caChecksum := include "openhands.caBundle.checksumAnnotation" $ | trim }}
+      {{- if or $.Values.secretsChecksum $caChecksum }}
+      annotations:
+        {{- if $.Values.secretsChecksum }}
+        checksum/config-secrets: {{ $.Values.secretsChecksum | quote }}
+        {{- end }}
+        {{- with $caChecksum }}
+        {{- . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ $cfg.terminationGracePeriodSeconds }}
+      serviceAccountName: {{ $.Values.serviceAccount.name }}
+      {{- with $.Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "openhands.affinity" $) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- if $.Values.caBundle.enabled }}
+      volumes:
+        {{- include "openhands.caBundle.volume" $ | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: task-queue-{{ $role }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy | default "IfNotPresent" }}
+          command: ["python", "-m", "server.task_queue.worker"]
+          resources:
+            {{- toYaml $cfg.resources | nindent 12 }}
+          ports:
+            - name: probe
+              containerPort: {{ $tq.probePort }}
+          # Served by the watchdog's probe thread from a flag its enforcement
+          # thread publishes; the watchdog also exits the process by itself.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probe
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+            {{- if not (kindIs "invalid" $tq.probeTerminationGracePeriodSeconds) }}
+            terminationGracePeriodSeconds: {{ $tq.probeTerminationGracePeriodSeconds }}
+            {{- end }}
+          {{- if $.Values.caBundle.enabled }}
+          volumeMounts:
+            {{- include "openhands.caBundle.volumeMount" $ | nindent 12 }}
+          {{- end }}
+          env:
+            {{- include "openhands.env" $ | nindent 12 }}
+            {{- include "openhands.caBundle.env" $ | nindent 12 }}
+            - name: TASK_QUEUE_ROLE
+              value: {{ $role | quote }}
+            - name: TASK_QUEUE_SCHEDULING_ENABLED
+              value: {{ ternary "1" "0" $tq.schedulingEnabled | quote }}
+            - name: TASK_QUEUE_MAX_DELAY_SECONDS
+              value: {{ $tq.maxDelaySeconds | quote }}
+            - name: TASK_QUEUE_DEFAULT_BUDGET_SECONDS
+              value: {{ $tq.defaultBudgetSeconds | quote }}
+            - name: TASK_QUEUE_WATCHDOG_GRACE_SECONDS
+              value: {{ $tq.watchdogGraceSeconds | quote }}
+            - name: TASK_QUEUE_PROBE_PORT
+              value: {{ $tq.probePort | quote }}
+            {{- range $job, $jobCfg := $tq.jobs }}
+            {{- $prefix := printf "TASK_QUEUE_%s" (upper $job) }}
+            - name: {{ $prefix }}_ENABLED
+              value: {{ ternary "1" "0" $jobCfg.enabled | quote }}
+            - name: {{ $prefix }}_SCHEDULE
+              value: {{ $jobCfg.schedule | quote }}
+            {{- with $jobCfg.budgetSeconds }}
+            - name: {{ $prefix }}_BUDGET_SECONDS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with $tq.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+{{- end }}
+{{- end }}

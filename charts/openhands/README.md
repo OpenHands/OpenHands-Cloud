@@ -53,6 +53,26 @@ Retention**, defaulting to 3 days. See
 [ClickHouse diagnostic log retention](../../docs/clickhouse-diagnostic-log-retention.md)
 for cleanup commands and support-bundle details.
 
+### Scheduled jobs on the task queue
+
+`taskQueue` adds two Deployments running the Procrastinate worker from the app
+image: `business` runs the scheduled jobs, `ops` runs stalled-job recovery and
+retention. They will replace the `appConversationStartTaskClean`,
+`proactiveConvoClean` and `enrichUserInteractionData` CronJobs. Both are off by
+default, and the CronJobs stay authoritative until cutover.
+
+Cutover order: suspend the three CronJobs, wait for their active Jobs to finish,
+record watermarks with `python -m server.task_queue.watermark record`, then set
+`taskQueue.schedulingEnabled: true`. To roll back, set it to `false`, let the
+workers drain, scale both Deployments to zero, run
+`python -m server.task_queue.rollback reconcile` and `verify`, then un-suspend
+the CronJobs with `startingDeadlineSeconds` set.
+
+The liveness probe sets a probe-level `terminationGracePeriodSeconds`, which
+needs Kubernetes 1.28 or later. On older clusters set
+`taskQueue.probeTerminationGracePeriodSeconds: null`. The worker's watchdog
+exits a hung process by itself, so the probe is only a secondary safety net.
+
 ### TLS and Certificate Configuration
 
 The chart supports two methods for TLS configuration:

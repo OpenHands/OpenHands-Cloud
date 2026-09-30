@@ -371,6 +371,61 @@ appConversationStartTaskClean:
     limits:
       memory: 512Mi
 
+# Procrastinate workers that replace the enrichUserInteractionData,
+# proactiveConvoClean and appConversationStartTaskClean CronJobs (OHE-3417).
+# Off by default: the CronJobs stay authoritative until cutover, which suspends
+# them, records watermarks, and only then sets schedulingEnabled.
+taskQueue:
+  enabled: false
+  # TASK_QUEUE_SCHEDULING_ENABLED. Off stops deferring new occurrences while the
+  # workers keep draining what is queued, which is what rollback needs.
+  schedulingEnabled: false
+  # Catch-up window for a worker that starts after an occurrence was due. It
+  # must exceed the longest gap of every schedule below; the worker refuses to
+  # start otherwise, because a dropped occurrence cannot be recovered.
+  maxDelaySeconds: 93600
+  # In-loop budget per run, then this grace before the watchdog exits the pod.
+  defaultBudgetSeconds: 600
+  watchdogGraceSeconds: 60
+  probePort: 8080
+  # Probe-level terminationGracePeriodSeconds needs Kubernetes 1.28+. Set to
+  # null on older clusters; the watchdog's self-exit does not depend on it.
+  probeTerminationGracePeriodSeconds: 30
+  # Keyed by the worker's job names; each maps to TASK_QUEUE_<NAME>_* env.
+  jobs:
+    clean_app_conversation_start_tasks:
+      enabled: true
+      schedule: "0 3 * * *"
+    clean_proactive_convo_table:
+      enabled: false
+      schedule: "0 2 * * *"
+    enrich_user_interaction_data:
+      enabled: false
+      schedule: "*/10 * * * *"
+  business:
+    replicas: 2
+    # Longer than the longest normal run (about two minutes), so a deploy lets
+    # the running job finish instead of leaving it to stalled recovery.
+    terminationGracePeriodSeconds: 300
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 200m
+      limits:
+        memory: 1Gi
+  # Stalled-job recovery and retention. Separate from business so recovery never
+  # waits for a slot behind the jobs it exists to recover.
+  ops:
+    replicas: 2
+    terminationGracePeriodSeconds: 60
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 50m
+      limits:
+        memory: 512Mi
+  extraEnv: []
+
 resendSync:
   enabled: false
   schedule: "0 1 * * *" # Daily at 1 AM
