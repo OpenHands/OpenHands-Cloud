@@ -68,7 +68,6 @@ jobs:
     needs: dispatch
     runs-on: ubuntu-24.04
     timeout-minutes: 50
-    environment: e2e-replicated
     # A newer revision supersedes this one; only the newest needs a run.
     concurrency:
       group: e2e-test-revision-pin-wait
@@ -77,23 +76,34 @@ jobs:
       - name: Wait for the openhands-e2e template to use this revision
         shell: bash
         env:
-          ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_E2E_TOKEN }}
+          ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}
           REVISION: ${{ github.sha }}
         run: |
           url="https://workflows.dev.all-hands.dev/api/v1/workflow-templates/openhands-e2e/openhands-e2e"
           deadline=$(( $(date +%s) + 45 * 60 ))
           pinned=""
+          code=000
           while [ "$(date +%s)" -lt "$deadline" ]; do
-            pinned=$(curl --fail --silent --show-error --max-time 10 \
-              --header "Authorization: Bearer ${ARGO_TOKEN}" "$url" \
-              | jq -r '.spec.arguments.parameters[] | select(.name == "test-revision") | .value') || pinned=""
+            code=$(curl --silent --show-error --max-time 10 --output template.json \
+              --write-out '%{http_code}' \
+              --header "Authorization: Bearer ${ARGO_TOKEN}" "$url") || code=000
+            case "$code" in
+              200)
+                pinned=$(jq -r '.spec.arguments.parameters[] | select(.name == "test-revision") | .value' template.json) || pinned=""
+                ;;
+              # Retrying cannot fix an auth or missing-template answer.
+              401|403|404)
+                echo "::error::Argo answered HTTP ${code} reading the openhands-e2e WorkflowTemplate. Check ARGO_WORKFLOWS_GATE_TOKEN and the openhands-e2e-gate Role in saas-deploy."
+                exit 1
+                ;;
+            esac
             if [ "$pinned" = "$REVISION" ]; then
               echo "Argo pins \`${REVISION}\`; starting the unstable E2E run." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 30
           done
-          echo "::error::Argo still pins '${pinned}', not ${REVISION}, after 45 minutes. Check the rolling bump-e2e-test-revision/development PR in saas-deploy and the openhands-e2e-development ArgoCD sync."
+          echo "::error::Argo still pins '${pinned}', not ${REVISION}, after 45 minutes (last HTTP ${code}). Check the rolling bump-e2e-test-revision/development PR in saas-deploy and the openhands-e2e-development ArgoCD sync."
           exit 1
 
   e2e:

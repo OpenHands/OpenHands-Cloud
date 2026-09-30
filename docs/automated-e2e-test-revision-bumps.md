@@ -25,6 +25,13 @@ an unstable E2E run through
 cancels an older wait, so only the newest revision gets a run. If the pin never
 arrives, the job fails and points at the bump pull request.
 
+The wait reads the template with the repo-level, read-only
+`ARGO_WORKFLOWS_GATE_TOKEN` (the `openhands-e2e-gate` identity in
+`saas-deploy`), not the environment-scoped `ARGO_WORKFLOWS_E2E_TOKEN`. The
+submit identity's template `get` is scoped to the template name, and Argo
+Server checks this read without a name, so it is always denied. A 401, 403, or
+404 fails the job at once rather than after 45 minutes.
+
 ## Dispatch payload
 
 | Field | Value |
