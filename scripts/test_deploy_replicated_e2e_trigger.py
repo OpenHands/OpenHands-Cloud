@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-replicated.yml"
 E2E_WORKFLOW = ROOT / ".github/workflows/e2e-replicated.yml"
 RELEASE_GATE_WORKFLOW = ROOT / ".github/workflows/release-gate.yml"
+DISPATCH_WORKFLOW = ROOT / ".github/workflows/dispatch-e2e-test-revision-bump.yml"
 TEST_WORKFLOW = ROOT / ".github/workflows/test-scripts.yml"
 RELEASE_WORKFLOWS = {
     "unstable": ROOT / ".github/workflows/release-replicated-unstable.yml",
@@ -176,6 +177,7 @@ def test_workflow_contract_runs_when_related_workflows_change():
     assert "- '.github/workflows/deploy-replicated.yml'" in text
     assert "- '.github/workflows/e2e-replicated.yml'" in text
     assert "- '.github/workflows/release-gate.yml'" in text
+    assert "- '.github/workflows/dispatch-e2e-test-revision-bump.yml'" in text
 
 
 def release_gate_command():
@@ -216,6 +218,25 @@ def test_release_gate_uses_a_read_only_argo_token():
         "${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}"
     )
     assert "ARGO_WORKFLOWS_E2E_TOKEN" not in yaml.safe_dump(workflow)
+
+
+def test_pin_wait_reads_the_template_with_the_read_only_argo_token():
+    # The submit token's `get` is scoped to the template name, and Argo Server
+    # checks this GET without one, so that token is always answered 403.
+    workflow = load_workflow(DISPATCH_WORKFLOW)
+    job = workflow["jobs"]["wait-for-pin"]
+    assert "environment" not in job
+    step = job["steps"][0]
+    assert step["env"]["ARGO_TOKEN"] == "${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}"
+    assert "ARGO_WORKFLOWS_E2E_TOKEN" not in yaml.safe_dump(job)
+
+
+def test_pin_wait_stops_on_an_answer_a_retry_cannot_change():
+    command = load_workflow(DISPATCH_WORKFLOW)["jobs"]["wait-for-pin"]["steps"][0][
+        "run"
+    ]
+    assert "401|403|404)" in command
+    assert "--fail" not in command
 
 
 def test_release_gate_staleness_window_fits_inside_argo_retention():
