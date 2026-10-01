@@ -149,8 +149,10 @@ submitting a run.
 
 ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
 is enabled, the harness keeps the existing Playwright reporters and also uploads
-test results, steps, traces, videos, screenshots, and other Playwright
-attachments through `@reportportal/agent-js-playwright`.
+test results, traces, videos, screenshots, and other Playwright attachments
+through `@reportportal/agent-js-playwright`. It reports one row per test, not one
+row per browser action. Each test row keeps its error, skip reason, and
+attachments.
 
 Required variables:
 
