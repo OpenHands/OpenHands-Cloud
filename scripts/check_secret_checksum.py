@@ -53,21 +53,52 @@ for doc in yaml.safe_load_all((ROOT / "replicated" / "openhands.yaml").read_text
         if value:
             checksum_expr = value
             break
-covered = set(re.findall(r'ConfigOption\s+"([^"]+)"', checksum_expr))
+# Positional order matters: Go's printf silently discards args that run past
+# the format string, so an arg beyond position N (where N = count of %s) never
+# contributes to the hash. We validate both membership and arity.
+ordered_args = re.findall(r'ConfigOption\s+"([^"]+)"', checksum_expr)
+covered = set(ordered_args)
 
-# 3. Every secret field must be covered by the checksum.
+# Count %s placeholders in the format string (the first "..." inside printf).
+printf_fmt = re.search(r'printf\s+"([^"]*)"', checksum_expr)
+num_placeholders = printf_fmt.group(1).count("%s") if printf_fmt else 0
+num_args = len(ordered_args)
+
+errors = []
+
+# 3a. Every secret field must appear in the ConfigOption arg list.
 missing = [f for f in password_fields if f not in covered]
 if missing:
-    print(
-        "ERROR: these password config fields are not included in secretsChecksum "
-        "(replicated/openhands.yaml):"
+    errors.append(
+        "These password config fields are not referenced in secretsChecksum "
+        "(replicated/openhands.yaml):\n"
+        + "\n".join(f"  - {f}" for f in missing)
+        + "\n\nAdd each one so changing it in the admin console restarts the "
+        "openhands pod."
     )
-    for field in missing:
-        print(f"  - {field}")
-    print(
-        "\nAdd each one to the secretsChecksum sha256 so changing it in the admin "
-        "console restarts the openhands pod. See scripts/check_secret_checksum.py."
+
+# 3b. Arity: Go's printf discards extra args. Fields beyond the last %s are
+# silently excluded from the hash, so rotating them in the admin console does
+# NOT roll the pod — the new value stays dormant until an unrelated restart.
+if num_args != num_placeholders:
+    dropped = ordered_args[num_placeholders:]
+    errors.append(
+        f"secretsChecksum printf has {num_placeholders} '%s' placeholders but "
+        f"{num_args} ConfigOption args. Go's printf discards the extras, so "
+        "these fields are silently excluded from the hash (changing them does "
+        "NOT restart the pod):\n"
+        + "\n".join(f"  - position {num_placeholders + i + 1}: {name}"
+                    for i, name in enumerate(dropped))
+        + "\n\nAdd matching '%s|' entries to the format string so every arg "
+        "contributes to the hash."
     )
+
+if errors:
+    print("ERROR: " + "\n\nERROR: ".join(errors))
+    print("\nSee scripts/check_secret_checksum.py.")
     sys.exit(1)
 
-print(f"OK: all {len(password_fields)} password config fields are covered by secretsChecksum.")
+print(
+    f"OK: all {len(password_fields)} password config fields are covered by "
+    f"secretsChecksum ({num_placeholders} placeholders / {num_args} args)."
+)
