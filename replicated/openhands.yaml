@@ -438,7 +438,7 @@ spec:
               OH_CONVERSATIONS_PATH: "/workspace/conversations"
               OH_ENABLE_VNC: "0"
               # Managed-LLM key refresh-on-401 contract the app sends on every
-              # runtime request (enterprise#468). runtime-api matches these keys
+              # runtime request. runtime-api matches these keys
               # exactly, so they must equal the app's values: the URL is built
               # from WEB_HOST (ingress.host), the headers are the literal
               # json.dumps the app emits, and the base URL is the chart's
