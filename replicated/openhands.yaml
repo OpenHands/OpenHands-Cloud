@@ -437,6 +437,16 @@ spec:
               OH_BASH_EVENTS_DIR: "/workspace/bash_events"
               OH_CONVERSATIONS_PATH: "/workspace/conversations"
               OH_ENABLE_VNC: "0"
+              # Managed-LLM key refresh-on-401 contract the app sends on every
+              # runtime request. runtime-api matches these keys
+              # exactly, so they must equal the app's values: the URL is built
+              # from WEB_HOST (ingress.host), the headers are the literal
+              # json.dumps the app emits, and the base URL is the chart's
+              # LITE_LLM_API_URL for the bundled litellm-helm (FQDN of
+              # <releaseName>-litellm in <namespace>, both pinned above).
+              OH_LLM_API_KEY_REFRESH_BASE_URLS: "http://openhands-litellm.openhands.svc.cluster.local:4000"
+              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${OH_SESSION_API_KEYS_0}"}'
+              OH_LLM_API_KEY_REFRESH_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/keys/llm/managed/current'
               OH_VSCODE_PORT: "60001"
               OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
               OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
