@@ -776,7 +776,7 @@ spec:
           value: '{{repl RandomString 32}}'
         - name: automation_kv_secret
           title: Automation KV Secret
-          help_text: Key that signs automation key-value store tokens and encrypts the state automations keep there
+          help_text: Key that signs automation key-value store tokens and encrypts the state automations keep there. Must never change once set — changing it makes existing automation state unreadable.
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
