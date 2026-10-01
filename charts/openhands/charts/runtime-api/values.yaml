@@ -305,11 +305,6 @@ warmRuntimes:
         LMNR_FORCE_HTTP: ""
         LMNR_HTTP_PORT: ""
         LMNR_PROJECT_API_KEY: ""
-        # When ingress.host is set, the app also sends OH_LLM_API_KEY_REFRESH_URL,
-        # OH_LLM_API_KEY_REFRESH_HEADERS and OH_LLM_API_KEY_REFRESH_BASE_URLS on every
-        # runtime request. They derive from ingress.host and LITE_LLM_API_URL, which
-        # this chart cannot template here, so add them with the exact app values
-        # (see replicated/openhands.yaml) or no warm pod is ever claimable.
         LOG_JSON: "1"
         LOG_JSON_LEVEL_KEY: "severity"
         OH_ALLOW_CORS_ORIGINS_0: ""
