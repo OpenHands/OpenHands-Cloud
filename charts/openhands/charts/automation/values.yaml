@@ -193,6 +193,15 @@ gitSyncSecretFromSecret:
   name: automation-git-sync-secret
   key: git-sync-secret
 
+# KV store signing key from K8s secret
+# Signs per-run KV JWT tokens and encrypts stored values at rest. Internal
+# signing material only; never shown to admins or users (same posture as
+# serviceKey, webhookSecret, gitSyncSecret). When unset, every KV endpoint
+# returns 503 "KV store not configured".
+kvSecretFromSecret:
+  name: automation-kv-secret
+  key: kv-secret
+
 # Automation run behavior. All defaults below are disabled by default, meaning
 # no automation is ever auto-disabled
 runBehavior:

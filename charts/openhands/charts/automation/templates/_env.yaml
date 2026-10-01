@@ -124,6 +124,16 @@
       name: {{ .Values.automationWebhookSecretFromSecret.name }}
       key: {{ .Values.automationWebhookSecretFromSecret.key }}
 {{- end }}
+# KV store signing key: signs per-run KV JWT tokens and encrypts stored values
+# at rest. Internal signing material; no admin-facing config. Without this,
+# every /api/automation/v1/kv endpoint returns 503.
+{{- if .Values.kvSecretFromSecret }}
+- name: AUTOMATION_KV_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.kvSecretFromSecret.name }}
+      key: {{ .Values.kvSecretFromSecret.key }}
+{{- end }}
 # Git sync wrapping key: encrypts each organization's git token and repo
 # encryption key at rest. Optional so pods start before the secret exists;
 # until then the service refuses to store git sync secrets (503) rather than

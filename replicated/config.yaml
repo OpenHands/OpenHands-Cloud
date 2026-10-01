@@ -774,6 +774,12 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: automation_kv_secret
+          title: Automation KV Store Secret
+          help_text: Signing key for scoped automation KV tokens and encryption key for stored values. Internal signing material; not an admin-tunable setting.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: default_openhands_organization
       title: Default OpenHands Organization
