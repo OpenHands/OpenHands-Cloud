@@ -1,7 +1,7 @@
 """Keep the Replicated warm pool claimable for the LLM key refresh-on-401 env.
 
 The app sends OH_LLM_API_KEY_REFRESH_{URL,HEADERS,BASE_URLS} on every runtime
-request whenever WEB_HOST is set (enterprise#468), and runtime-api claims warm
+request whenever WEB_HOST is set, and runtime-api claims warm
 pods only on an exact env match. These assertions rebuild the values the app
 derives from the chart-rendered WEB_HOST and LITE_LLM_API_URL and require the
 Replicated warm env to carry identical ones.
