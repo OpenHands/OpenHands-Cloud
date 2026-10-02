@@ -445,7 +445,7 @@ spec:
               # LITE_LLM_API_URL for the bundled litellm-helm (FQDN of
               # <releaseName>-litellm in <namespace>, both pinned above).
               OH_LLM_API_KEY_REFRESH_BASE_URLS: "http://openhands-litellm.openhands.svc.cluster.local:4000"
-              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${OH_SESSION_API_KEYS_0}"}'
+              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${SESSION_API_KEY}"}'
               OH_LLM_API_KEY_REFRESH_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/keys/llm/managed/current'
               OH_VSCODE_PORT: "60001"
               OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
