@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sysbox-storage-reschedule-smoke
+  namespace: openhands-runtimes
+spec:
+  runtimeClassName: sysbox-runc
+  hostUsers: false
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/hostname: ${SECOND_SANDBOX_NODE}
+  containers:
+    - name: smoke
+      image: ubuntu:24.04
+      command: [bash, -lc]
+      args:
+        - 'set -eu; grep -Fx aks-sysbox-storage-ok /workspace/probe.txt; df -h /workspace; echo SYSBOX_AZURE_DISK_RESCHEDULE_PASS'
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+  volumes:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: sysbox-storage-smoke
