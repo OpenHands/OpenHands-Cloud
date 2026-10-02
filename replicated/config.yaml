@@ -989,7 +989,7 @@ spec:
             webhook secret, then registers the displayed events URL as a webhook in Jira
             Cloud using that secret.
           type: bool
-          default: "0"
+          default: "1"
 
     - name: github_authentication
       title: GitHub Authentication
