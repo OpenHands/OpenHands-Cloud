@@ -74,7 +74,7 @@ def test_replicated_warm_env_matches_app_llm_key_refresh_env() -> None:
             f"https://{web_host}/api/keys/llm/managed/current"
         ),
         "OH_LLM_API_KEY_REFRESH_HEADERS": json.dumps(
-            {"X-Session-API-Key": "${OH_SESSION_API_KEYS_0}"}
+            {"X-Session-API-Key": "${SESSION_API_KEY}"}
         ),
         "OH_LLM_API_KEY_REFRESH_BASE_URLS": lite_llm_api_url,
     }
