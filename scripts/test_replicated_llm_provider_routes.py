@@ -426,6 +426,7 @@ def test_azure_providers_coexist(auth, azure_drop, foundry_drop):
             "azure_auth_method": auth,
             "azure_deployments": " gpt-5.3-codex, ai-gpt-5.4\r\n gpt-5.3-codex ",
             "azure_ai_deployments": " gpt-5.4\r\n gpt-5.4 ",
+            "azure_api_version": "2025-04-01-preview",
             "azure_drop_params": azure_drop,
             "azure_ai_drop_params": foundry_drop,
         }
@@ -447,6 +448,7 @@ def test_azure_providers_coexist(auth, azure_drop, foundry_drop):
         azure_drop == "1",
         foundry_drop == "1",
     ]
+    assert [p["api_version"] for p in params[:-1]] == ["2025-04-01-preview"] * 2
     assert ("client_secret" in params[0]) == (auth == "service_principal")
     assert ("api_key" in params[0]) == (auth == "api_key")
     assert params[-1]["custom_llm_provider"] == "azure_ai"

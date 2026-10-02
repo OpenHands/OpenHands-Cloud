@@ -361,6 +361,8 @@
 - name: LITE_LLM_API_URL
   value: {{ .Values.litellm.url }}
 {{- end }}
+- name: OPENHANDS_PROVIDER_BASE_URL
+  value: $(LITE_LLM_API_URL)
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_KEY
   valueFrom:
