@@ -1,11 +1,16 @@
-"""Keep every Replicated warm-runtime config claimable for the env the app
+"""Keep every Replicated warm-runtime config consistent with the env the app
 injects on each runtime request.
 
-runtime-api claims a warm pod only on an exact environment match, so every env
-var the app sends on a runtime start request must also appear, with the same
-value, in each warm-runtime config. A key the app emits that is absent from the
-warm env makes the pool unclaimable for those requests and the conversation
-cold-starts instead.
+runtime-api claims a warm pod when the request env equals the warm config env,
+compared after it drops a set of deployment keys. A key the app emits that the
+warm config lacks or gets wrong fails in one of two ways:
+
+* compared keys (``OH_LLM_API_KEY_REFRESH_*``, ``LMNR_*``,
+  ``global.agentServerEnv``): no warm pod matches, so every conversation
+  cold-starts;
+* dropped keys (``OH_WEBHOOKS_0_BASE_URL``, ``OH_ALLOW_CORS_ORIGINS_0``): the
+  pod is still claimed, but claiming does not rewrite its env, so the sandbox
+  runs with the warm value and sends webhooks / allows CORS for the wrong host.
 
 Two classes of app-injected env exist:
 
@@ -18,7 +23,7 @@ Two classes of app-injected env exist:
 * Request-derived env the app computes per request from ``WEB_HOST`` and
   ``LITE_LLM_API_URL`` (the managed-LLM key refresh contract, webhooks, CORS).
   These are hand-mirrored into each warm config and are the class that silently
-  drifts -- the missing ``OH_LLM_API_KEY_REFRESH_*`` keys were exactly this bug.
+  drifts -- the missing ``OH_LLM_API_KEY_REFRESH_*`` keys were the original bug.
   This test rebuilds that contract from the rendered chart and requires every
   rendered warm config (Replicated and chart-default entries alike) to carry it.
 
@@ -60,8 +65,9 @@ def rendered_env_value(manifest: str, env_name: str) -> str:
 
 def injected_request_env(web_host: str, lite_llm_api_url: str) -> dict[str, str]:
     """The always-on env the app derives per runtime request from WEB_HOST and
-    LITE_LLM_API_URL. Every warm config must carry these verbatim or the pool is
-    unclaimable for the requests that carry them."""
+    LITE_LLM_API_URL. Every warm config must carry these verbatim: a drifted
+    refresh key leaves the pool unclaimable, and a drifted webhook/CORS key
+    leaves claimed pods running with the wrong value."""
     return {
         "OH_LLM_API_KEY_REFRESH_URL": (
             f"https://{web_host}/api/keys/llm/managed/current"
@@ -181,8 +187,9 @@ def test_replicated_warm_env_matches_app_injected_request_env() -> None:
             if warm_env.get(key) != value
         }
         assert not missing, (
-            f"warm config {config['name']!r} is missing or mismatches app-injected "
-            f"request env (managed-proxy requests would cold-start): {missing}"
+            f"warm config {config['name']!r} does not match app-injected request "
+            f"env: {missing} (a compared key makes the pool unclaimable; a "
+            "webhook/CORS key leaves claimed pods misrouted)"
         )
 
 
