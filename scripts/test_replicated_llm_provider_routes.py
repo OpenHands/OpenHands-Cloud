@@ -449,6 +449,7 @@ def test_azure_providers_coexist(auth, azure_drop, foundry_drop):
     ]
     assert ("client_secret" in params[0]) == (auth == "service_principal")
     assert ("api_key" in params[0]) == (auth == "api_key")
+    assert params[-1]["custom_llm_provider"] == "azure_ai"
     assert "api_version" not in params[-1]
     assert "client_secret" not in params[-1]
 
