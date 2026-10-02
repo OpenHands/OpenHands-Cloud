@@ -683,6 +683,25 @@ spec:
           - app=automation-events
         limits:
           maxAge: 336h
+    # Presence-only ("set"/"empty_or_unset") snapshot of secret-backed vars that
+    # exist only on the automation pods, so the openhands snapshot above cannot
+    # report them (never values). Without AUTOMATION_KV_SECRET the KV store is
+    # off and runs get no AUTOMATION_KV_TOKEN.
+    - exec:
+        name: app/automation-config-snapshot
+        collectorName: automation-config-snapshot
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=automation
+        containerName: automation
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os
+            SECRET_PRESENCE = ["AUTOMATION_KV_SECRET"]
+            presence = {k: ("set" if os.environ.get(k) else "empty_or_unset") for k in SECRET_PRESENCE}
+            print(json.dumps({"secret_presence": presence}, indent=2))
+        timeout: 30s
     # Read-only automation DB dump via the automation pod's own creds (asyncpg).
     # Webhook/automation/run metadata only — never webhook_secret, prompts,
     # tarball paths, event payloads or error detail.
