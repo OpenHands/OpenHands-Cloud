@@ -40,6 +40,8 @@ config:
   google_vertex_location: ""
   deepseek_api_key: ""
   mistral_api_key: ""
+  azure_ai_api_key: ""
+  azure_ai_endpoint: ""
   azure_api_key: ""
   azure_tenant_id: ""
   azure_client_id: ""

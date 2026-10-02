@@ -119,6 +119,18 @@ PROVIDERS = {
 }
 
 
+PROVIDERS["azure-ai"] = (
+    {
+        "llm_provider": "azure",
+        "azure_provider_mode": "azure_ai",
+        "azure_ai_api_key": "foundry-key",
+        "azure_ai_endpoint": "https://example.openai.azure.com/",
+        "azure_ai_deployments": "gpt-5.4",
+    },
+    "azure_ai/",
+)
+
+
 def _to_helm(template: str) -> str:
     """Rewrite KOTS template syntax into a plain Helm template."""
     template = template.replace("{{repl ", "{{ ").replace("repl{{", "{{")
@@ -397,3 +409,62 @@ def test_default_model_is_a_visible_route(provider: str) -> None:
     assert default_model.removeprefix("litellm_proxy/") in visible, (
         f"{provider}: LITELLM_DEFAULT_MODEL {default_model} is not one of {sorted(visible)}"
     )
+
+
+@pytest.mark.parametrize("auth", ["api_key", "service_principal"])
+@pytest.mark.parametrize(
+    "azure_drop,foundry_drop", [("0", "0"), ("1", "0"), ("0", "1"), ("1", "1")]
+)
+def test_azure_providers_coexist(auth, azure_drop, foundry_drop):
+    default, routes = _render_routes(
+        {
+            **PROVIDERS[
+                "azure-" + ("api-key" if auth == "api_key" else "service-principal")
+            ][0],
+            **PROVIDERS["azure-ai"][0],
+            "azure_provider_mode": "both",
+            "azure_auth_method": auth,
+            "azure_deployments": " gpt-5.3-codex, ai-gpt-5.4\r\n gpt-5.3-codex ",
+            "azure_ai_deployments": " gpt-5.4\r\n gpt-5.4 ",
+            "azure_drop_params": azure_drop,
+            "azure_ai_drop_params": foundry_drop,
+        }
+    )
+    assert default == "litellm_proxy/azure-gpt-5.3-codex"
+    assert [r["model_name"] for r in routes] == [
+        "azure-gpt-5.3-codex",
+        "azure-ai-gpt-5.4",
+        "azure_ai-gpt-5.4",
+    ]
+    params = [r["litellm_params"] for r in routes]
+    assert [p["model"] for p in params] == [
+        "azure/gpt-5.3-codex",
+        "azure/ai-gpt-5.4",
+        "azure_ai/gpt-5.4",
+    ]
+    assert [p["drop_params"] for p in params] == [
+        azure_drop == "1",
+        azure_drop == "1",
+        foundry_drop == "1",
+    ]
+    assert ("client_secret" in params[0]) == (auth == "service_principal")
+    assert ("api_key" in params[0]) == (auth == "api_key")
+    assert "api_version" not in params[-1]
+    assert "client_secret" not in params[-1]
+
+
+def test_foundry_only_does_not_require_openai_fields():
+    cfg = _config_options(PROVIDERS["azure-ai"][0])
+    assert all(
+        not cfg[field]
+        for field in [
+            "azure_auth_method",
+            "azure_endpoint",
+            "azure_api_version",
+            "azure_deployments",
+        ]
+    )
+    default, routes = render_routes("azure-ai")
+    assert default == "litellm_proxy/azure_ai-gpt-5.4"
+    assert len(routes) == 1
+    assert routes[0]["litellm_params"]["drop_params"] is False
