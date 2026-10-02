@@ -86,6 +86,27 @@ import path from "path";
 
 export type RunUser = "returning" | "new-user";
 
+/**
+ * Spec files that exercise only one user role. The other role's test projects
+ * do not schedule them, so a run does not report them as skipped. Each spec
+ * keeps its own `runUser` guard for ad-hoc runs that bypass the projects.
+ */
+export const ROLE_ONLY_SPECS: Record<RunUser, readonly string[]> = {
+  returning: [
+    "007-member-api-key-scope.spec.ts",
+    "008-managed-key-ownership.spec.ts",
+    "009-budgets.spec.ts",
+    "010-personal-budget-guards.spec.ts",
+  ],
+  "new-user": ["006-org-management.spec.ts", "011-automations.spec.ts"],
+};
+
+/** `testIgnore` for a role's test projects: setup files and the other role's specs. */
+export function testIgnoreFor(user: RunUser): Array<string | RegExp> {
+  const other: RunUser = user === "returning" ? "new-user" : "returning";
+  return [/setup\//, ...ROLE_ONLY_SPECS[other].map((file) => `**/${file}`)];
+}
+
 export const DEFAULT_KEYCLOAK_REALM = "allhands";
 
 /**
