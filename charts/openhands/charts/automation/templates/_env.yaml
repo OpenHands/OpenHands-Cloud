@@ -136,6 +136,17 @@
       key: {{ .Values.gitSyncSecretFromSecret.key }}
       optional: true
 {{- end }}
+# KV store secret: signs the per-automation KV tokens and encrypts the state
+# automations keep between runs. Optional so pods start before the secret
+# exists; until then the KV store is off and runs get no AUTOMATION_KV_TOKEN.
+{{- if .Values.kvSecretFromSecret }}
+- name: AUTOMATION_KV_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.kvSecretFromSecret.name }}
+      key: {{ .Values.kvSecretFromSecret.key }}
+      optional: true
+{{- end }}
 # Laminar (Laminar) monitoring/analytics
 {{- if .Values.lmnrApiKeyFromSecret }}
 - name: LMNR_PROJECT_API_KEY
