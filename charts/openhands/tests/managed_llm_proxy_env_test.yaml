@@ -1,0 +1,43 @@
+suite: managed LLM proxy URL wiring
+templates:
+  - deployment.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: routes managed conversations through the bundled proxy across namespaces
+    release:
+      name: enterprise
+      namespace: app
+    set:
+      enabled: true
+      litellm-helm.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITE_LLM_API_URL
+            value: http://enterprise-litellm.app.svc.cluster.local:4000
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_PROVIDER_BASE_URL
+            value: $(LITE_LLM_API_URL)
+  - it: routes managed conversations through the configured external proxy
+    set:
+      enabled: true
+      litellm-helm.enabled: false
+      litellm.url: https://proxy.example.test/v1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITE_LLM_API_URL
+            value: https://proxy.example.test/v1
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_PROVIDER_BASE_URL
+            value: $(LITE_LLM_API_URL)
