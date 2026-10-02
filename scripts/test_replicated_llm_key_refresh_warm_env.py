@@ -13,18 +13,20 @@ Two classes of app-injected env exist:
   ``OH_AGENT_SERVER_ENV`` on the app and the runtime-api subchart mirrors the
   same map into every warm config (see
   ``charts/openhands/charts/runtime-api/templates/warm-runtimes-configmap.yaml``),
-  so that class is kept in sync structurally from a single source.
+  so that class is kept in sync from a single source; a sentinel test below pins
+  that merge.
 * Request-derived env the app computes per request from ``WEB_HOST`` and
   ``LITE_LLM_API_URL`` (the managed-LLM key refresh contract, webhooks, CORS).
   These are hand-mirrored into each warm config and are the class that silently
   drifts -- the missing ``OH_LLM_API_KEY_REFRESH_*`` keys were exactly this bug.
   This test rebuilds that contract from the rendered chart and requires every
-  ``configsByName`` entry to carry it.
+  rendered warm config (Replicated and chart-default entries alike) to carry it.
 
 When the app starts emitting a new always-on request env var, add it to
 ``injected_request_env`` below (and mirror it into the warm config). ``LMNR_*``
-is intentionally excluded: the app only emits it when analytics is enabled, so
-it is not an unconditional match key.
+is also on every request: the chart always sets it on the app (``""`` when
+Laminar is off) and the app auto-forwards the ``LMNR_`` prefix, so each warm
+config must carry the same values Replicated sets on the app.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -41,6 +44,7 @@ OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 APP_HOSTNAME_TEMPLATE = '{{repl ConfigOption "computed_app_hostname" }}'
 APP_HOSTNAME = "app.example.com"
+WARM_CONFIGMAP = "charts/runtime-api/templates/warm-runtimes-configmap.yaml"
 
 
 def rendered_env_value(manifest: str, env_name: str) -> str:
@@ -95,9 +99,52 @@ def render_openhands_app(spec: dict) -> str:
     ).stdout
 
 
+def render_warm_configs(
+    spec: dict, extra_agent_server_env: dict[str, str] | None = None
+) -> list[dict]:
+    """Render warm-runtimes.json the way a Replicated install gets it: Replicated
+    values layered over the chart defaults, with global.agentServerEnv merged in."""
+    values = spec["values"]
+    # count is a KOTS template string; only the configs matter here.
+    warm = {**values["runtime-api"]["warmRuntimes"], "count": 1}
+    # Only agentServerEnv from global: the rest holds {{repl}} strings that
+    # third-party subcharts tpl-render and helm cannot parse.
+    agent_server_env = {
+        **values["global"]["agentServerEnv"],
+        **(extra_agent_server_env or {}),
+    }
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml") as overrides:
+        yaml.safe_dump(
+            {
+                "global": {"agentServerEnv": agent_server_env},
+                "runtime-api": {"warmRuntimes": warm},
+            },
+            overrides,
+        )
+        overrides.flush()
+        manifest = subprocess.run(
+            [
+                "helm",
+                "template",
+                spec["releaseName"],
+                str(OPENHANDS_CHART),
+                "--namespace",
+                spec["namespace"],
+                "-f",
+                overrides.name,
+                "--show-only",
+                WARM_CONFIGMAP,
+            ],
+            check=True,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        ).stdout
+    return json.loads(yaml.safe_load(manifest)["data"]["warm-runtimes.json"])["configs"]
+
+
 def test_replicated_warm_env_matches_app_injected_request_env() -> None:
     spec = yaml.safe_load(REPLICATED_OPENHANDS.read_text(encoding="utf-8"))["spec"]
-    configs = spec["values"]["runtime-api"]["warmRuntimes"]["configsByName"]
 
     manifest = render_openhands_app(spec)
     web_host = rendered_env_value(manifest, "WEB_HOST")
@@ -106,16 +153,27 @@ def test_replicated_warm_env_matches_app_injected_request_env() -> None:
 
     expected = injected_request_env(web_host, lite_llm_api_url)
 
-    checked = 0
-    for name, config in configs.items():
-        environment = config.get("environment")
-        if environment is None:
-            continue
+    # Replicated sets the analytics-on LMNR_* values on the app from the same
+    # anchors the warm config uses; the warm value must match those, not the
+    # chart's "".
+    app_lmnr_env = {
+        key: value
+        for block in spec["optionalValues"]
+        for key, value in block["values"].get("env", {}).items()
+        if key.startswith("LMNR_")
+    }
+    lmnr_keys = set(re.findall(r"(?m)^\s+- name: (LMNR_\w+)$", manifest))
+    assert lmnr_keys and lmnr_keys <= app_lmnr_env.keys(), (lmnr_keys, app_lmnr_env)
+    expected = {**expected, **app_lmnr_env}
+
+    configs = render_warm_configs(spec)
+    assert configs, "no warm-runtime configs rendered"
+    for config in configs:
         warm_env = {
             key: value.replace(APP_HOSTNAME_TEMPLATE, APP_HOSTNAME)
             if isinstance(value, str)
             else value
-            for key, value in environment.items()
+            for key, value in config["environment"].items()
         }
         missing = {
             key: value
@@ -123,9 +181,15 @@ def test_replicated_warm_env_matches_app_injected_request_env() -> None:
             if warm_env.get(key) != value
         }
         assert not missing, (
-            f"warm config {name!r} is missing or mismatches app-injected request "
-            f"env (managed-proxy requests would cold-start): {missing}"
+            f"warm config {config['name']!r} is missing or mismatches app-injected "
+            f"request env (managed-proxy requests would cold-start): {missing}"
         )
-        checked += 1
 
-    assert checked, "no warm configsByName entries with an environment were checked"
+
+def test_every_warm_config_carries_global_agent_server_env() -> None:
+    spec = yaml.safe_load(REPLICATED_OPENHANDS.read_text(encoding="utf-8"))["spec"]
+    sentinel = {"OH_TEST_AGENT_SERVER_ENV_SENTINEL": "1"}
+    expected = {**spec["values"]["global"]["agentServerEnv"], **sentinel}
+
+    for config in render_warm_configs(spec, sentinel):
+        assert expected.items() <= config["environment"].items(), config["name"]
