@@ -11,6 +11,7 @@ import {
   authReturningFile,
   authNewUserFile,
   isUserEnabled,
+  testIgnoreFor,
 } from "./utils/config";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
@@ -146,14 +147,15 @@ export default defineConfig({
     //
     // Each spec file (*.spec.ts) is picked up by both the returning and
     // new-user variants of every browser, so the same suite runs once per
-    // user role. The active role is exposed to specs via project metadata
-    // (`project.metadata.user`); see utils/config.ts#runUser.
+    // user role. Specs listed in ROLE_ONLY_SPECS (utils/config.ts) run only
+    // in their own role. The active role is exposed to specs via project
+    // metadata (`project.metadata.user`); see utils/config.ts#runUser.
 
     // Chromium (primary browser)
     {
       name: "chromium:returning",
       testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("returning"),
       use: {
         ...devices["Desktop Chrome"],
         storageState: authReturningFile,
@@ -164,7 +166,7 @@ export default defineConfig({
     {
       name: "chromium:new-user",
       testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("new-user"),
       use: {
         ...devices["Desktop Chrome"],
         storageState: authNewUserFile,
@@ -177,7 +179,7 @@ export default defineConfig({
     {
       name: "firefox:returning",
       testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("returning"),
       use: {
         ...devices["Desktop Firefox"],
         storageState: authReturningFile,
@@ -188,7 +190,7 @@ export default defineConfig({
     {
       name: "firefox:new-user",
       testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("new-user"),
       use: {
         ...devices["Desktop Firefox"],
         storageState: authNewUserFile,
@@ -201,7 +203,7 @@ export default defineConfig({
     {
       name: "webkit:returning",
       testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("returning"),
       use: {
         ...devices["Desktop Safari"],
         storageState: authReturningFile,
@@ -212,7 +214,7 @@ export default defineConfig({
     {
       name: "webkit:new-user",
       testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("new-user"),
       use: {
         ...devices["Desktop Safari"],
         storageState: authNewUserFile,

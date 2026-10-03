@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.67.0
+  tag: 1.68.1
 
 autoscaling:
   enabled: false
@@ -1365,6 +1365,13 @@ automation:
   gitSyncSecretFromSecret:
     name: automation-git-sync-secret
     key: git-sync-secret
+
+  # KV store secret from K8s secret: signs the per-automation KV tokens and
+  # encrypts the state automations keep between runs. Optional in the pod
+  # spec, so the pods start before the secret exists.
+  kvSecretFromSecret:
+    name: automation-kv-secret
+    key: kv-secret
   
   # Node-local scratch space for git sync checkouts, rendered as
   # AUTOMATION_WORKSPACE_BASE and as the emptyDir mount on both deployments.

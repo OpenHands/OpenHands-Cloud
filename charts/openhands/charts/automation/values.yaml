@@ -193,6 +193,12 @@ gitSyncSecretFromSecret:
   name: automation-git-sync-secret
   key: git-sync-secret
 
+# KV store secret from K8s secret
+# Signs the per-automation KV tokens and encrypts the state automations keep there
+kvSecretFromSecret:
+  name: automation-kv-secret
+  key: kv-secret
+
 # Automation run behavior. All defaults below are disabled by default, meaning
 # no automation is ever auto-disabled
 runBehavior:

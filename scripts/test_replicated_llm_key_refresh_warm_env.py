@@ -73,7 +73,7 @@ def injected_request_env(web_host: str, lite_llm_api_url: str) -> dict[str, str]
             f"https://{web_host}/api/keys/llm/managed/current"
         ),
         "OH_LLM_API_KEY_REFRESH_HEADERS": json.dumps(
-            {"X-Session-API-Key": "${OH_SESSION_API_KEYS_0}"}
+            {"X-Session-API-Key": "${SESSION_API_KEY}"}
         ),
         "OH_LLM_API_KEY_REFRESH_BASE_URLS": lite_llm_api_url,
         "OH_WEBHOOKS_0_BASE_URL": f"https://{web_host}/api/v1/webhooks",
