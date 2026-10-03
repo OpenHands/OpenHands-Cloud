@@ -1,3 +1,6 @@
+import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/deploy-replicated.yml"
 E2E_WORKFLOW = ROOT / ".github/workflows/e2e-replicated.yml"
 RELEASE_GATE_WORKFLOW = ROOT / ".github/workflows/release-gate.yml"
+DISPATCH_WORKFLOW = ROOT / ".github/workflows/dispatch-e2e-test-revision-bump.yml"
 TEST_WORKFLOW = ROOT / ".github/workflows/test-scripts.yml"
 RELEASE_WORKFLOWS = {
     "unstable": ROOT / ".github/workflows/release-replicated-unstable.yml",
@@ -176,6 +180,7 @@ def test_workflow_contract_runs_when_related_workflows_change():
     assert "- '.github/workflows/deploy-replicated.yml'" in text
     assert "- '.github/workflows/e2e-replicated.yml'" in text
     assert "- '.github/workflows/release-gate.yml'" in text
+    assert "- '.github/workflows/dispatch-e2e-test-revision-bump.yml'" in text
 
 
 def release_gate_command():
@@ -216,6 +221,122 @@ def test_release_gate_uses_a_read_only_argo_token():
         "${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}"
     )
     assert "ARGO_WORKFLOWS_E2E_TOKEN" not in yaml.safe_dump(workflow)
+
+
+def test_pin_wait_reads_the_template_with_the_read_only_argo_token():
+    # The submit token's `get` is scoped to the template name, and Argo Server
+    # checks this GET without one, so that token is always answered 403.
+    workflow = load_workflow(DISPATCH_WORKFLOW)
+    job = workflow["jobs"]["wait-for-pin"]
+    assert "environment" not in job
+    step = job["steps"][0]
+    assert step["env"]["ARGO_TOKEN"] == "${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}"
+    assert "ARGO_WORKFLOWS_E2E_TOKEN" not in yaml.safe_dump(job)
+
+
+def test_pin_wait_keeps_the_status_code_visible():
+    # `--fail` would hide the 401/403/404 the step fails fast on. The fake curl
+    # below ignores flags, so only this string check can see it come back.
+    command = load_workflow(DISPATCH_WORKFLOW)["jobs"]["wait-for-pin"]["steps"][0][
+        "run"
+    ]
+    assert "--fail" not in command
+
+
+PIN_WAIT_REVISION = "a" * 40
+
+FAKE_CURL = """#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+
+calls = Path(os.environ["CURL_CALLS"])
+n = len(calls.read_text().splitlines()) if calls.exists() else 0
+with calls.open("a") as f:
+    f.write(" ".join(sys.argv[1:]) + "\\n")
+replies = json.loads(os.environ["CURL_REPLIES"])
+code, rc, body = replies[min(n, len(replies) - 1)]
+Path(sys.argv[sys.argv.index("--output") + 1]).write_text(body)
+sys.stdout.write(code)
+sys.exit(rc)
+"""
+
+# Each call advances a minute, so the 45-minute deadline is ~45 polls, not 45 minutes.
+FAKE_DATE = """#!/usr/bin/env bash
+now=$(( $(cat "$FAKE_CLOCK" 2>/dev/null || echo 0) + 60 ))
+echo "$now" > "$FAKE_CLOCK"
+echo "$now"
+"""
+
+
+def argo_template(revision):
+    return json.dumps(
+        {
+            "spec": {
+                "arguments": {
+                    "parameters": [{"name": "test-revision", "value": revision}]
+                }
+            }
+        }
+    )
+
+
+def run_pin_wait(tmp_path, replies):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in {
+        "curl": FAKE_CURL,
+        "date": FAKE_DATE,
+        "sleep": "#!/bin/sh\n",
+    }.items():
+        (bin_dir / name).write_text(body, encoding="utf-8")
+        (bin_dir / name).chmod(0o755)
+    step = load_workflow(DISPATCH_WORKFLOW)["jobs"]["wait-for-pin"]["steps"][0]
+    env = os.environ | {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "CURL_REPLIES": json.dumps(replies),
+        "CURL_CALLS": str(tmp_path / "calls"),
+        "FAKE_CLOCK": str(tmp_path / "clock"),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        "ARGO_TOKEN": "fake-local-token",
+        "REVISION": PIN_WAIT_REVISION,
+    }
+    # GitHub runs `shell: bash` as `bash -e -o pipefail`.
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    calls = len((tmp_path / "calls").read_text().splitlines())
+    return result, calls
+
+
+def test_pin_wait_rides_out_transient_answers_until_this_revision_is_pinned(
+    tmp_path,
+):
+    result, calls = run_pin_wait(
+        tmp_path,
+        [
+            ["503", 0, "unavailable"],
+            ["000", 28, ""],  # curl timeout
+            ["200", 0, "<html>proxy page</html>"],
+            ["200", 0, argo_template("b" * 40)],  # previous pin
+            ["200", 0, argo_template(PIN_WAIT_REVISION)],
+        ],
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls == 5
+    assert PIN_WAIT_REVISION in (tmp_path / "summary").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("code", ["401", "403", "404"])
+def test_pin_wait_fails_on_the_first_auth_or_missing_template_answer(tmp_path, code):
+    result, calls = run_pin_wait(tmp_path, [[code, 0, "denied"]])
+    assert result.returncode == 1
+    assert calls == 1
+    assert f"HTTP {code}" in result.stdout
 
 
 def test_release_gate_staleness_window_fits_inside_argo_retention():

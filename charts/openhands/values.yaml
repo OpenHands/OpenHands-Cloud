@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.66.0
+  tag: 1.68.1
 
 autoscaling:
   enabled: false
@@ -118,11 +118,12 @@ env:
   # each sandbox ingress. The default nests sandboxes under the runtime base,
   # matching the runtime-api's own "." separator.
   RUNTIME_URL_PATTERN: "https://{runtime_id}.runtime.app.example.com"
-  # Maximum number of concurrent sandboxes the app will start (0 = no cap).
-  # The Replicated installer exposes this as the sandbox_max_num_sandboxes
-  # ConfigOption; leave at 0 here so non-Replicated installs are uncapped by
-  # default and operators opt in to a limit.
-  OH_SANDBOX_MAX_NUM_SANDBOXES: "0"
+  # Max sandboxes one user can have running at once; when they start another,
+  # their oldest running sandbox is paused. Automations count against the
+  # account that owns them. 0 falls back to the app default of 10; this is not
+  # a cluster-wide cap. The Replicated installer exposes this as the
+  # sandbox_max_num_sandboxes ConfigOption.
+  OH_SANDBOX_MAX_NUM_SANDBOXES: "10"
   # replace prod/claude-3-7-sonnet-20250219 with your LLM model and uncomment or override this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/prod/claude-3-7-sonnet-20250219"
 
@@ -922,6 +923,8 @@ maintenanceTasks:
   enabled: true
   schedule: "0 6 * * *" # Run daily at 1AM Eastern Time (6AM UTC)
   concurrencyPolicy: Forbid
+  # Cap a single run so a hung one can't block every later run under Forbid.
+  activeDeadlineSeconds: 1800
   failedJobsHistoryLimit: 3
   successfulJobsHistoryLimit: 3
   backoffLimit: 3
@@ -937,6 +940,8 @@ budgetMaintenance:
   enabled: true
   schedule: "*/15 * * * *" # Run every 15 minutes
   concurrencyPolicy: Forbid
+  # Cap a single run so a hung one can't block every later run under Forbid.
+  activeDeadlineSeconds: 1800
   failedJobsHistoryLimit: 3
   successfulJobsHistoryLimit: 3
   backoffLimit: 3
@@ -1357,6 +1362,13 @@ automation:
   gitSyncSecretFromSecret:
     name: automation-git-sync-secret
     key: git-sync-secret
+
+  # KV store secret from K8s secret: signs the per-automation KV tokens and
+  # encrypts the state automations keep between runs. Optional in the pod
+  # spec, so the pods start before the secret exists.
+  kvSecretFromSecret:
+    name: automation-kv-secret
+    key: kv-secret
   
   # Node-local scratch space for git sync checkouts, rendered as
   # AUTOMATION_WORKSPACE_BASE and as the emptyDir mount on both deployments.
@@ -1365,6 +1377,24 @@ automation:
     mountPath: /workspace
     sizeLimit: 10Gi
   
+  # Automation run behavior. Every knob below ships off: no automation is ever
+  # auto-disabled, and a run's sandbox is deleted the moment the run ends.
+  # See the automation subchart's values.yaml for the full key reference.
+  runBehavior:
+    # Consecutive permanent failures (bad credential, revoked token) before an
+    # automation is auto-disabled. 0 never auto-disables.
+    failureDisableThreshold: 0
+    # Consecutive failures of any kind before an automation is auto-disabled.
+    # Empty never auto-disables; setting a number is what turns the rule on.
+    consecutiveFailureDisableThreshold: ""
+    # Only read when consecutiveFailureDisableThreshold is set: the rule fires
+    # only if nothing succeeded in this many hours.
+    consecutiveFailureDisableWindowHours: 24
+    # Seconds after a run ends before its sandbox is deleted; until then it is
+    # paused, so the run's conversation stays resumable. 0 deletes immediately.
+    # Requires automation image >= 1.12.0; ignored by older images.
+    sandboxCleanupDelaySeconds: 0
+
   # Datadog configuration
   datadog:
     env: "dev"
@@ -1398,7 +1428,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.49.6-python
+    tag: 1.50.1-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

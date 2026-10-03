@@ -101,6 +101,18 @@ spec:
       # Enterprise reads the FEATURE_FLAGS-prefixed name; bare name kept for OSS.
       OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
+      # BYOR: whether users may retrieve the managed LiteLLM key from
+      # Settings → API Keys for use with agent-server runtimes outside this
+      # cluster. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # Backend route gating (server/constants.py, OrgService.check_byor_export_enabled)
+      # reads the bare ENABLE_BYOR_EXPORT. The web client's LlmApiKeyManager
+      # instead gates on feature_flags.enable_byor_export, which the app server
+      # builds from OH_WEB_CLIENT_FEATURE_FLAGS_* envs; once any of those is set
+      # (this chart always sets several), the _get_feature_flags() default
+      # factory that would read the bare env is bypassed and enable_byor_export
+      # falls back to the WebClientFeatureFlags model default (False).
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
+      ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
@@ -425,6 +437,16 @@ spec:
               OH_BASH_EVENTS_DIR: "/workspace/bash_events"
               OH_CONVERSATIONS_PATH: "/workspace/conversations"
               OH_ENABLE_VNC: "0"
+              # Managed-LLM key refresh-on-401 contract the app sends on every
+              # runtime request. runtime-api matches these keys
+              # exactly, so they must equal the app's values: the URL is built
+              # from WEB_HOST (ingress.host), the headers are the literal
+              # json.dumps the app emits, and the base URL is the chart's
+              # LITE_LLM_API_URL for the bundled litellm-helm (FQDN of
+              # <releaseName>-litellm in <namespace>, both pinned above).
+              OH_LLM_API_KEY_REFRESH_BASE_URLS: "http://openhands-litellm.openhands.svc.cluster.local:4000"
+              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${SESSION_API_KEY}"}'
+              OH_LLM_API_KEY_REFRESH_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/keys/llm/managed/current'
               OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
               WORKER_1: "12000"
               WORKER_2: "12001"
@@ -529,7 +551,7 @@ spec:
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
     # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automation_kv_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -727,10 +749,14 @@ spec:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
-          env:
-            # Deferred archive of automation conversations (OHE-2833). Quoted
-            # so the chart's `automation.env` receives a string.
-            AUTOMATION_SANDBOX_CLEANUP_DELAY_SECONDS: 'repl{{ ConfigOption "automations_sandbox_cleanup_delay_seconds" }}'
+          # Auto-disable and sandbox cleanup, from the Automations config group.
+          # Their defaults there are the off settings, so this block is inert
+          # until an operator changes one.
+          runBehavior:
+            failureDisableThreshold: '{{repl ConfigOption "automations_failure_disable_threshold" }}'
+            consecutiveFailureDisableThreshold: '{{repl ConfigOption "automations_consecutive_failure_disable_threshold" }}'
+            consecutiveFailureDisableWindowHours: '{{repl ConfigOption "automations_consecutive_failure_disable_window_hours" }}'
+            sandboxCleanupDelaySeconds: '{{repl ConfigOption "automations_sandbox_cleanup_delay_seconds" }}'
           # Uploaded automation packages must survive pod replacement, so store
           # them on the bundled MinIO (persistent here — minio.persistence
           # above) instead of the pod filesystem.

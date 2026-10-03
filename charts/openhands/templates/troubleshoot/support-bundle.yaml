@@ -247,6 +247,31 @@ spec:
                  "created_at, stopped_at, last_state_change, cpu_millicores, memory_mb, "
                  "storage_gb, running_time, paused_time, run_as_user, run_as_group, fs_group "
                  "FROM runtimes ORDER BY created_at DESC LIMIT 50"),
+                # Sizing history. Each runtime counts from creation for its accumulated
+                # running_time, so later pause/resume cycles are approximated.
+                ("runtimes daily peak concurrent (approx, 14d, 10-min samples)",
+                 "WITH iv AS (SELECT created_at AS s, CASE WHEN status IN ('running', 'starting') "
+                 "THEN now() ELSE created_at + make_interval(secs => COALESCE(running_time, 0)) END AS e "
+                 "FROM runtimes WHERE created_at > now() - interval '15 days'), "
+                 "t AS (SELECT generate_series(date_trunc('hour', now() - interval '14 days'), now(), "
+                 "interval '10 minutes') AS t) "
+                 "SELECT t::date AS day, MAX(n) AS peak_concurrent FROM (SELECT t, COUNT(*) AS n "
+                 "FROM t JOIN iv ON iv.s <= t AND iv.e > t GROUP BY t) x GROUP BY 1 ORDER BY 1"),
+                ("runtimes session length minutes (14d, finished)",
+                 "SELECT COUNT(*) AS n, "
+                 "ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY running_time) / 60)::numeric, 1) AS p50, "
+                 "ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY running_time) / 60)::numeric, 1) AS p90, "
+                 "ROUND((MAX(running_time) / 60)::numeric, 1) AS max FROM runtimes "
+                 "WHERE created_at > now() - interval '14 days' AND status NOT IN ('running', 'starting')"),
+                # Per-sandbox timeline without identifiers, for percentiles and incident timing.
+                # `unclaimed` is api_key_name IS NULL — current unclaimed state, not warm-pool origin.
+                ("runtimes timeline (14d, no ids)",
+                 "SELECT EXTRACT(EPOCH FROM created_at)::bigint AS created, "
+                 "EXTRACT(EPOCH FROM stopped_at)::bigint AS stopped, "
+                 "EXTRACT(EPOCH FROM last_state_change)::bigint AS last_change, "
+                 "ROUND(running_time)::bigint AS running_s, ROUND(paused_time)::bigint AS paused_s, "
+                 "status, (api_key_name IS NULL) AS unclaimed FROM runtimes "
+                 "WHERE created_at > now() - interval '14 days' ORDER BY created_at LIMIT 50000"),
             ]
             for label, sql in queries:
                 run(label, sql)
@@ -585,6 +610,13 @@ spec:
                  "conversation_settings->>'max_iterations' AS max_iterations, "
                  "(_llm_api_key IS NOT NULL) AS org_llm_api_key_set, "
                  "(llm_profiles IS NOT NULL) AS has_llm_profiles FROM org ORDER BY name"),
+                # The per-user sandbox cap counts by owner. Sorted by peak-hour burst
+                # (the useful signal for sizing the cap), not by total volume.
+                ("sandboxes started per user, top 50 by peak-hour burst (14d)",
+                 "SELECT created_by_user_id, SUM(n) AS sandboxes, MAX(n) AS max_started_in_one_hour "
+                 "FROM (SELECT created_by_user_id, date_trunc('hour', created_at) AS h, COUNT(*) AS n "
+                 "FROM v1_remote_sandbox WHERE created_at > now() - interval '14 days' GROUP BY 1, 2) x "
+                 "GROUP BY 1 ORDER BY 3 DESC LIMIT 50"),
             ]
             for label, sql in queries:
                 run(label, sql)
@@ -613,6 +645,7 @@ spec:
                 "AZURE_DEVOPS_ORGANIZATION", "AZURE_DEVOPS_TENANT_ID",
                 "GITHUB_APP_ID", "GITHUB_APP_SLUG",
                 "SANDBOX_CLOSE_DELAY", "SANDBOX_KEEP_RUNTIME_ALIVE",
+                "OH_SANDBOX_MAX_NUM_SANDBOXES",
                 "FILE_STORE", "SHARED_EVENT_STORAGE_PROVIDER",
                 "LITE_LLM_API_URL", "LITE_LLM_TEAM_ID",
                 "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_SSL_MODE",
@@ -650,6 +683,25 @@ spec:
           - app=automation-events
         limits:
           maxAge: 336h
+    # Presence-only ("set"/"empty_or_unset") snapshot of secret-backed vars that
+    # exist only on the automation pods, so the openhands snapshot above cannot
+    # report them (never values). Without AUTOMATION_KV_SECRET the KV store is
+    # off and runs get no AUTOMATION_KV_TOKEN.
+    - exec:
+        name: app/automation-config-snapshot
+        collectorName: automation-config-snapshot
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=automation
+        containerName: automation
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json, os
+            SECRET_PRESENCE = ["AUTOMATION_KV_SECRET"]
+            presence = {k: ("set" if os.environ.get(k) else "empty_or_unset") for k in SECRET_PRESENCE}
+            print(json.dumps({"secret_presence": presence}, indent=2))
+        timeout: 30s
     # Read-only automation DB dump via the automation pod's own creds (asyncpg).
     # Webhook/automation/run metadata only — never webhook_secret, prompts,
     # tarball paths, event payloads or error detail.
@@ -705,6 +757,40 @@ spec:
                      "SELECT id, automation_id, status, conversation_id, sandbox_id, "
                      "created_at, started_at, completed_at FROM automation_runs "
                      "ORDER BY created_at DESC LIMIT 50"),
+                    ("automation_runs daily peak concurrent (14d, 5-min samples)",
+                     "WITH iv AS (SELECT r.started_at AS s, COALESCE(r.completed_at, CASE WHEN "
+                     "r.status IN ('PENDING', 'RUNNING') THEN now() ELSE r.started_at END) AS e, a.user_id "
+                     "FROM automation_runs r JOIN automations a ON a.id = r.automation_id "
+                     "WHERE r.started_at > now() - interval '15 days'), "
+                     "t AS (SELECT generate_series(date_trunc('hour', now() - interval '14 days'), now(), "
+                     "interval '5 minutes') AS t) "
+                     "SELECT t::date AS day, MAX(n) AS peak_concurrent_runs FROM (SELECT t, COUNT(*) AS n "
+                     "FROM t JOIN iv ON iv.s <= t AND iv.e > t GROUP BY t) x GROUP BY 1 ORDER BY 1"),
+                    ("automation_runs peak concurrent per owner (14d)",
+                     "WITH iv AS (SELECT r.started_at AS s, COALESCE(r.completed_at, CASE WHEN "
+                     "r.status IN ('PENDING', 'RUNNING') THEN now() ELSE r.started_at END) AS e, a.user_id "
+                     "FROM automation_runs r JOIN automations a ON a.id = r.automation_id "
+                     "WHERE r.started_at > now() - interval '15 days'), "
+                     "t AS (SELECT generate_series(date_trunc('hour', now() - interval '14 days'), now(), "
+                     "interval '5 minutes') AS t) "
+                     "SELECT user_id, MAX(n) AS peak_concurrent_runs FROM (SELECT t, user_id, COUNT(*) AS n "
+                     "FROM t JOIN iv ON iv.s <= t AND iv.e > t GROUP BY t, user_id) x "
+                     "GROUP BY 1 ORDER BY 2 DESC LIMIT 20"),
+                    ("automation_runs duration minutes (14d, finished)",
+                     "SELECT COUNT(*) AS n, ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY "
+                     "EXTRACT(EPOCH FROM completed_at - started_at)) / 60)::numeric, 1) AS p50, "
+                     "ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY "
+                     "EXTRACT(EPOCH FROM completed_at - started_at)) / 60)::numeric, 1) AS p90 "
+                     "FROM automation_runs WHERE started_at > now() - interval '14 days' "
+                     "AND completed_at IS NOT NULL"),
+                    # Timeline windows on created_at (not started_at like the peak query above)
+                    # so PENDING runs that never started are visible for queue-lag analysis.
+                    ("automation_runs timeline (14d, no ids)",
+                     "SELECT EXTRACT(EPOCH FROM created_at)::bigint AS created, "
+                     "EXTRACT(EPOCH FROM started_at)::bigint AS started, "
+                     "EXTRACT(EPOCH FROM completed_at)::bigint AS completed, status "
+                     "FROM automation_runs WHERE created_at > now() - interval '14 days' "
+                     "ORDER BY created_at LIMIT 50000"),
                 ]
                 for label, sql in queries:
                     await run(label, sql)
@@ -743,6 +829,7 @@ spec:
         uri: redis://default:{{ .Values.replicated.redisPassword | urlquery }}@{{ include "openhands.cache.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:6379
     {{- end }}
   analyzers: {{- include "troubleshoot.analyzers.shared" .  | nindent 4 }}
+    {{- include "troubleshoot.analyzers.sandboxCapacity" . | nindent 4 }}
     - deploymentStatus:
         name: openhands
         namespace: {{ .Release.Namespace }}
