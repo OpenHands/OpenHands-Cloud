@@ -9,6 +9,7 @@ metadata:
     app: {{ .Release.Name }}-resend-sync
 spec:
   schedule: {{ .Values.resendSync.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.resendSync.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.resendSync.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.resendSync.successfulJobsHistoryLimit }}

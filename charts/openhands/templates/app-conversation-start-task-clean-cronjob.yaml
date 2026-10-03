@@ -9,6 +9,7 @@ metadata:
     app: {{ .Release.Name }}-app-conversation-start-task-clean
 spec:
   schedule: {{ .Values.appConversationStartTaskClean.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.appConversationStartTaskClean.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.appConversationStartTaskClean.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.appConversationStartTaskClean.successfulJobsHistoryLimit }}

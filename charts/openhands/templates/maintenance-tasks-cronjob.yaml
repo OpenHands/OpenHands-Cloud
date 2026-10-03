@@ -9,6 +9,7 @@ metadata:
     app: {{ .Release.Name }}-maintenance-tasks
 spec:
   schedule: {{ .Values.maintenanceTasks.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.maintenanceTasks.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.maintenanceTasks.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.maintenanceTasks.successfulJobsHistoryLimit }}

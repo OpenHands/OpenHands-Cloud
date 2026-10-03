@@ -9,6 +9,7 @@ metadata:
     app: {{ .Release.Name }}-proactive-convo-clean
 spec:
   schedule: {{ .Values.proactiveConvoClean.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.proactiveConvoClean.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.proactiveConvoClean.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.proactiveConvoClean.successfulJobsHistoryLimit }}

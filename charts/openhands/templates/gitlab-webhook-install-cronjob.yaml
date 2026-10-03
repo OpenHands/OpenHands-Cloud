@@ -9,6 +9,7 @@ metadata:
     app: {{ .Release.Name }}-install-gitlab-webhooks
 spec:
   schedule: {{ .Values.gitlabWebhookInstallation.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.gitlabWebhookInstallation.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.gitlabWebhookInstallation.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.gitlabWebhookInstallation.successfulJobsHistoryLimit }}
