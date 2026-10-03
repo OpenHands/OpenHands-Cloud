@@ -240,6 +240,35 @@ function isSettledAppUrl(urlString: string, allowOnboarding: boolean): boolean {
 }
 
 /**
+ * Origin, path and query parameter names of a URL. Query values are dropped
+ * because redirect URLs can carry OAuth codes and state.
+ */
+function describeUrlWithoutValues(urlString: string): string {
+  const url = new URL(urlString);
+  const keys = [...url.searchParams.keys()];
+  const query = keys.length ? ` (query keys: ${keys.join(", ")})` : "";
+  return `${url.origin}${url.pathname}${query}`;
+}
+
+async function waitForSettledAppUrl(
+  page: Page,
+  allowOnboarding: boolean,
+): Promise<void> {
+  try {
+    await page.waitForURL(
+      (url) => isSettledAppUrl(url.toString(), allowOnboarding),
+      { timeout: 60_000 },
+    );
+  } catch (error) {
+    throw new Error(
+      `Login redirect did not settle on the app; last URL was ` +
+        `${describeUrlWithoutValues(page.url())}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
  * Complete the login and onboarding flow after GitHub authentication.
  *
  * Drives the post-OAuth redirect chain (GitHub → Keycloak → app) through any
@@ -264,9 +293,7 @@ export async function completeLoginAndOnboard(
   // run before the final-URL wait — otherwise waitForURL would resolve on
   // /accept-tos or /onboarding (neither contains the excluded substrings) and
   // skip the onboarding steps.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), true), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, true);
 
   // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
   // sequence — loop until we're past both.
@@ -276,9 +303,7 @@ export async function completeLoginAndOnboard(
 
   // Phase 3: wait for the final app URL (no intermediate auth hosts, no
   // onboarding pages) and assert the home screen is visible.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), false), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, false);
 
   await expect(page.getByTestId("home-screen")).toBeVisible({
     timeout: 30_000,
