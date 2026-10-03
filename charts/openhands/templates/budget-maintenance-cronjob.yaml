@@ -9,6 +9,7 @@ metadata:
     app: {{ .Release.Name }}-budget-maintenance
 spec:
   schedule: {{ .Values.budgetMaintenance.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.budgetMaintenance.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.budgetMaintenance.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.budgetMaintenance.successfulJobsHistoryLimit }}

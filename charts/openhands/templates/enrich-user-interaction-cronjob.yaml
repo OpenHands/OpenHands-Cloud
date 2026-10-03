@@ -10,6 +10,7 @@ metadata:
     app: {{ .Release.Name | trunc 27 }}-enrich-user-interaction
 spec:
   schedule: {{ .Values.enrichUserInteractionData.schedule | quote }}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.enrichUserInteractionData.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.enrichUserInteractionData.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.enrichUserInteractionData.successfulJobsHistoryLimit }}
