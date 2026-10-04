@@ -19,11 +19,8 @@
 - clusterVersion:
     outcomes:
       - fail:
-          when: "< 1.19.0"
-          message: "Kubernetes version 1.19.0 or later is required for OpenHands"
-      - warn:
-          when: "< 1.26.0"
-          message: "Kubernetes version 1.26.0 or later is recommended"
+          when: "< 1.27.0"
+          message: "Kubernetes version 1.27.0 or later is required for OpenHands"
       - pass:
           message: "Kubernetes version is supported"
 - nodeResources:

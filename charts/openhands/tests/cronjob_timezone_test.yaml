@@ -1,0 +1,91 @@
+suite: openhands app cronjobs run in UTC
+templates:
+  - "*.yaml"
+tests:
+  - it: renders only the seven app CronJobs, each with timeZone Etc/UTC
+    set: &allEnabled
+      enabled: true
+      budgetMaintenance.enabled: true
+      maintenanceTasks.enabled: true
+      appConversationStartTaskClean.enabled: true
+      proactiveConvoClean.enabled: true
+      resendSync.enabled: true
+      gitlabWebhookInstallation.enabled: true
+      enrichUserInteractionData.enabled: true
+    documentSelector:
+      path: kind
+      value: CronJob
+      matchMany: true
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - matchRegex:
+          path: metadata.name
+          pattern: ^RELEASE-NAME-(budget-maintenance|maintenance-tasks|app-conversation-start-task-clean|proactive-convo-clean|resend-sync|install-gitlab-webhooks|enrich-user-interaction)$
+      - equal:
+          path: spec.timeZone
+          value: Etc/UTC
+
+  - it: renders every one of the seven when enabled
+    templates: &appCronJobs
+      - budget-maintenance-cronjob.yaml
+      - maintenance-tasks-cronjob.yaml
+      - app-conversation-start-task-clean-cronjob.yaml
+      - proactive-convo-clean-cronjob.yaml
+      - resend-sync-cronjob.yaml
+      - gitlab-webhook-install-cronjob.yaml
+      - enrich-user-interaction-cronjob.yaml
+    set: *allEnabled
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: CronJob
+      - equal:
+          path: spec.timeZone
+          value: Etc/UTC
+
+  - it: keeps overridden schedules and concurrency policies alongside UTC
+    templates: *appCronJobs
+    set:
+      enabled: true
+      budgetMaintenance: {enabled: true, schedule: "1 1 * * *", concurrencyPolicy: Replace}
+      maintenanceTasks: {enabled: true, schedule: "2 2 * * *", concurrencyPolicy: Replace}
+      appConversationStartTaskClean: {enabled: true, schedule: "3 3 * * *", concurrencyPolicy: Replace}
+      proactiveConvoClean: {enabled: true, schedule: "4 4 * * *", concurrencyPolicy: Replace}
+      resendSync: {enabled: true, schedule: "5 5 * * *", concurrencyPolicy: Replace}
+      gitlabWebhookInstallation: {enabled: true, schedule: "6 6 * * *", concurrencyPolicy: Replace}
+      enrichUserInteractionData: {enabled: true, schedule: "7 7 * * *", concurrencyPolicy: Replace}
+    asserts:
+      - equal: {path: spec.schedule, value: "1 1 * * *"}
+        template: budget-maintenance-cronjob.yaml
+      - equal: {path: spec.schedule, value: "2 2 * * *"}
+        template: maintenance-tasks-cronjob.yaml
+      - equal: {path: spec.schedule, value: "3 3 * * *"}
+        template: app-conversation-start-task-clean-cronjob.yaml
+      - equal: {path: spec.schedule, value: "4 4 * * *"}
+        template: proactive-convo-clean-cronjob.yaml
+      - equal: {path: spec.schedule, value: "5 5 * * *"}
+        template: resend-sync-cronjob.yaml
+      - equal: {path: spec.schedule, value: "6 6 * * *"}
+        template: gitlab-webhook-install-cronjob.yaml
+      - equal: {path: spec.schedule, value: "7 7 * * *"}
+        template: enrich-user-interaction-cronjob.yaml
+      - equal: {path: spec.concurrencyPolicy, value: Replace}
+      - equal: {path: spec.timeZone, value: Etc/UTC}
+
+  - it: renders none of the seven when they are disabled
+    templates: *appCronJobs
+    set:
+      enabled: true
+      budgetMaintenance.enabled: false
+      maintenanceTasks.enabled: false
+      appConversationStartTaskClean.enabled: false
+      proactiveConvoClean.enabled: false
+      resendSync.enabled: false
+      gitlabWebhookInstallation.enabled: false
+      enrichUserInteractionData.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
