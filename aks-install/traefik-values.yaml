@@ -1,0 +1,19 @@
+# Tested chart version will be recorded in README.md.
+nodeSelector:
+  workload: openhands-platform
+service:
+  spec:
+    type: LoadBalancer
+ports:
+  web:
+    asDefault: false
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    asDefault: true
+providers:
+  kubernetesCRD:
+    defaultTLSResourcesNamespace: openhands
