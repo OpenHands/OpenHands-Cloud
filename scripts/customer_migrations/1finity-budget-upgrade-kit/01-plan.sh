@@ -21,6 +21,12 @@ printf '%s\n' "$source_chart" > "$EVIDENCE_DIR/openhands-chart-before.txt"
 printf '%s\n' "$source_image" > "$EVIDENCE_DIR/openhands-image-before.txt"
 printf '%s\n' "$DATABASE_MODE" > "$EVIDENCE_DIR/database-mode.txt"
 k exec "$DB_EXEC_POD" -c "$DB_EXEC_CONTAINER" -- sh -c 'psql --version; pg_dump --version; pg_restore --version' > "$EVIDENCE_DIR/postgres-client-versions.txt"
+if [[ "$DATABASE_MODE" == external ]]; then
+  printf '%s\n' "$DB_HELPER_IMAGE" > "$EVIDENCE_DIR/postgres-client-image-configured.txt"
+  k get pod "$DB_EXEC_POD" -o json | jq -er --arg container "$DB_EXEC_CONTAINER" \
+    '.status.containerStatuses[] | select(.name == $container) | .imageID' \
+    > "$EVIDENCE_DIR/postgres-client-image-resolved.txt"
+fi
 
 printf 'Recording org roster and pre-upgrade state...\n'
 list_team_orgs > "$EVIDENCE_DIR/orgs.txt"

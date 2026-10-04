@@ -45,6 +45,8 @@ require_config() {
   [[ "$BUDGET_CRON_VERIFICATION_RUNS" =~ ^[1-9][0-9]*$ ]] || fail "BUDGET_CRON_VERIFICATION_RUNS must be a positive integer"
   if [[ "$DATABASE_MODE" == external ]]; then
     : "${DB_HELPER_SOURCE_INIT_CONTAINER:?DB_HELPER_SOURCE_INIT_CONTAINER is required in external mode}"
+    : "${DB_HELPER_IMAGE:?DB_HELPER_IMAGE is required in external mode}"
+    [[ "$DB_HELPER_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] || fail "DB_HELPER_IMAGE must use an immutable sha256 digest"
   fi
   [[ "$EVIDENCE_DIR" = /* ]] || fail "EVIDENCE_DIR must be an absolute path"
   read -r -a KUBECTL_COMMAND <<< "$KUBECTL"
@@ -110,9 +112,10 @@ create_external_db_helper() {
   if k get pod "$DB_EXEC_POD" >/dev/null 2>&1; then
     [[ $(k get pod "$DB_EXEC_POD" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}') == "1finity-budget-upgrade-kit" ]] \
       || fail "pod/$DB_EXEC_POD already exists and is not managed by this kit"
-    local phase
+    local phase existing_image
     phase=$(k get pod "$DB_EXEC_POD" -o jsonpath='{.status.phase}')
-    if [[ "$phase" == Failed || "$phase" == Succeeded || "$phase" == Unknown || -z "$phase" ]]; then
+    existing_image=$(k get pod "$DB_EXEC_POD" -o json | jq -r --arg container "$DB_EXEC_CONTAINER" '.spec.containers[] | select(.name == $container) | .image')
+    if [[ "$phase" == Failed || "$phase" == Succeeded || "$phase" == Unknown || -z "$phase" || "$existing_image" != "$DB_HELPER_IMAGE" ]]; then
       k delete pod "$DB_EXEC_POD" --wait=true
     fi
   fi
@@ -120,7 +123,8 @@ create_external_db_helper() {
     k get deploy "$OPENHANDS_DEPLOYMENT" -o json | jq \
       --arg source "$DB_HELPER_SOURCE_INIT_CONTAINER" \
       --arg pod "$DB_EXEC_POD" \
-      --arg container "$DB_EXEC_CONTAINER" '
+      --arg container "$DB_EXEC_CONTAINER" \
+      --arg image "$DB_HELPER_IMAGE" '
         .spec.template.spec as $podspec
         | ($podspec.initContainers[] | select(.name == $source)) as $source_container
         | {
@@ -136,8 +140,8 @@ create_external_db_helper() {
               imagePullSecrets: ($podspec.imagePullSecrets // []),
               containers: [{
                 name: $container,
-                image: $source_container.image,
-                imagePullPolicy: "Never",
+                image: $image,
+                imagePullPolicy: "IfNotPresent",
                 command: ["sh", "-c", "trap : TERM INT; sleep infinity & wait"],
                 env: [
                   ($source_container.env // [])[]

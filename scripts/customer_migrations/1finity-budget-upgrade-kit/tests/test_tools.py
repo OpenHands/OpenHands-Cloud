@@ -97,14 +97,28 @@ class ShellHelperTests(unittest.TestCase):
         function = lib.split("llsnap() {", 1)[1].split("\n}", 1)[0]
         self.assertNotIn("exec -i", function)
 
-    def test_terminal_database_helper_is_recreated(self):
+    def test_terminal_or_wrong_image_database_helper_is_recreated(self):
         lib = (ROOT / "lib.sh").read_text()
         function = lib.split("create_external_db_helper() {", 1)[1].split("\n}", 1)[0]
         self.assertIn('phase" == Failed', function)
         self.assertIn('phase" == Succeeded', function)
         self.assertIn("managed by this kit", function)
+        self.assertIn('"$existing_image" != "$DB_HELPER_IMAGE"', function)
         self.assertIn('k delete pod "$DB_EXEC_POD" --wait=true', function)
         self.assertIn('if ! k get pod "$DB_EXEC_POD"', function)
+
+    def test_external_helper_uses_immutable_configured_image(self):
+        lib = (ROOT / "lib.sh").read_text()
+        self.assertIn("DB_HELPER_IMAGE must use an immutable sha256 digest", lib)
+        function = lib.split("create_external_db_helper() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('--arg image "$DB_HELPER_IMAGE"', function)
+        self.assertIn("image: $image", function)
+        self.assertNotIn("image: $source_container.image", function)
+
+    def test_plan_records_postgres_helper_image_identity(self):
+        plan = (ROOT / "01-plan.sh").read_text()
+        self.assertIn("postgres-client-image-configured.txt", plan)
+        self.assertIn("postgres-client-image-resolved.txt", plan)
 
 
 class UpgradeLogTests(unittest.TestCase):

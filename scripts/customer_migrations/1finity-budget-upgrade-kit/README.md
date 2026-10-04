@@ -33,8 +33,8 @@ If 1finity uses per-key caps, do not run this migration until those caps are rem
 ### `01-plan.sh`
 
 1. Requires maintenance-window and clock acknowledgments and exact source `0.55.1-rc.1`.
-2. Creates the temporary external-TLS PostgreSQL helper from existing image and Secret references.
-3. Records all team orgs/members and suspends both maintenance CronJobs.
+2. Creates the temporary external-TLS PostgreSQL helper from an approved immutable client image while preserving the existing database connection environment and Secret references.
+3. Records the configured and resolved helper image identities, all team orgs/members, and suspends both maintenance CronJobs.
 4. Saves complete LiteLLM policy and financial snapshots.
 5. Takes validated LiteLLM and OpenHands budget-table dumps.
 6. Produces reviewable `migration-plan.json` and guarded `apply-migration.sql` without changing budget ownership.
@@ -94,14 +94,16 @@ chmod 600 config.env
 Review `config.env`:
 
 - Keep `DATABASE_MODE=external` for 1finity.
+- Set `DB_HELPER_IMAGE` to a customer-approved immutable digest containing `psql`, `pg_dump`, and `pg_restore` 18 or newer. PostgreSQL 18 is preferred for the PostgreSQL 18 server.
+- Confirm that the helper image trusts the external database's TLS CA and provides `sh` and `sleep`.
 - Confirm namespace, deployments, databases, CronJobs, and upgrade Jobs.
 - Use a new absolute `EVIDENCE_DIR`.
 - Confirm `MIGRATION_RESET_DAY`; `1` matches the existing setup.
 - Keep the plan-age window short enough to prevent spend drift.
 
-The helper reuses OpenHands' cached `wait-for-db` image with `imagePullPolicy: Never` and existing database Secret references. Credentials never leave Kubernetes. Successful verification removes it.
+The helper uses `DB_HELPER_IMAGE` for PostgreSQL tools and preserves the existing `wait-for-db` database connection environment, Secret references, and image-pull Secrets. It replaces an earlier kit-managed helper automatically if its image differs. Credentials never leave Kubernetes. Successful verification removes the helper.
 
-If planning exits early, delete the helper only after confirming label `app.kubernetes.io/managed-by=1finity-budget-upgrade-kit`.
+Review `postgres-client-versions.txt`, `postgres-client-image-configured.txt`, and `postgres-client-image-resolved.txt` before accepting the plan. If planning exits early, delete the helper only after confirming label `app.kubernetes.io/managed-by=1finity-budget-upgrade-kit`.
 
 ## Maintenance-window procedure
 
