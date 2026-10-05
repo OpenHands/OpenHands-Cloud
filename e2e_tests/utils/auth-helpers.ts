@@ -225,16 +225,25 @@ function isOnboardingUrl(urlString: string): boolean {
  * URL predicate for a "settled" post-redirect destination: either an
  * onboarding-intermediate page (accept-tos, onboarding form) or the final
  * app URL with no intermediate auth/redirect hosts left in the chain.
+ *
+ * Only the host and path are checked: the app lands on e.g.
+ * `/canvas?login_method=github`, whose query must not read as a login page.
  */
-function isSettledAppUrl(urlString: string, allowOnboarding: boolean): boolean {
+export function isSettledAppUrl(
+  urlString: string,
+  allowOnboarding: boolean,
+): boolean {
   if (allowOnboarding && isOnboardingUrl(urlString)) {
     return true;
   }
+  const url = new URL(urlString);
+  const hostAndPath = `${url.host}${url.pathname}`;
   return (
-    !urlString.includes("github.com") &&
-    !urlString.includes("login") &&
-    !urlString.includes("keycloak") &&
-    !urlString.includes("sessions/verified-device") &&
+    !hostAndPath.includes("github.com") &&
+    !hostAndPath.includes("login") &&
+    !hostAndPath.includes("keycloak") &&
+    !hostAndPath.includes("/realms/") &&
+    !hostAndPath.includes("sessions/verified-device") &&
     !isOnboardingUrl(urlString)
   );
 }
