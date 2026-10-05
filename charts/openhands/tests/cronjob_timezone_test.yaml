@@ -1,6 +1,17 @@
 suite: openhands app cronjobs run in UTC
-templates:
-  - "*.yaml"
+# Scope to the seven app CronJob templates only. Globbing the whole chart
+# (templates: ["*.yaml"]) forces helm-unittest to render crd-check-hook.yaml,
+# whose "crd-check.hook" helper lives in the crd-check dependency subchart that
+# is not vendored during `helm unittest` (the workflow does not run
+# `helm dependency build`), causing a render error.
+templates: &appCronJobs
+  - budget-maintenance-cronjob.yaml
+  - maintenance-tasks-cronjob.yaml
+  - app-conversation-start-task-clean-cronjob.yaml
+  - proactive-convo-clean-cronjob.yaml
+  - resend-sync-cronjob.yaml
+  - gitlab-webhook-install-cronjob.yaml
+  - enrich-user-interaction-cronjob.yaml
 tests:
   - it: renders only the seven app CronJobs, each with timeZone Etc/UTC
     set: &allEnabled
@@ -28,14 +39,7 @@ tests:
           value: Etc/UTC
 
   - it: renders every one of the seven when enabled
-    templates: &appCronJobs
-      - budget-maintenance-cronjob.yaml
-      - maintenance-tasks-cronjob.yaml
-      - app-conversation-start-task-clean-cronjob.yaml
-      - proactive-convo-clean-cronjob.yaml
-      - resend-sync-cronjob.yaml
-      - gitlab-webhook-install-cronjob.yaml
-      - enrich-user-interaction-cronjob.yaml
+    templates: *appCronJobs
     set: *allEnabled
     asserts:
       - hasDocuments:
