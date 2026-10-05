@@ -2,7 +2,7 @@ apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
 appVersion: 1.68.1
-version: 0.76.0
+version: 0.77.0
 # The app's CronJobs set spec.timeZone, which is stable from Kubernetes 1.27.
 kubeVersion: ">=1.27.0-0"
 dependencies:

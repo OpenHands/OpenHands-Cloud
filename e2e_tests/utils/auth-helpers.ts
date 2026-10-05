@@ -225,18 +225,56 @@ function isOnboardingUrl(urlString: string): boolean {
  * URL predicate for a "settled" post-redirect destination: either an
  * onboarding-intermediate page (accept-tos, onboarding form) or the final
  * app URL with no intermediate auth/redirect hosts left in the chain.
+ *
+ * Only the host and path are checked: the app lands on e.g.
+ * `/canvas?login_method=github`, whose query must not read as a login page.
  */
-function isSettledAppUrl(urlString: string, allowOnboarding: boolean): boolean {
+export function isSettledAppUrl(
+  urlString: string,
+  allowOnboarding: boolean,
+): boolean {
   if (allowOnboarding && isOnboardingUrl(urlString)) {
     return true;
   }
+  const url = new URL(urlString);
+  const hostAndPath = `${url.host}${url.pathname}`;
   return (
-    !urlString.includes("github.com") &&
-    !urlString.includes("login") &&
-    !urlString.includes("keycloak") &&
-    !urlString.includes("sessions/verified-device") &&
+    !hostAndPath.includes("github.com") &&
+    !hostAndPath.includes("login") &&
+    !hostAndPath.includes("keycloak") &&
+    !hostAndPath.includes("/realms/") &&
+    !hostAndPath.includes("sessions/verified-device") &&
     !isOnboardingUrl(urlString)
   );
+}
+
+/**
+ * Origin, path and query parameter names of a URL. Query values are dropped
+ * because redirect URLs can carry OAuth codes and state.
+ */
+function describeUrlWithoutValues(urlString: string): string {
+  const url = new URL(urlString);
+  const keys = [...url.searchParams.keys()];
+  const query = keys.length ? ` (query keys: ${keys.join(", ")})` : "";
+  return `${url.origin}${url.pathname}${query}`;
+}
+
+async function waitForSettledAppUrl(
+  page: Page,
+  allowOnboarding: boolean,
+): Promise<void> {
+  try {
+    await page.waitForURL(
+      (url) => isSettledAppUrl(url.toString(), allowOnboarding),
+      { timeout: 60_000 },
+    );
+  } catch (error) {
+    throw new Error(
+      `Login redirect did not settle on the app; last URL was ` +
+        `${describeUrlWithoutValues(page.url())}`,
+      { cause: error },
+    );
+  }
 }
 
 /**
@@ -264,9 +302,7 @@ export async function completeLoginAndOnboard(
   // run before the final-URL wait — otherwise waitForURL would resolve on
   // /accept-tos or /onboarding (neither contains the excluded substrings) and
   // skip the onboarding steps.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), true), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, true);
 
   // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
   // sequence — loop until we're past both.
@@ -276,9 +312,7 @@ export async function completeLoginAndOnboard(
 
   // Phase 3: wait for the final app URL (no intermediate auth hosts, no
   // onboarding pages) and assert the home screen is visible.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), false), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, false);
 
   await expect(page.getByTestId("home-screen")).toBeVisible({
     timeout: 30_000,
