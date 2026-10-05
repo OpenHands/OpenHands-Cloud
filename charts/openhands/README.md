@@ -5,7 +5,7 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 ## Prerequisites
 
 - Kubernetes 1.27+ (the app's CronJobs set `timeZone`, which is stable from 1.27)
-- Helm 3.2.0+
+- Helm 3.2.0+ to install or upgrade against a live cluster. Offline renders (`helm template` / `helm lint` with no `--kube-version`) need Helm 3.12.0+, because the `kubeVersion: ">=1.27.0-0"` gate is checked against Helm's built-in default Kubernetes version, which is below 1.27 before Helm 3.12. On older Helm, pass `--kube-version 1.27.0` (or higher).
 - Ingress controller (recommended: Traefik)
 - A TLS solution for certificates (recommended: cert-manager)
 
