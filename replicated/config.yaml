@@ -1592,7 +1592,7 @@ spec:
           title: Enable Super Admin Dashboard
           help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
           type: bool
-          default: "0"
+          default: "1"
 
     - name: analytics_configuration
       title: Analytics Configuration
