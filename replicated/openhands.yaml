@@ -182,10 +182,10 @@ spec:
         existingSecretUserKey: username
         existingSecretPasswordKey: password
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/keycloak-docker'
       keycloakConfigCli:
         image:
-          repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak-config-cli'
+          repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/adorsys/keycloak-config-cli'
       waitForDb:
         image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql:latest'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
@@ -815,7 +815,7 @@ spec:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
         keycloak:
           image:
-            repository: '{{repl LocalRegistryNamespace }}/keycloak'
+            repository: '{{repl LocalRegistryNamespace }}/keycloak-docker'
           keycloakConfigCli:
             image:
               repository: '{{repl LocalRegistryNamespace }}/keycloak-config-cli'
