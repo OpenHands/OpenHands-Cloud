@@ -9,7 +9,7 @@ metadata:
     app: {{ .Release.Name }}-app-conversation-start-task-clean
 spec:
   schedule: {{ .Values.appConversationStartTaskClean.schedule | quote }}
-  {{- /* fixed to UTC to match the task queue's UTC due-time check; do not expose as a value */}}
+  {{- /* pinned to UTC so the schedule is interpreted the same regardless of the cluster controller's local time zone; do not expose as a value */}}
   timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.appConversationStartTaskClean.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.appConversationStartTaskClean.failedJobsHistoryLimit }}

@@ -10,7 +10,7 @@ metadata:
     app: {{ .Release.Name | trunc 27 }}-enrich-user-interaction
 spec:
   schedule: {{ .Values.enrichUserInteractionData.schedule | quote }}
-  {{- /* fixed to UTC to match the task queue's UTC due-time check; do not expose as a value */}}
+  {{- /* pinned to UTC so the schedule is interpreted the same regardless of the cluster controller's local time zone; do not expose as a value */}}
   timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.enrichUserInteractionData.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.enrichUserInteractionData.failedJobsHistoryLimit }}
