@@ -1,4 +1,4 @@
-"""Opt-in real Keycloak tests: KEYCLOAK_TEST_IMAGE=quay.io/keycloak/keycloak:26.3.3."""
+"""Opt-in real Keycloak tests: KEYCLOAK_TEST_IMAGE=quay.io/keycloak/keycloak:26.7.5."""
 
 import json
 import os
@@ -45,6 +45,12 @@ def login(url, password):
             "password": password,
         },
     )
+
+
+def assert_invalid_password(url, password):
+    status, error = login(url, password)
+    assert status in (400, 401)
+    assert error["error"] == "invalid_grant"
 
 
 @pytest.fixture
@@ -128,11 +134,11 @@ def test_existing_install_password_changes_and_restart(keycloak):
     first = 'first + & = " quote \\ $ ` password'
     reconcile(keycloak, first)
     assert login(keycloak, first)[0] == 200
-    assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 401
+    assert_invalid_password(keycloak, BOOTSTRAP_PASSWORD)
     second = "second-admin-password"
     reconcile(keycloak, second)
     assert login(keycloak, second)[0] == 200
-    assert login(keycloak, first)[0] == 401
+    assert_invalid_password(keycloak, first)
     _, auth = login(keycloak, second)
     assert (
         request(
@@ -151,7 +157,7 @@ def test_existing_install_password_changes_and_restart(keycloak):
     )
     assert users_after[0]["id"] == users_before[0]["id"]
     assert login(keycloak, second)[0] == 200
-    assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 401
+    assert_invalid_password(keycloak, BOOTSTRAP_PASSWORD)
 
 
 def test_fresh_install_with_custom_password(keycloak):
@@ -247,7 +253,7 @@ def test_partial_provisioner_setup_and_client_collision(keycloak, matching_secre
         assert login(keycloak, "next-dashboard-password")[0] == 200
     else:
         assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 200
-        assert login(keycloak, "new-dashboard-password")[0] == 401
+        assert_invalid_password(keycloak, "new-dashboard-password")
 
 
 def test_console_password_is_only_passed_to_provisioning_container():
