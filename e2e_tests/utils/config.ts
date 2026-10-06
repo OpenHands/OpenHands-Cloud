@@ -97,6 +97,7 @@ export const ROLE_ONLY_SPECS: Record<RunUser, readonly string[]> = {
     "008-managed-key-ownership.spec.ts",
     "009-budgets.spec.ts",
     "010-personal-budget-guards.spec.ts",
+    "012-first-install.spec.ts",
   ],
   "new-user": ["006-org-management.spec.ts", "011-automations.spec.ts"],
 };

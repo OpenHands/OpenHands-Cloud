@@ -112,6 +112,27 @@ candidate enterprise image. Download the Playwright artifact and retain the
 JSON evidence with the tested image SHA and release sequence. Scheduled runs
 reuse the same protected contract.
 
+### Super Admin dashboard and first install
+
+Both specs need the instance's **Enable Super Admin Dashboard** option (the
+`ENABLE_SUPER_ADMIN` and `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`
+variables). They skip when it is off.
+
+`tests/013-super-admin-dashboard.spec.ts` opens the dashboard from Settings,
+then works through organization, Super Admin, membership and account actions
+on a throwaway user and organizations. It deletes them afterwards. It runs for
+whichever role is a Super Admin, and skips unless user provisioning is enabled.
+Its emails use `example.com`, because the server rejects `.test` addresses.
+
+`tests/012-first-install.spec.ts` walks the `/install` wizard. That wizard only
+exists for the first user to sign in after a fresh install with the option
+already on. The spec therefore runs only when the Returning User is that first
+Super Admin and the wizard is still pending, and skips on every long-lived
+instance. When the wizard sends a user to `/install` at sign-in, the login
+helper goes to the app home and leaves the wizard for the spec. To run the spec
+again on the same instance, the first Super Admin can reopen the wizard with
+`PATCH /api/admin/setup-state` and the body `{"wizard_completed": false}`.
+
 ### Run through an Argo WorkflowTemplate
 
 Operators with access to an Argo installation can submit the test harness from
