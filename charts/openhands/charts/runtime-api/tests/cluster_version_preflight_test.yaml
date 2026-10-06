@@ -7,8 +7,10 @@ templates:
   - templates/troubleshoot/preflights.yaml
   - templates/troubleshoot/support-bundle.yaml
 tests:
-  # Contiguous match binds severity, threshold and message: a revert to 1.26
-  # or a fail->warn downgrade each break it.
+  # Contiguous match with literal indentation binds severity, threshold and
+  # message to the fail outcome and pins the pass outcome: a revert to 1.26, a
+  # fail->warn downgrade, a dedent out of the fail block or a new pass
+  # condition each break it.
   - it: fails the preflight below Kubernetes 1.27.0
     template: templates/troubleshoot/secrets.yaml
     set:
@@ -19,7 +21,7 @@ tests:
     asserts:
       - matchRegex:
           path: stringData["preflight.yaml"]
-          pattern: '- clusterVersion:\s+outcomes:\s+- fail:\s+when: "< 1\.27\.0"\s+message: "Kubernetes version 1\.27\.0 or later is required"\s+- pass:'
+          pattern: '\n    - clusterVersion:\n        outcomes:\n          - fail:\n              when: "< 1\.27\.0"\n              message: "Kubernetes version 1\.27\.0 or later is required"\n          - pass:\n              message: "Kubernetes version is supported"\n'
 
   - it: carries the same cluster version check in the support bundle spec
     template: templates/troubleshoot/secrets.yaml
@@ -31,4 +33,4 @@ tests:
     asserts:
       - matchRegex:
           path: stringData["support-bundle-spec"]
-          pattern: '- clusterVersion:\s+outcomes:\s+- fail:\s+when: "< 1\.27\.0"\s+message: "Kubernetes version 1\.27\.0 or later is required"\s+- pass:'
+          pattern: '\n    - clusterVersion:\n        outcomes:\n          - fail:\n              when: "< 1\.27\.0"\n              message: "Kubernetes version 1\.27\.0 or later is required"\n          - pass:\n              message: "Kubernetes version is supported"\n'
