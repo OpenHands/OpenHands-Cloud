@@ -10,7 +10,8 @@ regional support and quota. The namespaces are fixed to `openhands` and
 ## Optional Azure Disk checks
 
 These helper checks still need validation on a fresh runc installation. Use the
-dedicated `KUBECONFIG` from the installation sequence. Temporarily raise the
+dedicated `KUBECONFIG` from the installation sequence. Run the following block as
+a Bash script so a timeout stops the check. Temporarily raise the
 sandbox pool minimum to two nodes, wait for both to become Ready, then choose a
 second node in the same disk-compatible topology as the writer.
 
@@ -58,6 +59,7 @@ az aks nodepool update --subscription "$SUBSCRIPTION" \
 ```
 
 Do not reapply the original 1Gi PVC manifest after expansion. If a check times out,
-inspect Pod events and PVC conditions before retrying. Remove each reader/writer
+inspect Pod events and PVC conditions (including `FileSystemResizePending`)
+before retrying. Remove each reader/writer
 before attaching the RWO disk elsewhere. Restore the original pool minimum after
 cleanup; do not bypass disruption budgets to force node removal.

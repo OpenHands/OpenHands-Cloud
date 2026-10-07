@@ -170,8 +170,8 @@ NODE_RESOURCE_GROUP=$(az aks show --subscription "$SUBSCRIPTION" \
   --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" --query nodeResourceGroup -o tsv)
 az resource list --subscription "$SUBSCRIPTION" --resource-group "$RESOURCE_GROUP" -o table
 az resource list --subscription "$SUBSCRIPTION" --resource-group "$NODE_RESOURCE_GROUP" -o table
+# Stop conversation runtimes through OpenHands before uninstalling the application.
 helm uninstall openhands --namespace openhands
-# Stop conversation runtimes through OpenHands before deleting their claims.
 # After confirming no data needs to be retained, delete only this install's PVCs.
 kubectl get pvc -n openhands
 kubectl get pvc -n openhands-runtimes
