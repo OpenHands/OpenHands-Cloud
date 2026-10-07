@@ -24,7 +24,19 @@ spec:
       image: ubuntu:24.04
       command: [bash, -lc]
       args:
-        - 'set -eu; grep -Fx aks-runc-storage-ok /workspace/probe.txt; df -h /workspace; test "$(df -B1 /workspace | tail -1 | awk ''{print $2}'')" -gt 1500000000; echo RUNC_AZURE_DISK_EXPANSION_PASS'
+        - |
+          set -eu
+          grep -Fx aks-runc-storage-ok /workspace/probe.txt
+          for attempt in $(seq 1 120); do
+            size=$(df -B1 /workspace | tail -1 | awk '{print $2}')
+            if [ "$size" -gt 1500000000 ]; then
+              echo RUNC_AZURE_DISK_EXPANSION_PASS
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Timed out waiting for filesystem expansion' >&2
+          exit 1
       resources:
         requests:
           cpu: 100m

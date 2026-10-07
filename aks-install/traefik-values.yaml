@@ -1,9 +1,8 @@
-# Tested chart version will be recorded in README.md.
+# Used by the installation sequence in .agents/skills/aks-install.md.
 nodeSelector:
   workload: openhands-platform
 service:
-  spec:
-    type: LoadBalancer
+  type: LoadBalancer
 ports:
   web:
     asDefault: false

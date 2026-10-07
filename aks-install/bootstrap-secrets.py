@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create evaluation secrets without exposing credentials in command arguments.
+"""Create installation secrets without exposing credentials in command arguments.
 
 Requires KUBECONFIG, ANTHROPIC_API_KEY and a private GitHub App credentials JSON.
 Does not overwrite existing Secrets. Retain them using your secret manager.
@@ -14,6 +14,8 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument('--github-credentials', required=True)
 args = parser.parse_args()
+if not os.environ.get('KUBECONFIG'):
+    raise SystemExit('Set KUBECONFIG to the dedicated AKS configuration.')
 github = json.loads(Path(args.github_credentials).read_text())
 llm_key = os.environ['ANTHROPIC_API_KEY']
 

@@ -12,7 +12,8 @@ TLS. KinD remains faster and adequate for ordinary chart work.
 Everything lives in `aks-install/`. Use `create-cluster.sh` for the cluster and
 node pools, `values.yaml.tmpl` for Helm, and `bootstrap-secrets.py` for Secrets.
 Follow the [Enterprise Helm guide](https://docs.openhands.dev/enterprise/k8s-install/installation)
-for licensed registry access and shared chart configuration.
+for licensed registry access and shared chart configuration. The revised package
+has not been run end to end on a fresh cluster.
 
 ## Non-obvious AKS setup (read this first)
 
@@ -49,13 +50,13 @@ provisioning. Use a dedicated kubeconfig so commands cannot target another clust
 ## Sequence
 
 Substitute approved values. Every Azure command pins the subscription; every
-kubectl/Helm command uses the dedicated kubeconfig. Reuse an existing evaluation
+kubectl/Helm command uses the dedicated kubeconfig. Reuse an existing test cluster
 rather than creating duplicate billable resources.
 
 ```bash
-export SUBSCRIPTION=<subscription-id> RESOURCE_GROUP=<evaluation-group>
+export SUBSCRIPTION=<subscription-id> RESOURCE_GROUP=<dedicated-resource-group>
 export REGION=<region> CLUSTER=<cluster-name>
-export BASE_DOMAIN=<base-domain> NAMESPACE=openhands
+export BASE_DOMAIN=<base-domain>
 export KUBECONFIG=<dedicated-kubeconfig-path>
 
 # 1. cluster and separate Ubuntu platform/sandbox pools
@@ -69,31 +70,46 @@ helm repo update traefik
 helm upgrade --install traefik traefik/traefik --version 41.6.0 \
   --namespace traefik --create-namespace -f aks-install/traefik-values.yaml
 kubectl get service traefik --namespace traefik
-# Create *.$BASE_DOMAIN A -> external IP and provision trusted wildcard TLS.
+# Create *.$BASE_DOMAIN A -> external IP with your DNS provider.
+# Do not add *.app.$BASE_DOMAIN: it blocks wildcard synthesis for app.$BASE_DOMAIN.
 
 # 3. installation Secrets; ANTHROPIC_API_KEY is provided privately
+# Obtain a trusted wildcard certificate from a CA using DNS-01 before this step.
 python3 aks-install/bootstrap-secrets.py --github-credentials <private-json-file>
+kubectl -n openhands create secret tls openhands-wildcard-tls \
+  --cert=<fullchain-file> --key=<private-key-file>
 
 # 4. render the values and install from the licensed chart source
 # Use explicit output paths; do not overwrite the templates.
 envsubst '${BASE_DOMAIN}' < aks-install/values.yaml.tmpl > /tmp/aks-values.yaml
 helm upgrade --install openhands <licensed-chart-source> --version 0.74.0 \
-  --namespace "$NAMESPACE" --create-namespace -f /tmp/aks-values.yaml --timeout 10m
+  --namespace openhands --create-namespace -f /tmp/aks-values.yaml --timeout 10m
 
-# 5. create the conversation bucket after RustFS is Ready
+# 5. wait for RustFS, then create the conversation bucket
+kubectl -n openhands wait pod --for=condition=Ready \
+  --selector=app.kubernetes.io/name=rustfs --timeout=10m
 kubectl apply -f aks-install/create-session-bucket.yaml
+kubectl -n openhands wait job/create-session-bucket \
+  --for=condition=Complete --timeout=5m
 ```
 
-Install the wildcard certificate as Secret `openhands-wildcard-tls` in namespace
-`openhands` before installing the chart. Assign renewal ownership when using
-manually provisioned TLS. The GitHub credential JSON must contain `id`, `slug`,
+Assign renewal ownership when using manually provisioned TLS. The helpers use
+the fixed namespaces `openhands` and `openhands-runtimes`. The GitHub credential JSON must contain `id`, `slug`,
 `client_id`, `client_secret`, `pem` and `webhook_secret`; the bootstrap helper reads
 `ANTHROPIC_API_KEY` from the environment and retains existing Secrets.
 
 Open `https://app.$BASE_DOMAIN`, sign in with GitHub and start a conversation.
 Enable optional automations only after the baseline works: render
 `values-automation.yaml.tmpl` with `envsubst '${BASE_DOMAIN}'`, then upgrade with
-both the original values and that overlay. Preserve the four runc settings on
+both the original values and that overlay:
+
+```bash
+envsubst '${BASE_DOMAIN}' < aks-install/values-automation.yaml.tmpl > /tmp/aks-automation-values.yaml
+helm upgrade openhands <licensed-chart-source> --version 0.74.0 \
+  --namespace openhands -f /tmp/aks-values.yaml -f /tmp/aks-automation-values.yaml --timeout 10m
+```
+
+Preserve the four runc settings on
 every upgrade; later overlays must not restore the chart's Sysbox defaults.
 
 ## Constraints that bite (do not "fix" these away)
@@ -134,22 +150,39 @@ every upgrade; later overlays must not restore the chart's Sysbox defaults.
   with no `runtimeClassName` or `hostUsers` override.
 - Stop the conversation runtime and reopen it; the workspace file persists.
 
-Use `runc-storage-smoke.yaml` for a disposable Azure Disk check. The reader,
-expansion and observer templates require `SECOND_SANDBOX_NODE`; render them with
-`envsubst '${SECOND_SANDBOX_NODE}'`. Remove the writer before running the reader.
-After expansion, do not reapply the original 1Gi PVC manifest. The observer holds
-its mount while Kubernetes updates PVC capacity.
+For optional Azure Disk reattachment and expansion checks, follow
+[`aks-install/README.md`](../../aks-install/README.md). These checks and the
+optional automation helpers still need validation on a fresh runc installation.
 
-For optional automations, configure separate service/webhook Secrets and package
-storage, then verify a completed run and callback. `automationBaseUrl` is the
-public origin; `automationService.url` includes `/api/automation`. Use
-`automation-smoke-request.json` for a temporary prompt preset, dispatch once and
-leave its schedule disabled. Do not infer automation success from a normal
-conversation.
+The optional automation overlay uses the service/webhook Secrets created by the
+bootstrap helper and configures package storage. After upgrading, check the
+Deployment and Pod readiness in `openhands`. An end-to-end automation run remains
+to be validated; healthy pods alone do not establish that it works.
 
 ## Teardown
 
-Keep resources until the user is finished. During authorized cleanup, inventory
-the resource group, AKS node resource group, managed disks, snapshots, public IPs,
-load balancer and external DNS records. Remove only this evaluation's resources
-and confirm the inventory afterward. `reclaimPolicy: Delete` is not a backup.
+Keep resources until the user is finished. Before authorized cleanup, save the
+node resource group and inventory both groups; confirm this is a dedicated group.
+Do not delete a shared resource group.
+
+```bash
+NODE_RESOURCE_GROUP=$(az aks show --subscription "$SUBSCRIPTION" \
+  --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" --query nodeResourceGroup -o tsv)
+az resource list --subscription "$SUBSCRIPTION" --resource-group "$RESOURCE_GROUP" -o table
+az resource list --subscription "$SUBSCRIPTION" --resource-group "$NODE_RESOURCE_GROUP" -o table
+helm uninstall openhands --namespace openhands
+# Stop conversation runtimes through OpenHands before deleting their claims.
+# After confirming no data needs to be retained, delete only this install's PVCs.
+kubectl get pvc -n openhands
+kubectl get pvc -n openhands-runtimes
+kubectl delete pvc <confirmed-claim-name> --namespace <claim-namespace>
+helm uninstall traefik --namespace traefik
+az aks delete --subscription "$SUBSCRIPTION" --resource-group "$RESOURCE_GROUP" --name "$CLUSTER"
+# Only for the dedicated group created for this installation:
+az group delete --subscription "$SUBSCRIPTION" --name "$RESOURCE_GROUP"
+```
+
+For noninteractive cleanup, add `--yes` to the Azure delete commands only after
+the user has approved the exact targets. Remove this install's wildcard DNS record through its DNS provider. Confirm both
+resource groups are gone and check for retained managed disks, snapshots and public
+IPs against the saved inventory. `reclaimPolicy: Delete` is not a backup.
