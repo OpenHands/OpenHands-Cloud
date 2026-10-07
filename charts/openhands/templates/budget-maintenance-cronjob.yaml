@@ -9,6 +9,8 @@ metadata:
     app: {{ .Release.Name }}-budget-maintenance
 spec:
   schedule: {{ .Values.budgetMaintenance.schedule | quote }}
+  {{- /* pinned to UTC so the schedule is interpreted the same regardless of the cluster controller's local time zone; do not expose as a value */}}
+  timeZone: Etc/UTC
   concurrencyPolicy: {{ .Values.budgetMaintenance.concurrencyPolicy }}
   failedJobsHistoryLimit: {{ .Values.budgetMaintenance.failedJobsHistoryLimit }}
   successfulJobsHistoryLimit: {{ .Values.budgetMaintenance.successfulJobsHistoryLimit }}

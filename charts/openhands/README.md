@@ -4,14 +4,18 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 
 ## Prerequisites
 
-- Kubernetes 1.19+
-- Helm 3.2.0+
+- Kubernetes 1.27+ (the app's CronJobs set `timeZone`, which is stable from 1.27)
+- Helm 3.2.0+ to install or upgrade against a live cluster. Offline renders (`helm template` / `helm lint` with no `--kube-version`) need Helm 3.12.0+, because the `kubeVersion: ">=1.27.0-0"` gate is checked against Helm's built-in default Kubernetes version, which is below 1.27 before Helm 3.12. On older Helm, pass `--kube-version 1.27.0` (or higher).
 - Ingress controller (recommended: Traefik)
 - A TLS solution for certificates (recommended: cert-manager)
 
 ### Hardware prerequisites
 
 - Profile the application's resource usage (CPU, memory) to establish the minimum required specifications for the cluster.
+
+## Scheduled jobs run in UTC
+
+The app's seven CronJobs (`budgetMaintenance`, `maintenanceTasks`, `appConversationStartTaskClean`, `proactiveConvoClean`, `resendSync`, `gitlabWebhookInstallation`, `enrichUserInteractionData`) set `timeZone: Etc/UTC`, so each `schedule` is read in UTC whatever time zone the cluster's controller runs in. To run a job at a local time, write its schedule in UTC. A UTC schedule does not follow daylight saving time.
 
 ## Configuration
 

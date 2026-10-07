@@ -1,0 +1,30 @@
+suite: cluster version preflight
+# secrets.yaml includes the troubleshoot.preflights and troubleshoot.supportBundle
+# defines from these two templates, so all three are listed; each test scopes
+# its asserts to secrets.yaml.
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+tests:
+  # Contiguous match binds severity, threshold and message: a revert to 1.19,
+  # a fail->warn downgrade, or a reintroduced warn tier each break it.
+  - it: fails the preflight below Kubernetes 1.27.0
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: '- clusterVersion:\s+outcomes:\s+- fail:\s+when: "< 1\.27\.0"\s+message: "Kubernetes version 1\.27\.0 or later is required for OpenHands"\s+- pass:'
+
+  - it: carries the same cluster version check in the support bundle spec
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-support-bundle
+    asserts:
+      - matchRegex:
+          path: stringData["support-bundle-spec"]
+          pattern: '- clusterVersion:\s+outcomes:\s+- fail:\s+when: "< 1\.27\.0"\s+message: "Kubernetes version 1\.27\.0 or later is required for OpenHands"\s+- pass:'
