@@ -33,7 +33,7 @@ spec:
         GIT_SSL_CAINFO: /etc/openhands/ca-bundle/ca-bundle.crt
         CURL_CA_BUNDLE: /etc/openhands/ca-bundle/ca-bundle.crt
         NODE_EXTRA_CA_CERTS: /etc/openhands/ca-bundle/ca-bundle.crt
-        EXTENSIONS_REF: "3cecf18dc888b84a3463ce2c67fe7561a1326e08"
+        EXTENSIONS_REF: "de3fc7d899b3da82ca3e8b01f35a393d6b2ec5dd"
 
     image:
       repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
