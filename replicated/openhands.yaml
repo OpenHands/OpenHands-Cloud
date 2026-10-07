@@ -113,6 +113,11 @@ spec:
       # falls back to the WebClientFeatureFlags model default (False).
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
       ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
+      # Super Admin dashboard. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # The server reads the bare ENABLE_SUPER_ADMIN to mount the /api/admin
+      # directory routes; the web client reads feature_flags.enable_super_admin.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
+      ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'

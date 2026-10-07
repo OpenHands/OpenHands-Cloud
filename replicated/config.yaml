@@ -1588,6 +1588,11 @@ spec:
             regex:
               pattern: ^(github|https?)://
               message: Must start with github://, https://, or http://
+        - name: super_admin_dashboard_enabled
+          title: Enable Super Admin Dashboard
+          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
+          type: bool
+          default: "0"
 
     - name: analytics_configuration
       title: Analytics Configuration
