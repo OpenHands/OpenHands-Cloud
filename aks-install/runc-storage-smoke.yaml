@@ -6,7 +6,7 @@ metadata:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: sysbox-storage-smoke
+  name: runc-storage-smoke
   namespace: openhands-runtimes
 spec:
   accessModes: [ReadWriteOnce]
@@ -18,18 +18,18 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: sysbox-storage-smoke
+  name: runc-storage-smoke
   namespace: openhands-runtimes
 spec:
-  runtimeClassName: sysbox-runc
-  hostUsers: false
+  nodeSelector:
+    workload: openhands-sandbox
   restartPolicy: Never
   containers:
     - name: smoke
       image: ubuntu:24.04
       command: [bash, -lc]
       args:
-        - 'set -eu; id; uname -r; echo aks-sysbox-storage-ok > /workspace/probe.txt; cat /workspace/probe.txt; test -w /workspace; echo SYSBOX_AZURE_DISK_PASS'
+        - 'set -eu; id; uname -r; echo aks-runc-storage-ok > /workspace/probe.txt; cat /workspace/probe.txt; test -w /workspace; echo RUNC_AZURE_DISK_PASS'
       resources:
         requests:
           cpu: 100m
@@ -43,4 +43,4 @@ spec:
   volumes:
     - name: workspace
       persistentVolumeClaim:
-        claimName: sysbox-storage-smoke
+        claimName: runc-storage-smoke

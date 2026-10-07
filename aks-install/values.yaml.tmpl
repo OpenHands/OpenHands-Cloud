@@ -63,8 +63,10 @@ runtime-api:
     RUNTIME_URL_SEPARATOR: "-"
     RUNTIME_DISABLE_SSL: "false"
     STORAGE_CLASS: managed-csi
-    RUNTIME_CLASS: sysbox-runc
-    SET_HOST_USERS: "true"
+    RUNTIME_CLASS: ""
+    SET_HOST_USERS: "false"
+    RUNTIME_NODE_SELECTOR: '{"workload":"openhands-sandbox"}'
+    RUNTIME_TOLERATIONS: '[]'
 filestore:
   type: s3
   bucket: openhands-sessions

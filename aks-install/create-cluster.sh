@@ -37,11 +37,10 @@ az aks nodepool add --subscription "$subscription" \
   --resource-group "$resource_group" --cluster-name "$cluster" \
   --name sandbox --mode User --node-count 1 --node-vm-size Standard_D4s_v3 \
   --os-sku Ubuntu --node-osdisk-type Managed --node-osdisk-size 64 \
-  --labels workload=openhands-sandbox sysbox-install=yes \
+  --labels workload=openhands-sandbox \
   --enable-cluster-autoscaler --min-count 1 --max-count 2
 
-# The current Sysbox installer requires the documented per-node correction on
-# this AKS image, including any node added by the autoscaler. See .agents/skills/aks-install.md.
+# Use the default containerd/runc runtime. No Sysbox installer or node repair is needed.
 az aks get-credentials --subscription "$subscription" \
   --resource-group "$resource_group" --name "$cluster" \
   --file "$KUBECONFIG"

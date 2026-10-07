@@ -1,25 +1,7 @@
-# AKS evaluation reference
+# AKS helper compatibility
 
-The source evaluation on October 2, 2026 used:
+These templates target Enterprise Helm chart 0.74.0 / OpenHands 1.67.0 and Runtime API 0.10.0, with Azure Disk CSI, Traefik and standard runc sandboxes. Adapt resource sizes, network ranges and supported AKS versions to the target environment.
 
-| Component | Version or choice |
-| --- | --- |
-| Region / VM | eastus2, Standard_D4s_v3, regional placement |
-| AKS / Ubuntu | 1.35.8 / 24.04.5 LTS |
-| Kernel / containerd | 6.8.0-1067-azure / 2.3.3-2 |
-| Pools | Two platform nodes; sandbox autoscaler 1–2 |
-| Network | Azure CNI overlay, Calico, managed VNet |
-| Storage | managed-csi, Azure Disk CSI |
-| Ingress | Traefik chart 41.6.0 / image 3.7.13 |
-| OpenHands | Helm chart 0.74.0 / application 1.67.0 |
-| Agent server / automation | 1.49.6-python / 1.15.1 |
-| Database / object store | Embedded PostgreSQL / bundled RustFS |
+The runc deployment was evaluated on AKS 1.35.8 / Ubuntu 24.04.5 / containerd 2.3.3-2. Ordinary conversations and workspace persistence worked without node runtime repairs. Automations and PVC expansion have not been validated on the runc rebuild; their helpers are optional checks, not acceptance claims. The generalized package has not been rerun as a fresh installation.
 
-Login, a command-executing conversation, automation completion with callback,
-and Azure Disk read/write, cross-node persistence and expansion passed. Both
-sandbox nodes required the manual Sysbox registration correction. Future nodes
-still need a maintained solution. TLS was manually provisioned.
-
-External production PostgreSQL, Azure Blob, backup/restore, cross-zone recovery,
-node reimage and unattended certificate renewal were not validated. The
-generalized companion package has not been rerun as a fresh installation.
+Sysbox remains a separate unresolved AKS integration issue. This package does not install it or include manual node repairs. Detailed evaluation records are kept outside the installation skill.
