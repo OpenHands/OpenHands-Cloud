@@ -216,9 +216,22 @@ export async function loginWithKeycloakPassword(
  */
 const ONBOARDING_PATHS = ["/accept-tos", "/onboarding"];
 
+/**
+ * True on the first-install wizard, where the server sends an instance's first
+ * Super Admin after sign-in. Only the path is matched: GitHub's
+ * `/apps/<slug>/installations` pages must not count.
+ */
+function isInstallWizardUrl(urlString: string): boolean {
+  const { pathname } = new URL(urlString);
+  return pathname === "/install" || pathname.startsWith("/install/");
+}
+
 /** True if the URL is one of the onboarding-intermediate pages. */
 function isOnboardingUrl(urlString: string): boolean {
-  return ONBOARDING_PATHS.some((p) => urlString.includes(p));
+  return (
+    ONBOARDING_PATHS.some((p) => urlString.includes(p)) ||
+    isInstallWizardUrl(urlString)
+  );
 }
 
 /**
@@ -305,9 +318,12 @@ export async function completeLoginAndOnboard(
   await waitForSettledAppUrl(page, true);
 
   // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
-  // sequence — loop until we're past both.
+  // sequence — loop until we're past both. A step can start another redirect
+  // chain (TOS → Keycloak offline token → /install), so settle again after
+  // each one before checking where we are.
   while (isOnboardingUrl(page.url())) {
     await runOnboardingSteps(page, userIdentifier);
+    await waitForSettledAppUrl(page, true);
   }
 
   // Phase 3: wait for the final app URL (no intermediate auth hosts, no
@@ -323,13 +339,22 @@ export async function completeLoginAndOnboard(
  * Run the onboarding step the user is currently on.
  *
  * Dispatches to the TOS handler or the onboarding-form handler based on the
- * current URL. Each handler completes its step and waits for the page to
- * navigate to the next destination (another onboarding step or the app).
+ * current URL, or leaves the first-install wizard. Each handler completes its
+ * step and waits for the page to navigate to the next destination (another
+ * onboarding step or the app).
  */
 async function runOnboardingSteps(
   page: Page,
   userIdentifier?: string,
 ): Promise<void> {
+  if (isInstallWizardUrl(page.url())) {
+    // The wizard stays pending on the server, so 012-first-install.spec.ts
+    // can walk it. The app home does not send the user back to /install.
+    console.log("Onboarding: leaving the first-install wizard for its spec...");
+    await page.goto("/");
+    return;
+  }
+
   if (page.url().includes("/accept-tos")) {
     console.log("Onboarding: accepting Terms of Service...");
     await handleTOSAcceptance(page);
