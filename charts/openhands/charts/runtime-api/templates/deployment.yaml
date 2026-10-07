@@ -19,9 +19,22 @@ spec:
       {{- include "runtime-api.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- /* Roll the Deployment whenever the warm-runtimes config (which
+      pins the agent-server image) changes. Without this, a warm-image bump
+      only updates the ConfigMap and the long-lived API pods keep serving
+      the old image until a manual restart. */}}
+      {{- $warmChecksum := "" }}
+      {{- if .Values.warmRuntimes.enabled }}
+      {{- $warmChecksum = include (print $.Template.BasePath "/warm-runtimes-configmap.yaml") . | sha256sum }}
+      {{- end }}
+      {{- if or $warmChecksum .Values.podAnnotations }}
       annotations:
+        {{- if $warmChecksum }}
+        checksum/warm-runtimes-config: {{ $warmChecksum | quote }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       labels:
         {{- include "runtime-api.selectorLabels" . | nindent 8 }}
