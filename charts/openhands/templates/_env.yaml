@@ -350,6 +350,26 @@
       key: webhook-secret
       optional: true
 {{- end }}
+{{- if .Values.defaultLlm.enabled }}
+- name: OPENHANDS_LLM_PROVIDER_ROUTE
+  value: direct
+- name: OPENHANDS_DEFAULT_LLM_MODEL
+  value: {{ .Values.defaultLlm.model | quote }}
+{{- with .Values.defaultLlm.baseUrl }}
+- name: OPENHANDS_DEFAULT_LLM_BASE_URL
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.defaultLlm.auth.existingSecret }}
+- name: OPENHANDS_DEFAULT_LLM_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: {{ $.Values.defaultLlm.auth.secretKey }}
+      # Keyless custom endpoints leave the key unset.
+      optional: true
+{{- end }}
+{{- end }}
+{{- if .Values.litellm.enabled }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
   # FQDN (not the bare Service name) so it resolves from any namespace. This URL
@@ -376,6 +396,10 @@
 {{- end }}
 - name: LITE_LLM_TEAM_ID
   value: {{ .Values.litellm.teamId }}
+{{- else }}
+- name: ENABLE_LEGACY_LITELLM
+  value: "false"
+{{- end }}
 {{- if .Values.stripe.enabled }}
 - name: STRIPE_API_KEY
   valueFrom:

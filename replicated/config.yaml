@@ -100,7 +100,7 @@ spec:
           title: LLM Proxy Hostname
           help_text: The hostname for the LiteLLM proxy service
           type: text
-          when: 'repl{{ ConfigOptionEquals "hostname_mode" "custom" }}'
+          when: 'repl{{ and (ConfigOptionEquals "hostname_mode" "custom") (ConfigOptionEquals "enable_litellm" "1") }}'
           required: true
         - name: runtime_api_hostname
           title: Runtime API Hostname
@@ -239,7 +239,7 @@ spec:
           help_text: The hostname for the LiteLLM proxy service
           type: text
           readonly: true
-          when: 'repl{{ ne (ConfigOption "hostname_mode") "custom" }}'
+          when: 'repl{{ and (ne (ConfigOption "hostname_mode") "custom") (ConfigOptionEquals "enable_litellm" "1") }}'
           value: '{{repl if ConfigOption "base_domain" }}{{repl ConfigOption "computed_llm_proxy_hostname" }}{{repl end }}'
         - name: derived_runtime_api_hostname
           title: Runtime API Hostname
@@ -287,8 +287,8 @@ spec:
             {{repl if ConfigOptionEquals "hostname_mode" "wildcard" }}Use a single wildcard SAN:
             • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl else }}It must cover:
             • `{{repl ConfigOption "computed_app_hostname" }}`
-            • `{{repl ConfigOption "computed_auth_hostname" }}`
-            • `{{repl ConfigOption "computed_llm_proxy_hostname" }}`
+            • `{{repl ConfigOption "computed_auth_hostname" }}`{{repl if ConfigOptionEquals "enable_litellm" "1" }}
+            • `{{repl ConfigOption "computed_llm_proxy_hostname" }}`{{repl end }}
             • `{{repl ConfigOption "computed_runtime_api_hostname" }}`
             • `{{repl ConfigOption "computed_analytics_hostname" }}`
             • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl end }}
@@ -329,6 +329,15 @@ spec:
       title: LLM Configuration
       description: Configure your Large Language Model provider
       items:
+        - name: enable_litellm
+          title: Enable LiteLLM gateway
+          help_text: Install-time choice; switching an existing install on or off is not supported yet. When off, the LiteLLM proxy and its database are not deployed, budgets, managed LLM keys and OpenHands-managed models are unavailable, and users can always bring their own LLM keys. The provider below becomes the default model for new users (its first listed model, called directly with the key entered here). AWS Bedrock, Google Vertex AI and Azure require LiteLLM.
+          type: bool
+          default: "1"
+        - name: litellm_off_unsupported_provider_notice
+          title: "This provider requires LiteLLM. With LiteLLM off, new users get no default model and must add their own LLM key. Choose another provider or enable LiteLLM."
+          type: label
+          when: 'repl{{ and (ConfigOptionEquals "enable_litellm" "0") (or (ConfigOptionEquals "llm_provider" "bedrock") (ConfigOptionEquals "llm_provider" "azure") (and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "vertex"))) }}'
         - name: llm_provider
           title: LLM Provider
           help_text: Choose your Large Language Model provider
@@ -634,6 +643,8 @@ spec:
           # Default off: self-hosted installs are admin-governed, so BYOK is an
           # explicit opt-in. Existing installs keep whatever value they set.
           default: "0"
+          # BYOK is forced on without LiteLLM.
+          when: 'repl{{ ConfigOptionEquals "enable_litellm" "1" }}'
         - name: enable_byor_export
           title: Enable LLM Key Export (BYOR)
           help_text: |
@@ -648,10 +659,13 @@ spec:
           # _get_feature_flags() and does not silently opt existing installs
           # into exposing the LiteLLM key to end users.
           default: "0"
+          # Exports the managed LiteLLM key, so it only exists with LiteLLM.
+          when: 'repl{{ ConfigOptionEquals "enable_litellm" "1" }}'
 
     - name: litellm_admin_console
       title: LiteLLM Admin Console
       description: Configure credentials for the bundled LiteLLM Admin UI.
+      when: 'repl{{ ConfigOptionEquals "enable_litellm" "1" }}'
       items:
         - name: litellm_admin_password
           title: LiteLLM Admin Password
@@ -1284,6 +1298,7 @@ spec:
           help_text: Database name for the LiteLLM proxy
           type: text
           default: "litellm"
+          when: 'repl{{ ConfigOptionEquals "enable_litellm" "1" }}'
         - name: external_postgres_runtime_api_database
           title: Runtime API Database
           help_text: Database name for the Runtime API
@@ -1547,6 +1562,7 @@ spec:
     - name: upgrade_checks
       title: Upgrade Checks
       description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      when: 'repl{{ ConfigOptionEquals "enable_litellm" "1" }}'
       items:
         - name: budget_preflight_mode
           title: Pre-upgrade Budget Preflight
@@ -1736,20 +1752,21 @@ spec:
             Forward selected headers from each client request through LiteLLM to upstream LLM providers. When enabled, LiteLLM forwards the anthropic-beta header and client x-* headers, except x-stainless-* headers. It does not forward Authorization or non-x-* gateway headers such as Ocp-Apim-Subscription-Key. Leave disabled unless you need provider-visible client headers. Use Custom LLM Extra HTTP Headers for static gateway auth or routing headers.
           type: bool
           default: "0"
+          when: 'repl{{ ConfigOptionEquals "enable_litellm" "1" }}'
         - name: custom_llm_extra_headers_enabled
           title: Enable Custom LLM Extra HTTP Headers (JSON)
           help_text: >-
             Show a JSON field for static headers that the bundled OpenHands LiteLLM Proxy sends on every request to the custom upstream gateway for all users in this deployment. NOTE: This is intended as temporary installer-level configuration until organization-level header settings are available in OpenHands. Use only if your upstream LLM gateway requires static auth or routing headers that cannot be expressed via the standard Authorization bearer header.
           type: bool
           default: "0"
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "custom" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "enable_litellm" "1") }}'
         - name: custom_llm_extra_headers
           title: Custom LLM Extra HTTP Headers (JSON)
           help_text: >-
             Format: JSON object mapping header names to values. Example: {"Ocp-Apim-Subscription-Key": "abc123", "X-Tenant-Id": "prod"}
           type: textarea
           default: ""
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "custom_llm_extra_headers_enabled" "1") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "custom") (ConfigOptionEquals "custom_llm_extra_headers_enabled" "1") (ConfigOptionEquals "enable_litellm" "1") }}'
           required: false
           validation:
             regex:

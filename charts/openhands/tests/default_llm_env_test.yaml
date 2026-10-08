@@ -1,0 +1,91 @@
+suite: direct default LLM env
+templates:
+  - deployment.yaml
+  - litellm-config-script.yaml
+  - validations.yaml
+  # troubleshoot/secrets.yaml renders the bundle specs by including helpers
+  # defined across these files, so they must be compiled alongside it.
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: sets no direct-default env by default
+    asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LLM_PROVIDER_ROUTE
+          any: true
+
+  - it: routes the default model directly and reads the key from the secret
+    set:
+      defaultLlm.enabled: true
+      defaultLlm.model: anthropic/claude-sonnet-4-5-20250929
+      defaultLlm.auth.existingSecret: litellm-env-secrets
+      defaultLlm.auth.secretKey: ANTHROPIC_API_KEY
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LLM_PROVIDER_ROUTE
+            value: direct
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_DEFAULT_LLM_MODEL
+            value: anthropic/claude-sonnet-4-5-20250929
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_DEFAULT_LLM_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: litellm-env-secrets
+                key: ANTHROPIC_API_KEY
+                optional: true
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_DEFAULT_LLM_BASE_URL
+          any: true
+
+  - it: passes an explicit base URL through
+    set:
+      defaultLlm.enabled: true
+      defaultLlm.model: openai/my-model
+      defaultLlm.baseUrl: https://llm.example.com/v1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_DEFAULT_LLM_BASE_URL
+            value: https://llm.example.com/v1
+
+  - it: fails without a model
+    set:
+      defaultLlm.enabled: true
+    asserts:
+      - template: validations.yaml
+        failedTemplate:
+          errorMessage: "defaultLlm.enabled is true but defaultLlm.model is empty. Set defaultLlm.model to an SDK model string (e.g. anthropic/claude-sonnet-4-5-20250929)."
+
+  - it: fails with a secret but no key name
+    set:
+      defaultLlm.enabled: true
+      defaultLlm.model: openai/gpt-5
+      defaultLlm.auth.existingSecret: litellm-env-secrets
+    asserts:
+      - template: validations.yaml
+        failedTemplate:
+          errorMessage: "defaultLlm.auth.existingSecret is set but defaultLlm.auth.secretKey is empty. Set the key that holds the provider API key."
