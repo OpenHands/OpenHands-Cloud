@@ -608,6 +608,13 @@ laminar:
   # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
   httpPort: null
 
+  # Upstream laminar runs its Redis cache on valkey/valkey:latest (Debian), which
+  # moves on every pull and carries OS findings with fixes available. Pin the
+  # same Valkey release on the Alpine base. The cache has no persistent volume.
+  images:
+    redis:
+      tag: "9.1.2-alpine"
+
   clickhouse:
     diagnostics:
       # Retention, in days, for high-volume ClickHouse system diagnostic tables
