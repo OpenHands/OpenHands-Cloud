@@ -1,0 +1,18 @@
+{
+  "images": [
+    {"source": "ghcr.io/openhands/enterprise-server:1.64.0", "target": "ghcr.io/openhands/patched/enterprise-server"},
+    {"source": "ghcr.io/openhands/runtime-api:0.10.0", "target": "ghcr.io/openhands/patched/runtime-api"},
+    {"source": "ghcr.io/openhands/agent-server:1.49.5-python", "target": "ghcr.io/openhands/patched/agent-server"},
+    {"source": "ghcr.io/openhands/automation:1.14.0", "target": "ghcr.io/openhands/patched/automation"},
+    {"source": "ghcr.io/openhands/agent-canvas:1.23.0", "target": "ghcr.io/openhands/patched/agent-canvas"},
+    {"source": "ghcr.io/openhands/plugin-directory-server:1.2.0", "target": "ghcr.io/openhands/patched/plugin-directory-server"},
+    {"source": "ghcr.io/openhands/plugin-directory-client:1.2.0", "target": "ghcr.io/openhands/patched/plugin-directory-client"},
+    {"source": "ghcr.io/openhands/ohe-minio:RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279", "target": "ghcr.io/openhands/patched/ohe-minio"},
+    {"source": "ghcr.io/openhands/ohe-minio-mc:RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701", "target": "ghcr.io/openhands/patched/ohe-minio-mc"},
+    {"source": "docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0", "target": "ghcr.io/openhands/patched/keycloak"},
+    {"source": "docker.io/bitnamilegacy/keycloak-config-cli:6.4.0-debian-12-r9", "target": "ghcr.io/openhands/patched/keycloak-config-cli"},
+    {"source": "docker.io/bitnamilegacy/postgresql:16.4.0-debian-12-r14", "target": "ghcr.io/openhands/patched/postgresql"},
+    {"source": "docker.io/bitnamilegacy/redis:7.4.1-debian-12-r2", "target": "ghcr.io/openhands/patched/redis"},
+    {"source": "ghcr.io/berriai/litellm-database:1.100.1@sha256:fc44cf7f72786e636dc4dc1032b4e431818abfec9d54b8e04284fdea7ef03e2a", "target": "ghcr.io/openhands/patched/litellm-database"}
+  ]
+}
