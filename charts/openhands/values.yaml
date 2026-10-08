@@ -608,6 +608,12 @@ laminar:
   # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
   httpPort: null
 
+  # Upstream laminar defaults ClickHouse to 25.10, which is out of support and
+  # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
+  images:
+    clickhouse:
+      tag: "26.3-alpine"
+
   clickhouse:
     diagnostics:
       # Retention, in days, for high-volume ClickHouse system diagnostic tables
