@@ -703,7 +703,7 @@ Note: This will not delete any PVCs or secrets created. You'll need to delete th
 
 ### Budget policy changes
 
-The bundled LiteLLM proxy uses unmodified 1.100.1 pinned by digest and
+The bundled LiteLLM proxy uses unmodified 1.100.5 pinned by digest and
 `litellm-helm.proxy_config.general_settings.user_api_key_cache_ttl: 0`.
 Both are required for a budget change (including disabling a user's limit)
 to affect the next request using an existing key. Older proxies can keep enforcing

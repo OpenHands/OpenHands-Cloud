@@ -691,8 +691,11 @@ litellm-helm:
   # 1.94.1 picks up the orphaned prisma query-engine reaping fix
   # (BerriAI/litellm#33424, released in v1.94.0), which addresses the gradual
   # per-worker memory growth seen on 1.93.0.
+  #
+  # 1.100.5 is the 1.100.x patch release that backports dependency security
+  # fixes (PyJWT, anyio, pypdf, urllib3, Python); same Prisma schema as 1.100.1.
   image:
-    tag: "1.100.1@sha256:fc44cf7f72786e636dc4dc1032b4e431818abfec9d54b8e04284fdea7ef03e2a"
+    tag: "1.100.5@sha256:65cdef1d78a9a966dfa6797951ea01602826430b6978bc9fa3957da6913dcc7f"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
