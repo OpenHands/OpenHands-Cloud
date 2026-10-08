@@ -37,7 +37,7 @@ dependencies:
     version: 1.19.7
     condition: replicated.enabled
   - name: rustfs
-    version: 0.10.0
+    version: 1.0.1
     repository: https://charts.rustfs.com/
     condition: rustfs.enabled
   - name: crd-check
