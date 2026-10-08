@@ -1128,28 +1128,32 @@ spec:
       title: SMTP Email Delivery
       description: Configure SMTP for OpenHands email notifications and Keycloak sign-in emails (email verification, account linking, password reset)
       items:
+        # Fleet testing: SMTP is on by default and sends to the in-cluster
+        # Mailpit from mailpit.yaml (plain SMTP on 1025, no auth, no STARTTLS).
         - name: smtp_enabled
           title: Enable SMTP
           help_text: Enable SMTP email delivery for budget alerts and admin notifications, and for Keycloak account emails (email verification, account linking, password reset)
           type: bool
-          default: "0"
+          default: "1"
         - name: smtp_host
           title: SMTP Host
           help_text: Hostname of the SMTP server
           type: text
+          default: mailpit.openhands.svc.cluster.local
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
           required: true
         - name: smtp_port
           title: SMTP Port
           help_text: Port for the SMTP server
           type: text
-          default: "587"
+          default: "1025"
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
           required: true
         - name: smtp_from_email
           title: SMTP From Email
           help_text: Sender address for outgoing SMTP email
           type: text
+          default: 'openhands@{{repl ConfigOption "base_domain" }}'
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
           required: true
         - name: smtp_use_ssl
@@ -1162,7 +1166,7 @@ spec:
           title: Use SMTP STARTTLS
           help_text: Enable STARTTLS after connecting
           type: bool
-          default: "1"
+          default: "0"
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_username
           title: SMTP Username
@@ -1174,6 +1178,17 @@ spec:
           help_text: Password for SMTP authentication
           type: password
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+
+    # Fleet testing only: the inbox for the Mailpit in mailpit.yaml.
+    - name: test_mail_catcher
+      title: Test Mail Catcher
+      description: Mailpit catches every email this install sends. Read them at https://mail.<base domain>, signing in as user "mail".
+      items:
+        - name: mailpit_ui_password
+          title: Mail Inbox Password
+          help_text: Password for user "mail" on the Mailpit inbox
+          type: password
+          value: '{{repl RandomString 24 }}'
 
     - name: object_storage
       title: Object Storage
@@ -1785,4 +1800,5 @@ spec:
             by customers who OEM OpenHands Enterprise and integrate it with their
             own user management system.
           type: bool
-          default: "0"
+          # Fleet testing: on by default.
+          default: "1"

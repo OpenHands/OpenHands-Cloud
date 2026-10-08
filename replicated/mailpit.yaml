@@ -1,0 +1,89 @@
+# Fleet testing only: a mail catcher. Every email the install sends (invites,
+# budget alerts, Keycloak verification and password resets) lands in Mailpit,
+# and nothing leaves the VM. config.yaml points SMTP here by default. The inbox
+# is at https://mail.<base domain>, behind basic auth (user "mail", password
+# from the Test Mail Catcher config group).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  namespace: openhands
+  labels:
+    app.kubernetes.io/name: mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mailpit
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.31.4
+          env:
+            - name: MP_UI_AUTH
+              value: 'mail:repl{{ ConfigOption "mailpit_ui_password" }}'
+            # The app and Keycloak send without credentials; accept them anyway
+            # in case a client offers some.
+            - name: MP_SMTP_AUTH_ACCEPT_ANY
+              value: "true"
+            - name: MP_SMTP_AUTH_ALLOW_INSECURE
+              value: "true"
+            - name: MP_MAX_MESSAGES
+              value: "5000"
+          ports:
+            - name: smtp
+              containerPort: 1025
+            - name: http
+              containerPort: 8025
+          readinessProbe:
+            tcpSocket:
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  namespace: openhands
+spec:
+  selector:
+    app.kubernetes.io/name: mailpit
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: smtp
+    - name: http
+      port: 8025
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mailpit
+  namespace: openhands
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - 'mail.repl{{ ConfigOption "base_domain" }}'
+      secretName: openhands-tls
+  rules:
+    - host: 'mail.repl{{ ConfigOption "base_domain" }}'
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mailpit
+                port:
+                  name: http
