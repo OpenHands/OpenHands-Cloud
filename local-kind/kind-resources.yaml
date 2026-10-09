@@ -58,19 +58,15 @@ postgresql:
         cpu: "1"
         memory: 1Gi
 
-redis:
+valkey:
   enabled: true
-  networkPolicy:
-    enabled: false
-  master:
-    resourcesPreset: none
-    resources:
-      requests:
-        cpu: 50m
-        memory: 128Mi
-      limits:
-        cpu: 250m
-        memory: 512Mi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
 
 minio:
   resources:

@@ -877,8 +877,9 @@ externalDatabase:
   sslMode: "prefer"
   existingSecret: postgres-password
 
+# Superseded by the valkey block below. Still selected when enabled.
 redis:
-  enabled: true
+  enabled: false
   image:
     repository: bitnamilegacy/redis
   architecture: standalone
@@ -901,10 +902,10 @@ redis:
   replica:
     replicaCount: 0
 
-# Second bundled cache backend. Redis above wins while both are enabled
+# The bundled cache. Redis above wins while both are enabled
 # (templates/_cache.tpl).
 valkey:
-  enabled: false
+  enabled: true
   image:
     repository: valkey/valkey
     # The subchart defaults to its appVersion (9.1.1, Debian), which has

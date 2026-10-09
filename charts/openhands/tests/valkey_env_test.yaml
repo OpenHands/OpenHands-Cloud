@@ -15,28 +15,7 @@ templates:
 release:
   name: openhands
 tests:
-  - it: keeps the cache env on redis at the chart defaults
-    asserts:
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: REDIS_HOST
-            value: openhands-redis-master
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: REDIS_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: redis
-                key: redis-password
-
-  - it: points the cache env at valkey when only valkey is enabled
-    set:
-      redis.enabled: false
-      valkey.enabled: true
+  - it: points the cache env at valkey at the chart defaults
     asserts:
       - template: deployment.yaml
         contains:
@@ -52,11 +31,8 @@ tests:
             value: "6379"
 
   # If this assertion changes, an install has to create a new secret before it
-  # can enable valkey.
+  # can upgrade.
   - it: reads the password from the same redis secret
-    set:
-      redis.enabled: false
-      valkey.enabled: true
     asserts:
       - template: deployment.yaml
         contains:
@@ -68,9 +44,9 @@ tests:
                 name: redis
                 key: redis-password
 
-  - it: stays on redis when both backends are enabled
+  - it: returns to redis when redis is re-enabled
     set:
-      valkey.enabled: true
+      redis.enabled: true
     asserts:
       - template: deployment.yaml
         contains:
@@ -78,6 +54,15 @@ tests:
           content:
             name: REDIS_HOST
             value: openhands-redis-master
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: redis
+                key: redis-password
 
   - it: drops the cache env when neither backend is enabled
     set:
@@ -91,33 +76,10 @@ tests:
             name: REDIS_PORT
             value: "6379"
 
-  - it: analyses redis as a StatefulSet in the support bundle
-    set:
-      replicated.enabled: true
-      replicated.redisPassword: test-password
-    asserts:
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: "statefulsetStatus:\n\\s+name: openhands-redis-master"
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: "app.kubernetes.io/name=redis"
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        notMatchRegex:
-          path: stringData.support-bundle-spec
-          pattern: "openhands-valkey"
-
   # Valkey renders a Deployment, not a StatefulSet. A statefulsetStatus analyzer
   # left pointing at the old workload reports permanently unready.
   - it: analyses valkey as a Deployment in the support bundle
     set:
-      redis.enabled: false
-      valkey.enabled: true
       replicated.enabled: true
       replicated.redisPassword: test-password
     asserts:
@@ -143,8 +105,6 @@ tests:
   # own separate cache and is unaffected.
   - it: leaves no reference to openhands-redis-master
     set:
-      redis.enabled: false
-      valkey.enabled: true
       replicated.enabled: true
       replicated.redisPassword: test-password
     asserts:
@@ -153,3 +113,20 @@ tests:
         notMatchRegex:
           path: stringData.support-bundle-spec
           pattern: "openhands-redis-master"
+
+  - it: analyses redis as a StatefulSet again when re-enabled
+    set:
+      redis.enabled: true
+      replicated.enabled: true
+      replicated.redisPassword: test-password
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "statefulsetStatus:\n\\s+name: openhands-redis-master"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "openhands-valkey"
