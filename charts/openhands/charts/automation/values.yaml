@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/automation
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.5.0
+  tag: 1.19.1
 
 imagePullSecrets: []
 
@@ -19,6 +19,16 @@ caBundle:
   name: openhands-ca-bundle
   key: ca-bundle.crt
   mountPath: /etc/openhands/ca-bundle
+
+# Node-local scratch space the service writes to (git sync checkouts, one
+# directory per organization). Rendered as AUTOMATION_WORKSPACE_BASE and as
+# the emptyDir mount on both deployments, so the write path and the mount can
+# never drift apart. Pods keep no state across restarts; a fresh pod re-clones.
+workspace:
+  mountPath: /workspace
+  # Caps the emptyDir: clones of consumer repositories are otherwise unbounded
+  # and would exhaust the node's ephemeral storage, evicting the whole pod.
+  sizeLimit: 10Gi
 
 deployment:
   replicas: 1
@@ -45,6 +55,29 @@ events:
         cpu: 500m
   uvicorn:
     workers: 2
+  # Keep at least one events pod serving during voluntary disruptions (node
+  # drains / rotations). Without this, a single node drain can evict every
+  # replica at once and take /v1/events/* to zero healthy backends.
+  # Only rendered when deployment.replicas > 1 — at one replica the budget would
+  # make the pod unevictable and stall the drain instead. Set enabled=false on a
+  # single-node cluster, where an evicted pod has nowhere else to land.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # Spread replicas across nodes so a single node failure/drain cannot take out
+  # the whole deployment. ScheduleAnyway keeps scheduling best-effort even when
+  # a perfect spread is not possible (e.g. small clusters).
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: automation-events
+
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
 
 securityContext:
   runAsUser: 42420
@@ -154,6 +187,35 @@ automationWebhookSecretFromSecret:
   name: automation-webhook-secret
   key: webhook-secret
 
+# Git sync wrapping key from K8s secret
+# Encrypts each organization's git token and repo encryption key at rest
+gitSyncSecretFromSecret:
+  name: automation-git-sync-secret
+  key: git-sync-secret
+
+# KV store secret from K8s secret
+# Signs the per-automation KV tokens and encrypts the state automations keep there
+kvSecretFromSecret:
+  name: automation-kv-secret
+  key: kv-secret
+
+# Automation run behavior. All defaults below are disabled by default, meaning
+# no automation is ever auto-disabled
+runBehavior:
+  # Consecutive permanent failures (bad credential, revoked token, etc.) before an
+  # automation is auto-disabled. 0 never auto-disables.
+  failureDisableThreshold: 0
+  # Consecutive failures of any kind before an automation is auto-disabled.
+  # Empty never auto-disables; setting a number is what turns the rule on.
+  consecutiveFailureDisableThreshold: ""
+  # Only read when consecutiveFailureDisableThreshold is set: the rule fires
+  # only if nothing succeeded in this many hours, so shorter outages ride out.
+  consecutiveFailureDisableWindowHours: 24
+  # Seconds after a run ends before its sandbox is deleted; until then it is
+  # paused, so the run's conversation stays resumable. 0 deletes immediately.
+  # Requires automation image >= 1.12.0; ignored by older images.
+  sandboxCleanupDelaySeconds: 0
+
 # Datadog configuration
 datadog:
   env: "dev"
@@ -171,3 +233,8 @@ global:
   security:
     # This allows using the bitnamilegacy image repo
     allowInsecureImages: true
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

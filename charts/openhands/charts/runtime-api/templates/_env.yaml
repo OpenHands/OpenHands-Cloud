@@ -103,6 +103,11 @@
   value: "true"
 - name: DD_TRACE_SAMPLING_RULES
   value: '[{"resource": "GET /health", "sample_rate": 0.0}, {"resource": "GET /internal/metrics", "sample_rate": 0.0}]'
+{{- else }}
+- name: DD_TRACE_ENABLED
+  value: "false"
+- name: DD_INSTRUMENTATION_TELEMETRY_ENABLED
+  value: "false"
 {{- end }}
 {{- if .Values.postgresql.enabled }}
 - name: DB_HOST

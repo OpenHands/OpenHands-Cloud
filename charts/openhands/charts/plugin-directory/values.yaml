@@ -56,6 +56,10 @@ caBundle:
 deployment:
   replicas: 1
 
+# Affinity for this chart's pods. Overrides global.scheduling.affinity, which
+# the openhands umbrella sets for every chart at once; leave empty to inherit it.
+affinity: {}
+
 # Security context for the pod
 securityContext:
   runAsUser: 1001
@@ -154,3 +158,10 @@ datadog:
 
 # Env vars passed directly to the containers (overrides defaults)
 env: {}
+
+global:
+  scheduling:
+    # Affinity applied to this chart's pods when `affinity` above is empty. The
+    # openhands umbrella sets this once for every chart it owns; this default
+    # only applies when rendering the subchart alone.
+    affinity: {}

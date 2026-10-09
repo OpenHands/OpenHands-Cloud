@@ -1,5 +1,6 @@
 {{- define "openhands.env.defaults" }}
 {{- $integrations := .Values.integrations | default dict }}
+{{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
   value: remote
 - name: OH_SANDBOX_SPEC_KIND
@@ -30,6 +31,30 @@
   value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
 - name: OPENHANDS_EXPERIMENT_MANAGER_CLS
   value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
+{{- if ne .Values.dailyConversationLimit nil }}
+- name: OH_DAILY_CONVERSATION_LIMIT
+  value: {{ .Values.dailyConversationLimit | quote }}
+{{- end }}
+{{- /*
+    Only the app-server startup lifespan reads these, so the copies that land in
+    the maintenance CronJobs sharing this block are inert -- those run standalone
+    `python -m` entrypoints that never start the app.
+   */}}
+{{- if ne $orgCondenser.maxTokens nil }}
+{{- /*
+    int64 before quoting: JSON Schema's integer type accepts YAML floats with a
+    zero fraction, and Go renders 1e6 as "1e+06", which the backend's isdecimal
+    parse rejects by raising out of the startup lifespan.
+   */}}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+  value: {{ $orgCondenser.maxTokens | int64 | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+  value: {{ $orgCondenser.applyToExisting | default false | quote }}
+- name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+  value: {{ $orgCondenser.overwriteExisting | default false | quote }}
+{{- end }}
+- name: DUPLICATE_EMAIL_CHECK
+  value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
   value: {{ get $integrations "resolverLabel" | default "openhands" | quote }}
 - name: LOG_JSON # Configure structured logging for Google Cloud
@@ -318,6 +343,12 @@
       name: {{ .Values.azureDevOps.auth.existingSecret }}
       key: client-secret
       optional: false
+- name: AZURE_DEVOPS_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.azureDevOps.auth.existingSecret }}
+      key: webhook-secret
+      optional: true
 {{- end }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_URL
@@ -377,16 +408,20 @@
   value: {{ .Values.smtp.useSsl | default false | quote }}
 - name: SMTP_USE_TLS
   value: {{ .Values.smtp.useTls | default true | quote }}
+{{- /* Optional: the smtp-credentials secret only renders the keys that were
+       provided, and servers that accept unauthenticated relay need neither. */}}
 - name: SMTP_USERNAME
   valueFrom:
     secretKeyRef:
       name: {{ .Values.smtp.auth.existingSecret }}
       key: smtp-username
+      optional: true
 - name: SMTP_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ .Values.smtp.auth.existingSecret }}
       key: smtp-password
+      optional: true
 {{- end }}
 {{- if .Values.tavily.enabled }}
 - name: TAVILY_API_KEY
@@ -576,6 +611,9 @@
 {{- if .Values.jira.enabled }}
 - name: ENABLE_JIRA
   value: "true"
+{{- if eq .Values.jira.linkMethod "oauth" }}
+- name: JIRA_ENABLE_OAUTH
+  value: "1"
 - name: JIRA_CLIENT_ID
   valueFrom:
     secretKeyRef:
@@ -586,6 +624,14 @@
     secretKeyRef:
       name: jira-app
       key: client-secret
+{{- else }}
+{{- /* Email match: no Atlassian OAuth app; admins configure the workspace in
+the app UI and webhook users are matched by email. */}}
+- name: JIRA_ENABLE_OAUTH
+  value: "0"
+- name: JIRA_WEBHOOKS_ENABLED
+  value: "1"
+{{- end }}
 {{- end }}
 
 {{- if .Values.jiraDc.enabled }}
@@ -642,6 +688,11 @@
     secretKeyRef:
       name: linear-app
       key: client-secret
+{{- end }}
+
+{{- if .Values.enterpriseSSO.enabled }}
+- name: ENABLE_ENTERPRISE_SSO
+  value: "true"
 {{- end }}
 
 {{- if .Values.automationServiceKey.enabled }}

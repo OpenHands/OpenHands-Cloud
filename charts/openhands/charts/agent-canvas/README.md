@@ -54,3 +54,22 @@ agent-canvas:
       enabled: true
       secretName: app-all-hands-dev-tls
 ```
+
+### Disabling telemetry
+
+`staticServer.disableTelemetry` (default `true`) sets
+`AGENT_CANVAS_DISABLE_TELEMETRY=1` on the container. `static-server.mjs`
+reads it and injects `window.__AGENT_CANVAS_DO_NOT_TRACK__` so the
+pre-built frontend disables all PostHog product telemetry at runtime
+(including the anonymous install event). The default is off because this
+chart targets self-hosted deployments. The image must include the runtime
+opt-out (OpenHands/OpenHands#16908); older images ignore the variable and
+keep their built-in default.
+
+A deployment that wants telemetry on (e.g. SaaS) overrides it:
+
+```yaml
+agent-canvas:
+  staticServer:
+    disableTelemetry: false
+```

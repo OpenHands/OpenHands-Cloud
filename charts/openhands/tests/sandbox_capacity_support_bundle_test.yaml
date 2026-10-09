@@ -1,0 +1,93 @@
+suite: sandbox capacity support bundle data
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+  - troubleshoot/_sandbox-nodes.tpl
+  - troubleshoot/_sandbox-capacity.tpl
+release:
+  name: openhands
+  namespace: openhands
+tests:
+  - it: flags scheduling failures and evictions from node pressure
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "reason: FailedScheduling\\n\\s+regex: 'Insufficient \\(cpu\\|memory\\|ephemeral-storage\\)'"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "reason: Evicted"
+      # Node usage comes from kotsadm's default spec; no probe pods or hostPath.
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "nodeMetrics|runDaemonSet|hostPath"
+
+  - it: records sizing history as aggregates and the per-user sandbox cap
+    set:
+      replicated.enabled: true
+      runtime-api.enabled: true
+      automation.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "runtimes daily peak concurrent"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "sandboxes started per user, top 50 by peak-hour burst \\(14d\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "automation_runs peak concurrent per owner"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: '"OH_SANDBOX_MAX_NUM_SANDBOXES",'
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "sandbox owners"
+
+  - it: exports 14-day timelines without identifiers, capped
+    set:
+      replicated.enabled: true
+      runtime-api.enabled: true
+      automation.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "runtimes timeline \\(14d, no ids\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "automation_runs timeline \\(14d, no ids\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "ORDER BY created_at LIMIT 50000"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "interval '30 days'"

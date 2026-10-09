@@ -379,6 +379,13 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
           required: true
+        - name: openai_models
+          title: OpenAI Models
+          help_text: OpenAI model IDs served through the bundled LiteLLM proxy, one per line (e.g., gpt-5).
+          type: textarea
+          value: "gpt-5\ngpt-4.1"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "openai" }}'
+          required: true
         - name: google_api_type
           title: Google API Type
           help_text: Choose between Google AI Studio (Gemini API) or Google Cloud Platform (Vertex AI)
@@ -394,6 +401,13 @@ spec:
           title: Google Gemini API Key
           help_text: Your Google AI Studio API key for Gemini models
           type: password
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
+          required: true
+        - name: gemini_models
+          title: Gemini Models
+          help_text: Google AI Studio (Gemini) model IDs served through the bundled LiteLLM proxy, one per line (e.g., gemini-2.5-pro).
+          type: textarea
+          value: "gemini-2.5-pro\ngemini-2.5-flash"
           when: 'repl{{ and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
           required: true
         - name: google_vertex_project_id
@@ -428,10 +442,24 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
           required: true
+        - name: deepseek_models
+          title: DeepSeek Models
+          help_text: DeepSeek model IDs served through the bundled LiteLLM proxy, one per line (e.g., deepseek-chat).
+          type: textarea
+          value: "deepseek-chat\ndeepseek-reasoner"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "deepseek" }}'
+          required: true
         - name: mistral_api_key
           title: Mistral API Key
           help_text: Your Mistral AI API key
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
+          required: true
+        - name: mistral_models
+          title: Mistral Models
+          help_text: Mistral AI model IDs served through the bundled LiteLLM proxy, one per line (e.g., mistral-large-latest).
+          type: textarea
+          value: "mistral-large-latest\ncodestral-latest"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
           required: true
         - name: azure_auth_method
@@ -504,10 +532,24 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
           required: true
+        - name: groq_models
+          title: Groq Models
+          help_text: Groq model IDs served through the bundled LiteLLM proxy, one per line (e.g., llama-3.3-70b-versatile).
+          type: textarea
+          value: "llama-3.3-70b-versatile"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "groq" }}'
+          required: true
         - name: openrouter_api_key
           title: OpenRouter API Key
           help_text: Your OpenRouter API key
           type: password
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
+          required: true
+        - name: openrouter_models
+          title: OpenRouter Models
+          help_text: OpenRouter model IDs served through the bundled LiteLLM proxy, one per line, as provider/model (e.g., anthropic/claude-sonnet-4.5).
+          type: textarea
+          value: "anthropic/claude-sonnet-4.5"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "openrouter" }}'
           required: true
         - name: aws_auth_method
@@ -592,6 +634,20 @@ spec:
           # Default off: self-hosted installs are admin-governed, so BYOK is an
           # explicit opt-in. Existing installs keep whatever value they set.
           default: "0"
+        - name: enable_byor_export
+          title: Enable LLM Key Export (BYOR)
+          help_text: |
+            When enabled, users see a "Refresh API Key" affordance in
+            Settings → API Keys and can retrieve the managed LiteLLM key
+            for use with agent-server runtimes outside this cluster.
+
+            Leave off unless you intentionally want to expose the internal
+            LiteLLM key to end users.
+          type: bool
+          # Default off matches the enterprise-server codebase default in
+          # _get_feature_flags() and does not silently opt existing installs
+          # into exposing the LiteLLM key to end users.
+          default: "0"
 
     - name: litellm_admin_console
       title: LiteLLM Admin Console
@@ -608,11 +664,6 @@ spec:
       description: Configure passwords and secrets for various services
       when: false
       items:
-        - name: admin_password
-          title: Admin Password
-          help_text: Admin password for Runtime API
-          type: password
-          hidden: true
         - name: postgres_username
           title: PostgreSQL Username
           help_text: Username for embedded PostgreSQL database
@@ -717,6 +768,18 @@ spec:
           type: password
           hidden: true
           value: '{{repl RandomString 32}}'
+        - name: automation_git_sync_secret
+          title: Automation Git Sync Secret
+          help_text: Key that encrypts each organization's git sync token and repository encryption key at rest
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
+        - name: automation_kv_secret
+          title: Automation KV Secret
+          help_text: Key that signs automation key-value store tokens and encrypts the state automations keep there. Must never change once set — changing it makes existing automation state unreadable.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: default_openhands_organization
       title: Default OpenHands Organization
@@ -739,6 +802,25 @@ spec:
           type: bool
           default: "1"
           when: 'repl{{ and (ConfigOptionEquals "default_openhands_org_enabled" "1") (ConfigOptionEquals "default_openhands_org_auto_add_users" "1") }}'
+
+    - name: keycloak_administration
+      title: Keycloak Administration
+      description: Manage OpenHands users and identity provider account links in Keycloak.
+      items:
+        - name: keycloak_admin_ui_password
+          title: Keycloak Admin Password
+          help_text: 'Sign in as admin at https://{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}/admin/. Set a password here, save, and deploy to apply it to the existing admin account. Leave blank to keep the current password. Manage this password here so future deployments keep the same value.'
+          type: password
+
+    - name: authentication_security
+      title: Authentication Security
+      description: Configure safeguards applied when users sign in.
+      items:
+        - name: duplicate_email_check
+          title: Prevent Duplicate Base Emails
+          help_text: Reject sign-ins when another user has the same base email after removing a plus-address suffix (for example, name+test@example.com matches name@example.com).
+          type: bool
+          default: "1"
 
     - name: bitbucket_data_center_authentication
       title: Bitbucket Data Center Authentication
@@ -822,6 +904,12 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}'
           required: true
+        - name: azure_devops_webhook_secret
+          title: Azure DevOps Webhook Secret
+          help_text: Shared secret used to verify Azure DevOps service hooks for the resolver. Generated automatically.
+          type: password
+          hidden: true
+          value: '{{repl RandomString 32}}'
 
     - name: jira_data_center_integration
       title: Jira Data Center Integration
@@ -886,6 +974,22 @@ spec:
           type: password
           when: 'repl{{ and (ConfigOptionEquals "jira_data_center_enabled" "1") (ConfigOptionEquals "jira_data_center_link_method" "oauth") }}'
           required: true
+
+    - name: jira_cloud_integration
+      title: Jira Cloud Integration
+      description: Enable the Jira Cloud issue integration. An organization admin finishes setup inside OpenHands and registers the webhook in Jira Cloud.
+      items:
+        - name: jira_cloud_enabled
+          title: Enable Jira Cloud Integration
+          help_text: >-
+            Enable the Jira Cloud issue integration. Users are linked by matching their
+            Jira email to their OpenHands email (their Atlassian profile email visibility
+            must be set to Anyone). After enabling, an organization admin opens Settings > Integrations
+            > Jira in OpenHands to enter the Jira service account email, API token, and a
+            webhook secret, then registers the displayed events URL as a webhook in Jira
+            Cloud using that secret.
+          type: bool
+          default: "0"
 
     - name: github_authentication
       title: GitHub Authentication
@@ -965,6 +1069,32 @@ spec:
           when: 'repl{{ ConfigOptionEquals "gitlab_auth_enabled" "1" }}'
           required: true
 
+    - name: enterprise_sso_authentication
+      title: Enterprise SSO (SAML) Authentication
+      description: Let users sign in with your corporate SAML identity provider.
+      items:
+        - name: enterprise_sso_enabled
+          title: Enable Enterprise SSO Authentication
+          help_text: Add an Enterprise SSO button to the OpenHands login page.
+          type: bool
+          default: "0"
+        - name: enterprise_sso_display_name
+          title: Identity Provider Display Name
+          help_text: Name shown for the identity provider on the sign-in page.
+          type: text
+          default: "Company SSO"
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+        - name: enterprise_sso_idp_metadata_url
+          title: SAML Metadata URL
+          help_text: HTTPS URL of your identity provider's SAML metadata.
+          type: text
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+          required: true
+          validation:
+            regex:
+              pattern: '^https://[^[:space:]]+$'
+              message: 'Must be an HTTPS metadata URL.'
+
     - name: slack_configuration
       title: Enable Slack
       description: Enable Slack
@@ -996,11 +1126,11 @@ spec:
 
     - name: smtp_configuration
       title: SMTP Email Delivery
-      description: Configure SMTP for OpenHands email notifications
+      description: Configure SMTP for OpenHands email notifications and Keycloak sign-in emails (email verification, account linking, password reset)
       items:
         - name: smtp_enabled
           title: Enable SMTP
-          help_text: Enable SMTP email delivery for budget alerts and admin notifications
+          help_text: Enable SMTP email delivery for budget alerts and admin notifications, and for Keycloak account emails (email verification, account linking, password reset)
           type: bool
           default: "0"
         - name: smtp_host
@@ -1036,7 +1166,7 @@ spec:
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_username
           title: SMTP Username
-          help_text: Username for SMTP authentication
+          help_text: Username for SMTP authentication. Leave blank if your SMTP server does not require authentication.
           type: text
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
         - name: smtp_password
@@ -1044,6 +1174,37 @@ spec:
           help_text: Password for SMTP authentication
           type: password
           when: 'repl{{ ConfigOptionEquals "smtp_enabled" "1" }}'
+
+    - name: object_storage
+      title: Object Storage
+      description: Persistent storage for conversation files and sandbox archives.
+      items:
+        - name: minio_storage_size
+          title: Bundled object storage size
+          type: text
+          default: "100Gi"
+          when: '{{repl empty (Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio") }}'
+          help_text: >-
+            Choose a storage request for a new installation, such as 100Gi or 1Ti.
+            Existing installations retain their current claim size; contact support
+            to plan a storage change. OpenEBS hostpath does not reserve this much
+            physical disk or enforce a usage limit. Leave disk space for the OS,
+            databases, logs, and sandboxes, and monitor actual free space.
+          validation:
+            regex:
+              pattern: '^[1-9][0-9]*(Mi|Gi|Ti)$'
+              message: Use a positive whole number followed by Mi, Gi, or Ti (for example, 100Gi).
+
+        - name: minio_existing_storage_size
+          title: Installed object storage claim size
+          type: text
+          readonly: true
+          when: '{{repl not (empty (Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio")) }}'
+          default: '{{repl with Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio" }}{{repl .spec.resources.requests.storage }}{{repl end }}'
+          help_text: >-
+            Upgrades preserve this claim size. OpenEBS hostpath does not guarantee
+            this much physical disk space. Monitor the backing filesystem and
+            contact support before changing installed storage.
 
     - name: database_configuration
       title: Database Configuration
@@ -1128,6 +1289,11 @@ spec:
           help_text: Database name for the Runtime API
           type: text
           default: "runtime_api_db"
+        - name: external_postgres_automations_database
+          title: Automations Database
+          help_text: Database name for Automations
+          type: text
+          default: "automations"
 
     - name: sandbox_configuration
       title: Sandbox Configuration
@@ -1239,6 +1405,26 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: admin_password
+          title: Runtime API Admin Password
+          help_text: Password for the Runtime API admin endpoints, used to manage warm runtime configurations (for example, running multiple custom sandbox images side by side). A random password is generated at install; to use the admin API, set your own password here and deploy. Changing this password restarts the runtime-api service.
+          type: password
+          value: '{{repl RandomString 32}}'
+        - name: sandbox_max_num_sandboxes
+          title: Max Running Sandboxes per User
+          help_text: >-
+            Maximum sandboxes one user can have running at once. When a user
+            starts another, their oldest running sandbox is paused. Automations
+            count against the account that owns them, so raise this to the number
+            of automation runs you expect at once. 0 means the default of 10. This
+            is not a cluster-wide limit: how many sandboxes the cluster can run is
+            set by node CPU, memory and ephemeral storage.
+          type: text
+          default: "10"
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.
@@ -1252,9 +1438,9 @@ spec:
           required: true
         - name: custom_sandbox_image_tag
           title: Sandbox Image Tag
-          help_text: Image tag, e.g. 1.39.1-python
+          help_text: Image tag, e.g. 1.49.4-python
           type: text
-          default: "1.39.1-python"
+          default: "1.49.4-python"
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: true
         - name: custom_sandbox_image_registry_server
@@ -1304,6 +1490,13 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_dedicated_nodes
+          title: Run sandboxes on dedicated nodes
+          help_text: >-
+            Confine sandboxes to nodes joined with the sandbox role. Requires at least
+            1 sandbox node already joined.
+          type: bool
+          default: "0"
 
     - name: proxy_configuration
       title: Proxy Configuration
@@ -1351,6 +1544,31 @@ spec:
             - name: "DEBUG"
               title: "Debug"
 
+    - name: upgrade_checks
+      title: Upgrade Checks
+      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      items:
+        - name: budget_preflight_mode
+          title: Pre-upgrade Budget Preflight
+          help_text: Read-only check of each organization's budget state before the upgrade applies. Strict blocks the upgrade on missing baselines, members missing from LiteLLM, cap drift, or a failed last sync; Acknowledge only records the findings.
+          type: select_one
+          default: "acknowledge"
+          items:
+            - name: "acknowledge"
+              title: "Acknowledge (default)"
+            - name: "strict"
+              title: "Strict"
+        - name: budget_reconcile_gate_mode
+          title: Post-upgrade Budget Reconciliation Gate
+          help_text: Reconciles every organization's LiteLLM budget policy after the upgrade and verifies it by readback. Strict marks the upgrade failed until reconciliation succeeds; Acknowledge lets the release proceed and records the findings.
+          type: select_one
+          default: "strict"
+          items:
+            - name: "strict"
+              title: "Strict (default)"
+            - name: "acknowledge"
+              title: "Acknowledge"
+
     - name: experimental
       title: Experimental
       description: Preview features that are still in development. Enable at your own risk.
@@ -1370,6 +1588,11 @@ spec:
             regex:
               pattern: ^(github|https?)://
               message: Must start with github://, https://, or http://
+        - name: super_admin_dashboard_enabled
+          title: Enable Super Admin Dashboard
+          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
+          type: bool
+          default: "0"
 
     - name: analytics_configuration
       title: Analytics Configuration
@@ -1387,6 +1610,19 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
           required: false
+        - name: clickhouse_diagnostic_log_retention_days
+          title: ClickHouse Diagnostic Log Retention
+          help_text: Retain Laminar ClickHouse system diagnostic tables such as trace_log, query_log, text_log, metric_log, and part_log for this many days. These logs are useful for recent support investigations but can grow quickly on busy installations.
+          type: select_one
+          default: "3"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
+          items:
+            - name: "1"
+              title: "1 day"
+            - name: "2"
+              title: "2 days"
+            - name: "3"
+              title: "3 days (default)"
 
     - name: automations_configuration
       title: Automations
@@ -1396,7 +1632,81 @@ spec:
           title: Enable Automations
           help_text: Deploy the Automations UI and backend. If you use an external PostgreSQL instance, make sure the automations database requirements are satisfied before enabling this option.
           type: bool
+          # `value:` not `default:`, for the reason given on hostname_mode above.
+          # Changing a default here would switch automations on for every
+          # existing install at its next upgrade, creating a database and a role
+          # on an external server. A value, once written, is never overwritten,
+          # so turning automations on for an existing install is something an
+          # operator does and a later release cannot.
+          value: '{{repl if eq Sequence 0 }}1{{repl else }}0{{repl end }}'
+        # With automatic creation off the database and role must already exist,
+        # so the operator has to tell us what they named them.
+        - name: automations_db_username
+          title: Automations Database User
+          help_text: PostgreSQL role that Automations connects as. Create it and the Automations database yourself before deploying, if Create Databases Automatically is off. If neither exists, Automations fails to start with a password authentication error.
+          type: text
+          default: "automation_user"
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        # Deliberately not required. Leaving it blank falls back to the external
+        # PostgreSQL password, which is the password an earlier install would
+        # have given this role, so an operator who never chose one is not asked
+        # to invent it. Making this required would stall those upgrades on a
+        # value only the installer knows.
+        - name: automations_db_password
+          title: Automations Database Password
+          help_text: Password for the Automations database role. Leave blank unless you created that role yourself with a different password, in which case enter it here. Note that changing this does not change the password in PostgreSQL.
+          type: password
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0") }}'
+        - name: automations_sandbox_cleanup_delay_seconds
+          title: Conversation Archive Delay (seconds)
+          help_text: >-
+            How long (in seconds) after an automation run finishes before its
+            conversation is archived and its sandbox deleted. Until then the
+            sandbox is paused, and opening the conversation resumes it. Set to 0
+            (default) to archive as soon as the run finishes. Values above the
+            sandbox Deletion Time have no further effect, because paused
+            sandboxes are deleted at that age regardless.
+          type: text
           default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^(0|[1-9][0-9]*)$
+              message: Must be a non-negative integer (in seconds)
+
+        # Auto-disable. Every default below is the off setting, so an upgrade
+        # never starts disabling an operator's automations on its own.
+        - name: automations_failure_disable_threshold
+          title: Auto-disable After Permanent Failures
+          help_text: Consecutive permanent failures (bad credential, revoked token) before an automation is disabled automatically. 0, the default, never disables one.
+          type: text
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^[0-9]+$
+              message: Must be a whole number of failures (0 to never auto-disable).
+        - name: automations_consecutive_failure_disable_threshold
+          title: Auto-disable After Consecutive Failures
+          help_text: Consecutive failures of any kind before an automation is disabled automatically. Blank, the default, never disables one; entering a number is what turns the rule on.
+          type: text
+          default: ""
+          when: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: ^[0-9]*$
+              message: Must be blank (never auto-disable) or a whole number of failures.
+        # Shown only once the rule above is on, because nothing reads it until then.
+        - name: automations_consecutive_failure_disable_window_hours
+          title: Consecutive Failure Window (Hours)
+          help_text: The consecutive-failure rule fires only if nothing has succeeded in this many hours, which is what stops a provider outage shorter than the window from disabling healthy automations.
+          type: text
+          default: "24"
+          when: 'repl{{ and (ConfigOptionEquals "automations_enabled" "1") (not (ConfigOptionEquals "automations_consecutive_failure_disable_threshold" "")) }}'
+          validation:
+            regex:
+              pattern: ^[0-9]+(\.[0-9]+)?$
+              message: Must be a number of hours.
 
     - name: agent_canvas_configuration
       title: Agent Canvas

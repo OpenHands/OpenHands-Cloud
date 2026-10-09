@@ -1,8 +1,8 @@
 apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
-appVersion: 1.49.1
-version: 0.38.0
+appVersion: 1.70.1
+version: 0.79.0
 dependencies:
   - name: keycloak
     version: 24.7.5
@@ -10,7 +10,7 @@ dependencies:
     condition: keycloak.enabled
   - name: laminar
     repository: https://lmnr-ai.github.io/lmnr-helm
-    version: 0.2.2
+    version: 0.2.5
     condition: laminar.enabled
   - name: litellm-helm
     repository: oci://ghcr.io/berriai
@@ -37,7 +37,7 @@ dependencies:
     version: 1.19.7
     condition: replicated.enabled
   - name: rustfs
-    version: 0.10.0
+    version: 1.0.1
     repository: https://charts.rustfs.com/
     condition: rustfs.enabled
   - name: crd-check

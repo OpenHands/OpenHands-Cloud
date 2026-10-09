@@ -50,3 +50,16 @@ Selector labels
 app.kubernetes.io/name: {{ include "automation.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Pod affinity. Renders the affinity map as YAML, or nothing when no affinity is
+configured, so callers can wrap the include in a `with` and omit the key
+entirely. A chart-level `affinity` value wins over the umbrella-wide
+`global.scheduling.affinity`.
+*/}}
+{{- define "automation.affinity" -}}
+{{- $affinity := .Values.affinity | default (dig "scheduling" "affinity" (dict) (.Values.global | default (dict))) -}}
+{{- with $affinity -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}

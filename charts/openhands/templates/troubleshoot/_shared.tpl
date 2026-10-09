@@ -32,17 +32,29 @@
       - fail:
           when: "count() < 1"
           message: "At least 1 node is required"
+      {{/* memoryCapacity is post-kernel-reservation: a node built with a nominal 32GiB of RAM
+           reports ~30.8GiB. Threshold sits below the recommendation so correct sizing doesn't warn. */}}
       - warn:
-          when: "min(memoryCapacity) < 8Gi"
-          message: "At least 8GB of memory per node is recommended for OpenHands with dependencies"
-      - warn:
-          when: "min(memoryCapacity) < 16Gi"
-          message: "At least 16GB of memory per node is recommended for optimal performance"
+          when: "min(memoryCapacity) < 30Gi"
+          message: "At least 32GiB of memory per node is recommended for optimal performance"
       - warn:
           when: "min(cpuCapacity) < 4"
           message: "At least 4 CPU cores per node is recommended for OpenHands"
       - pass:
           message: "Node resources are sufficient"
+{{- if and .Values.minio.enabled .Values.minio.persistence.enabled (eq (.Values.minio.persistence.storageClass | default "") "openebs-hostpath") }}
+- nodeResources:
+    checkName: "Embedded storage capacity"
+    outcomes:
+      - fail:
+          when: "count() < 1"
+          message: "At least one node is required for bundled object storage"
+      - fail:
+          when: "max(ephemeralStorageCapacity) < 200Gi"
+          message: "At least one node with 200Gi of storage is required when bundled object storage uses OpenEBS hostpath"
+      - pass:
+          message: "Embedded storage capacity meets the 200Gi minimum"
+{{- end }}
 - storageClass:
     checkName: "Default Storage Class"
     storageClassName: ""

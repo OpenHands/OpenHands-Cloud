@@ -39,7 +39,15 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
+
+    budgetPreflight:
+      mode: 'repl{{ ConfigOption "budget_preflight_mode" }}'
+    budgetReconcileGate:
+      mode: 'repl{{ ConfigOption "budget_reconcile_gate_mode" }}'
+
     env:
+      KEYCLOAK_ADMIN_CLIENT_ID: openhands-provisioner
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
       # other providers' optionalValues blocks below override this env var).
@@ -60,6 +68,7 @@ spec:
       # ignored, so the flag falls back to the model default (false) and the Jira DC
       # integration card never renders. Mirror jira_data_center_enabled here.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA_DC: 'repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_JIRA: 'repl{{ ConfigOptionEquals "jira_cloud_enabled" "1" }}'
       LOG_LEVEL: 'repl{{ ConfigOption "log_level" }}'
       # The chart's fallback for LAMINAR_WEB_HOST is laminar.<ingress.host>, but
       # Replicated installs expose Laminar at the analytics hostname. Set it
@@ -72,6 +81,7 @@ spec:
       # example.com, so this has to be set explicitly. The path-routing block
       # further down replaces it with the <base>/{runtime_id} form.
       RUNTIME_URL_PATTERN: 'https://{runtime_id}{{repl ConfigOption "computed_runtime_hostname_separator" }}{{repl ConfigOption "computed_runtime_base_hostname" }}'
+      OH_SANDBOX_MAX_NUM_SANDBOXES: 'repl{{ ConfigOption "sandbox_max_num_sandboxes" }}'
       # OH_AGENT_SERVER_ENV is assembled by the chart from
       # spec.values.global.agentServerEnv, not hand-written here.
       OPENHANDS_DEFAULT_ORG_ENABLED: 'repl{{ ConfigOptionEquals "default_openhands_org_enabled" "1" }}'
@@ -91,9 +101,34 @@ spec:
       # Enterprise reads the FEATURE_FLAGS-prefixed name; bare name kept for OSS.
       OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
       OH_ALLOW_USER_LLM_CONFIGURATION: 'repl{{ ConfigOptionEquals "allow_user_llm_configuration" "1" }}'
+      # BYOR: whether users may retrieve the managed LiteLLM key from
+      # Settings → API Keys for use with agent-server runtimes outside this
+      # cluster. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # Backend route gating (server/constants.py, OrgService.check_byor_export_enabled)
+      # reads the bare ENABLE_BYOR_EXPORT. The web client's LlmApiKeyManager
+      # instead gates on feature_flags.enable_byor_export, which the app server
+      # builds from OH_WEB_CLIENT_FEATURE_FLAGS_* envs; once any of those is set
+      # (this chart always sets several), the _get_feature_flags() default
+      # factory that would read the bare env is bypassed and enable_byor_export
+      # falls back to the WebClientFeatureFlags model default (False).
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
+      ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
+      # Super Admin dashboard. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # The server reads the bare ENABLE_SUPER_ADMIN to mount the /api/admin
+      # directory routes; the web client reads feature_flags.enable_super_admin.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
+      ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
+
+    # Enterprise SSO auto-configuration. When the toggle is on, the chart's
+    # keycloak-config init container upserts the enterprise_sso SAML identity
+    # provider in Keycloak from this metadata URL on every pod start.
+    enterpriseSSO:
+      enabled: repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}
+      displayName: repl{{ ConfigOption "enterprise_sso_display_name" | mustToJson }}
+      idpMetadataUrl: repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}
 
     ingress:
       enabled: true
@@ -213,7 +248,13 @@ spec:
       environmentSecrets:
         - litellm-env-secrets
       podAnnotations:
-        checksum/litellm-credentials: 'repl{{ sha256sum (printf "%s|%s|%s" (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key")) }}'
+        # Kubernetes never rolls a pod when an envFrom Secret changes, so this
+        # checksum is the only trigger that restarts LiteLLM after a credential
+        # edit. It must hash every config value feeding litellm-env-secrets.yaml.
+        # litellm_api_key is included too: it reaches the pod as PROXY_MASTER_KEY
+        # via the separate lite-llm-api-key Secret (same no-auto-restart
+        # behavior). scripts/check_litellm_checksum.py enforces this in CI.
+        checksum/litellm-credentials: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOptionData "google_vertex_credentials") (ConfigOption "google_vertex_project_id") (ConfigOption "google_vertex_location") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_tenant_id") (ConfigOption "azure_client_id") (ConfigOption "azure_client_secret") (ConfigOption "azure_endpoint") (ConfigOption "azure_api_version") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_auth_method") (ConfigOption "aws_access_key_id") (ConfigOption "aws_secret_access_key") (ConfigOption "aws_region_name") (ConfigOption "bedrock_model_ids") (ConfigOption "custom_api_key") (ConfigOption "custom_base_url")) }}'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # the Python SSL stack (httpx + requests) at the merged PEM. envVars
       # is a map (merges with proxy/vertex blocks), but volumes/volumeMounts
@@ -241,6 +282,8 @@ spec:
       ingress:
         enabled: true
         className: traefik
+        # Replicated uses the customer-uploaded openhands-tls Secret.
+        annotations: null
         hosts:
           - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
             paths:
@@ -256,6 +299,8 @@ spec:
           OR_SITE_URL: "https://docs.all-hands.dev"
         general_settings:
           forward_client_headers_to_llm_api: repl{{ ConfigOptionEquals "litellm_forward_client_headers" "1" }}
+          # Read current budget policy on every request, including after limit removal.
+          user_api_key_cache_ttl: 0
           # Let admins add/manage models at runtime through the LiteLLM
           # dashboard. DB-stored models are encrypted with LITELLM_SALT_KEY,
           # merge with (never replace) the config-rendered model_list below,
@@ -289,6 +334,10 @@ spec:
       replicaCount: 1
       autoscaling:
         enabled: false
+      # ADMIN_PASSWORD comes from a secretKeyRef, so a password change needs a
+      # rollout to take effect (same pattern as checksum/litellm-credentials).
+      podAnnotations:
+        checksum/admin-password: 'repl{{ sha256sum (ConfigOption "admin_password") }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
         # Do not override the image tag here. Pin to a stable version in the chart.
@@ -324,24 +373,32 @@ spec:
         PGSSLMODE: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
         DB_USER: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_username"}}{{repl else}}postgres{{repl end}}'
         DB_NAME: "runtime_api_db"
+        # Admin-API warm configs overlay installer-managed entries by name:
+        # same-named rows override them and differently-named rows run beside
+        # them. Older runtime-api images ignore this variable.
+        WARM_RUNTIME_CONFIG_OVERLAY: "1"
         RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
         # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
         # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
         # it; "." nests it under the runtime base. The path-routing block below
         # overrides this to "/", which the runtime-api reads as path mode.
         RUNTIME_URL_SEPARATOR: '{{repl ConfigOption "computed_runtime_hostname_separator" }}'
-        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_base_hostname" }}'
+        RUNTIME_API_BASE_URL: 'https://{{repl ConfigOption "computed_runtime_api_hostname" }}'
         RUNTIME_IMAGE_PULL_SECRETS: '{{repl if and (ConfigOptionEquals "custom_sandbox_image_enabled" "1") (ne (ConfigOption "custom_sandbox_image_registry_server") "") (ne (ConfigOption "custom_sandbox_image_registry_username") "") (ne (ConfigOption "custom_sandbox_image_registry_password") "") }}sandbox-image-pull-secret{{repl else}}{{repl ImagePullSecretName }}{{repl end}}'
         STORAGE_CLASS: "openebs-hostpath"
         INGRESS_CLASS: "traefik"
         RUNTIME_CLASS: '{{repl if ConfigOptionEquals "sandbox_isolation" "sysbox"}}sysbox-runc{{repl else}}{{repl end}}'
-        # The embedded-cluster node carries no sysbox-install label or
-        # sysbox-runtime taint, so clear the scheduling defaults the runtime-api
-        # injects for the sysbox-runc class (node selector sysbox-install=yes +
-        # the sysbox-runtime toleration). Empty JSON collections mean "no node
-        # selector / no tolerations", keeping sandboxes schedulable on the single
-        # node. Scheduling is independent from the userns/hostUsers config
-        # (SET_HOST_USERS below). (runtime-api env vars from OpenHands/runtime-api#631.)
+        # Sandbox pod scheduling. Both are empty JSON collections ("no node
+        # selector", "no tolerations"), which overrides the defaults the
+        # runtime-api injects for the sysbox-runc class (node selector
+        # sysbox-install=yes + the sysbox-runtime toleration) — embedded-cluster
+        # nodes carry neither that label nor any taint, so those defaults would
+        # leave sandboxes unschedulable. Embedded Cluster cannot taint nodes at
+        # all, so RUNTIME_TOLERATIONS stays empty; the dedicated-nodes
+        # optionalValues block below points RUNTIME_NODE_SELECTOR at the sandbox
+        # role's label. Scheduling is independent from the userns/hostUsers
+        # config (SET_HOST_USERS below).
+        # (runtime-api env vars from OpenHands/runtime-api#631.)
         RUNTIME_TOLERATIONS: "[]"
         RUNTIME_NODE_SELECTOR: "{}"
         # Make the runtime-api set hostUsers: false on sysbox-runc sandboxes
@@ -371,11 +428,13 @@ spec:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
         configsByName:
+          # Keep this key aligned with the chart values for Helm merging.
           default:
+            name: v1_current
             # image omitted -> inherits global.agentServerImage. Proxy by
             # default; when custom_sandbox_image_enabled / HasLocalRegistry are
             # active, the optionalValues blocks below override the global instead.
-            working_dir: "/workspace"
+            working_dir: "/workspace/project"
             environment:
               LOG_JSON: "1"
               LOG_JSON_LEVEL_KEY: "severity"
@@ -383,6 +442,16 @@ spec:
               OH_BASH_EVENTS_DIR: "/workspace/bash_events"
               OH_CONVERSATIONS_PATH: "/workspace/conversations"
               OH_ENABLE_VNC: "0"
+              # Managed-LLM key refresh-on-401 contract the app sends on every
+              # runtime request. runtime-api matches these keys
+              # exactly, so they must equal the app's values: the URL is built
+              # from WEB_HOST (ingress.host), the headers are the literal
+              # json.dumps the app emits, and the base URL is the chart's
+              # LITE_LLM_API_URL for the bundled litellm-helm (FQDN of
+              # <releaseName>-litellm in <namespace>, both pinned above).
+              OH_LLM_API_KEY_REFRESH_BASE_URLS: "http://openhands-litellm.openhands.svc.cluster.local:4000"
+              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${SESSION_API_KEY}"}'
+              OH_LLM_API_KEY_REFRESH_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/keys/llm/managed/current'
               OH_VSCODE_PORT: "60001"
               OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
               OPENVSCODE_SERVER_ROOT: "/openhands/.openvscode-server"
@@ -414,6 +483,7 @@ spec:
           labels:
             app: runtime-api
           annotations:
+            cert-manager.io/cluster-issuer: null
             kubernetes.io/ingress.class: traefik
     # Advertises /dev/kvm (and /dev/fuse) to sandbox pods via the
     # squat/generic-device-plugin DaemonSet. Replaces the smarter-device-manager
@@ -462,6 +532,9 @@ spec:
       enabled: true
       persistence:
         enabled: true
+        storageClass: openebs-hostpath
+        # Preserve installed claims even if saved config contains a smaller value.
+        size: '{{repl $claim := Lookup "v1" "PersistentVolumeClaim" "openhands" "openhands-minio" }}{{repl if $claim }}{{repl $claim.spec.resources.requests.storage }}{{repl else }}{{repl ConfigOption "minio_storage_size" | default "100Gi" }}{{repl end }}'
       resources:
         requests:
           cpu: "1"
@@ -469,8 +542,13 @@ spec:
         limits:
           cpu: "2"
           memory: 2Gi
+      # Preserve the existing server/client bytes when changing registries.
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/quay.io/minio/minio'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/ohe-minio'
+        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279'
+      mcImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/ohe-minio-mc'
+        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
     # sha256 of every secret (password) config value. Changing any secret in the
@@ -481,7 +559,7 @@ spec:
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
     # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automation_kv_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -493,6 +571,11 @@ spec:
     jiraDc:
       enabled: repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}
       linkMethod: 'repl{{ ConfigOption "jira_data_center_link_method" }}'
+    # Jira Cloud in OHE is email-match only: OAuth linking needs an Atlassian
+    # OAuth app, which self-hosted installs don't have.
+    jira:
+      enabled: repl{{ ConfigOptionEquals "jira_cloud_enabled" "1" }}
+      linkMethod: 'email'
     github:
       enabled: repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}
     gitlab:
@@ -674,6 +757,14 @@ spec:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
           automationBaseUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+          # Auto-disable and sandbox cleanup, from the Automations config group.
+          # Their defaults there are the off settings, so this block is inert
+          # until an operator changes one.
+          runBehavior:
+            failureDisableThreshold: '{{repl ConfigOption "automations_failure_disable_threshold" }}'
+            consecutiveFailureDisableThreshold: '{{repl ConfigOption "automations_consecutive_failure_disable_threshold" }}'
+            consecutiveFailureDisableWindowHours: '{{repl ConfigOption "automations_consecutive_failure_disable_window_hours" }}'
+            sandboxCleanupDelaySeconds: '{{repl ConfigOption "automations_sandbox_cleanup_delay_seconds" }}'
           # Uploaded automation packages must survive pod replacement, so store
           # them on the bundled MinIO (persistent here — minio.persistence
           # above) instead of the pod filesystem.
@@ -687,7 +778,13 @@ spec:
             accessKey: default
             secretKey: notasecret
           database:
-            createDatabaseUser: true
+            # With automatic database creation off, no bootstrap container
+            # renders, so the automations database and role must already exist.
+            # Unquoted, like the createDatabases lines above, so this reaches
+            # the chart as a boolean rather than a string.
+            createDatabaseUser: repl{{ or (not (ConfigOptionEquals "postgres_type" "external_postgres")) (ConfigOptionEquals "external_postgres_create_databases" "1") }}
+            name: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_automations_database"}}{{repl else}}automations{{repl end}}'
+            user: '{{repl if and (ConfigOptionEquals "postgres_type" "external_postgres") (ConfigOptionEquals "external_postgres_create_databases" "0")}}{{repl ConfigOption "automations_db_username"}}{{repl else}}automation_user{{repl end}}'
             host: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_host"}}{{repl else}}openhands-postgresql{{repl end}}'
             port: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_port"}}{{repl else}}5432{{repl end}}'
             sslMode: '{{repl if ConfigOptionEquals "postgres_type" "external_postgres"}}{{repl ConfigOption "external_postgres_ssl_mode"}}{{repl else}}prefer{{repl end}}'
@@ -737,7 +834,9 @@ spec:
             repository: '{{repl LocalRegistryNamespace }}/valkey'
         minio:
           image:
-            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/minio'
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/ohe-minio'
+          mcImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/ohe-minio-mc'
         litellm-helm:
           image:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/litellm-database'
@@ -1012,6 +1111,71 @@ spec:
             # region-only litellm_params (credentials come from the instance
             # profile).
             model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "bedrock_model_ids" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "bedrock/%s" $m) "aws_region_name" "os.environ/AWS_REGION_NAME")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "bedrock")) }}repl{{ $models = append $models (dict "model_name" "bedrock" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # OpenAI — one <id> -> openai/<id> entry per non-empty line of the "OpenAI
+    # Models" textarea (comma- or newline-separated, trimmed, deduped). Key-only
+    # provider routed entirely through the proxy, mirroring the anthropic base.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "openai" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "openai_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "openai_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "openai/%s" $m) "api_key" "os.environ/OPENAI_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # DeepSeek — one <id> -> deepseek/<id> entry per line of the "DeepSeek
+    # Models" textarea.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "deepseek" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "deepseek_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "deepseek_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "deepseek/%s" $m) "api_key" "os.environ/DEEPSEEK_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # Mistral — one <id> -> mistral/<id> entry per line of the "Mistral Models"
+    # textarea.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "mistral" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "mistral_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "mistral_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "mistral/%s" $m) "api_key" "os.environ/MISTRAL_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # Groq — one <id> -> groq/<id> entry per line of the "Groq Models" textarea.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "groq" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "groq_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "groq_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "groq/%s" $m) "api_key" "os.environ/GROQ_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # OpenRouter — one <provider/model> -> openrouter/<provider/model> entry per
+    # line of the "OpenRouter Models" textarea. OR_SITE_URL / OR_APP_NAME come
+    # from the base block's proxy_config.environment_variables.
+    - when: '{{repl ConfigOptionEquals "llm_provider" "openrouter" }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "openrouter_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "openrouter_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "openrouter/%s" $m) "api_key" "os.environ/OPENROUTER_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
+    # Google AI Studio (Gemini) — one <id> -> gemini/<id> entry per line of the
+    # "Gemini Models" textarea. Gated on google_api_type=gemini AND
+    # llm_provider=google because google_api_type defaults to "gemini" (so the
+    # type check alone would fire for every other provider). LiteLLM's gemini
+    # provider defaults to GEMINI_API_KEY, but an explicit api_key wins, so it
+    # reads GOOGLE_API_KEY (the name litellm-env-secrets exports).
+    - when: '{{repl and (ConfigOptionEquals "llm_provider" "google") (ConfigOptionEquals "google_api_type" "gemini") }}'
+      recursiveMerge: true
+      values:
+        env:
+          LITELLM_DEFAULT_MODEL: 'litellm_proxy/repl{{ $first := "" }}repl{{ range $raw := splitList "\n" (ConfigOption "gemini_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not $first) }}repl{{ $first = $m }}repl{{ end }}repl{{ end }}repl{{ $first }}'
+        litellm-helm:
+          proxy_config:
+            model_list: repl{{ $models := list }}repl{{ $seen := dict }}repl{{ range $raw := splitList "\n" (ConfigOption "gemini_models" | replace "\r" "\n" | replace "," "\n") }}repl{{ $m := trim $raw }}repl{{ if and $m (not (hasKey $seen $m)) }}repl{{ $seen = set $seen $m true }}repl{{ $models = append $models (dict "model_name" $m "litellm_params" (dict "model" (printf "gemini/%s" $m) "api_key" "os.environ/GOOGLE_API_KEY")) }}repl{{ end }}repl{{ end }}repl{{ if and $models (not (hasKey $seen "claude-sonnet-4-5-20250929")) }}repl{{ $models = append $models (dict "model_name" "claude-sonnet-4-5-20250929" "litellm_params" (index (index $models 0) "litellm_params") "model_info" (dict "openhands_hidden" true "openhands_canonical" (index (index $models 0) "model_name"))) }}repl{{ end }}repl{{ $models | mustToJson }}
     # Path-based sandbox routing: route every runtime at <base>/{id} through a
     # shared Gateway instead of per-sandbox Ingresses at {id}.<base>. Traefik's
     # kubernetesGateway provider (enabled in embedded-cluster.yaml) installs
@@ -1082,6 +1246,8 @@ spec:
           global:
             cloudProvider: "aws"
           clickhouse:
+            diagnostics:
+              retentionDays: repl{{ ConfigOption "clickhouse_diagnostic_log_retention_days" }}
             persistence:
               storageClass: "openebs-hostpath" # default storage class for the k0s embededed cluster
             s3:
@@ -1211,6 +1377,72 @@ spec:
             basePath: /canvas
             authRequired: false
             lockToCloud: 'https://{{repl ConfigOption "computed_app_hostname" }}'
+    # Dedicated sandbox nodes: sandboxes go to nodes joined with the `sandbox`
+    # role, everything else stays on the controller(s). Embedded Cluster v2
+    # cannot taint nodes — its custom roles only stamp labels — so "keep other
+    # workloads off the sandbox nodes" is a required nodeAffinity on our own
+    # pods rather than a taint the sandboxes tolerate.
+    #
+    # The affinity keys on the control-plane role label, which k0s stamps on
+    # every controller and never on a node joined as a plain worker. That label
+    # is already present on every existing install, whereas role labels are
+    # applied at join time only, so openhands.dev/app is absent from any node
+    # that joined before this feature existed. The two nodeSelectorTerms are
+    # OR'd: the second admits dedicated application-capacity workers, joined
+    # with the `app` role, if capacity ever needs to grow beyond the controllers.
+    #
+    # global.scheduling.affinity reaches every chart OpenHands owns; Helm does
+    # not propagate it into vendored third-party subcharts, so each of those
+    # that this install enables gets the same value under its own affinity key.
+    # Node-level DaemonSets (the KVM device plugin here, the sysbox installer in
+    # the infra-sysbox release) are deliberately exempt — they must keep running
+    # on the sandbox nodes too.
+    - when: '{{repl ConfigOptionEquals "sandbox_dedicated_nodes" "1" }}'
+      recursiveMerge: true
+      values:
+        global:
+          scheduling:
+            affinity: &dedicated_nodes_affinity
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: Exists
+                    - matchExpressions:
+                        - key: openhands.dev/app
+                          operator: Exists
+        keycloak:
+          affinity: *dedicated_nodes_affinity
+        litellm-helm:
+          affinity: *dedicated_nodes_affinity
+        minio:
+          affinity: *dedicated_nodes_affinity
+          # Bucket/service-account creation runs as a post-install hook Job with
+          # its own scheduling knobs.
+          postJob:
+            affinity: *dedicated_nodes_affinity
+        postgresql:
+          primary:
+            affinity: *dedicated_nodes_affinity
+        redis:
+          # architecture is standalone, so only the master pod is rendered.
+          master:
+            affinity: *dedicated_nodes_affinity
+        replicated:
+          affinity: *dedicated_nodes_affinity
+        laminar:
+          # Only rendered when analytics is enabled. Every component of the
+          # chart falls back to global.affinity, so one key covers all of them.
+          global:
+            affinity: *dedicated_nodes_affinity
+        runtime-api:
+          env:
+            # Sandboxes go the other way: onto the sandbox-role nodes only.
+            # Only newly created sandbox Deployments pick this up; an existing
+            # sandbox keeps the pod template it was created with, so its pod can
+            # still return to the node its openebs-hostpath PV is pinned to.
+            RUNTIME_NODE_SELECTOR: '{"openhands.dev/sandbox":"true"}'
 
   builder:
     keycloak:
@@ -1219,6 +1451,12 @@ spec:
       enabled: true
     minio:
       enabled: true
+      image:
+        repository: ghcr.io/openhands/ohe-minio
+        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279'
+      mcImage:
+        repository: ghcr.io/openhands/ohe-minio-mc
+        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
     postgresql:
       enabled: true
     valkey:

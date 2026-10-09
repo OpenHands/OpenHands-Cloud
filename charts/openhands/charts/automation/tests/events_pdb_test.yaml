@@ -1,0 +1,48 @@
+suite: events PodDisruptionBudget
+templates:
+  - templates/events-pdb.yaml
+tests:
+  - it: renders nothing at the chart default (events deployment disabled)
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: keeps one events pod during voluntary disruption
+    set:
+      events.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels.app
+          value: automation-events
+
+  # A minAvailable=1 budget on a single replica makes the pod unevictable, so the
+  # node drain never completes — the opposite of what this exists for.
+  - it: does not block the drain when there is only one replica
+    set:
+      events.enabled: true
+      events.deployment.replicas: 1
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: honours a custom budget, including zero
+    set:
+      events.enabled: true
+      events.podDisruptionBudget.minAvailable: 0
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 0
+
+  - it: renders nothing when the budget is turned off
+    set:
+      events.enabled: true
+      events.podDisruptionBudget.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

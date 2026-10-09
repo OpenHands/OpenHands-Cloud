@@ -28,4 +28,11 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes", "gateways"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Read-only access to live pod CPU/memory usage (requires metrics-server,
+  # already a prerequisite for the CPU-based HPA below). Used by the
+  # cpu-watcher workload to detect sustained high-CPU (e.g. crypto-mining)
+  # runtimes. See OHE-3493.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 {{- end }}

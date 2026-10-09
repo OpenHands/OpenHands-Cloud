@@ -6,6 +6,21 @@
   "required": ["image"],
   "properties": {
     "enabled": { "type": "boolean" },
+    "dailyConversationLimit": { "type": ["integer", "null"] },
+    "duplicateEmailCheck": { "type": "boolean" },
+    "orgDefaults": {
+      "type": ["object", "null"],
+      "properties": {
+        "condenser": {
+          "type": ["object", "null"],
+          "properties": {
+            "maxTokens": { "type": ["integer", "null"], "minimum": 1 },
+            "applyToExisting": { "type": "boolean" },
+            "overwriteExisting": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "image": {
       "type": "object",
       "required": ["repository", "tag"],
@@ -45,6 +60,17 @@
         "enabled": { "type": "boolean" },
         "host": { "type": "string" },
         "class": { "type": "string" }
+      }
+    },
+    "enterpriseSSO": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "displayName": { "type": "string" },
+        "idpMetadataUrl": {
+          "type": "string",
+          "pattern": "^$|^https://[^\\s]+$"
+        }
       }
     },
     "sandbox": {
@@ -100,6 +126,23 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" }
+      }
+    },
+    "laminar": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "clickhouse": {
+          "type": "object",
+          "properties": {
+            "diagnostics": {
+              "type": "object",
+              "properties": {
+                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }
+              }
+            }
+          }
+        }
       }
     }
   }

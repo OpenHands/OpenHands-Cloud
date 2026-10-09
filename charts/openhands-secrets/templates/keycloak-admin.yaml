@@ -6,3 +6,4 @@ metadata:
 type: Opaque
 data:
   admin-password: {{ .Values.config.keycloak_admin_password | b64enc | quote }}
+  admin-ui-password: {{ .Values.config.keycloak_admin_ui_password | default "" | b64enc | quote }}

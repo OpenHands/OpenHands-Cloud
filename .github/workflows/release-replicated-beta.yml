@@ -6,9 +6,9 @@ name: Release Replicated to Beta
 # openhands and the replicated config are versioned together (see
 # release-please-config.openhands.json), so the openhands/<version> tag that
 # release-please creates on a release-PR merge is exactly the point at which a
-# matching Replicated release should go to Beta. The per-push "Release to
-# Replicated" workflow keeps publishing bleeding-edge main to Unstable; this adds
-# the Beta line, gated on an actual release.
+# matching Replicated release should go to Beta. The per-push "Release Replicated
+# to Unstable" workflow keeps publishing bleeding-edge main to Unstable; this
+# adds the Beta line, gated on an actual release.
 #
 # After promoting, we record the release sequence Replicated assigned by tagging
 # the same commit Replicated/Beta/<sequence>, linking each openhands release to
@@ -37,6 +37,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    outputs:
+      kots_cursor: ${{ steps.cursor.outputs.kots_cursor }}
     steps:
       - name: Resolve release tag
         id: tag
@@ -137,3 +139,46 @@ jobs:
             -m "${RELEASE_URL}"
           git push origin "${TAG}"
           echo "Tagged ${GITHUB_SHA} as ${TAG}"
+
+      - name: Resolve the KOTS cursor for this release
+        id: cursor
+        env:
+          REPLICATED_APP: ${{ secrets.REPLICATED_APP }}
+          REPLICATED_API_TOKEN: ${{ secrets.REPLICATED_API_TOKEN }}
+          SEQUENCE: ${{ steps.release.outputs.sequence }}
+        run: |
+          # KOTS selects by channelSequence (404); the CLI's `sequence` is the
+          # app-level release sequence (1451). Join them to pin the deploy to
+          # this build -- a channel can gain releases while one is deploying.
+          # Channel comes from the Makefile, which derives it from the branch:
+          # a dispatch on a feature branch publishes to that branch's channel,
+          # not Beta.
+          # Newest first, paginated; the release just created is on page 0.
+          CHANNEL=$(make -s print-channel CHANNEL=Beta)
+          CURSOR=$(replicated channel releases "$CHANNEL" --app "$REPLICATED_APP" --output json --page 0 --page-size 20 \
+            | jq -r --argjson rs "$SEQUENCE" \
+                'map(select(.sequence == $rs)) | max_by(.channelSequence) | .channelSequence // empty')
+          [ -n "$CURSOR" ] || { echo "::error::no channelSequence on $CHANNEL for release $SEQUENCE"; exit 1; }
+          echo "kots_cursor=${CURSOR}" >> "$GITHUB_OUTPUT"
+          echo "release ${SEQUENCE} is channelSequence ${CURSOR} on $CHANNEL"
+
+  deploy:
+    needs: beta
+    if: needs.beta.outputs.kots_cursor != ''
+    uses: ./.github/workflows/deploy-replicated.yml
+    with:
+      instance: beta
+      kots_cursor: ${{ needs.beta.outputs.kots_cursor }}
+    secrets:
+      kots_password: ${{ secrets.KOTS_PASSWORD_BETA }}
+
+  e2e:
+    name: E2E Replicated
+    needs: deploy
+    uses: ./.github/workflows/e2e-replicated.yml
+    with:
+      instance: beta
+    # A called workflow gets no secrets unless the call site passes them, and
+    # they reach only the workflow called directly. Nesting this under the
+    # deploy workflow left the environment's Argo token empty at dispatch.
+    secrets: inherit

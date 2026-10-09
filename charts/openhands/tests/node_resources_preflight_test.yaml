@@ -1,0 +1,35 @@
+suite: node resources preflight
+# secrets.yaml includes the troubleshoot.preflights and troubleshoot.supportBundle
+# defines, which live in these two templates. Neither is an underscore partial,
+# so both have to be listed here or the includes fail to resolve; each test
+# scopes its asserts to secrets.yaml.
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+tests:
+  # memoryCapacity is post-kernel-reservation, so the threshold sits below the
+  # 32GiB recommendation it states. Asserting the outcomes contiguously binds
+  # severity, threshold and message together: a warn->fail swap, a revert to
+  # 32Gi, or a reintroduced 8Gi tier each break the match.
+  - it: renders the memory warning with a 30Gi threshold and 32GiB recommendation
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'checkName: "Node Resources for OpenHands"\s+outcomes:\s+- fail:\s+when: "count\(\) < 1"\s+message: "At least 1 node is required"\s+- warn:\s+when: "min\(memoryCapacity\) < 30Gi"\s+message: "At least 32GiB of memory per node is recommended for optimal performance"\s+- warn:\s+when: "min\(cpuCapacity\) < 4"\s+message: "At least 4 CPU cores per node is recommended for OpenHands"\s+- pass:\s+message: "Node resources are sufficient"'
+
+  # The support bundle carries its own copy of the analyzer, so it is asserted
+  # separately: identical text in both specs is what keeps them from drifting.
+  - it: renders the same memory warning in the support bundle spec
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-support-bundle
+    asserts:
+      - matchRegex:
+          path: stringData["support-bundle-spec"]
+          pattern: 'checkName: "Node Resources for OpenHands"\s+outcomes:\s+- fail:\s+when: "count\(\) < 1"\s+message: "At least 1 node is required"\s+- warn:\s+when: "min\(memoryCapacity\) < 30Gi"\s+message: "At least 32GiB of memory per node is recommended for optimal performance"\s+- warn:\s+when: "min\(cpuCapacity\) < 4"\s+message: "At least 4 CPU cores per node is recommended for OpenHands"\s+- pass:\s+message: "Node resources are sufficient"'

@@ -43,9 +43,12 @@ runtime-api:
     RUNTIME_DISABLE_SSL: "false"
     STORAGE_CLASS: standard
 
+# Chart defaults filestore.type to gcs (needs GCP creds this cluster lacks) and
+# ships minio disabled; s3 + bundled MinIO give the file/event store a local target.
 filestore:
-  ephemeral: true
+  type: s3
 minio:
+  enabled: true
   persistence:
     enabled: true
 
@@ -56,3 +59,19 @@ litellm-helm:
         litellm_params:
           model: anthropic/${LLM_MODEL}
           api_key: os.environ/ANTHROPIC_API_KEY
+
+# lockToCloud points the UI at this instance's backend so users skip the "Manage
+# Backends" prompt; tls off because traefik serves the default cert (create-cluster.sh).
+agent-canvas:
+  enabled: true
+  ingress:
+    enabled: true
+    host: app.${BASE_DOMAIN}
+    className: traefik
+    path: /canvas
+    tls:
+      enabled: false
+  staticServer:
+    basePath: /canvas
+    authRequired: false
+    lockToCloud: https://app.${BASE_DOMAIN}

@@ -1,52 +1,81 @@
 
 {{- if .Values.cleanup.enabled }}
+{{- $jobs := dict "reaper" .Values.cleanup.jobs.reaper "k8s-garbage" (index .Values.cleanup.jobs "k8s-garbage") "snapshotter" .Values.cleanup.jobs.snapshotter "retention" .Values.cleanup.jobs.retention }}
+{{- range $phase, $cfg := $jobs }}
+{{- if $cfg.enabled }}
+{{- $archiveVol := and (eq $phase "reaper") $.Values.runtimeFileArchive.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "runtime-api.fullname" . }}-cleanup
+  name: {{ include "runtime-api.cronjobName" (dict "root" $ "suffix" (printf "cleanup-%s" $phase)) }}
   labels:
-    {{- include "runtime-api.labels" . | nindent 4 }}
+    {{- include "runtime-api.labels" $ | nindent 4 }}
 spec:
-  schedule: {{ .Values.cleanup.schedule | quote }}
+  schedule: {{ $cfg.schedule | quote }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: {{ .Values.jobSettings.successfulJobsHistoryLimit }}
-  failedJobsHistoryLimit: {{ .Values.jobSettings.failedJobsHistoryLimit }}
+  successfulJobsHistoryLimit: {{ $.Values.jobSettings.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $.Values.jobSettings.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
-      activeDeadlineSeconds: {{ .Values.jobSettings.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ $cfg.activeDeadlineSeconds }}
       template:
         spec:
-          {{- with .Values.securityContext }}
+          {{- with $.Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          serviceAccountName: {{ .Values.serviceAccount.name }}
-          {{- with .Values.imagePullSecrets }}
+          serviceAccountName: {{ $.Values.serviceAccount.name }}
+          {{- with $.Values.imagePullSecrets }}
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.ingressBase.enabled }}
+          {{- with (include "runtime-api.affinity" $) }}
+          affinity:
+            {{- . | nindent 12 }}
+          {{- end }}
+          {{- if or $.Values.ingressBase.enabled $archiveVol }}
           volumes:
+            {{- if $.Values.ingressBase.enabled }}
             - name: ingress-base-config
               configMap:
-                name: {{ include "runtime-api.fullname" . }}-ingress-base
+                name: {{ include "runtime-api.fullname" $ }}-ingress-base
+            {{- end }}
+            {{- if $archiveVol }}
+            - name: archive-tmp
+              emptyDir:
+                sizeLimit: {{ $.Values.runtimeFileArchive.tmpSizeLimit | default "10Gi" | quote }}
+            {{- end }}
           {{- end }}
           containers:
-          - name: cleanup
-            image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-            command: ["python", "cleanup.py"]
+          - name: cleanup-{{ $phase }}
+            image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+            imagePullPolicy: {{ $.Values.image.pullPolicy }}
+            command: ["python", "cleanup.py", "{{ $phase }}"]
             env:
-              {{- include "runtime-api.env" . | nindent 14 }}
+              {{- include "runtime-api.env" $ | nindent 14 }}
               - name: DB_POOL_SIZE
-                value: {{ .Values.database.poolSize.cronjobs | default 2 | quote }}
+                value: {{ $.Values.database.poolSize.cronjobs | default 2 | quote }}
               - name: DB_MAX_OVERFLOW
-                value: {{ .Values.database.maxOverflow.cronjobs | default 5 | quote }}
-            {{- if .Values.ingressBase.enabled }}
+                value: {{ $.Values.database.maxOverflow.cronjobs | default 5 | quote }}
+              {{- if $archiveVol }}
+              - name: RUNTIME_FILE_ARCHIVE_TMPDIR
+                value: {{ $.Values.runtimeFileArchive.tmpDir | default "/archive-tmp" | quote }}
+              {{- end }}
+            {{- if or $.Values.ingressBase.enabled $archiveVol }}
             volumeMounts:
+              {{- if $.Values.ingressBase.enabled }}
               - name: ingress-base-config
                 mountPath: /ingress-base
+              {{- end }}
+              {{- if $archiveVol }}
+              - name: archive-tmp
+                mountPath: {{ $.Values.runtimeFileArchive.tmpDir | default "/archive-tmp" | quote }}
+              {{- end }}
             {{- end }}
             resources:
-              {{- toYaml .Values.jobSettings.resources | nindent 14 }}
+              {{- toYaml $.Values.jobSettings.resources | nindent 14 }}
           restartPolicy: OnFailure
+---
+{{- end }}
+{{- end }}
 {{- end }}

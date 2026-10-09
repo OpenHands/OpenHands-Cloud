@@ -1,0 +1,115 @@
+# Tells OpenHands/saas-deploy to bump the e2e test revision its openhands-e2e
+# development chart is pinned to, whenever a change under e2e_tests/ lands here.
+#
+# This repo is public and saas-deploy is private, so we cannot call a reusable
+# workflow over there. We send a repository_dispatch instead. The payload is
+# provenance and requested state, not authorisation: saas-deploy authorises on
+# this dispatcher App's identity and queues auto-merge on its rolling bump PR.
+# Once Argo serves the new pin, this workflow starts an unstable E2E run so the
+# change is tested without waiting for the next scheduled run.
+#
+# See docs/automated-e2e-test-revision-bumps.md.
+
+name: Dispatch e2e test revision bump
+
+run-name: "Dispatch e2e test revision bump (${{ github.sha }})"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'e2e_tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch e2e test revision bump
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Job-level so a later dispatch does not queue behind this run's pin wait.
+    concurrency:
+      group: dispatch-e2e-test-revision-bump
+      cancel-in-progress: false
+    # Holds the dispatcher App credentials, and is restricted to main so a run
+    # from any other ref cannot reach them.
+    environment: e2e-test-revision-bump-dispatcher
+    steps:
+      - name: Mint saas-deploy dispatcher token
+        id: dispatcher-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.E2E_TEST_REVISION_BUMP_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.E2E_TEST_REVISION_BUMP_DISPATCHER_APP_PRIVATE_KEY }}
+          owner: OpenHands
+          repositories: saas-deploy
+          permission-contents: write
+
+      - name: Dispatch bump-e2e-test-revision
+        env:
+          GH_TOKEN: ${{ steps.dispatcher-token.outputs.token }}
+          REVISION: ${{ github.sha }}
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          gh api \
+            --method POST \
+            /repos/OpenHands/saas-deploy/dispatches \
+            -f event_type=bump-e2e-test-revision \
+            -f "client_payload[revision]=${REVISION}" \
+            -f "client_payload[environment]=development" \
+            -f "client_payload[source-repo]=${SOURCE_REPO}"
+
+          echo "Requested a development e2e test revision bump to ${REVISION}." >> "$GITHUB_STEP_SUMMARY"
+
+  wait-for-pin:
+    name: Wait for Argo to pin this revision
+    needs: dispatch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    # A newer revision supersedes this one; only the newest needs a run.
+    concurrency:
+      group: e2e-test-revision-pin-wait
+      cancel-in-progress: true
+    steps:
+      - name: Wait for the openhands-e2e template to use this revision
+        shell: bash
+        env:
+          ARGO_TOKEN: ${{ secrets.ARGO_WORKFLOWS_GATE_TOKEN }}
+          REVISION: ${{ github.sha }}
+        run: |
+          url="https://workflows.dev.all-hands.dev/api/v1/workflow-templates/openhands-e2e/openhands-e2e"
+          deadline=$(( $(date +%s) + 45 * 60 ))
+          pinned=""
+          code=000
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            code=$(curl --silent --show-error --max-time 10 --output template.json \
+              --write-out '%{http_code}' \
+              --header "Authorization: Bearer ${ARGO_TOKEN}" "$url") || code=000
+            case "$code" in
+              200)
+                pinned=$(jq -r '.spec.arguments.parameters[] | select(.name == "test-revision") | .value' template.json) || pinned=""
+                ;;
+              # Retrying cannot fix an auth or missing-template answer.
+              401|403|404)
+                echo "::error::Argo answered HTTP ${code} reading the openhands-e2e WorkflowTemplate. Check ARGO_WORKFLOWS_GATE_TOKEN and the openhands-e2e-gate Role in saas-deploy."
+                exit 1
+                ;;
+            esac
+            if [ "$pinned" = "$REVISION" ]; then
+              echo "Argo pins \`${REVISION}\`; starting the unstable E2E run." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::Argo still pins '${pinned}', not ${REVISION}, after 45 minutes (last HTTP ${code}). Check the rolling bump-e2e-test-revision/development PR in saas-deploy and the openhands-e2e-development ArgoCD sync."
+          exit 1
+
+  e2e:
+    name: E2E Replicated
+    needs: wait-for-pin
+    uses: ./.github/workflows/e2e-replicated.yml
+    with:
+      instance: unstable
+    secrets: inherit

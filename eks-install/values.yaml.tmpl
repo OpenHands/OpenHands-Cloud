@@ -1,0 +1,213 @@
+# Environment-specific values for an EKS install, rendered via
+# envsubst. TLS terminates at Traefik using a single wildcard certificate served
+# as Traefik's default (a cert-manager Certificate + TLSStore, issued by a
+# Route53 DNS-01 ClusterIssuer). The chart's own TLS is therefore disabled — the
+# same model local-kind uses, but with a real Let's Encrypt wildcard cert. One
+# wildcard covers app/auth/runtime-api AND every sandbox host.
+#
+# Export before rendering:
+#   BASE_DOMAIN    zone you control in Route53 (e.g. openhands.example.dev)
+#   LLM_MODEL      Anthropic model id (e.g. claude-sonnet-4-5-20250929)
+#   STORAGE_CLASS  EBS storage class with allowVolumeExpansion (e.g. gp3)
+ingress:
+  enabled: true
+  host: app.${BASE_DOMAIN}
+  class: traefik
+
+tls:
+  enabled: false # TLS terminates at Traefik's default wildcard certificate
+
+github:
+  enabled: true
+
+# Public ghcr install: the Replicated SDK sidecar has no license to pull and
+# crashloops with "either license ... must be specified". Disable it.
+replicated:
+  enabled: false
+
+# Create the app + runtime_api databases and run migrations on first install.
+databaseMigrations:
+  waitForDatabase: true
+  createDatabases: true
+  migrate: true
+
+# Bundled Postgres. auth.database sets DB_NAME for the app (empty by default,
+# which makes the app's wait-for-db loop forever).
+postgresql:
+  enabled: true
+  auth:
+    database: openhands
+  primary:
+    networkPolicy:
+      enabled: false
+
+redis:
+  networkPolicy:
+    enabled: false
+
+keycloak:
+  enabled: true
+  networkPolicy:
+    enabled: false
+  ingress:
+    enabled: true
+    hostname: auth.${BASE_DOMAIN}
+    tls: false
+
+sandbox:
+  # In-cluster service URL: pods reach the runtime-api by its Service name, not
+  # the external hostname (which resolves to the NLB, outside the cluster).
+  apiHostname: http://openhands-runtime-api:5000
+
+env:
+  # Must agree with runtime-api RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR below.
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtime.${BASE_DOMAIN}"
+  LITELLM_DEFAULT_MODEL: litellm_proxy/${LLM_MODEL}
+
+runtime-api:
+  databaseMigrations:
+    waitForDatabase: true
+    createDatabases: true
+    migrate: true
+  ingress:
+    enabled: true
+    host: runtime-api.${BASE_DOMAIN}
+    tls: false
+  env:
+    RUNTIME_BASE_URL: runtime.${BASE_DOMAIN}
+    # Dash separator keeps each sandbox one label under ${BASE_DOMAIN}
+    # ({id}-runtime.${BASE_DOMAIN}), so the single *.${BASE_DOMAIN} record and
+    # wildcard cert cover every sandbox. Traefik terminates their TLS with the
+    # default cert, so no RUNTIME_CERT_SECRET is needed.
+    RUNTIME_URL_SEPARATOR: "-"
+    RUNTIME_DISABLE_SSL: "false"
+    # EBS-backed class WITH allowVolumeExpansion (see gp3-storageclass.yaml).
+    STORAGE_CLASS: ${STORAGE_CLASS}
+
+# Chart defaults filestore.type to gcs (needs GCP creds this cluster lacks) and
+# ships minio disabled; s3 + bundled MinIO give the file/event store a local
+# target. For production, point filestore at a real S3 bucket via IRSA.
+filestore:
+  type: s3
+minio:
+  enabled: true
+  persistence:
+    enabled: true
+
+# Bedrock upstream via a LiteLLM proxy (approximates a production Bedrock setup). Credentials
+# come from IRSA: the litellm pod runs under a dedicated ServiceAccount annotated
+# with the Bedrock role, so no static AWS keys are needed. model_info is
+# populated so /v1/model/info fully resolves cost + limits (matching a real deployment).
+litellm-helm:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: openhands-litellm-bedrock
+    annotations:
+      eks.amazonaws.com/role-arn: ${BEDROCK_ROLE_ARN}
+  proxy_config:
+    model_list:
+      - model_name: ${LLM_MODEL}
+        litellm_params:
+          # Bedrock inference-profile ID (e.g. us.anthropic.claude-...); the
+          # "us.anthropic..." form is exactly what infer_provider mislabels.
+          model: bedrock/${BEDROCK_INFERENCE_PROFILE_ID}
+          aws_region_name: ${AWS_REGION}
+        model_info:
+          input_cost_per_token: 0.000003
+          output_cost_per_token: 0.000015
+          max_input_tokens: 200000
+          max_output_tokens: 8192
+      # Deliberate model-identity edge case (PLTF-3531): bare "us.anthropic..."
+      # ID with NO bedrock/ prefix (so infer_provider must guess), an alias that
+      # says 4-5 while the upstream is 4.6, and no aws_region_name. Kept verbatim.
+      - model_name: "prod/claude-sonnet-4-5-bedrock"
+        litellm_params:
+          model: "us.anthropic.claude-sonnet-4-6"
+          max_tokens: 8192
+
+# lockToCloud points the UI at this instance's backend so users skip the "Manage
+# Backends" prompt. TLS off because Traefik serves the default wildcard cert.
+agent-canvas:
+  enabled: true
+  ingress:
+    enabled: true
+    host: app.${BASE_DOMAIN}
+    className: traefik
+    path: /canvas
+    tls:
+      enabled: false
+  staticServer:
+    basePath: /canvas
+    authRequired: false
+    lockToCloud: https://app.${BASE_DOMAIN}
+
+# Laminar observability (lmnr-helm subchart). User-supplied values, with two
+# cluster-specific additions required on this EKS/Traefik cluster:
+#   - className: traefik  -> without it, cloudProvider "aws" defaults the
+#     ingressClassName to "alb", which this cluster does not run.
+#   - tls.clusterIssuer: letsencrypt -> cert-manager issues the two TLS secrets
+#     via the existing Route53 DNS-01 issuer (hosts are covered by the wildcard
+#     DNS record, so no new Route53 entries are needed).
+# The OpenHands app reads LMNR_PROJECT_API_KEY/LMNR_BASE_URL from the
+# lmnr-project-api-key / lmnr-base-url secrets (secretKeyRef optional: true), so
+# traces only start flowing once those are populated from a Laminar project.
+laminar:
+  enabled: true
+  global:
+    cloudProvider: "aws"
+
+  # ClickHouse: use local (gp3 PVC) storage. The subchart defaults
+  # clickhouse.s3.enabled=true but ships an EMPTY s3.endpoint, so the default
+  # storage_policy "s3_main" points at a bucketless S3 disk and ClickHouse
+  # aborts at startup (exit 36, BAD_ARGUMENTS). We have no S3 bucket wired for
+  # ClickHouse here, and clickhouse.persistence already provisions a 50Gi PV,
+  # so disable S3 and let ClickHouse use the local volume.
+  clickhouse:
+    s3:
+      enabled: false
+
+  frontend:
+    ingress:
+      enabled: true
+      hostname: "analytics.${BASE_DOMAIN}"
+      className: "traefik"
+      tls:
+        enabled: true
+        secretName: "laminar-frontend-tls"
+        clusterIssuer: "${CLUSTER_ISSUER}"
+    # Auth via the existing Keycloak realm (mirrors saas-deploy production).
+    # Reuses the "allhands" confidential client from the keycloak-realm secret;
+    # its redirect URIs must include https://analytics.${BASE_DOMAIN}/api/auth/callback/keycloak
+    env:
+      nextauthUrl: "https://analytics.${BASE_DOMAIN}"
+      nextPublicUrl: "https://analytics.${BASE_DOMAIN}"
+    extraEnv:
+      - name: AUTH_KEYCLOAK_ID
+        valueFrom:
+          secretKeyRef:
+            name: keycloak-realm
+            key: client-id
+      - name: AUTH_KEYCLOAK_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: keycloak-realm
+            key: client-secret
+      - name: AUTH_KEYCLOAK_ISSUER
+        value: "https://auth.${BASE_DOMAIN}/realms/allhands"
+
+  appServer:
+    # Use an app-server ingress (L7) instead of an NLB on this cluster.
+    ingress:
+      enabled: true
+      hostname: "laminar-api.${BASE_DOMAIN}"
+      className: "traefik"
+      tls:
+        enabled: true
+        secretName: "laminar-app-server-tls"
+        clusterIssuer: "${CLUSTER_ISSUER}"
+
+    # On AWS you could instead front the app-server with an NLB for direct TCP
+    # OTLP ingestion; we use the L7 ingress above, so keep this disabled.
+    loadBalancer:
+      enabled: false

@@ -1,4 +1,8 @@
 # OpenHands Cloud
+
+[![Replicated Unstable Deploy](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-unstable.yml/badge.svg?branch=main)](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-unstable.yml)
+[![Replicated Beta Deploy](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-beta.yml/badge.svg)](https://github.com/OpenHands/OpenHands-Cloud/actions/workflows/release-replicated-beta.yml)
+
 > [!WARNING]
 > This software is licensed under the [Polyform Free Trial License](./LICENSE). This is **NOT** an open source license. Usage is limited to 30 days per calendar year without a commercial license. If you would like to use it beyond 30 days, please [contact us](https://www.all-hands.dev/contact).
 
@@ -19,7 +23,8 @@ opened in the [core OpenHands repository](github.com/All-Hands-AI/OpenHands).
 # Installation
 
 See [charts/openhands/README.md](./charts/openhands/README.md) for
-full instructions.
+full instructions. See [Keycloak administration](./docs/keycloak-administration.md)
+for configuring admin console access through Replicated.
 
 # Automation
 

@@ -86,7 +86,12 @@ $(BUILDDIR)/$1-$(VER).tgz : $(CHARTDIR)/$1 $(shell find $(CHARTDIR)/$1 -name '*.
 			yq -i "(.dependencies[] | select(.name == \"$$$$dep\")).repository = \"file://../$$$$dep\"" $(CHARTDIR)/$1/Chart.yaml; \
 		fi; \
 	done; \
-	helm package -u $(CHARTDIR)/$1 -d $(BUILDDIR)/
+	n=0; until helm package -u $(CHARTDIR)/$1 -d $(BUILDDIR)/; do \
+		n=$$$$((n+1)); \
+		if [ $$$$n -ge 5 ]; then echo "helm package failed after $$$$n attempts"; exit 1; fi; \
+		echo "helm package failed (likely transient upstream chart download); retry $$$$n/5 in $$$$((n*15))s"; \
+		sleep $$$$((n*15)); \
+	done
 RELEASE_FILES := $(RELEASE_FILES) $(BUILDDIR)/$1-$(VER).tgz
 charts:: $(BUILDDIR)/$1-$(VER).tgz
 endef
@@ -133,6 +138,12 @@ check-release-guard:
 		echo "       This is reserved for CI. If you really mean to do this, re-run with ALLOW_MAIN_RELEASE=1."; \
 		exit 1; \
 	fi
+
+# Echo the channel `release` publishes to, so CI can pin a deploy to it without
+# re-deriving the branch mapping.
+.PHONY: print-channel
+print-channel:
+	@echo $(CHANNEL)
 
 # Build everything, lint, then publish a release to the Replicated channel
 .PHONY: release

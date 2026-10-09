@@ -1,0 +1,123 @@
+suite: workspace scratch volume rendering
+templates:
+  - templates/deployment.yaml
+  - templates/events-deployment.yaml
+tests:
+  # `volumes:` and `volumeMounts:` used to be emitted only when caBundle was
+  # enabled. Ungating them for the workspace emptyDir is the same template
+  # region that once merged a volume list item into imagePullSecrets (and its
+  # mount into env) on the runtime-api reaper, so assert the shape directly.
+  - it: mounts a bounded workspace emptyDir on the api deployment without the CA bundle
+    template: templates/deployment.yaml
+    set:
+      caBundle.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: workspace
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir.sizeLimit
+          value: 10Gi
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /workspace
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: workspace
+
+  - it: points the service at the mounted directory
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_WORKSPACE_BASE
+            value: /workspace
+
+  - it: keeps the mount, the env var and the cap in step with values.workspace
+    template: templates/deployment.yaml
+    set:
+      workspace.mountPath: /var/lib/automation
+      workspace.sizeLimit: 2Gi
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir.sizeLimit
+          value: 2Gi
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /var/lib/automation
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_WORKSPACE_BASE
+            value: /var/lib/automation
+
+  - it: renders the workspace and the CA bundle volumes in order when both are on
+    template: templates/deployment.yaml
+    set:
+      caBundle.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.volumes[1].name
+          value: openhands-ca-bundle
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[1].name
+          value: openhands-ca-bundle
+
+  - it: mounts the same bounded workspace on the events deployment
+    template: templates/events-deployment.yaml
+    set:
+      events.enabled: true
+      caBundle.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.imagePullSecrets
+          content:
+            name: workspace
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir.sizeLimit
+          value: 10Gi
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /workspace
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATION_WORKSPACE_BASE
+            value: /workspace
+
+  - it: renders both volumes in order on the events deployment when the CA bundle is on
+    template: templates/events-deployment.yaml
+    set:
+      events.enabled: true
+      caBundle.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: workspace
+      - equal:
+          path: spec.template.spec.volumes[1].name
+          value: openhands-ca-bundle
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[1].name
+          value: openhands-ca-bundle
