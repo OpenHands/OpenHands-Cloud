@@ -121,10 +121,10 @@ spec:
       # OAuth v2 login. Only the web client reads it (feature_flags.enable_oauth_v2_login),
       # and this chart sets other OH_WEB_CLIENT_FEATURE_FLAGS_* envs, so the bare
       # ENABLE_OAUTH_V2_LOGIN would be ignored — see the ENABLE_JIRA_DC note above.
-      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: '0'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: '1'
       # Integrated (email + password) IdP. Migration 179 reads it once, in the
       # migrate-db init container, to seed the IdP's oauth_providers row.
-      ENABLE_INTEGRATED_IDP: '0'
+      ENABLE_INTEGRATED_IDP: '1'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
