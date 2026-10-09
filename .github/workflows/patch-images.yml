@@ -1,0 +1,152 @@
+name: Patch images
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or tag holding the patch manifest (e.g. dj/copa-0.71.2)
+        required: true
+      manifest:
+        description: Patch manifest path (e.g. patches/0.71.2.json)
+        required: true
+      push:
+        description: Patch and push to GHCR (unchecked scans only)
+        type: boolean
+        default: false
+      force:
+        description: Re-patch images whose -patched tag already exists (default skips them)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  TRIVY_VERSION: v0.75.0
+  COPA_VERSION: 0.15.0
+  BUILDKIT_IMAGE: moby/buildkit:v0.34.0
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      indices: ${{ steps.matrix.outputs.indices }}
+    steps:
+      - name: Checkout manifest ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Build matrix
+        id: matrix
+        env:
+          MANIFEST: ${{ inputs.manifest }}
+        run: echo "indices=$(jq -c '[range(.images | length)]' "$MANIFEST")" >> "$GITHUB_OUTPUT"
+
+  patch:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        index: ${{ fromJson(needs.plan.outputs.indices) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch manifest
+        env:
+          REF: ${{ inputs.ref }}
+          MANIFEST: ${{ inputs.manifest }}
+        run: |
+          git fetch --depth 1 origin "$REF"
+          git show "FETCH_HEAD:$MANIFEST" > manifest.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Trivy and Copa
+        run: |
+          curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/${TRIVY_VERSION}/contrib/install.sh" \
+            | sh -s -- -b "$HOME/.local/bin" "$TRIVY_VERSION"
+          curl -sfL "https://github.com/project-copacetic/copacetic/releases/download/v${COPA_VERSION}/copa_${COPA_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" copa
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Set up multi-platform BuildKit
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+          docker buildx create --name copa --driver docker-container \
+            --driver-opt "image=${BUILDKIT_IMAGE}" --bootstrap
+
+      - name: Log in to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Patch
+        env:
+          INDEX: ${{ matrix.index }}
+          PUSH: ${{ inputs.push && '--push' || '' }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+          # Some sources (plugin-directory, ohe-minio) are private on GHCR.
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # shellcheck disable=SC2086
+          uv run scripts/copa_patch_images.py patch manifest.json --index "$INDEX" --out "result-$INDEX" $PUSH $FORCE
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.index }}
+          path: result-${{ matrix.index }}/
+          retention-days: 90
+
+  lock:
+    needs: patch
+    if: always() && needs.patch.result != 'skipped'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch manifest
+        env:
+          REF: ${{ inputs.ref }}
+          MANIFEST: ${{ inputs.manifest }}
+        run: |
+          git fetch --depth 1 origin "$REF"
+          git show "FETCH_HEAD:$MANIFEST" > manifest.json
+
+      - name: Download results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: results
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Write lock file and summary
+        run: uv run scripts/copa_patch_images.py merge manifest.json results > summary.md
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f summary.md ]; then
+            cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload lock file
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-lock
+          path: manifest.lock.json
+          retention-days: 90
