@@ -1,0 +1,59 @@
+name: Scan chart images
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: Chart version to scan (latest published when empty)
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.18.4'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.75.0/contrib/install.sh \
+            | sh -s -- -b "$HOME/.local/bin" v0.75.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Scan
+        env:
+          CHART_VERSION: ${{ inputs.chart_version }}
+          # integrations-hub and plugin-directory images are private on GHCR.
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run scripts/scan_chart_images.py --version "$CHART_VERSION" --out scan-out
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f scan-out/summary.md ]; then
+            cat scan-out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chart-scan
+          path: scan-out/
+          retention-days: 90
