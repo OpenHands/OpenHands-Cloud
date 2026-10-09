@@ -132,7 +132,8 @@ def patch(entry: dict, out: Path, push: bool, builder: str, force: bool = False)
     def copa(report_dir: Path, pkg_types: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["copa", "patch", "--image", patch_input, "--report", str(report_dir), "--tag", f"{tag}-patched",
-             "--pkg-types", pkg_types, "--library-patch-level", "minor", "--ignore-errors",
+             "--pkg-types", pkg_types,
+             *(["--library-patch-level", "minor"] if "library" in pkg_types else []), "--ignore-errors",
              "--push", "--addr", f"buildx://{builder}", "--timeout", "45m"],
             env={**os.environ, "COPA_EXPERIMENTAL": "1"}, capture_output=True, text=True,
         )

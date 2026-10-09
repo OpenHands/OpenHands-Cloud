@@ -12,12 +12,12 @@ IMAGES = {
     "image": (
         "ohe-minio",
         "RELEASE.2023-05-18T00-05-36Z",
-        "52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279",
+        "17dbdf60833de2cd75aabb6a4937d7bd01944c0341c02cecc3151f38f619dc2a",
     ),
     "mcImage": (
         "ohe-minio-mc",
         "RELEASE.2023-05-18T16-59-00Z",
-        "9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701",
+        "207216603c84d00844c4eaf94594964a1dc7bdd527b083fa91e24992690acd30",
     ),
 }
 
@@ -52,12 +52,12 @@ def test_minio_server_and_jobs_use_verified_images(mode, tmp_path):
     values = yaml.safe_load(text)
     for key, (name, tag, digest) in IMAGES.items():
         expected_repo = {
-            "online": f"images.r9.all-hands.dev/proxy/test-app/ghcr.io/openhands/{name}",
+            "online": f"images.r9.all-hands.dev/proxy/test-app/ghcr.io/openhands/patched/{name}",
             "airgap": f"registry.test/test-app/{name}",
-            "builder": f"ghcr.io/openhands/{name}",
+            "builder": f"ghcr.io/openhands/patched/{name}",
         }[mode]
         assert values[key]["repository"] == expected_repo
-        assert values[key]["tag"] == f"{tag}-amd64@sha256:{digest}"
+        assert values[key]["tag"] == f"{tag}-amd64-patched@sha256:{digest}"
     # Render the actual pinned dependency, including its post-install job.
     values.update(
         mode="standalone",
