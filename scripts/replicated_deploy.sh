@@ -208,9 +208,12 @@ else
   done
   [ -n "$META" ] || fail "upgrade service never came up"
 
-  # --- config: read values, write them straight back -----------------------
+  # --- config: read values, write them back --------------------------------
+  # These instances exist for the E2E suite. Its org specs provision users via
+  # the endpoint that oem_user_creation_flow_enabled registers (off by default).
   if [ "$(jq -r .isConfigurable <<<"$META")" = true ]; then
-    TMO=60 api "$UP/config" | jq -c '{configGroups}' >/tmp/cfg.json
+    TMO=60 api "$UP/config" | jq -c '{configGroups}
+      | (.configGroups[]?.items[]? | select(.name == "oem_user_creation_flow_enabled") | .value) = "1"' >/tmp/cfg.json
     R="$(retry_gateway PUT --data-binary @/tmp/cfg.json "$UP/config" || true)"
     ok <<<"$R" || fail "config rejected: $(why <<<"$R") — new release likely added a required item with no default"
   fi
