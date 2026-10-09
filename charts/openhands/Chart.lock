@@ -25,7 +25,7 @@ dependencies:
   version: 1.19.7
 - name: rustfs
   repository: https://charts.rustfs.com/
-  version: 0.10.0
+  version: 1.0.1
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
@@ -47,5 +47,5 @@ dependencies:
 - name: device-plugin
   repository: ""
   version: '*'
-digest: sha256:67d80d93f12c6c9e275b78237ef86a5c2af247670621d5ba4de12eee98a237c1
-generated: "2026-10-08T11:51:00.264705-05:00"
+digest: sha256:4072c160bdc468f30d93dbfe17a8802d996a519d1e9b6df37854e3b439f9f42a
+generated: "2026-10-08T15:40:32.005133-05:00"
