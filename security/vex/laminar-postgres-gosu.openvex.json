@@ -1,0 +1,471 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/OpenHands/OpenHands-Cloud/vex/laminar-postgres-gosu",
+  "author": "OpenHands",
+  "timestamp": "2026-10-09T11:37:29Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-61726",
+        "aliases": [
+          "GO-2026-4341"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-61729",
+        "aliases": [
+          "GO-2025-4155"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-68121",
+        "aliases": [
+          "GO-2026-4337"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-25679",
+        "aliases": [
+          "GO-2026-4601"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-27145",
+        "aliases": [
+          "GO-2026-5037"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-32280",
+        "aliases": [
+          "GO-2026-4947"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-32281",
+        "aliases": [
+          "GO-2026-4946"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-32283",
+        "aliases": [
+          "GO-2026-4870"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-33811",
+        "aliases": [
+          "GO-2026-4981"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-33814",
+        "aliases": [
+          "GO-2026-4918"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-33818",
+        "aliases": [
+          "GO-2026-5972"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-39820",
+        "aliases": [
+          "GO-2026-4986"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-39821",
+        "aliases": [
+          "GO-2026-5026"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-39822",
+        "aliases": [
+          "GO-2026-4970"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The affected Go standard library package is linked into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6), but govulncheck -mode=binary finds no call to the vulnerable function. gosu only switches user and execs the next command at container start."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-39836",
+        "aliases": [
+          "GO-2026-4971"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-42499",
+        "aliases": [
+          "GO-2026-4977"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-42504",
+        "aliases": [
+          "GO-2026-5038"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56853",
+        "aliases": [
+          "GO-2026-6089"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56858",
+        "aliases": [
+          "GO-2026-6091"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56859",
+        "aliases": [
+          "GO-2026-6088"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56860",
+        "aliases": [
+          "GO-2026-6218"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-56862",
+        "aliases": [
+          "GO-2026-6090"
+        ]
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/postgres?repository_url=index.docker.io%2Flibrary%2Fpostgres",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/stdlib@v1.24.6"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected Go standard library package is not compiled into /usr/local/bin/gosu (gosu v1.19.0, go1.24.6). govulncheck -mode=binary reports this vulnerability only by toolchain version, with no affected package or symbol present in the binary."
+    }
+  ]
+}
