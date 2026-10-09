@@ -14,8 +14,8 @@ databaseMigrations:
 # Client container configuration (React Router SSR)
 client:
   image:
-    repository: ghcr.io/openhands/plugin-directory-client
-    tag: "1.2.0"
+    repository: ghcr.io/openhands/patched/plugin-directory-client
+    tag: "1.2.0-patched@sha256:667252f537f005dd9da6e52a20398c87276cb18608996d734e0a070f395f818c"
   resources:
     requests:
       memory: 256Mi

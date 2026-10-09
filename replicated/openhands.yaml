@@ -1245,7 +1245,7 @@ spec:
             issuerUrl: 'https://{{repl ConfigOption "computed_auth_hostname" }}'
           client:
             image:
-              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/plugin-directory-client'
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/plugin-directory-client'
           server:
             image:
               repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/plugin-directory-server'
