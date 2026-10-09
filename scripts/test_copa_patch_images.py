@@ -54,11 +54,17 @@ def test_copa_report_drops_results_copa_cannot_patch():
     assert kept["Metadata"] == {"OS": "x"}
 
 
+def test_os_only_copa_report_drops_library_results():
+    report = {"Results": [{"Class": "os-pkgs", "Type": "debian"}, {"Class": "lang-pkgs", "Type": "node-pkg"}]}
+    assert [r["Type"] for r in copa.copa_report(report, library=False)["Results"]] == ["debian"]
+
+
 def test_counts_only_critical_and_high():
     report = {"Results": [{"Vulnerabilities": [
-        {"Severity": "CRITICAL"}, {"Severity": "HIGH"}, {"Severity": "HIGH"}, {"Severity": "MEDIUM"},
+        {"Severity": "CRITICAL", "FixedVersion": "1.1"}, {"Severity": "HIGH"},
+        {"Severity": "HIGH", "FixedVersion": "2.0"}, {"Severity": "MEDIUM", "FixedVersion": "3"},
     ]}, {"Vulnerabilities": None}]}
-    assert copa.counts(report) == {"critical": 1, "high": 2}
+    assert copa.counts(report) == {"critical": 1, "critical_fixable": 1, "high": 2, "high_fixable": 1}
 
 
 def test_existing_patched_tag_is_skipped_without_scanning(tmp_path, monkeypatch):
@@ -93,8 +99,8 @@ def test_merge_writes_lock_and_flags_missing_results(tmp_path, monkeypatch, caps
     results.mkdir(parents=True)
     (results / "result.json").write_text(json.dumps({
         "source": "a:1", "image": "ghcr.io/o/a:1-patched", "platforms": ["linux/amd64"],
-        "before": {"linux/amd64": {"critical": 5, "high": 9}},
-        "after": {"linux/amd64": {"critical": 1, "high": 4}},
+        "before": {"linux/amd64": {"critical": 5, "critical_fixable": 4, "high": 9, "high_fixable": 6}},
+        "after": {"linux/amd64": {"critical": 1, "critical_fixable": 0, "high": 4, "high_fixable": 1}},
         "copa": ["Patch Summary: 10 total, 10 patched, 0 skipped"], "digest": "sha256:" + "a" * 64,
     }))
     monkeypatch.setattr("sys.argv", ["copa_patch_images.py", "merge", str(manifest), str(tmp_path / "results")])
@@ -103,7 +109,8 @@ def test_merge_writes_lock_and_flags_missing_results(tmp_path, monkeypatch, caps
     lock = json.loads((tmp_path / "patches.lock.json").read_text())["images"]
     assert lock[0]["digest"].startswith("sha256:")
     assert lock[1]["error"] == "no result"
-    assert "| `ghcr.io/o/a:1-patched` | linux/amd64 | 5 → 1 | 9 → 4 |" in capsys.readouterr().out
+    assert ("| `ghcr.io/o/a:1-patched` | linux/amd64 | 5 (4 fixable) → 1 (0 fixable) | "
+            "9 (6 fixable) → 4 (1 fixable) |") in capsys.readouterr().out
 
 
 if __name__ == "__main__":
