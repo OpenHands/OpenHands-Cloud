@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.69.0
+  tag: 1.70.1
 
 autoscaling:
   enabled: false
@@ -611,9 +611,14 @@ laminar:
   # Upstream laminar runs its Redis cache on valkey/valkey:latest (Debian), which
   # moves on every pull and carries OS findings with fixes available. Pin the
   # same Valkey release on the Alpine base. The cache has no persistent volume.
+  #
+  # Upstream laminar defaults ClickHouse to 25.10, which is out of support and
+  # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
   images:
     redis:
       tag: "9.1.2-alpine"
+    clickhouse:
+      tag: "26.3-alpine"
 
   clickhouse:
     diagnostics:
@@ -902,6 +907,10 @@ valkey:
   enabled: false
   image:
     repository: valkey/valkey
+    # The subchart defaults to its appVersion (9.1.1, Debian), which has
+    # critical/high OS findings with fixes available. The Alpine build of the
+    # current 9.1 patch has none.
+    tag: "9.1.2-alpine"
   auth:
     enabled: true
     # The same Secret the redis subchart reads.
