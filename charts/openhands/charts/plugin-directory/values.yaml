@@ -14,8 +14,8 @@ databaseMigrations:
 # Client container configuration (React Router SSR)
 client:
   image:
-    repository: ghcr.io/openhands/plugin-directory-client
-    tag: "1.2.0"
+    repository: ghcr.io/openhands/patched/plugin-directory-client
+    tag: "1.2.0-patched@sha256:667252f537f005dd9da6e52a20398c87276cb18608996d734e0a070f395f818c"
   resources:
     requests:
       memory: 256Mi
@@ -26,10 +26,10 @@ client:
 # Server container configuration (FastAPI backend)
 server:
   image:
-    repository: ghcr.io/openhands/plugin-directory-server
+    repository: ghcr.io/openhands/patched/plugin-directory-server
     # You must use a stable, semver tag. Do not use sha-based tags.
     # If you are hotfixing, you MUST create a patch release and use the semver tag.
-    tag: "1.2.0"
+    tag: "1.2.0-patched@sha256:463981dfb39efa6574f7ccaf1dfa40363330cbc2123ef0f793314eef94993640"
   resources:
     requests:
       memory: 256Mi

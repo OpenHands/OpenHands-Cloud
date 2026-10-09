@@ -155,6 +155,13 @@ jobs:
           # not Beta.
           # Newest first, paginated; the release just created is on page 0.
           CHANNEL=$(make -s print-channel CHANNEL=Beta)
+          # Beta is semver-required, so an older maintenance release never becomes head; publish it but don't deploy it.
+          HEAD_SEQ=$(replicated channel ls --app "$REPLICATED_APP" --output json \
+            | jq -r --arg c "$CHANNEL" '.[] | select(.name == $c) | .releaseSequence')
+          if [ "$HEAD_SEQ" != "$SEQUENCE" ]; then
+            echo "::notice title=Beta deploy skipped::release $SEQUENCE is not the head of $CHANNEL (head is $HEAD_SEQ)"
+            exit 0
+          fi
           CURSOR=$(replicated channel releases "$CHANNEL" --app "$REPLICATED_APP" --output json --page 0 --page-size 20 \
             | jq -r --argjson rs "$SEQUENCE" \
                 'map(select(.sequence == $rs)) | max_by(.channelSequence) | .channelSequence // empty')

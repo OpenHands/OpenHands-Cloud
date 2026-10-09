@@ -57,14 +57,14 @@ REPLICATED_CONFIG_PATH = REPO_ROOT / "replicated" / "config.yaml"
 
 # Regex patterns for values.yaml image tag updates
 ENTERPRISE_SERVER_TAG_PATTERN = (
-    r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/enterprise-server\s*\n\s*tag:\s*)(\S+)"
+    r"(image:\s*\n\s*repository:\s*ghcr\.io/openhands/(?:patched/)?enterprise-server\s*\n\s*tag:\s*)(\S+)"
 )
 # The agent-server image now lives in one place: the openhands chart's
 # global.agentServerImage. runtime.image and warmRuntimes configsByName entries
 # fall back to it, so bumping this single tag moves them all. Same repository:/
 # tag: shape as the enterprise-server pattern.
 GLOBAL_AGENT_SERVER_TAG_PATTERN = (
-    r"(agentServerImage:\s*\n\s*repository:\s*ghcr\.io/openhands/agent-server\s*\n\s*tag:\s*)(\S+)"
+    r"(agentServerImage:\s*\n\s*repository:\s*ghcr\.io/openhands/(?:patched/)?agent-server\s*\n\s*tag:\s*)(\S+)"
 )
 # image-loader's values.yaml has the agent-server image at the top level, so this
 # matches an image: { repository: ghcr.io/openhands/agent-server, tag: ... } block.

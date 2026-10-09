@@ -136,6 +136,19 @@ def test_bare_agent_server_tag_without_a_variant_passes(tmp_path, fake_remote):
     assert run_check(tmp_path)
 
 
+def test_copa_patched_pins_resolve_to_the_release_they_patch(tmp_path, fake_remote):
+    digest = "@sha256:" + "b" * 64
+    write_charts(tmp_path, f"1.56.0-patched{digest}", f"1.43.1-python-patched{digest}")
+    # image-loader ships on its own release line and may still name the unpatched tag.
+    unpatched = AGENT_SERVER_PINS[-1]
+    document = yaml.safe_load((tmp_path / unpatched.path).read_text())
+    document["image"]["tag"] = "1.43.1-python"
+    (tmp_path / unpatched.path).write_text(yaml.safe_dump(document))
+
+    assert run_check(tmp_path)
+    assert "git/ref/tags/1.56.0" in fake_remote["calls"]
+
+
 def test_agent_server_pins_must_agree_with_each_other(tmp_path, fake_remote):
     write_charts(tmp_path, "1.56.0", "1.43.1-python")
     drifted = AGENT_SERVER_PINS[-1]

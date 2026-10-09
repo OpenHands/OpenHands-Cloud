@@ -9,10 +9,10 @@ allowedUsers: null
 enabled: true
 
 image:
-  repository: ghcr.io/openhands/enterprise-server
+  repository: ghcr.io/openhands/patched/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.64.0
+  tag: "1.64.0-patched@sha256:b8180530ba277738b5177a97eac96d0a684c8c4e22a48c83d25aed2c1f5944fb"
 
 autoscaling:
   enabled: false
@@ -469,7 +469,10 @@ uvicorn:
 keycloak:
   enabled: false
   image:
-    repository: bitnamilegacy/keycloak
+    registry: ghcr.io
+    repository: openhands/patched/keycloak
+    tag: 26.3.0-debian-12-r0-patched
+    digest: sha256:aa1657e0405de7e4700a72d663392793788a97c7e6dcb4e3cd2aa66a16cea1fc
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
@@ -538,7 +541,7 @@ keycloak:
     - name: KC_DB_URL_PROPERTIES
       value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
   waitForDb:
-    image: "bitnamilegacy/postgresql:latest"
+    image: "ghcr.io/openhands/patched/postgresql:16.4.0-debian-12-r14-patched@sha256:08649d38a65ab3ee6d8f7699c8c903bf1583cc99ba93bc3aa2726f9ad3f24b58"
   initContainers:
     - name: wait-for-db
       # The Bitnami Keycloak subchart renders initContainers through common.tplvalues.render,
@@ -827,7 +830,10 @@ rustfs:
 postgresql:
   enabled: true
   image:
-    repository: bitnamilegacy/postgresql
+    registry: ghcr.io
+    repository: openhands/patched/postgresql
+    tag: 16.4.0-debian-12-r14-patched
+    digest: sha256:08649d38a65ab3ee6d8f7699c8c903bf1583cc99ba93bc3aa2726f9ad3f24b58
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -864,7 +870,10 @@ externalDatabase:
 redis:
   enabled: true
   image:
-    repository: bitnamilegacy/redis
+    registry: ghcr.io
+    repository: openhands/patched/redis
+    tag: 7.4.1-debian-12-r2-patched
+    digest: sha256:0a36c1ecdbc656b6f91c6cc4f43e48d7c78abaf3b71959a9d14c169e7ae4a33c
   architecture: standalone
   auth:
     enabled: true
@@ -1128,13 +1137,13 @@ plugin-directory:
 
   client:
     image:
-      repository: ghcr.io/openhands/plugin-directory-client
-      # tag: set via helm args or override
+      repository: ghcr.io/openhands/patched/plugin-directory-client
+      tag: "1.2.0-patched@sha256:667252f537f005dd9da6e52a20398c87276cb18608996d734e0a070f395f818c"
 
   server:
     image:
-      repository: ghcr.io/openhands/plugin-directory-server
-      # tag: set via helm args or override
+      repository: ghcr.io/openhands/patched/plugin-directory-server
+      tag: "1.2.0-patched@sha256:463981dfb39efa6574f7ccaf1dfa40363330cbc2123ef0f793314eef94993640"
 
   imagePullSecrets: []
 
@@ -1211,8 +1220,8 @@ automation:
   enabled: false
   
   image:
-    repository: ghcr.io/openhands/automation
-    # tag: set via helm args or override
+    repository: ghcr.io/openhands/patched/automation
+    tag: "1.14.0-patched@sha256:e0963f3cac040087fa7bcb829a9d17c53a49fab6871c3c5522c7d206627f5697"
   
   imagePullSecrets: []
   
@@ -1400,8 +1409,8 @@ global:
   # any warm-runtime configsByName entry that omits its own `image`. Override
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
-    repository: ghcr.io/openhands/agent-server
-    tag: 1.49.5-python
+    repository: ghcr.io/openhands/patched/agent-server
+    tag: "1.49.5-python-patched@sha256:c143d7113ba6df06caeb2be61a2c5a119c05074889a633b1f36e99d435eaac28"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1629,8 +1638,8 @@ agent-canvas:
   enabled: false
 
   image:
-    repository: ghcr.io/openhands/agent-canvas
-    # tag: supplied at deploy time via the OpenHands deploy workflow.
+    repository: ghcr.io/openhands/patched/agent-canvas
+    tag: "1.23.0-patched@sha256:63b7824a3a1a67bab899eb65d1daa2fceaa2739dff5ac5f7c9eac02a2773cc14"
 
   ingress:
     enabled: false

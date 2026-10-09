@@ -65,6 +65,9 @@ _VARIANT_SUFFIX_RE = re.compile(r"^(?P<version>[^-]+)(?:-(?P<variant>.+))?$")
 # no tag to look up on the remote -- the commit itself is the ref.
 _SHA_TAG_RE = re.compile(r"^sha-(?P<sha>[0-9a-f]{7,40})$")
 
+# Copa-patched rebuilds (`1.64.0-patched@sha256:...`) carry the release they patch.
+_PATCHED_SUFFIX_RE = re.compile(r"(?:-patched)?(?:@sha256:[0-9a-f]{64})?$")
+
 # `openhands-agent-server[extra]==1.43.1 ; python_version >= "3.12"`
 _REQUIREMENT_RE = re.compile(
     r"^(?P<name>[A-Za-z0-9._-]+)\s*(?:\[[^\]]*\])?\s*==\s*(?P<version>[^\s,;]+)"
@@ -129,6 +132,11 @@ def read_pin(repo_root: Path, pin: Pin) -> str:
             f"{pin} is a {type(node).__name__}, expected a quoted string"
         )
     return node
+
+
+def release_tag(tag: str) -> str:
+    """Strip a Copa ``-patched`` suffix and digest pin, leaving the release tag."""
+    return _PATCHED_SUFFIX_RE.sub("", tag, count=1)
 
 
 def split_variant(tag: str) -> tuple[str, str | None]:
@@ -270,11 +278,11 @@ def check(repo_root: Path, enterprise_repo: str, token: str | None) -> list[str]
     """Run the check. Returns the report lines; raises CheckError on mismatch."""
     enterprise_tag = read_pin(repo_root, ENTERPRISE_SERVER_PIN)
 
-    chart_tags = {str(pin): read_pin(repo_root, pin) for pin in AGENT_SERVER_PINS}
+    chart_tags = {str(pin): release_tag(read_pin(repo_root, pin)) for pin in AGENT_SERVER_PINS}
     chart_tag = single_value("chart agent-server image tags", chart_tags)
     chart_version, variant = split_variant(chart_tag)
 
-    ref, ref_description = resolve_enterprise_ref(enterprise_repo, enterprise_tag, token)
+    ref, ref_description = resolve_enterprise_ref(enterprise_repo, release_tag(enterprise_tag), token)
     sdk_pins = read_sdk_pins(enterprise_repo, ref, token)
     sdk_version = single_value(f"{enterprise_repo}@{ref[:7]} SDK pins", sdk_pins)
 
