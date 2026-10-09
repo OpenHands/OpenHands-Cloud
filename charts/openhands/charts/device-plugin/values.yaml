@@ -13,9 +13,8 @@
 #   helm install device-plugin charts/openhands/charts/device-plugin
 
 image:
-  # OpenHands fork of squat/generic-device-plugin (upstream 2cc50b0 rebuilt with
-  # Go and dependency CVE fixes; see github.com/OpenHands/generic-device-plugin).
-  # Tags are short git shas of the fork; pin one so installs are reproducible.
+  # Our fork of squat/generic-device-plugin: upstream is inactive and its image
+  # ships unpatched CVEs. The fork publishes only commit tags, so pin one.
   repository: ghcr.io/openhands/generic-device-plugin
   tag: 5cb2f8c
   pullPolicy: IfNotPresent
