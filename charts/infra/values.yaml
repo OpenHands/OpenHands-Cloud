@@ -72,7 +72,7 @@ crdCheck:
   enabled: false
   image:
     repository: docker.io/rancher/kubectl
-    tag: v1.33.0
+    tag: v1.33.13
     pullPolicy: IfNotPresent
   timeout: 120s
   backoffLimit: 6
