@@ -370,6 +370,11 @@ replicated:
   enabled: false
 
 global:
+  # psql/pg_isready image for the database init containers and jobs. The openhands
+  # umbrella's global wins; this default only applies when rendering the subchart alone.
+  postgresClientImage:
+    repository: docker.io/library/postgres
+    tag: 16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
   # Canonical agent-server image. Defaults any warm-runtime configsByName entry
   # that omits its own `image`. In the openhands umbrella the parent chart's
   # global wins; this default only applies when rendering the subchart alone.

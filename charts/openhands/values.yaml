@@ -538,15 +538,14 @@ keycloak:
     # this is evaluated in the Keycloak subchart context at render time.
     - name: KC_DB_URL_PROPERTIES
       value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
-  waitForDb:
-    image: "bitnamilegacy/postgresql:latest"
   initContainers:
     - name: wait-for-db
-      # The Bitnami Keycloak subchart renders initContainers through common.tplvalues.render,
-      # so this template expression is evaluated at deploy time rather than being treated as
-      # a literal string. This lets us override just the image (e.g. for Replicated proxy)
-      # without duplicating the entire init container.
-      image: '{{ .Values.waitForDb.image }}'
+      # Rendered through common.tplvalues.render, so this resolves against the shared global.
+      image: '{{ .Values.global.postgresClientImage.repository }}:{{ .Values.global.postgresClientImage.tag }}'
+      # The client image defaults to root; keep the uid the Bitnami image ran this as.
+      securityContext:
+        runAsUser: 1001
+        runAsNonRoot: true
       command: ['sh', '-c']
       args:
         - |
@@ -1445,6 +1444,10 @@ replicated:
   postgresDatabase: ""
 
 global:
+  # psql/pg_isready image for the database init containers and jobs.
+  postgresClientImage:
+    repository: docker.io/library/postgres
+    tag: 16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
   # Canonical agent-server image. Defaults the runtime image (runtime.image) and
   # any warm-runtime configsByName entry that omits its own `image`. Override
   # either of those for per-use exceptions; set it here to move them together.
