@@ -1,8 +1,8 @@
 image:
-  repository: ghcr.io/openhands/patched/runtime-api
+  repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: "0.10.0-patched@sha256:bae96ecbe18e30bd1e6e67e92b8932919141b7e8dc9a813814540efb24267638"
+  tag: 0.10.0
   pullPolicy: Always
 
 nameOverride: ""
@@ -357,8 +357,8 @@ global:
   # that omits its own `image`. In the openhands umbrella the parent chart's
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
-    repository: ghcr.io/openhands/patched/agent-server
-    tag: "1.49.5-python-patched@sha256:c143d7113ba6df06caeb2be61a2c5a119c05074889a633b1f36e99d435eaac28"
+    repository: ghcr.io/openhands/agent-server
+    tag: 1.49.5-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

@@ -8,12 +8,12 @@
 # screen.
 
 image:
-  repository: ghcr.io/openhands/patched/agent-canvas
+  repository: ghcr.io/openhands/agent-canvas
   # Pinned to a semver release tag (agent-canvas publishes release-tagged
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "1.23.0-patched@sha256:63b7824a3a1a67bab899eb65d1daa2fceaa2739dff5ac5f7c9eac02a2773cc14"
+  tag: "1.23.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

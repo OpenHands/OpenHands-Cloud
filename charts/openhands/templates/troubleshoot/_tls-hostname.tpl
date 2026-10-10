@@ -51,7 +51,7 @@ analyticsHost: {{ $lamFrontIng.hostname | default "" | quote }}
 routingMode: {{ $rtApiEnv.RUNTIME_ROUTING_MODE | default "" | quote }}
 rtSeparator: {{ $rtApiEnv.RUNTIME_URL_SEPARATOR | default "." | quote }}
 analyticsEnabled: {{ $lam.enabled | default false }}
-probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/openhands/enterprise-server" (trimSuffix "/ghcr.io/openhands/patched/enterprise-server" $repo)) | quote }}
+probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/openhands/enterprise-server" $repo) | quote }}
 {{- end -}}
 
 {{- define "troubleshoot.collectors.tlsHostname" -}}
