@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.64.0
+  tag: "1.64.0-r1@sha256:6c137216f1c6afe1d560300e92990a52050064a1358472c314285ae8e0bf8307"
 
 autoscaling:
   enabled: false
@@ -1129,12 +1129,12 @@ plugin-directory:
   client:
     image:
       repository: ghcr.io/openhands/plugin-directory-client
-      # tag: set via helm args or override
+      tag: "1.2.0-r1@sha256:8d74aa59e423d50aaa8bb4558a4aab8325463de7bccb761f10ed55c823358aff"
 
   server:
     image:
       repository: ghcr.io/openhands/plugin-directory-server
-      # tag: set via helm args or override
+      tag: "1.2.0-r1@sha256:bf35b82bdcdcf37abba673ef5b40bdbed22ccc3af67b4793c7bcb21fdf11aa4d"
 
   imagePullSecrets: []
 
@@ -1212,7 +1212,7 @@ automation:
   
   image:
     repository: ghcr.io/openhands/automation
-    # tag: set via helm args or override
+    tag: "1.14.0-r1@sha256:6c2c8bd220c92d6fc2c981a361b52e74207578a16ebacd6ac54fce82c47a6001"
   
   imagePullSecrets: []
   
@@ -1401,7 +1401,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.49.5-python
+    tag: "1.49.5-r1-python@sha256:5f2919fbfc33934c023092926fc79a5da9acecc809d5773e582b44b8093d8d3f"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1630,7 +1630,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
-    # tag: supplied at deploy time via the OpenHands deploy workflow.
+    tag: "1.23.0-r1@sha256:7f024e6802eaa0e7ca54b8f6134b57941bf370436b22f9d61e13488cf267da5a"
 
   ingress:
     enabled: false
