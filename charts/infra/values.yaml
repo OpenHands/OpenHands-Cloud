@@ -48,6 +48,9 @@ trust-manager:
   app:
     trust:
       namespace: cert-manager
+  # Chart default is :20230311-deb12u1.6; .7 is a rebuild of the same CA data.
+  defaultPackageImage:
+    tag: "20230311-deb12u1.7"
   resources:
     requests:
       cpu: 10m
