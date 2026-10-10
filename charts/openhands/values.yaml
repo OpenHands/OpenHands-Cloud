@@ -828,6 +828,8 @@ postgresql:
   enabled: true
   image:
     repository: bitnamilegacy/postgresql
+    # Same app version as chart 15.5.38's default (16.4.0), later OS-package rebuild.
+    tag: 16.4.0-debian-12-r28
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -865,6 +867,8 @@ redis:
   enabled: true
   image:
     repository: bitnamilegacy/redis
+    # Patch bump over chart 20.3.0's default (7.4.1); 7.4.3 fixes CVE-2025-21605.
+    tag: 7.4.3-debian-12-r0
   architecture: standalone
   auth:
     enabled: true
