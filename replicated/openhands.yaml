@@ -21,6 +21,9 @@ spec:
       # global.agentServerImage.
       agentServerImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+      # Tag pinned in the chart.
+      postgresClientImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/psql'
       # Runtime (agent-server sandbox) env vars. The chart serialises this map
       # into OH_AGENT_SERVER_ENV and mirrors it into every warm-runtime entry's
       # env (runtime-api claims warm pods by exact env match, so a key here
@@ -191,8 +194,6 @@ spec:
       keycloakConfigCli:
         image:
           repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak-config-cli'
-      waitForDb:
-        image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql:latest'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # Keycloak's truststore at the merged PEM. Repeats the chart's default
       # KC_* env vars because helm value merging replaces arrays — adding
@@ -816,6 +817,8 @@ spec:
           # warmRuntimes default entry both inherit this. Tag pinned in the chart.
           agentServerImage:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
+          postgresClientImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/psql'
         image:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
         keycloak:
@@ -824,8 +827,6 @@ spec:
           keycloakConfigCli:
             image:
               repository: '{{repl LocalRegistryNamespace }}/keycloak-config-cli'
-          waitForDb:
-            image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/postgresql:latest'
         postgresql:
           image:
             repository: '{{repl LocalRegistryNamespace }}/postgresql'

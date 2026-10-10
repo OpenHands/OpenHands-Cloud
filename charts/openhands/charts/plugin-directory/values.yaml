@@ -160,6 +160,11 @@ datadog:
 env: {}
 
 global:
+  # psql/pg_isready image for the database init containers and jobs. The openhands
+  # umbrella's global wins; this default only applies when rendering the subchart alone.
+  postgresClientImage:
+    repository: docker.io/alpine/psql
+    tag: 18.6@sha256:08f354a83552fcefa508116268463b371717577fe49d3fcb7b82cf8d2be464b8
   scheduling:
     # Affinity applied to this chart's pods when `affinity` above is empty. The
     # openhands umbrella sets this once for every chart it owns; this default
