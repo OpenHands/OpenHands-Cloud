@@ -17,7 +17,7 @@ Consumers must define a `crdCheck` block in their own values.yaml, e.g.:
     crds: []
     image:
       repository: docker.io/rancher/kubectl
-      tag: v1.33.0
+      tag: v1.33.13
       pullPolicy: IfNotPresent
     imagePullSecrets: []
     resources:
