@@ -65,8 +65,9 @@ _VARIANT_SUFFIX_RE = re.compile(r"^(?P<version>[^-]+)(?:-(?P<variant>.+))?$")
 # no tag to look up on the remote -- the commit itself is the ref.
 _SHA_TAG_RE = re.compile(r"^sha-(?P<sha>[0-9a-f]{7,40})$")
 
-# Rebuilds of a release (`1.64.0-patched@sha256:...`, `1.64.0-r1`) carry the release they rebuild.
-_PATCHED_SUFFIX_RE = re.compile(r"(?:-(?:patched|r\d+))?(?:@sha256:[0-9a-f]{64})?$")
+# Rebuilds of a release (`1.64.0-patched@sha256:...`, `1.64.0-r1`, `1.49.5-r1-python`) carry the release they rebuild.
+_PATCHED_SUFFIX_RE = re.compile(r"(?:-patched)?(?:@sha256:[0-9a-f]{64})?$")
+_REBUILD_RE = re.compile(r"^(?P<version>[^-@]+)-r\d+(?=-|@|$)")
 
 # `openhands-agent-server[extra]==1.43.1 ; python_version >= "3.12"`
 _REQUIREMENT_RE = re.compile(
@@ -136,7 +137,7 @@ def read_pin(repo_root: Path, pin: Pin) -> str:
 
 def release_tag(tag: str) -> str:
     """Strip a ``-patched``/``-rN`` rebuild suffix and digest pin, leaving the release tag."""
-    return _PATCHED_SUFFIX_RE.sub("", tag, count=1)
+    return _PATCHED_SUFFIX_RE.sub("", _REBUILD_RE.sub(r"\g<version>", tag, count=1), count=1)
 
 
 def split_variant(tag: str) -> tuple[str, str | None]:

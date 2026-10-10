@@ -1,7 +1,7 @@
 # Agent-server image the loader pre-pulls onto nodes; keep tag in sync with the sandbox runtime.
 image:
   repository: ghcr.io/openhands/agent-server
-  tag: "1.49.5-r1-python@sha256:5f2919fbfc33934c023092926fc79a5da9acecc809d5773e582b44b8093d8d3f"
+  tag: 1.49.5-python
   pullPolicy: Always
 
 resources:
