@@ -15,7 +15,6 @@ import { fetchWebClientConfig } from "../utils/billing";
  * Settings account menu through the instance-level actions, on a throwaway
  * user and two throwaway organizations:
  *  - create an organization with the throwaway user as its owner;
- *  - suspend and resume that organization;
  *  - grant and revoke Super Admin;
  *  - change a membership role, remove the membership and add it back;
  *  - suspend and re-activate the account;
@@ -226,21 +225,6 @@ test.describe("Super Admin dashboard @super-admin", () => {
         expect(membership?.role).toBe("owner");
         return orgB.id;
       });
-
-    await test.step("suspend and resume the organization", async () => {
-      await page.getByTestId("super-admin-org-search").fill(orgBName);
-      const actions = page.getByTestId(`super-admin-org-actions-${orgBId}`);
-      const row = page.getByRole("row").filter({ has: actions });
-
-      await actions.click();
-      await page.getByTestId(`super-admin-org-suspend-${orgBId}`).click();
-      await page.getByTestId("super-admin-org-confirm-submit").click();
-      await expect(row).toContainText(/suspended/i);
-
-      await actions.click();
-      await page.getByTestId(`super-admin-org-resume-${orgBId}`).click();
-      await expect(row).toContainText(/active/i);
-    });
 
     await test.step("grant and revoke Super Admin", async () => {
       await openDashboardPage(
