@@ -1,8 +1,8 @@
 image:
-  repository: ghcr.io/openhands/patched/automation
+  repository: ghcr.io/openhands/automation
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: "1.14.0-patched@sha256:e0963f3cac040087fa7bcb829a9d17c53a49fab6871c3c5522c7d206627f5697"
+  tag: "1.14.0-r1@sha256:6c2c8bd220c92d6fc2c981a361b52e74207578a16ebacd6ac54fce82c47a6001"
 
 imagePullSecrets: []
 
@@ -207,6 +207,11 @@ postgresql:
   enabled: false
 
 global:
+  # psql/pg_isready image for the database init containers and jobs. The openhands
+  # umbrella's global wins; this default only applies when rendering the subchart alone.
+  postgresClientImage:
+    repository: docker.io/alpine/psql
+    tag: 18.6@sha256:08f354a83552fcefa508116268463b371717577fe49d3fcb7b82cf8d2be464b8
   security:
     # This allows using the bitnamilegacy image repo
     allowInsecureImages: true

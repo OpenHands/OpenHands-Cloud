@@ -20,7 +20,10 @@ spec:
       # admin-supplied custom image). The default tag is pinned in the chart's
       # global.agentServerImage.
       agentServerImage:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/agent-server'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+      # Tag pinned in the chart.
+      postgresClientImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/psql'
       # Runtime (agent-server sandbox) env vars. The chart serialises this map
       # into OH_AGENT_SERVER_ENV and mirrors it into every warm-runtime entry's
       # env (runtime-api claims warm pods by exact env match, so a key here
@@ -35,7 +38,7 @@ spec:
         NODE_EXTRA_CA_CERTS: /etc/openhands/ca-bundle/ca-bundle.crt
 
     image:
-      repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/enterprise-server'
+      repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/enterprise-server'
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
@@ -169,12 +172,10 @@ spec:
         existingSecretUserKey: username
         existingSecretPasswordKey: password
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/keycloak'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak'
       keycloakConfigCli:
         image:
           repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak-config-cli'
-      waitForDb:
-        image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/postgresql:16.4.0-debian-12-r14-patched@sha256:08649d38a65ab3ee6d8f7699c8c903bf1583cc99ba93bc3aa2726f9ad3f24b58'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # Keycloak's truststore at the merged PEM. Repeats the chart's default
       # KC_* env vars because helm value merging replaces arrays — adding
@@ -321,7 +322,7 @@ spec:
       podAnnotations:
         checksum/admin-password: 'repl{{ sha256sum (ConfigOption "admin_password") }}'
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/runtime-api'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/runtime-api'
         # Do not override the image tag here. Pin to a stable version in the chart.
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
@@ -491,7 +492,7 @@ spec:
     redis:
       enabled: true
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/redis'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
       auth:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
     # Conversation/session files live on the bundled MinIO, which is durable
@@ -513,11 +514,11 @@ spec:
           memory: 2Gi
       # Preserve the existing server/client bytes when changing registries.
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/ohe-minio'
-        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64-patched@sha256:17dbdf60833de2cd75aabb6a4937d7bd01944c0341c02cecc3151f38f619dc2a'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/ohe-minio'
+        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279'
       mcImage:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/ohe-minio-mc'
-        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64-patched@sha256:207216603c84d00844c4eaf94594964a1dc7bdd527b083fa91e24992690acd30'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/ohe-minio-mc'
+        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
     # sha256 of every secret (password) config value. Changing any secret in the
@@ -721,7 +722,7 @@ spec:
           caBundle:
             enabled: true
           image:
-            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/automation'
+            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/automation'
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
           openhandsApiUrl: 'https://{{repl ConfigOption "computed_app_hostname" }}'
@@ -760,7 +761,7 @@ spec:
       values:
         postgresql:
           image:
-            repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/postgresql'
+            repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql'
         keycloak:
           postgresql:
             image:
@@ -781,6 +782,8 @@ spec:
           # warmRuntimes default entry both inherit this. Tag pinned in the chart.
           agentServerImage:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
+          postgresClientImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/psql'
         image:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
         keycloak:
@@ -789,8 +792,6 @@ spec:
           keycloakConfigCli:
             image:
               repository: '{{repl LocalRegistryNamespace }}/keycloak-config-cli'
-          waitForDb:
-            image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/postgresql:16.4.0-debian-12-r14-patched@sha256:08649d38a65ab3ee6d8f7699c8c903bf1583cc99ba93bc3aa2726f9ad3f24b58'
         postgresql:
           image:
             repository: '{{repl LocalRegistryNamespace }}/postgresql'
@@ -1245,10 +1246,10 @@ spec:
             issuerUrl: 'https://{{repl ConfigOption "computed_auth_hostname" }}'
           client:
             image:
-              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/plugin-directory-client'
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/plugin-directory-client'
           server:
             image:
-              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/plugin-directory-server'
+              repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/plugin-directory-server'
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
     - when: '{{repl ConfigOptionEquals "agent_canvas_enabled" "1" }}'
@@ -1262,7 +1263,7 @@ spec:
         agent-canvas:
           enabled: true
           image:
-            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/patched/agent-canvas'
+            repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-canvas'
           imagePullSecrets:
             - name: '{{repl ImagePullSecretName }}'
           ingress:
@@ -1352,11 +1353,11 @@ spec:
     minio:
       enabled: true
       image:
-        repository: ghcr.io/openhands/patched/ohe-minio
-        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64-patched@sha256:17dbdf60833de2cd75aabb6a4937d7bd01944c0341c02cecc3151f38f619dc2a'
+        repository: ghcr.io/openhands/ohe-minio
+        tag: 'RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279'
       mcImage:
-        repository: ghcr.io/openhands/patched/ohe-minio-mc
-        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64-patched@sha256:207216603c84d00844c4eaf94594964a1dc7bdd527b083fa91e24992690acd30'
+        repository: ghcr.io/openhands/ohe-minio-mc
+        tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
     postgresql:
       enabled: true
     redis:

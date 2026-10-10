@@ -22,7 +22,7 @@ spec:
       {{- end }}
       containers:
       - name: create-user
-        image: postgres:14
+        image: "{{ .Values.global.postgresClientImage.repository }}:{{ .Values.global.postgresClientImage.tag }}"
         env:
         - name: PGPASSWORD
           valueFrom:
