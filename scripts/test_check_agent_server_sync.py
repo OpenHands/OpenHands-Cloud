@@ -149,6 +149,28 @@ def test_copa_patched_pins_resolve_to_the_release_they_patch(tmp_path, fake_remo
     assert "git/ref/tags/1.56.0" in fake_remote["calls"]
 
 
+def test_r1_hotfix_pins_resolve_to_the_release_they_rebuild(tmp_path, fake_remote):
+    digest = "@sha256:" + "c" * 64
+    write_charts(tmp_path, f"1.56.0-r1{digest}", f"1.43.1-r1-python{digest}")
+
+    assert run_check(tmp_path)
+    assert "git/ref/tags/1.56.0" in fake_remote["calls"]
+
+
+def test_plain_r1_enterprise_tag_resolves_to_the_release(tmp_path, fake_remote):
+    write_charts(tmp_path, "1.56.0-r1", "1.43.1-r1-python")
+
+    assert run_check(tmp_path)
+    assert "git/ref/tags/1.56.0" in fake_remote["calls"]
+
+
+def test_r1_agent_server_pin_still_fails_on_sdk_mismatch(tmp_path, fake_remote):
+    write_charts(tmp_path, "1.56.0-r1", "1.42.0-r1-python")
+
+    with pytest.raises(CheckError, match="1.42.0"):
+        run_check(tmp_path)
+
+
 def test_agent_server_pins_must_agree_with_each_other(tmp_path, fake_remote):
     write_charts(tmp_path, "1.56.0", "1.43.1-python")
     drifted = AGENT_SERVER_PINS[-1]
