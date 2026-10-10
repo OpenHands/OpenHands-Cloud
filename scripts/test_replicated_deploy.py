@@ -47,6 +47,8 @@ def make_handler(state):
 
         def do_PUT(self):
             state["config_paths"].append(self.path)
+            n = int(self.headers.get("Content-Length") or 0)
+            state["config_bodies"].append(json.loads(self.rfile.read(n) or b"null"))
             total = len(state["config_paths"])
             if state["config_502_then"] and total <= state["config_502_then"]:
                 return self.reply(502, None)
@@ -102,6 +104,8 @@ def make_handler(state):
                 res = {"results": [{"isPass": not strict, "title": "mem"}]}
                 return self.reply(200, {"preflightResult": {
                     "result": json.dumps(res), "hasFailingStrictPreflights": strict}})
+            if p.endswith("/upgrade-service/app/openhands/config"):
+                return self.reply(200, {"configGroups": state["config_groups"]})
             if "/task/upgrade-service" in p:
                 return self.reply(200, {"status": ""})
             if p.endswith("/upgrade-service/app/openhands"):
@@ -121,7 +125,8 @@ def kots():
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
              "deploy_body": None, "deploy_502_then": 0, "deploy_paths": [],
              "config_status": 200, "config_body": None, "config_502_then": 0,
-             "config_paths": [], "boot_status": 200, "boot_body": None,
+             "config_paths": [], "config_bodies": [], "config_groups": None,
+             "boot_status": 200, "boot_body": None,
              "boot_502_then": 0, "boot_paths": [], "apps_status": 200,
              "configurable": False, "apps_fail_after_deploy": False,
              "apps_dark": False, "current_status": "deployed", "extra_env": {}}
@@ -263,6 +268,19 @@ def test_a_transient_502_on_the_config_put_is_retried(kots):
     assert "KOTS gateway hit a transient error" in r.stderr
     assert len(kots["config_paths"]) == 2
     assert kots["deploy_paths"], "a retried config must not block the deploy"
+
+
+def test_the_config_write_back_enables_user_provisioning_and_keeps_other_values(kots):
+    """The E2E org specs call the provision-user endpoint, which this item registers."""
+    kots["configurable"] = True
+    kots["config_groups"] = [{"name": "oem", "items": [
+        {"name": "oem_user_creation_flow_enabled", "value": "", "default": "0"},
+        {"name": "other_item", "value": "kept", "default": ""}]}]
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert kots["config_bodies"][-1] == {"configGroups": [{"name": "oem", "items": [
+        {"name": "oem_user_creation_flow_enabled", "value": "1", "default": "0"},
+        {"name": "other_item", "value": "kept", "default": ""}]}]}
 
 
 def test_a_transient_502_on_booting_the_upgrade_service_is_retried(kots):
