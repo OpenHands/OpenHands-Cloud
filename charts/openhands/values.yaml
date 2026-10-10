@@ -1397,8 +1397,8 @@ replicated:
 global:
   # psql/pg_isready image for the database init containers and jobs.
   postgresClientImage:
-    repository: docker.io/library/postgres
-    tag: 16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    repository: docker.io/alpine/psql
+    tag: 18.6@sha256:08f354a83552fcefa508116268463b371717577fe49d3fcb7b82cf8d2be464b8
   # Canonical agent-server image. Defaults the runtime image (runtime.image) and
   # any warm-runtime configsByName entry that omits its own `image`. Override
   # either of those for per-use exceptions; set it here to move them together.
