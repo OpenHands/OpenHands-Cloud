@@ -8,6 +8,9 @@ on:
       - 'replicated/**'
       - 'charts/**'
       - 'Makefile'
+      - 'scripts/replicated_deploy.sh'
+      - '.github/workflows/deploy-replicated.yml'
+      - '.github/workflows/release-replicated-unstable.yml'
   workflow_dispatch:
 
 jobs:
