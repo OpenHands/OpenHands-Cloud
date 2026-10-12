@@ -16,7 +16,9 @@ from ruamel.yaml import YAML
 
 
 WORKFLOW = Path(".github/workflows/scan-docker-images.yml")
+GATE_WORKFLOW = Path(".github/workflows/image-scan-gate.yml")
 TRIVY_IGNORE = Path(".trivyignore.yaml")
+RELEASE_BRANCH = "release-please--branches--main--components--openhands"
 
 
 def _load(path: Path) -> dict:
@@ -185,6 +187,23 @@ def test_ignore_entry_expiring_soon_warns_with_id_and_date_but_does_not_fail():
 def test_ignore_entry_that_has_expired_or_is_not_a_date_fails(expired_at, message):
     with pytest.raises(AssertionError, match=message):
         _check_ignore_entries([_entry(expired_at)], TODAY)
+
+
+def test_gate_workflow_has_no_path_filter_and_scopes_jobs_to_the_release_pr():
+    workflow = _load(GATE_WORKFLOW)
+    assert "paths" not in (workflow["on"]["pull_request"] or {})
+    assert workflow["jobs"]["scan"]["with"]["enforce"] is True
+    for name in ("scan", "image-scan-gate"):
+        condition = workflow["jobs"][name]["if"]
+        assert f"head.ref == '{RELEASE_BRANCH}'" in condition
+        assert "head.repo.full_name == github.repository" in condition
+
+
+def test_gate_job_has_the_required_context_name_and_waits_for_the_scan():
+    job = _load(GATE_WORKFLOW)["jobs"]["image-scan-gate"]
+    assert job["name"] == "image-scan-gate"
+    assert job["needs"] == "scan"
+    assert "always()" in job["if"]
 
 
 if __name__ == "__main__":
