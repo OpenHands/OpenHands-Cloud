@@ -1,0 +1,188 @@
+name: Image scan gate
+
+# Fails the openhands release-please PR when the images it ships break the scan
+# policy. Required via the `image-scan-gate` context in the main ruleset.
+# No paths: filter -- a required check that never runs blocks every merge.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  # A CVE disclosed or fixed while the PR is open fires no GitHub event.
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+env:
+  RELEASE_PR_BRANCH: "release-please--branches--main--components--openhands"
+  OVERRIDE_LABEL: "override-image-scan-gate"
+
+jobs:
+  scan:
+    name: scan
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/scan-docker-images.yml
+    with:
+      enforce: true
+      severity: CRITICAL
+
+  image-scan-gate:
+    name: image-scan-gate
+    needs: scan
+    if: >-
+      always() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Evaluate image scan gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SCAN_RESULT: ${{ needs.scan.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "### Image scan gate"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Scan result | \`${SCAN_RESULT}\` |"
+            echo "| Policy | unfixed vulnerabilities ignored; \`.trivyignore.yaml\` applies |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$SCAN_RESULT" = "success" ]; then
+            echo "Image scan passed."
+            exit 0
+          fi
+
+          gate_reason="image scan ${SCAN_RESULT}"
+          labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
+          if ! grep -Fxq "$OVERRIDE_LABEL" <<<"$labels"; then
+            echo "::error::${gate_reason} — blocking the release PR. ${RUN_URL}"
+            exit 1
+          fi
+
+          events=$(gh api --paginate --slurp \
+            "repos/${REPO}/issues/${PR_NUMBER}/events?per_page=100")
+          applier_when=$(jq -r --arg label "$OVERRIDE_LABEL" '
+            [.[][] | select(.event == "labeled" and .label.name == $label)]
+            | last
+            | if . == null then empty else [.actor.login, .created_at] | @tsv end
+          ' <<<"$events")
+          IFS=$'\t' read -r applier override_when <<<"$applier_when"
+          if [ -z "${applier:-}" ] || [ -z "${override_when:-}" ]; then
+            echo "::error::${OVERRIDE_LABEL} is present but no event records who applied it"
+            exit 1
+          fi
+
+          # An override authorizes the commit it was applied to, not later pushes.
+          head_date=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" --jq '.commit.committer.date')
+          if [ "$(date -u -d "$override_when" +%s)" -le "$(date -u -d "$head_date" +%s)" ]; then
+            echo "::error::override by ${applier} at ${override_when} predates head commit ${HEAD_SHA:0:8} (${head_date}); remove and reapply ${OVERRIDE_LABEL}"
+            exit 1
+          fi
+
+          perm=$(gh api "repos/${REPO}/collaborators/${applier}/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          case "$perm" in
+            admin|write|maintain) ;;
+            *)
+              echo "::error::${OVERRIDE_LABEL} was applied by ${applier}, who lacks write permission (${perm})"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo ""
+            echo "> [!WARNING]"
+            echo "> **Image scan gate overridden.**"
+            echo ">"
+            echo "> ${gate_reason}; override applied by \`${applier}\` (\`${perm}\`) at ${override_when}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          marker="<!-- image-scan-gate-override:${override_when} -->"
+          comments=$(gh api --paginate --slurp \
+            "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100")
+          already_recorded=$(jq -r --arg marker "$marker" \
+            'any(.[][]; .body | contains($marker))' <<<"$comments")
+          if [ "$already_recorded" != "true" ]; then
+            body=$(printf '%s\n\n%s\n\n%s' \
+              "🟡 **Image scan gate overridden** by \`${applier}\` (\`${perm}\`) at ${override_when}. ${gate_reason}; this release PR head (\`${HEAD_SHA:0:8}\`) may merge." \
+              "$marker" \
+              "_Posted automatically by an AI-assisted workflow on behalf of the OpenHands-Cloud maintainers._")
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+          fi
+
+          echo "Override honored for head ${HEAD_SHA}."
+
+  refresh-image-scan-gate:
+    name: Refresh image scan gate
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Rerun the open release PR gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          pr=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" | jq -c \
+            --arg repo "$REPO" --arg branch "$RELEASE_PR_BRANCH" '
+              first(.[] | select(
+                .base.ref == "main" and
+                .head.ref == $branch and
+                .head.repo.full_name == $repo
+              )) // empty
+            ')
+          if [ -z "$pr" ]; then
+            echo "No open openhands release PR; nothing to refresh."
+            exit 0
+          fi
+
+          sha=$(jq -r '.head.sha' <<<"$pr")
+          gate_run=$(gh api \
+            "repos/${REPO}/actions/workflows/image-scan-gate.yml/runs?event=pull_request&per_page=100" \
+            | jq -c --arg sha "$sha" \
+              'first(.workflow_runs[] | select(.head_sha == $sha)) // empty')
+          if [ -z "$gate_run" ]; then
+            echo "::warning::No image-scan-gate run found for release PR head ${sha}."
+            exit 0
+          fi
+
+          run_id=$(jq -r '.id' <<<"$gate_run")
+          status=$(jq -r '.status' <<<"$gate_run")
+          if [ "$status" != "completed" ]; then
+            echo "Image scan gate ${run_id} is ${status}; leaving it alone."
+            exit 0
+          fi
+          # A rerun request races the run finishing, so a 403 here is expected
+          # and must not redden a job that fires every few hours.
+          if gh api --method POST "repos/${REPO}/actions/runs/${run_id}/rerun"; then
+            echo "Rerunning image scan gate ${run_id} for release PR head ${sha}."
+          else
+            echo "::notice::Image scan gate ${run_id} could not be rerun right now."
+          fi
