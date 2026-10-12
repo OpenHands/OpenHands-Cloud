@@ -109,7 +109,7 @@ spec:
       {{- else if .Values.postgresql.enabled }}
       # Wait for the service's own PostgreSQL subchart to be ready
       - name: wait-for-postgres
-        image: bitnamilegacy/postgresql:latest
+        image: ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie
         command: ['sh', '-c']
         args:
           - |

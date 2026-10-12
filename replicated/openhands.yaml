@@ -192,7 +192,7 @@ spec:
         image:
           repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak-config-cli'
       waitForDb:
-        image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql:latest'
+        image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # Keycloak's truststore at the merged PEM. Repeats the chart's default
       # KC_* env vars because helm value merging replaces arrays — adding
