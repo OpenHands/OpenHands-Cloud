@@ -211,11 +211,17 @@ else
   # --- config: read values, write them back --------------------------------
   # These instances exist for the E2E suite. Its org specs provision users via
   # the endpoint that oem_user_creation_flow_enabled registers (off by default).
-  if [ "$(jq -r .isConfigurable <<<"$META")" = true ]; then
+  OEM_ITEM='[.configGroups[]?.items[]? | select(.name == "oem_user_creation_flow_enabled") | .value][0] // "missing"'
+  CONFIGURABLE="$(jq -r .isConfigurable <<<"$META")"
+  if [ "$CONFIGURABLE" = true ]; then
     TMO=60 api "$UP/config" | jq -c '{configGroups}
       | (.configGroups[]?.items[]? | select(.name == "oem_user_creation_flow_enabled") | .value) = "1"' >/tmp/cfg.json
     R="$(retry_gateway PUT --data-binary @/tmp/cfg.json "$UP/config" || true)"
     ok <<<"$R" || fail "config rejected: $(why <<<"$R") — new release likely added a required item with no default"
+    echo "config: oem_user_creation_flow_enabled sent=$(jq -r "$OEM_ITEM" /tmp/cfg.json)" \
+      "read back=$(TMO=60 api "$UP/config" | jq -r "$OEM_ITEM")"
+  else
+    echo "config: skipped, isConfigurable=$CONFIGURABLE"
   fi
 
   # --- preflights ----------------------------------------------------------
