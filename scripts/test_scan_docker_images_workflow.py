@@ -14,7 +14,9 @@ from ruamel.yaml import YAML
 
 
 WORKFLOW = Path(".github/workflows/scan-docker-images.yml")
+GATE_WORKFLOW = Path(".github/workflows/image-scan-gate.yml")
 TRIVY_IGNORE = Path(".trivyignore.yaml")
+RELEASE_BRANCH = "release-please--branches--main--components--openhands"
 
 
 def _load(path: Path) -> dict:
@@ -104,6 +106,23 @@ def test_trivy_ignore_entries_are_justified_and_expire():
     entries = _load(TRIVY_IGNORE)["vulnerabilities"]
     for entry in entries:
         assert entry["id"] and entry["statement"] and entry["expired_at"], entry
+
+
+def test_gate_workflow_has_no_path_filter_and_scopes_jobs_to_the_release_pr():
+    workflow = _load(GATE_WORKFLOW)
+    assert "paths" not in (workflow["on"]["pull_request"] or {})
+    assert workflow["jobs"]["scan"]["with"]["enforce"] is True
+    for name in ("scan", "image-scan-gate"):
+        condition = workflow["jobs"][name]["if"]
+        assert f"head.ref == '{RELEASE_BRANCH}'" in condition
+        assert "head.repo.full_name == github.repository" in condition
+
+
+def test_gate_job_has_the_required_context_name_and_waits_for_the_scan():
+    job = _load(GATE_WORKFLOW)["jobs"]["image-scan-gate"]
+    assert job["name"] == "image-scan-gate"
+    assert job["needs"] == "scan"
+    assert "always()" in job["if"]
 
 
 if __name__ == "__main__":
