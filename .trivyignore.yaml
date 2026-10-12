@@ -1,0 +1,6 @@
+# CVEs accepted by the enforced image scan. Give each a statement and an
+# expired_at date so an exception cannot outlive its reason:
+#   - id: CVE-0000-00000
+#     statement: Why this is not exploitable here, and the tracking issue.
+#     expired_at: 2026-12-31
+vulnerabilities: []
