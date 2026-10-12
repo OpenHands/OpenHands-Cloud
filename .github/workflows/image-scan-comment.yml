@@ -1,0 +1,80 @@
+name: Image scan comment
+
+# Advisory: warns on the PR that adds vulnerabilities to a shipped image. Never required.
+
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+      - '.trivyignore.yaml'
+      - 'scripts/image_scan_diff.py'
+      - '.github/workflows/image-scan-comment.yml'
+
+concurrency:
+  group: image-scan-comment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MIN_SEVERITY: ${{ vars.IMAGE_SCAN_MIN_SEVERITY || 'HIGH' }}
+
+jobs:
+  image-scan-comment:
+    name: Image scan comment
+    # A fork's GITHUB_TOKEN cannot write comments.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # The merge commit: HEAD is what main would ship, HEAD^1 is the base tip.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.70.0
+          cache: true
+
+      - name: Find vulnerabilities this PR adds
+        id: diff
+        run: |
+          uv run scripts/image_scan_diff.py \
+            --base-rev HEAD^1 \
+            --head-rev HEAD \
+            --min-severity "$MIN_SEVERITY" \
+            --output "$RUNNER_TEMP/comment.md"
+          cat "$RUNNER_TEMP/comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create, update or resolve the PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HAS_FINDINGS: ${{ steps.diff.outputs.has_findings }}
+        run: |
+          marker='<!-- image-scan-comment -->'
+          existing=$(gh api --paginate --slurp "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
+            | jq -r --arg marker "$marker" \
+              '[.[][] | select(.body | contains($marker))] | first | .id // empty')
+
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@"$RUNNER_TEMP/comment.md" > /dev/null
+            echo "Updated comment ${existing}."
+          elif [ "$HAS_FINDINGS" = "true" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"
+            echo "Posted a new comment."
+          else
+            echo "No new findings and no earlier comment; nothing to post."
+          fi
