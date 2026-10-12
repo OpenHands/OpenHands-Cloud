@@ -5,6 +5,8 @@
 # ///
 """Behavior checks for the Docker image scan workflow."""
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -51,10 +53,42 @@ def test_there_is_one_trivy_step_and_it_is_pinned_to_a_commit():
     assert len(ref) == 40 and set(ref) <= set("0123456789abcdef"), step["uses"]
 
 
-def test_scan_fails_the_job_only_when_enforced():
+def _exit_code_for(image: str, enforced_images: str, tmp_path: Path) -> str:
+    steps = _load(WORKFLOW)["jobs"]["scan_docker_images"]["steps"]
+    decide = next(s for s in steps if s.get("id") == "policy")
+    output = tmp_path / "github_output"
+    output.touch()
+    subprocess.run(
+        ["bash", "-c", decide["run"]],
+        check=True,
+        env={
+            "IMAGE": image,
+            "ENFORCED_IMAGES": enforced_images,
+            "GITHUB_OUTPUT": str(output),
+            "PATH": os.environ["PATH"],
+        },
+    )
+    return output.read_text().strip()
+
+
+@pytest.mark.parametrize(
+    ("image", "enforced_images", "expected"),
+    [
+        ("openhands/runtime-api:0.11.1", "runtime-api,enterprise-server", "exit_code=1"),
+        ("openhands/enterprise-server:1.70.1", "runtime-api, enterprise-server", "exit_code=1"),
+        ("openhands/agent-server:1.50.1-python", "runtime-api,enterprise-server", "exit_code=0"),
+        ("openhands/agent-server:1.50.1-python", "", "exit_code=0"),
+        ("openhands/runtime-api:0.11.1", "runtime-api-extra", "exit_code=0"),
+    ],
+)
+def test_only_listed_images_are_enforced(image, enforced_images, expected, tmp_path):
+    assert _exit_code_for(image, enforced_images, tmp_path) == expected
+
+
+def test_scan_exit_code_comes_from_the_per_image_decision():
     (step,) = _trivy_steps()
     assert "if" not in step
-    assert step["with"]["exit-code"] == "${{ inputs.enforce && '1' || '0' }}"
+    assert step["with"]["exit-code"] == "${{ steps.policy.outputs.exit_code }}"
     assert step["with"]["severity"] == "${{ inputs.severity || 'CRITICAL' }}"
     assert step["with"]["ignore-unfixed"] is True
     assert step["with"]["trivyignores"] == str(TRIVY_IGNORE)

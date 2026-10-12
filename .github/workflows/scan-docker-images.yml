@@ -5,12 +5,11 @@ env:
 on:
   workflow_call:
     inputs:
-      enforce:
-        description: Fail the job when the scan finds anything. Otherwise it only reports.
-        type: boolean
-        default: false
+      enforced_images:
+        description: Comma-separated image names (for example runtime-api,agent-server) whose scan fails the job on a finding. Other images only report.
+        type: string
       severity:
-        description: Comma-separated severities to report (and fail on, when enforce is true). Defaults to CRITICAL.
+        description: Comma-separated severities to report, and to fail on for enforced images. Defaults to CRITICAL.
         type: string
   pull_request:
     paths:
@@ -70,13 +69,26 @@ jobs:
         run: |
           python3 scripts/wait_for_image_manifest.py "$IMAGE_REF"
 
+      - name: Decide whether this image is enforced
+        id: policy
+        env:
+          IMAGE: ${{ matrix.IMAGE }}
+          ENFORCED_IMAGES: ${{ inputs.enforced_images }}
+        run: |
+          name="${IMAGE%%:*}"
+          name="${name##*/}"
+          case ",${ENFORCED_IMAGES// /}," in
+            *",${name},"*) echo "exit_code=1" >> "$GITHUB_OUTPUT" ;;
+            *) echo "exit_code=0" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ matrix.IMAGE }}
           format: 'table'
           output: 'trivy-results.txt'
-          exit-code: ${{ inputs.enforce && '1' || '0' }}
+          exit-code: ${{ steps.policy.outputs.exit_code }}
           severity: ${{ inputs.severity || 'CRITICAL' }}
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
