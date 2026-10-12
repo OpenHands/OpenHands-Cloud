@@ -281,6 +281,15 @@ def test_the_config_write_back_enables_user_provisioning_and_keeps_other_values(
     assert kots["config_bodies"][-1] == {"configGroups": [{"name": "oem", "items": [
         {"name": "oem_user_creation_flow_enabled", "value": "1", "default": "0"},
         {"name": "other_item", "value": "kept", "default": ""}]}]}
+    assert "config: oem_user_creation_flow_enabled sent=1 read back=" in r.stdout
+
+
+def test_a_skipped_config_step_is_logged(kots):
+    """The provisioning item is only written when KOTS reports the app as configurable."""
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "config: skipped, isConfigurable=false" in r.stdout
+    assert not kots["config_bodies"]
 
 
 def test_a_transient_502_on_booting_the_upgrade_service_is_retried(kots):
