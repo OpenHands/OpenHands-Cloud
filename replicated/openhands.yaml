@@ -506,7 +506,7 @@ spec:
       # conventional device-plugin priority.
       priorityClassName: system-node-critical
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/squat/generic-device-plugin'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/generic-device-plugin'
         # Do not override the image tag here. Pin to a stable version in the chart.
       initImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'
