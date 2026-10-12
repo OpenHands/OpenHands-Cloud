@@ -1,16 +1,27 @@
 #!/usr/bin/env -S uv run
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pytest"]
+# dependencies = ["pytest", "ruamel.yaml"]
 # ///
 """Behavior checks for the Docker image scan workflow."""
 
 from pathlib import Path
 
 import pytest
+from ruamel.yaml import YAML
 
 
 WORKFLOW = Path(".github/workflows/scan-docker-images.yml")
+TRIVY_IGNORE = Path(".trivyignore.yaml")
+
+
+def _load(path: Path) -> dict:
+    return YAML(typ="safe").load(path.read_text())
+
+
+def _trivy_steps() -> list[dict]:
+    steps = _load(WORKFLOW)["jobs"]["scan_docker_images"]["steps"]
+    return [s for s in steps if s.get("uses", "").startswith("aquasecurity/trivy-action")]
 
 
 def _line_number_containing(lines: list[str], text: str) -> int:
@@ -32,6 +43,38 @@ def test_scan_waits_for_the_matrix_image_manifest_before_running_trivy():
     wait_step = "\n".join(lines[wait_index:trivy_index])
     assert "IMAGE_REF: ${{ env.REGISTRY }}/${{ matrix.IMAGE }}" in wait_step
     assert 'python3 scripts/wait_for_image_manifest.py "$IMAGE_REF"' in wait_step
+
+
+def test_there_is_one_trivy_step_and_it_is_pinned_to_a_commit():
+    (step,) = _trivy_steps()
+    ref = step["uses"].split("@", 1)[1]
+    assert len(ref) == 40 and set(ref) <= set("0123456789abcdef"), step["uses"]
+
+
+def test_scan_fails_the_job_only_when_enforced():
+    (step,) = _trivy_steps()
+    assert "if" not in step
+    assert step["with"]["exit-code"] == "${{ inputs.enforce && '1' || '0' }}"
+    assert step["with"]["severity"] == "${{ inputs.severity || 'CRITICAL' }}"
+    assert step["with"]["ignore-unfixed"] is True
+    assert step["with"]["trivyignores"] == str(TRIVY_IGNORE)
+
+
+def test_scan_results_are_written_to_the_job_summary_even_when_the_scan_fails():
+    steps = _load(WORKFLOW)["jobs"]["scan_docker_images"]["steps"]
+    names = [s["name"] for s in steps]
+    scan, publish = steps[names.index("Run Trivy vulnerability scanner") :][:2]
+    assert scan["with"]["output"] == "trivy-results.txt"
+    assert publish["name"] == "Publish scan results"
+    assert "!cancelled()" in publish["if"]
+    assert "cat trivy-results.txt" in publish["run"]
+    assert '"$GITHUB_STEP_SUMMARY"' in publish["run"]
+
+
+def test_trivy_ignore_entries_are_justified_and_expire():
+    entries = _load(TRIVY_IGNORE)["vulnerabilities"]
+    for entry in entries:
+        assert entry["id"] and entry["statement"] and entry["expired_at"], entry
 
 
 if __name__ == "__main__":

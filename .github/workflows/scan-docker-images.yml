@@ -3,6 +3,15 @@ name: Scan Docker Images
 env:
   REGISTRY: ghcr.io
 on:
+  workflow_call:
+    inputs:
+      enforce:
+        description: Fail the job when the scan finds anything. Otherwise it only reports.
+        type: boolean
+        default: false
+      severity:
+        description: Comma-separated severities to report (and fail on, when enforce is true). Defaults to CRITICAL.
+        type: string
   pull_request:
     paths:
       - 'charts/**'
@@ -62,11 +71,26 @@ jobs:
           python3 scripts/wait_for_image_manifest.py "$IMAGE_REF"
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        # This only reports, does not fail the build on CVE.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ matrix.IMAGE }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: 'table'
+          output: 'trivy-results.txt'
+          exit-code: ${{ inputs.enforce && '1' || '0' }}
+          severity: ${{ inputs.severity || 'CRITICAL' }}
+          ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           timeout: '10m'
           scanners: 'vuln'  # Only scan vulnerabilities, not secrets/config
+
+      - name: Publish scan results
+        if: ${{ !cancelled() && hashFiles('trivy-results.txt') != '' }}
+        env:
+          IMAGE: ${{ matrix.IMAGE }}
+        run: |
+          {
+            echo "### ${IMAGE}"
+            echo '```'
+            cat trivy-results.txt
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
