@@ -469,7 +469,10 @@ uvicorn:
 keycloak:
   enabled: false
   image:
-    repository: bitnamilegacy/keycloak
+    registry: ghcr.io
+    repository: openhands/third-party-images/keycloak
+    tag: 26.3.0-debian-12-r0-oh1
+    digest: sha256:f833fd9c2e26f2900b10273e26666c00d6dc10e4cc4edf798edd9e30359aeb25
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
@@ -597,6 +600,11 @@ laminar:
   baseUrlFromSecret:
     name: lmnr-base-url
     key: LMNR_BASE_URL
+
+  images:
+    postgres:
+      repository: ghcr.io/openhands/third-party-images/postgres
+      tag: "15.19-oh1@sha256:5bcf9f7969fd50bd10dc754b83586f7d3e3e4f156d8057a4ce2b4aec329d86a5"
 
   # Force HTTP instead of HTTPS for Laminar connections
   # Useful for development/test environments without TLS
@@ -826,9 +834,11 @@ rustfs:
 postgresql:
   enabled: true
   image:
-    repository: bitnamilegacy/postgresql
+    registry: ghcr.io
+    repository: openhands/third-party-images/postgresql
     # Same app version as chart 15.5.38's default (16.4.0), later OS-package rebuild.
-    tag: 16.4.0-debian-12-r28
+    tag: 16.4.0-debian-12-r28-oh1
+    digest: sha256:d71da928acd66f0c40d65e086e7314942de59a1b9e4ab6557376b21303c03ff3
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -865,9 +875,11 @@ externalDatabase:
 redis:
   enabled: true
   image:
-    repository: bitnamilegacy/redis
+    registry: ghcr.io
+    repository: openhands/third-party-images/redis
     # Patch bump over chart 20.3.0's default (7.4.1); 7.4.3 fixes CVE-2025-21605.
-    tag: 7.4.3-debian-12-r0
+    tag: 7.4.3-debian-12-r0-oh1
+    digest: sha256:a4d2e84b8669166117f6a145c24f870e548fadf06b85a1e99c11abbb1dd629a7
   architecture: standalone
   auth:
     enabled: true
