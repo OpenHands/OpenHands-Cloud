@@ -18,7 +18,7 @@ defaults:
     shell: bash --noprofile --norc -euo pipefail {0}
 
 env:
-  RELEASE_PR_BRANCH: "release-please--branches--main--components--openhands"
+  RELEASE_PR_BRANCH: "test/image-scan-gate"
   OVERRIDE_LABEL: "override-image-scan-gate"
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
+      github.event.pull_request.head.ref == 'test/image-scan-gate' &&
       github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
@@ -46,7 +46,7 @@ jobs:
       always() &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.ref == 'release-please--branches--main--components--openhands' &&
+      github.event.pull_request.head.ref == 'test/image-scan-gate' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
