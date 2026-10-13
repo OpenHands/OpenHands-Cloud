@@ -469,8 +469,12 @@ uvicorn:
 
 keycloak:
   enabled: false
+  # Upstream 26.8.0 rebuilt in the Bitnami layout (github.com/OpenHands/third-party-images).
+  # Upgrading from 26.3.0 migrates the database one way, so back it up first (see README, "Upgrading").
   image:
-    repository: bitnamilegacy/keycloak
+    registry: ghcr.io
+    repository: openhands/third-party-images/keycloak
+    tag: 26.8.0-debian-12-oh1
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
