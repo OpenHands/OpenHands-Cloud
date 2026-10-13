@@ -34,7 +34,7 @@ import path from "path";
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
  *  - KEYCLOAK_NEW_USER_EMAIL       email of the synthetic New User. Must be
- *                                  under an e2e-only TLD (see
+ *                                  under an e2e-only domain (see
  *                                  ``assertE2eOnlyEmail``).
  *  - AUTH_BASE_URL                 (optional) explicit HTTP(S) Keycloak server
  *                                  URL. When non-empty it is validated and used;
@@ -306,19 +306,20 @@ export function skipAuth(): boolean {
 }
 
 /**
- * Allow-list pattern for e2e-only email addresses. ``.test`` is reserved by
- * RFC 2606 and can never resolve to a real mailbox, so any address matching
- * this pattern is provably outside any customer or employee namespace.
+ * Allow-list pattern for e2e-only email addresses. ``e2e.example.com`` is
+ * under an RFC 2606 reserved domain, so it can never be a real mailbox.
+ * ``.e2e.test`` is accepted only until saas-deploy switches domains.
  *
  * The synthetic New User's email must match this pattern; both the delete-
  * by-email and create-user paths in ``keycloak-admin.ts`` assert on it before
  * hitting the Keycloak Admin API. This is defense-in-depth against a
  * ``KEYCLOAK_NEW_USER_EMAIL`` typo pointing the harness at a real account.
  */
-export const E2E_EMAIL_PATTERN = /^[^@\s]+@([a-z0-9-]+\.)*e2e\.test$/i;
+export const E2E_EMAIL_PATTERN =
+  /^[^@\s]+@([a-z0-9-]+\.)*e2e\.(example\.com|test)$/i;
 
 /**
- * Throw if the given email is not under the e2e-only ``.test`` TLD.
+ * Throw if the given email is not under an e2e-only domain.
  *
  * This guard runs before any destructive Keycloak Admin API call keyed on
  * email (delete-by-email, create-user).
@@ -327,7 +328,7 @@ export function assertE2eOnlyEmail(email: string): void {
   if (!E2E_EMAIL_PATTERN.test(email)) {
     throw new Error(
       `Refusing to use "${email}" as an e2e user address: expected an ` +
-        `address under the reserved .e2e.test namespace (see E2E_EMAIL_PATTERN). ` +
+        `address under the reserved e2e.example.com namespace (see E2E_EMAIL_PATTERN). ` +
         `The synthetic new-user cleanup and creation deliberately reject any ` +
         `namespace that could overlap with real users.`,
     );

@@ -210,7 +210,7 @@ Three credential sets are required before any test run:
 
 The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
 
-`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `.e2e.test` namespace (RFC 2606 reserves `.test` from being a real TLD). Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
+`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
 
 ### Environment variables
 
@@ -223,7 +223,7 @@ Keycloak admin (cleanup):
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
 - `KEYCLOAK_ADMIN_PASSWORD` — admin password.
-- `KEYCLOAK_NEW_USER_EMAIL` — email of the synthetic New User. Must be under the reserved `.e2e.test` namespace (RFC 2606); enforced by `assertE2eOnlyEmail`.
+- `KEYCLOAK_NEW_USER_EMAIL` — email of the synthetic New User. Must be under the reserved `e2e.example.com` namespace (RFC 2606); enforced by `assertE2eOnlyEmail`.
 
 The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
 

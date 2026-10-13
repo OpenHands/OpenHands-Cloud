@@ -1,4 +1,8 @@
-import { assertE2eOnlyEmail, type KeycloakAdminConfig } from "./config";
+import {
+  assertE2eOnlyEmail,
+  E2E_EMAIL_PATTERN,
+  type KeycloakAdminConfig,
+} from "./config";
 
 /**
  * Keycloak Admin REST API helper used to delete and recreate the New User
@@ -24,7 +28,7 @@ import { assertE2eOnlyEmail, type KeycloakAdminConfig } from "./config";
  *  - Users are looked up by exact email match in the target realm (default
  *    ``allhands``) and every match is deleted.
  *  - The email under ``config.newUserEmail`` is under a reserved e2e-only
- *    TLD (see ``assertE2eOnlyEmail``), so the delete-by-email call cannot
+ *    domain (see ``assertE2eOnlyEmail``), so the delete-by-email call cannot
  *    ever match a real user.
  */
 
@@ -64,14 +68,16 @@ interface KeycloakUser {
   email: string;
 }
 
-async function findUsersByEmail(
+async function findUsers(
   config: KeycloakAdminConfig,
   token: string,
+  field: "email" | "username",
+  value: string,
 ): Promise<KeycloakUser[]> {
   const url = new URL(
     `${config.keycloakUrl}/admin/realms/${config.realm}/users`,
   );
-  url.searchParams.set("email", config.newUserEmail);
+  url.searchParams.set(field, value);
   url.searchParams.set("exact", "true");
 
   const res = await fetch(url, {
@@ -110,7 +116,7 @@ async function deleteUser(
  * Delete every user in the target realm whose email matches the New User's
  * email. Returns the number of users deleted.
  *
- * The email is required to be under an e2e-only TLD (see
+ * The email is required to be under an e2e-only domain (see
  * ``assertE2eOnlyEmail``); this is a defense-in-depth guard against a config
  * typo pointing the delete at a real account.
  */
@@ -119,7 +125,7 @@ export async function deleteNewUsersByEmail(
 ): Promise<number> {
   assertE2eOnlyEmail(config.newUserEmail);
   const token = await getAdminToken(config);
-  const users = await findUsersByEmail(config, token);
+  const users = await findUsers(config, token, "email", config.newUserEmail);
 
   if (users.length === 0) {
     console.log(
@@ -213,8 +219,14 @@ export async function createRealmUser(
     console.log(
       `[keycloak-cleanup] User ${user.email} already exists (409 Conflict); deleting and recreating.`,
     );
-    const existing = await findUsersByEmail(config, token);
-    for (const u of existing) {
+    // The username can also collide with a leftover user under a previous e2e domain.
+    const existing = [
+      ...(await findUsers(config, token, "email", user.email)),
+      ...(await findUsers(config, token, "username", user.username)).filter(
+        (u) => E2E_EMAIL_PATTERN.test(u.email ?? ""),
+      ),
+    ];
+    for (const u of new Map(existing.map((u) => [u.id, u])).values()) {
       await deleteUser(config, token, u.id);
     }
     res = await postRealmUser(config, token, user);
