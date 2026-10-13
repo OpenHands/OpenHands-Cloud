@@ -5,7 +5,10 @@
 # ///
 """Behavior checks for the Docker image scan workflow."""
 
+import json
 import os
+import shlex
+import stat
 import subprocess
 import warnings
 from datetime import date, timedelta
@@ -204,6 +207,228 @@ def test_gate_job_has_the_required_context_name_and_waits_for_the_scan():
     assert job["name"] == "image-scan-gate"
     assert job["needs"] == "scan"
     assert "always()" in job["if"]
+
+
+TEST_SCRIPTS_WORKFLOW = Path(".github/workflows/test-scripts.yml")
+OVERRIDE_LABEL = "override-image-scan-gate"
+HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"
+HEAD_DATE = "2026-01-01T00:00:00Z"
+LATER = "2026-01-02T00:00:00Z"
+MARKER = f"<!-- image-scan-gate-override:{LATER} -->"
+
+FAKE_GH = """#!/usr/bin/env bash
+echo "$*" >> "$FIXTURES/calls.log"
+case "$*" in
+  "pr comment"*) ;;
+  *"--method POST"*"/rerun") exit "$(cat "$FIXTURES/rerun_exit")" ;;
+  *"/issues/"*"/labels"*) cat "$FIXTURES/labels" ;;
+  *"/issues/"*"/events"*) cat "$FIXTURES/events.json" ;;
+  *"/issues/"*"/comments"*) cat "$FIXTURES/comments.json" ;;
+  *"/commits/"*) cat "$FIXTURES/head_date" ;;
+  *"/collaborators/"*"/permission"*)
+    user=$(sed -E 's#.*/collaborators/([^/]+)/permission.*#\\1#' <<<"$*")
+    cat "$FIXTURES/permission.$user" 2>/dev/null || cat "$FIXTURES/permission" ;;
+  *"/pulls?state=open&per_page=100") cat "$FIXTURES/pulls.json" ;;
+  *"/actions/workflows/image-scan-gate.yml/runs?event=pull_request&per_page=100")
+    cat "$FIXTURES/runs.json" ;;
+  *) echo "unexpected gh call: $*" >&2; exit 99 ;;
+esac
+"""
+
+
+def _run_step(tmp_path, job, step_name, env, fixtures):
+    workflow = _load(GATE_WORKFLOW)
+    step = next(s for s in workflow["jobs"][job]["steps"] if s["name"] == step_name)
+    script = tmp_path / "step.sh"
+    script.write_text(step["run"])
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(FAKE_GH)
+    gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    fixture_dir = tmp_path / "fixtures"
+    fixture_dir.mkdir()
+    defaults = {"rerun_exit": "0", "labels": "", "events.json": "[]",
+                "comments.json": "[]", "head_date": HEAD_DATE, "permission": "write",
+                "pulls.json": "[]", "runs.json": '{"workflow_runs": []}'}
+    for name, text in {**defaults, **fixtures}.items():
+        (fixture_dir / name).write_text(str(text))
+    summary = tmp_path / "summary.md"
+    summary.touch()
+    shell = workflow["defaults"]["run"]["shell"].format(script)
+    result = subprocess.run(
+        shlex.split(shell),
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "FIXTURES": str(fixture_dir),
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "OVERRIDE_LABEL": workflow["env"]["OVERRIDE_LABEL"],
+            "RELEASE_PR_BRANCH": workflow["env"]["RELEASE_PR_BRANCH"],
+            "REPO": "OpenHands/OpenHands-Cloud",
+            **env,
+        },
+    )
+    calls = fixture_dir / "calls.log"
+    return result, calls.read_text() if calls.exists() else "", summary.read_text()
+
+
+def _labeled(actor, when):
+    return {"event": "labeled", "label": {"name": OVERRIDE_LABEL},
+            "actor": {"login": actor}, "created_at": when}
+
+
+def _gate(tmp_path, scan_result="failure", **fixtures):
+    return _run_step(
+        tmp_path, "image-scan-gate", "Evaluate image scan gate",
+        {"GH_TOKEN": "x", "PR_NUMBER": "7", "HEAD_SHA": HEAD_SHA,
+         "SCAN_RESULT": scan_result, "RUN_URL": "https://example.invalid/run"},
+        fixtures,
+    )
+
+
+def _overridden(**fixtures):
+    return {"labels": OVERRIDE_LABEL, "events.json": json.dumps([[_labeled("alice", LATER)]]),
+            **fixtures}
+
+
+def test_gate_passes_without_looking_at_labels_when_the_scan_succeeds(tmp_path):
+    result, calls, _ = _gate(tmp_path, scan_result="success")
+    assert result.returncode == 0, result.stderr
+    assert calls == ""
+
+
+@pytest.mark.parametrize("scan_result", ["failure", "cancelled", "skipped"])
+def test_gate_blocks_a_failed_scan_that_has_no_override(tmp_path, scan_result):
+    result, calls, _ = _gate(tmp_path, scan_result=scan_result)
+    assert result.returncode == 1
+    assert f"::error::image scan {scan_result}" in result.stdout
+    assert "pr comment" not in calls
+
+
+def test_gate_honours_a_fresh_override_by_a_writer_and_records_it_once(tmp_path):
+    result, calls, summary = _gate(tmp_path, **_overridden())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls.count("pr comment") == 1
+    assert MARKER in calls
+    assert "Image scan gate overridden" in summary
+
+
+def test_gate_does_not_comment_again_when_the_override_is_already_recorded(tmp_path):
+    comments = json.dumps([[{"body": f"overridden\n\n{MARKER}"}]])
+    result, calls, _ = _gate(tmp_path, **_overridden(**{"comments.json": comments}))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "pr comment" not in calls
+
+
+def test_gate_rejects_an_override_applied_before_the_head_commit(tmp_path):
+    result, _, _ = _gate(tmp_path, **_overridden(head_date="2026-01-03T00:00:00Z"))
+    assert result.returncode == 1
+    assert "predates head commit" in result.stdout
+
+
+@pytest.mark.parametrize("permission", ["read", "triage", "none"])
+def test_gate_rejects_an_override_from_someone_without_write_access(tmp_path, permission):
+    result, _, _ = _gate(tmp_path, **_overridden(permission=permission))
+    assert result.returncode == 1
+    assert "lacks write permission" in result.stdout
+
+
+def test_gate_rejects_a_label_with_no_labeled_event(tmp_path):
+    result, _, _ = _gate(tmp_path, labels=OVERRIDE_LABEL)
+    assert result.returncode == 1
+    assert "no event records who applied it" in result.stdout
+
+
+def test_gate_judges_the_most_recent_application_of_the_label(tmp_path):
+    events = json.dumps([[_labeled("alice", LATER)], [_labeled("mallory", "2026-01-04T00:00:00Z")]])
+    result, _, _ = _gate(
+        tmp_path,
+        **_overridden(**{"events.json": events, "permission.alice": "write",
+                         "permission.mallory": "read"}),
+    )
+    assert result.returncode == 1
+    assert "applied by mallory" in result.stdout
+
+
+def test_gate_ignores_other_labels(tmp_path):
+    result, _, _ = _gate(tmp_path, **_overridden(labels="override-something-else"))
+    assert result.returncode == 1
+
+
+def _refresh(tmp_path, **fixtures):
+    return _run_step(
+        tmp_path, "refresh-image-scan-gate", "Rerun the open release PR gate",
+        {"GH_TOKEN": "x"}, fixtures,
+    )
+
+
+def _pr(branch=RELEASE_BRANCH):
+    return json.dumps([{"base": {"ref": "main"}, "head": {
+        "ref": branch, "sha": HEAD_SHA, "repo": {"full_name": "OpenHands/OpenHands-Cloud"}}}])
+
+
+def _runs(status, sha=HEAD_SHA):
+    return json.dumps({"workflow_runs": [{"id": 42, "head_sha": sha, "status": status}]})
+
+
+def test_refresh_reruns_the_completed_gate_run_for_the_release_pr_head(tmp_path):
+    result, calls, _ = _refresh(tmp_path, **{"pulls.json": _pr(), "runs.json": _runs("completed")})
+    assert result.returncode == 0, result.stderr
+    assert "--method POST repos/OpenHands/OpenHands-Cloud/actions/runs/42/rerun" in calls
+
+
+@pytest.mark.parametrize("fixtures", [
+    {"pulls.json": _pr("some-other-branch"), "runs.json": _runs("completed")},
+    {"pulls.json": _pr(), "runs.json": _runs("in_progress")},
+    {"pulls.json": _pr(), "runs.json": _runs("completed", sha="f" * 40)},
+])
+def test_refresh_leaves_everything_else_alone(tmp_path, fixtures):
+    result, calls, _ = _refresh(tmp_path, **fixtures)
+    assert result.returncode == 0, result.stderr
+    assert "/rerun" not in calls
+
+
+def test_refresh_does_not_fail_when_the_rerun_is_refused(tmp_path):
+    result, _, _ = _refresh(
+        tmp_path, **{"pulls.json": _pr(), "runs.json": _runs("completed"), "rerun_exit": "1"})
+    assert result.returncode == 0, result.stderr
+    assert "could not be rerun" in result.stdout
+
+
+def test_gate_workflow_triggers_cover_label_changes_and_the_schedule():
+    on = _load(GATE_WORKFLOW)["on"]
+    assert {"opened", "reopened", "synchronize", "labeled", "unlabeled"} <= set(
+        on["pull_request"]["types"])
+    assert on["schedule"]
+    assert _load(GATE_WORKFLOW)["jobs"]["refresh-image-scan-gate"]["if"] == (
+        "github.event_name == 'schedule'")
+
+
+def test_gate_only_fails_on_critical_findings():
+    assert _load(GATE_WORKFLOW)["jobs"]["scan"]["with"]["severity"] == "CRITICAL"
+
+
+def test_both_gate_jobs_are_limited_to_prs_into_main():
+    jobs = _load(GATE_WORKFLOW)["jobs"]
+    for name in ("scan", "image-scan-gate"):
+        assert "base.ref == 'main'" in jobs[name]["if"], name
+
+
+def test_gate_job_permissions_cover_what_each_job_calls():
+    workflow = _load(GATE_WORKFLOW)
+    jobs = workflow["jobs"]
+    assert workflow["permissions"] == {}
+    callee = _load(WORKFLOW)["jobs"]["scan_docker_images"]["permissions"]
+    assert jobs["scan"]["permissions"] == callee
+    assert jobs["image-scan-gate"]["permissions"]["pull-requests"] == "write"
+    assert jobs["refresh-image-scan-gate"]["permissions"]["actions"] == "write"
+
+
+def test_test_scripts_workflow_runs_when_the_gate_workflow_changes():
+    paths = _load(TEST_SCRIPTS_WORKFLOW)["on"]["pull_request"]["paths"]
+    assert str(GATE_WORKFLOW) in paths
 
 
 if __name__ == "__main__":
