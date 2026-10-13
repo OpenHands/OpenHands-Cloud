@@ -3,4 +3,7 @@
 #   - id: CVE-0000-00000
 #     statement: Why this is not exploitable here, and the tracking issue.
 #     expired_at: 2026-12-31
+# Entries apply to every scanned image and every caller of the workflow. Trivy's
+# YAML format also supports `purls` and `paths` per entry to scope an exception
+# narrowly.
 vulnerabilities: []
