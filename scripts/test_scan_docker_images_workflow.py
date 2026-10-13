@@ -7,6 +7,7 @@
 
 import os
 import subprocess
+import warnings
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -129,16 +130,61 @@ def test_summary_is_a_heading_and_a_closed_code_fence(table_bytes, tmp_path):
     assert lines.count("```") == 2
 
 
-def test_trivy_ignore_entries_are_justified_and_expire():
-    entries = _load(TRIVY_IGNORE)["vulnerabilities"]
+WARN_DAYS = 14
+
+
+def _check_ignore_entries(entries: list[dict], today: date) -> None:
     for entry in entries:
         assert entry["id"] and entry["statement"] and entry["expired_at"], entry
-        assert isinstance(entry["expired_at"], date), (
+        expired_at = entry["expired_at"]
+        assert isinstance(expired_at, date), (
             f"{entry['id']}: expired_at must be an unquoted YYYY-MM-DD date"
         )
-        assert entry["expired_at"] > date.today() + timedelta(days=14), (
-            f"{entry['id']} expires within 14 days (or already has); renew or remove it"
+        assert expired_at > today, (
+            f"{entry['id']} expired on {expired_at}; renew or remove it"
         )
+        if expired_at <= today + timedelta(days=WARN_DAYS):
+            warnings.warn(
+                f"{entry['id']} in {TRIVY_IGNORE} expires on {expired_at}; "
+                "renew or remove it",
+                stacklevel=2,
+            )
+
+
+def test_trivy_ignore_entries_are_justified_and_expire():
+    _check_ignore_entries(_load(TRIVY_IGNORE)["vulnerabilities"], date.today())
+
+
+TODAY = date(2026, 6, 1)
+
+
+def _entry(expired_at) -> dict:
+    return {"id": "CVE-2026-0001", "statement": "Not reachable.", "expired_at": expired_at}
+
+
+def test_ignore_entry_far_from_expiry_neither_warns_nor_fails():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _check_ignore_entries([_entry(TODAY + timedelta(days=365))], TODAY)
+
+
+def test_ignore_entry_expiring_soon_warns_with_id_and_date_but_does_not_fail():
+    expiry = TODAY + timedelta(days=7)
+    with pytest.warns(UserWarning, match=rf"CVE-2026-0001.*{expiry.isoformat()}"):
+        _check_ignore_entries([_entry(expiry)], TODAY)
+
+
+@pytest.mark.parametrize(
+    ("expired_at", "message"),
+    [
+        (TODAY - timedelta(days=1), "renew or remove it"),
+        (TODAY, "renew or remove it"),
+        ("2026-12-31", "unquoted YYYY-MM-DD date"),
+    ],
+)
+def test_ignore_entry_that_has_expired_or_is_not_a_date_fails(expired_at, message):
+    with pytest.raises(AssertionError, match=message):
+        _check_ignore_entries([_entry(expired_at)], TODAY)
 
 
 if __name__ == "__main__":
