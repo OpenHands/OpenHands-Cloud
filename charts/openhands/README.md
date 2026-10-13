@@ -693,14 +693,23 @@ helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 
 ### Keycloak 26.3 to 26.8
 
-The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.0. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards. Back up the Keycloak database before upgrading so a rollback is possible:
+The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.0. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards.
+
+`helm upgrade` backs the database up first. A pre-upgrade hook (`keycloak.preUpgradeBackup`) reads the schema version from Keycloak's `migration_model` table and, when it differs from the version in `keycloak.image.tag`, copies `bitnami_keycloak` to `bitnami_keycloak_backup_26_3_0` on the same server while Keycloak 26.3 is still running. If the copy fails, the upgrade stops before anything changes; the reason is in the log of the `<release>-keycloak-backup` Job. The hook needs a database user that can `CREATE DATABASE` (the bundled `postgres` user can) and PostgreSQL 17 or older, since it runs `pg_dump` 17. If yours does not, back up the database yourself and upgrade with `keycloak.preUpgradeBackup.enabled=false` (on Replicated, untick **Back Up Keycloak Database Before Upgrade** under **Upgrade Checks**). The hook does not run under `helm template`, so ArgoCD and similar tools must back up by hand:
 
 ```bash
 kubectl exec -n openhands <release>-postgresql-0 -- \
   sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U postgres -Fc -d bitnami_keycloak' > keycloak-26.3.dump
 ```
 
-With an external database, run the same `pg_dump` against the Keycloak database there. To roll back, scale the `keycloak` StatefulSet to 0, restore the dump into an empty `bitnami_keycloak` database with `pg_restore`, and upgrade with `keycloak.image` set back to `docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0`.
+To roll back, scale the `keycloak` StatefulSet to 0, swap the databases, and upgrade with `keycloak.image` set back to `docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0`:
+
+```sql
+ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_0;
+ALTER DATABASE bitnami_keycloak_backup_26_3_0 RENAME TO bitnami_keycloak;
+```
+
+With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`.
 
 ## Uninstallation
 

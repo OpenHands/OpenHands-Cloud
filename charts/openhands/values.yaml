@@ -470,11 +470,27 @@ uvicorn:
 keycloak:
   enabled: false
   # Upstream 26.8.0 rebuilt in the Bitnami layout (github.com/OpenHands/third-party-images).
-  # Upgrading from 26.3.0 migrates the database one way, so back it up first (see README, "Upgrading").
+  # Upgrading from 26.3.0 migrates the database one way; see preUpgradeBackup.
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/keycloak
     tag: 26.8.0-debian-12-oh1
+  # Parent-chart pre-upgrade hook (not consumed by the Keycloak subchart): when
+  # the upgrade changes the Keycloak version, copy the database to
+  # <database>_backup_<old version> on the same server before Keycloak migrates
+  # it, and fail the upgrade if the copy fails. Needs CREATE DATABASE and
+  # PostgreSQL 17 or older (pg_dump 17). See README, "Keycloak 26.3 to 26.8".
+  preUpgradeBackup:
+    enabled: true
+    # Counts image pull time; must stay under Helm's per-hook wait (600s on Replicated).
+    activeDeadlineSeconds: 300
+    resources:
+      requests:
+        memory: "100Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
