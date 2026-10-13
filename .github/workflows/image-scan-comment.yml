@@ -23,8 +23,10 @@ env:
 jobs:
   image-scan-comment:
     name: Image scan comment
-    # A fork's GITHUB_TOKEN cannot write comments.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # A fork's or Dependabot's GITHUB_TOKEN cannot write comments.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
