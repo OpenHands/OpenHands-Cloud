@@ -202,6 +202,15 @@ def test_gate_workflow_has_no_path_filter_and_scopes_jobs_to_the_release_pr():
         assert "head.repo.full_name == github.repository" in condition
 
 
+def test_release_branch_matches_the_release_please_config():
+    config = json.loads(Path("release-please-config.openhands.json").read_text())
+    component = config["packages"]["."]["component"]
+    assert RELEASE_BRANCH == f"release-please--branches--main--components--{component}"
+    for path in (GATE_WORKFLOW, Path(".github/workflows/release-gate.yml")):
+        assert _load(path)["env"]["RELEASE_PR_BRANCH"] == RELEASE_BRANCH
+        assert f"head.ref == '{RELEASE_BRANCH}'" in path.read_text()
+
+
 def test_gate_job_has_the_required_context_name_and_waits_for_the_scan():
     job = _load(GATE_WORKFLOW)["jobs"]["image-scan-gate"]
     assert job["name"] == "image-scan-gate"
@@ -218,16 +227,23 @@ MARKER = f"<!-- image-scan-gate-override:{LATER} -->"
 
 FAKE_GH = """#!/usr/bin/env bash
 echo "$*" >> "$FIXTURES/calls.log"
+jq_filter=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  [ "${args[i]}" = "--jq" ] && jq_filter="${args[i+1]}"
+done
+emit() { if [ -n "$jq_filter" ]; then jq -r "$jq_filter" "$1"; else cat "$1"; fi; }
 case "$*" in
   "pr comment"*) ;;
   *"--method POST"*"/rerun") exit "$(cat "$FIXTURES/rerun_exit")" ;;
-  *"/issues/"*"/labels"*) cat "$FIXTURES/labels" ;;
+  *"/issues/"*"/labels"*) emit "$FIXTURES/labels.json" ;;
   *"/issues/"*"/events"*) cat "$FIXTURES/events.json" ;;
   *"/issues/"*"/comments"*) cat "$FIXTURES/comments.json" ;;
-  *"/commits/"*) cat "$FIXTURES/head_date" ;;
+  *"/commits/"*) emit "$FIXTURES/commit.json" ;;
   *"/collaborators/"*"/permission"*)
     user=$(sed -E 's#.*/collaborators/([^/]+)/permission.*#\\1#' <<<"$*")
-    cat "$FIXTURES/permission.$user" 2>/dev/null || cat "$FIXTURES/permission" ;;
+    [ -e "$FIXTURES/permission_exit" ] && exit "$(cat "$FIXTURES/permission_exit")"
+    emit "$FIXTURES/permission.$user.json" 2>/dev/null || emit "$FIXTURES/permission.json" ;;
   "api repos/OpenHands/OpenHands-Cloud/pulls?state=open&base=main&head=OpenHands:@BRANCH@")
     cat "$FIXTURES/pulls.json" ;;
   "api repos/OpenHands/OpenHands-Cloud/actions/workflows/image-scan-gate.yml/runs?event=pull_request&head_sha=@SHA@&per_page=1")
@@ -252,8 +268,19 @@ def _run_step(tmp_path, job, step_name, env, fixtures):
     defaults = {"rerun_exit": "0", "labels": "", "events.json": "[]",
                 "comments.json": "[]", "head_date": HEAD_DATE, "permission": "write",
                 "pulls.json": "[]", "runs.json": '{"workflow_runs": []}'}
-    for name, text in {**defaults, **fixtures}.items():
-        (fixture_dir / name).write_text(str(text))
+    for name, value in {**defaults, **fixtures}.items():
+        if name == "labels":
+            text = json.dumps([{"name": label} for label in value.split()])
+            name = "labels.json"
+        elif name == "head_date":
+            text = json.dumps({"commit": {"committer": {"date": value}}})
+            name = "commit.json"
+        elif name.startswith("permission") and name != "permission_exit":
+            text = json.dumps({"permission": value})
+            name += ".json"
+        else:
+            text = str(value)
+        (fixture_dir / name).write_text(text)
     summary = tmp_path / "summary.md"
     summary.touch()
     shell = workflow["defaults"]["run"]["shell"].format(script)
@@ -327,6 +354,21 @@ def test_gate_rejects_an_override_applied_before_the_head_commit(tmp_path):
     result, _, _ = _gate(tmp_path, **_overridden(head_date="2026-01-03T00:00:00Z"))
     assert result.returncode == 1
     assert "predates head commit" in result.stdout
+
+
+@pytest.mark.parametrize("head_date", [None, "", "not a date"])
+def test_gate_blocks_when_the_head_commit_date_is_unusable(tmp_path, head_date):
+    result, calls, _ = _gate(tmp_path, **_overridden(head_date=head_date))
+    assert result.returncode != 0
+    assert "Override honored" not in result.stdout
+    assert "pr comment" not in calls
+
+
+def test_gate_blocks_when_the_permission_lookup_fails(tmp_path):
+    result, calls, _ = _gate(tmp_path, **_overridden(permission_exit="1"))
+    assert result.returncode == 1
+    assert "lacks write permission (none)" in result.stdout
+    assert "pr comment" not in calls
 
 
 @pytest.mark.parametrize("permission", ["read", "triage", "none"])

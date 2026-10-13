@@ -102,7 +102,11 @@ jobs:
           # The rule is "label applied after the head commit's committer date",
           # not "after the push".
           head_date=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" --jq '.commit.committer.date')
-          if [ "$(date -u -d "$override_when" +%s)" -le "$(date -u -d "$head_date" +%s)" ]; then
+          # Plain assignments, so a date that cannot be parsed aborts under
+          # set -e; inside `[ ]` the failure would read as "not predated".
+          override_epoch=$(date -u -d "$override_when" +%s)
+          head_epoch=$(date -u -d "$head_date" +%s)
+          if ! [ "$override_epoch" -gt "$head_epoch" ]; then
             echo "::error::override by ${applier} at ${override_when} predates head commit ${HEAD_SHA:0:8} (${head_date}); remove and reapply ${OVERRIDE_LABEL}"
             exit 1
           fi
