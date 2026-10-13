@@ -16,9 +16,7 @@ import { runUser } from "../utils/config";
  *
  * It runs only where the returning user is that first Super Admin and the
  * wizard is still pending, i.e. a freshly installed instance. Everywhere else,
- * including the long-lived release instances, it skips. The New User cannot
- * run it: the organization step sends the user's own email as the contact
- * email, and the server rejects the reserved `.e2e.test` domain.
+ * including the long-lived release instances, it skips.
  *
  * Once it has passed, the wizard is finished for good on that instance. To run
  * it again, the first Super Admin can send
