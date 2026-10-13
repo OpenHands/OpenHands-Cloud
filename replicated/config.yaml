@@ -1546,13 +1546,8 @@ spec:
 
     - name: upgrade_checks
       title: Upgrade Checks
-      description: Checks that run as Helm hooks around each upgrade. For the budget checks, Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
       items:
-        - name: keycloak_pre_upgrade_backup
-          title: Back Up Keycloak Database Before Upgrade
-          help_text: When an upgrade changes the Keycloak version, copy the Keycloak database to a backup database named after the old version (e.g. bitnami_keycloak_backup_26_3_0) on the same PostgreSQL server before Keycloak migrates it one way, and stop the upgrade if the copy fails. Requires the database user to have CREATE DATABASE. Disable only after backing up the Keycloak database yourself.
-          type: bool
-          default: "1"
         - name: budget_preflight_mode
           title: Pre-upgrade Budget Preflight
           help_text: Read-only check of each organization's budget state before the upgrade applies. Strict blocks the upgrade on missing baselines, members missing from LiteLLM, cap drift, or a failed last sync; Acknowledge only records the findings.

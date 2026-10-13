@@ -186,8 +186,6 @@ spec:
         existingSecret: postgres-password
         existingSecretUserKey: username
         existingSecretPasswordKey: password
-      preUpgradeBackup:
-        enabled: repl{{ ConfigOptionEquals "keycloak_pre_upgrade_backup" "1" }}
       image:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/third-party-images/keycloak'
       keycloakConfigCli:
