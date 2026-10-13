@@ -1,8 +1,4 @@
-import {
-  assertE2eOnlyEmail,
-  E2E_EMAIL_PATTERN,
-  type KeycloakAdminConfig,
-} from "./config";
+import { assertE2eOnlyEmail, type KeycloakAdminConfig } from "./config";
 
 /**
  * Keycloak Admin REST API helper used to delete and recreate the New User
@@ -68,16 +64,14 @@ interface KeycloakUser {
   email: string;
 }
 
-async function findUsers(
+async function findUsersByEmail(
   config: KeycloakAdminConfig,
   token: string,
-  field: "email" | "username",
-  value: string,
 ): Promise<KeycloakUser[]> {
   const url = new URL(
     `${config.keycloakUrl}/admin/realms/${config.realm}/users`,
   );
-  url.searchParams.set(field, value);
+  url.searchParams.set("email", config.newUserEmail);
   url.searchParams.set("exact", "true");
 
   const res = await fetch(url, {
@@ -125,7 +119,7 @@ export async function deleteNewUsersByEmail(
 ): Promise<number> {
   assertE2eOnlyEmail(config.newUserEmail);
   const token = await getAdminToken(config);
-  const users = await findUsers(config, token, "email", config.newUserEmail);
+  const users = await findUsersByEmail(config, token);
 
   if (users.length === 0) {
     console.log(
@@ -219,14 +213,8 @@ export async function createRealmUser(
     console.log(
       `[keycloak-cleanup] User ${user.email} already exists (409 Conflict); deleting and recreating.`,
     );
-    // The username can also collide with a leftover user under a previous e2e domain.
-    const existing = [
-      ...(await findUsers(config, token, "email", user.email)),
-      ...(await findUsers(config, token, "username", user.username)).filter(
-        (u) => E2E_EMAIL_PATTERN.test(u.email ?? ""),
-      ),
-    ];
-    for (const u of new Map(existing.map((u) => [u.id, u])).values()) {
+    const existing = await findUsersByEmail(config, token);
+    for (const u of existing) {
       await deleteUser(config, token, u.id);
     }
     res = await postRealmUser(config, token, user);
