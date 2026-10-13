@@ -7,6 +7,7 @@
 
 import os
 import subprocess
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -77,8 +78,20 @@ def test_one_failing_image_does_not_cancel_the_other_scans():
     assert job["strategy"]["fail-fast"] is False
 
 
-@pytest.mark.parametrize("table_bytes", [1_000, 3_000_000])
-def test_job_summary_stays_under_the_github_size_limit(table_bytes, tmp_path):
+def test_workflow_is_callable_with_enforce_and_severity_inputs():
+    inputs = _load(WORKFLOW)["on"]["workflow_call"]["inputs"]
+    assert inputs["enforce"]["type"] == "boolean"
+    assert inputs["enforce"]["default"] is False
+    assert inputs["severity"]["type"] == "string"
+
+
+def test_scan_prints_a_table():
+    (step,) = _trivy_steps()
+    assert step["with"]["format"] == "table"
+
+
+def _publish(table_bytes: int, tmp_path: Path) -> tuple[str, str]:
+    """Run the real publish script; return (job log output, job summary)."""
     steps = _load(WORKFLOW)["jobs"]["scan_docker_images"]["steps"]
     publish = next(s for s in steps if s["name"] == "Publish scan results")
     (tmp_path / "trivy-results.txt").write_text("x" * (table_bytes - 1) + "\n")
@@ -89,21 +102,39 @@ def test_job_summary_stays_under_the_github_size_limit(table_bytes, tmp_path):
         check=True,
         capture_output=True,
         text=True,
-        env={
-            "IMAGE": "openhands/runtime-api:0.11.1",
-            "GITHUB_STEP_SUMMARY": str(summary),
-            "PATH": os.environ["PATH"],
-        },
+        env={"IMAGE": "img", "GITHUB_STEP_SUMMARY": str(summary), "PATH": os.environ["PATH"]},
     )
-    assert len(result.stdout) == table_bytes
-    assert summary.stat().st_size < 1024 * 1024
-    assert ("job log has the full table" in summary.read_text()) == (table_bytes > 900_000)
+    return result.stdout, summary.read_text()
+
+
+@pytest.mark.parametrize("table_bytes", [1_000, 3_000_000])
+def test_job_summary_stays_under_the_github_size_limit(table_bytes, tmp_path):
+    log, summary = _publish(table_bytes, tmp_path)
+    assert len(log) == table_bytes
+    assert len(summary.encode()) < 1024 * 1024
+    assert ("job log has the full table" in summary) == (table_bytes > 900_000)
+
+
+@pytest.mark.parametrize("table_bytes", [900_000, 900_001])
+def test_summary_is_cut_only_above_the_limit(table_bytes, tmp_path):
+    _, summary = _publish(table_bytes, tmp_path)
+    notice = any("job log has the full table" in ln for ln in summary.splitlines())
+    assert notice == (table_bytes > 900_000)
+
+
+@pytest.mark.parametrize("table_bytes", [1_000, 3_000_000])
+def test_summary_is_a_heading_and_a_closed_code_fence(table_bytes, tmp_path):
+    _, summary = _publish(table_bytes, tmp_path)
+    lines = summary.splitlines()
+    assert lines[:2] == ["### img", "```"]
+    assert lines.count("```") == 2
 
 
 def test_trivy_ignore_entries_are_justified_and_expire():
     entries = _load(TRIVY_IGNORE)["vulnerabilities"]
     for entry in entries:
         assert entry["id"] and entry["statement"] and entry["expired_at"], entry
+        assert entry["expired_at"] > date.today(), f"{entry['id']} has already expired"
 
 
 if __name__ == "__main__":
