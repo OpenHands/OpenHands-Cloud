@@ -76,6 +76,8 @@ jobs:
             exit 0
           fi
 
+          # Any non-success result, including cancelled, may be overridden;
+          # the override comment records the reason.
           gate_reason="image scan ${SCAN_RESULT}"
           labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
           if ! grep -Fxq "$OVERRIDE_LABEL" <<<"$labels"; then
@@ -97,6 +99,8 @@ jobs:
           fi
 
           # An override authorizes the commit it was applied to, not later pushes.
+          # The rule is "label applied after the head commit's committer date",
+          # not "after the push".
           head_date=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" --jq '.commit.committer.date')
           if [ "$(date -u -d "$override_when" +%s)" -le "$(date -u -d "$head_date" +%s)" ]; then
             echo "::error::override by ${applier} at ${override_when} predates head commit ${HEAD_SHA:0:8} (${head_date}); remove and reapply ${OVERRIDE_LABEL}"
@@ -150,7 +154,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          pr=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" | jq -c \
+          pr=$(gh api \
+            "repos/${REPO}/pulls?state=open&base=main&head=${REPO%%/*}:${RELEASE_PR_BRANCH}" \
+            | jq -c \
             --arg repo "$REPO" --arg branch "$RELEASE_PR_BRANCH" '
               first(.[] | select(
                 .base.ref == "main" and
@@ -165,7 +171,7 @@ jobs:
 
           sha=$(jq -r '.head.sha' <<<"$pr")
           gate_run=$(gh api \
-            "repos/${REPO}/actions/workflows/image-scan-gate.yml/runs?event=pull_request&per_page=100" \
+            "repos/${REPO}/actions/workflows/image-scan-gate.yml/runs?event=pull_request&head_sha=${sha}&per_page=1" \
             | jq -c --arg sha "$sha" \
               'first(.workflow_runs[] | select(.head_sha == $sha)) // empty')
           if [ -z "$gate_run" ]; then
