@@ -601,11 +601,6 @@ laminar:
     name: lmnr-base-url
     key: LMNR_BASE_URL
 
-  images:
-    postgres:
-      repository: ghcr.io/openhands/third-party-images/postgres
-      tag: "15.19-oh1@sha256:5bcf9f7969fd50bd10dc754b83586f7d3e3e4f156d8057a4ce2b4aec329d86a5"
-
   # Force HTTP instead of HTTPS for Laminar connections
   # Useful for development/test environments without TLS
   forceHttp: true
@@ -625,6 +620,9 @@ laminar:
       tag: "9.1.2-alpine"
     clickhouse:
       tag: "26.3-alpine"
+    postgres:
+      repository: ghcr.io/openhands/third-party-images/postgres
+      tag: "15.19-oh1@sha256:5bcf9f7969fd50bd10dc754b83586f7d3e3e4f156d8057a4ce2b4aec329d86a5"
 
   clickhouse:
     diagnostics:
