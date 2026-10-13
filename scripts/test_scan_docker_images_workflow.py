@@ -311,7 +311,8 @@ def _gate(tmp_path, scan_result="failure", **fixtures):
     return _run_step(
         tmp_path, "image-scan-gate", "Evaluate image scan gate",
         {"GH_TOKEN": "x", "PR_NUMBER": "7", "HEAD_SHA": HEAD_SHA,
-         "SCAN_RESULT": scan_result, "RUN_URL": "https://example.invalid/run"},
+         "SCAN_RESULT": scan_result, "SEVERITY": "CRITICAL,HIGH",
+         "RUN_URL": "https://example.invalid/run"},
         fixtures,
     )
 
@@ -461,8 +462,20 @@ def test_gate_workflow_triggers_cover_label_changes_and_the_schedule():
         "github.event_name == 'schedule'")
 
 
-def test_gate_only_fails_on_critical_findings():
-    assert _load(GATE_WORKFLOW)["jobs"]["scan"]["with"]["severity"] == "CRITICAL"
+GATE_SEVERITY = "${{ vars.IMAGE_SCAN_GATE_SEVERITY || 'CRITICAL,HIGH' }}"
+
+
+def test_gate_fails_on_high_and_critical_findings_unless_the_variable_overrides_it():
+    jobs = _load(GATE_WORKFLOW)["jobs"]
+    assert jobs["scan"]["with"]["severity"] == GATE_SEVERITY
+    assert jobs["image-scan-gate"]["steps"][0]["env"]["SEVERITY"] == GATE_SEVERITY
+
+
+def test_gate_summary_states_the_severity_it_gates_on(tmp_path):
+    env = {"GH_TOKEN": "x", "PR_NUMBER": "7", "HEAD_SHA": HEAD_SHA, "SCAN_RESULT": "success",
+           "RUN_URL": "https://example.invalid/run", "SEVERITY": "CRITICAL,HIGH"}
+    _, _, summary = _run_step(tmp_path, "image-scan-gate", "Evaluate image scan gate", env, {})
+    assert "| Severity | `CRITICAL,HIGH` |" in summary
 
 
 def test_both_gate_jobs_are_limited_to_prs_into_main():
