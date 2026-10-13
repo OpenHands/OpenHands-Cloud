@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 
+import { fetchWebClientConfig } from "../utils/billing";
 import { newUserEmail, runUser, superAdminApiKey } from "../utils/config";
 import { HomePage } from "../pages";
 import {
@@ -83,7 +84,7 @@ test.describe.serial("org management", () => {
     expect(provisioned.api_key).toBeTruthy();
   });
 
-  test("user-context-menu org-selector lists the personal workspace and new org", async ({
+  test("user-context-menu org-selector lists the user's workspaces and new org", async ({
     page,
   }, testInfo) => {
     test.skip(runUser(testInfo) !== "new-user", "new-user role only");
@@ -109,11 +110,27 @@ test.describe.serial("org management", () => {
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible({ timeout: 10_000 });
     const options = listbox.getByRole("option");
-    await expect(options).toHaveCount(2, { timeout: 10_000 });
 
+    // Mirrors useOrganizations: org-only installs hide personal workspaces once
+    // the user has a team org. Retries add orgs, so derive the list, don't count.
+    const config = await fetchWebClientConfig(page.request);
+    const orgsResponse = await page.request.get("/api/organizations");
+    expect(orgsResponse.ok()).toBe(true);
+    const { items } = (await orgsResponse.json()) as {
+      items: Array<{ name: string; is_personal?: boolean }>;
+    };
+    const hidePersonal =
+      config.feature_flags?.hide_personal_workspaces === true &&
+      items.some((o) => !o.is_personal);
+    const expected = items
+      .filter((o) => !(hidePersonal && o.is_personal))
+      .map((o) => (o.is_personal ? "Personal Workspace" : o.name))
+      .sort();
+    expect(expected).toContain(org.name);
+
+    await expect(options).toHaveCount(expected.length, { timeout: 10_000 });
     const optionTexts = await options.allTextContents();
     console.log(`org-selector options: ${JSON.stringify(optionTexts)}`);
-    expect(optionTexts).toContain("Personal Workspace");
-    expect(optionTexts).toContain(org.name);
+    expect(optionTexts.map((t) => t.trim()).sort()).toEqual(expected);
   });
 });
