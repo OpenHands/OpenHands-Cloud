@@ -218,8 +218,12 @@ else
       | (.configGroups[]?.items[]? | select(.name == "oem_user_creation_flow_enabled") | .value) = "1"' >/tmp/cfg.json
     R="$(retry_gateway PUT --data-binary @/tmp/cfg.json "$UP/config" || true)"
     ok <<<"$R" || fail "config rejected: $(why <<<"$R") — new release likely added a required item with no default"
+    # An empty read back is ambiguous: an unparseable reply and an unsaved value
+    # both print nothing. Log the reply's status and raw item to tell them apart.
+    READ="$(TMO=60 api "$UP/config" || true)"
     echo "config: oem_user_creation_flow_enabled sent=$(jq -r "$OEM_ITEM" /tmp/cfg.json)" \
-      "read back=$(TMO=60 api "$UP/config" | jq -r "$OEM_ITEM")"
+      "read back=$(jq -r "$OEM_ITEM" <<<"$READ" 2>/dev/null)" \
+      "($(tr -s '\n' ' ' <"$ERR"), item=$(jq -c '[.configGroups[]?.items[]? | select(.name == "oem_user_creation_flow_enabled") | {value, default}][0]' <<<"$READ" 2>/dev/null || echo unparseable))"
   else
     echo "config: skipped, isConfigurable=$CONFIGURABLE"
   fi

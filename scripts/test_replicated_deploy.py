@@ -282,6 +282,7 @@ def test_the_config_write_back_enables_user_provisioning_and_keeps_other_values(
         {"name": "oem_user_creation_flow_enabled", "value": "1", "default": "0"},
         {"name": "other_item", "value": "kept", "default": ""}]}]}
     assert "config: oem_user_creation_flow_enabled sent=1 read back=" in r.stdout
+    assert "(HTTP 200, item={" in r.stdout
 
 
 def test_a_skipped_config_step_is_logged(kots):
