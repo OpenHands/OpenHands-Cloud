@@ -187,7 +187,7 @@ spec:
         existingSecretUserKey: username
         existingSecretPasswordKey: password
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/third-party-images/keycloak'
       keycloakConfigCli:
         image:
           repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak-config-cli'
