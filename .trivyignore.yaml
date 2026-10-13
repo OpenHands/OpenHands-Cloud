@@ -5,5 +5,6 @@
 #     expired_at: 2026-12-31
 # Entries apply to every scanned image and every caller of the workflow. Trivy's
 # YAML format also supports `purls` and `paths` per entry to scope an exception
-# narrowly.
+# narrowly. The test suite warns 14 days before an entry expires and fails once
+# it has expired.
 vulnerabilities: []

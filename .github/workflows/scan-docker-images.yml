@@ -6,7 +6,7 @@ on:
   workflow_call:
     inputs:
       enforce:
-        description: Fail the job when the scan finds anything. Otherwise it only reports. When called from another repo, the caller must contain charts/openhands/values.yaml, scripts/wait_for_image_manifest.py and .trivyignore.yaml, because checkout fetches the caller's repo.
+        description: "Fail the job when the scan reports a finding (CRITICAL and HIGH by default; only fixed, non-ignored ones). Otherwise it only reports. When called from another repo, the caller must contain charts/openhands/values.yaml, charts/openhands/charts/runtime-api/values.yaml, scripts/wait_for_image_manifest.py and .trivyignore.yaml, because checkout fetches the caller's repo. The runner needs yq and jq."
         type: boolean
         default: false
       severity:
