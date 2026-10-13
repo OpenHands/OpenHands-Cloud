@@ -18,3 +18,15 @@ directly in `if` / `and` expressions.
 true
 {{- end -}}
 {{- end -}}
+
+{{/*
+Keycloak version the configured image runs, as Keycloak records it in
+migration_model (e.g. "26.8.0" from tag "26.8.0-debian-12-oh1").
+*/}}
+{{- define "openhands.keycloakVersion" -}}
+{{- $version := regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString .Values.keycloak.image.tag) -}}
+{{- if not $version -}}
+{{- fail (printf "keycloak.image.tag %q does not start with a Keycloak version (e.g. 26.8.0-...), which keycloak.preUpgradeBackup needs to tell whether the upgrade migrates the database. Use a versioned tag, or set keycloak.preUpgradeBackup.enabled=false after backing up the Keycloak database yourself." (toString .Values.keycloak.image.tag)) -}}
+{{- end -}}
+{{- $version -}}
+{{- end -}}
