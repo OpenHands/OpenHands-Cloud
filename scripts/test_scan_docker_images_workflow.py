@@ -7,7 +7,7 @@
 
 import os
 import subprocess
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -112,7 +112,6 @@ def test_job_summary_stays_under_the_github_size_limit(table_bytes, tmp_path):
     log, summary = _publish(table_bytes, tmp_path)
     assert len(log) == table_bytes
     assert len(summary.encode()) < 1024 * 1024
-    assert ("job log has the full table" in summary) == (table_bytes > 900_000)
 
 
 @pytest.mark.parametrize("table_bytes", [900_000, 900_001])
@@ -134,7 +133,12 @@ def test_trivy_ignore_entries_are_justified_and_expire():
     entries = _load(TRIVY_IGNORE)["vulnerabilities"]
     for entry in entries:
         assert entry["id"] and entry["statement"] and entry["expired_at"], entry
-        assert entry["expired_at"] > date.today(), f"{entry['id']} has already expired"
+        assert isinstance(entry["expired_at"], date), (
+            f"{entry['id']}: expired_at must be an unquoted YYYY-MM-DD date"
+        )
+        assert entry["expired_at"] > date.today() + timedelta(days=14), (
+            f"{entry['id']} expires within 14 days (or already has); renew or remove it"
+        )
 
 
 if __name__ == "__main__":
