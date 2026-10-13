@@ -95,18 +95,18 @@ test.describe.serial("org management", () => {
     await homePage.goto();
     await homePage.openUserMenu();
 
-    // The org-selector (see enterprise frontend org-selector.tsx) is a Dropdown
-    // rendered inside the user-context-menu. Open it via its toggle button and
-    // read the option list.
-    const orgSelector =
-      homePage.accountSettingsMenu.getByTestId("org-selector");
+    // The mobile drawer renders a second, hidden org-selector.
+    const orgSelector = homePage.settingsScreen
+      .getByTestId("settings-navbar-desktop")
+      .getByTestId("org-selector");
     await expect(orgSelector).toBeVisible({ timeout: 10_000 });
 
     const trigger = orgSelector.getByTestId("dropdown-trigger");
     await expect(trigger).toBeEnabled({ timeout: 10_000 });
     await trigger.click();
 
-    const listbox = orgSelector.getByRole("listbox");
+    // The menu is portaled to <body>; closed menus are display:none.
+    const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible({ timeout: 10_000 });
     const options = listbox.getByRole("option");
     await expect(options).toHaveCount(2, { timeout: 10_000 });
