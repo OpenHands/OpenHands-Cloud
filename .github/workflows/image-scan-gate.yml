@@ -1,7 +1,8 @@
 name: Image scan gate
 
 # Fails the openhands release-please PR when the images it ships break the scan
-# policy. Required via the `image-scan-gate` context in the main ruleset.
+# policy (CRITICAL,HIGH unless the IMAGE_SCAN_GATE_SEVERITY repository
+# variable says otherwise). Required via the `image-scan-gate` context in the main ruleset.
 # No paths: filter -- a required check that never runs blocks every merge.
 
 on:
@@ -37,7 +38,7 @@ jobs:
     uses: ./.github/workflows/scan-docker-images.yml
     with:
       enforce: true
-      severity: CRITICAL
+      severity: ${{ vars.IMAGE_SCAN_GATE_SEVERITY || 'CRITICAL,HIGH' }}
 
   image-scan-gate:
     name: image-scan-gate
@@ -60,6 +61,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           SCAN_RESULT: ${{ needs.scan.result }}
+          SEVERITY: ${{ vars.IMAGE_SCAN_GATE_SEVERITY || 'CRITICAL,HIGH' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
@@ -68,6 +70,7 @@ jobs:
             echo "| Field | Value |"
             echo "| --- | --- |"
             echo "| Scan result | \`${SCAN_RESULT}\` |"
+            echo "| Severity | \`${SEVERITY}\` |"
             echo "| Policy | unfixed vulnerabilities ignored; \`.trivyignore.yaml\` applies |"
           } >> "$GITHUB_STEP_SUMMARY"
 
