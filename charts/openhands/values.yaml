@@ -469,9 +469,8 @@ uvicorn:
 
 keycloak:
   enabled: false
-  # Upstream Keycloak 26.8.0 rebuilt in the Bitnami layout (github.com/OpenHands/third-party-images):
-  # the frozen bitnamilegacy 26.3.0 image and Keycloak 26.3's own libraries carry fixable CVEs.
-  # Moving from 26.3.0 migrates the Keycloak database one way; see "Upgrading" in the README.
+  # Upstream 26.8.0 rebuilt in the Bitnami layout (github.com/OpenHands/third-party-images).
+  # Upgrading from 26.3.0 migrates the database one way, so back it up first (see README, "Upgrading").
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/keycloak
