@@ -228,12 +228,13 @@ case "$*" in
   *"/collaborators/"*"/permission"*)
     user=$(sed -E 's#.*/collaborators/([^/]+)/permission.*#\\1#' <<<"$*")
     cat "$FIXTURES/permission.$user" 2>/dev/null || cat "$FIXTURES/permission" ;;
-  *"/pulls?state=open&per_page=100") cat "$FIXTURES/pulls.json" ;;
-  *"/actions/workflows/image-scan-gate.yml/runs?event=pull_request&per_page=100")
+  "api repos/OpenHands/OpenHands-Cloud/pulls?state=open&base=main&head=OpenHands:@BRANCH@")
+    cat "$FIXTURES/pulls.json" ;;
+  "api repos/OpenHands/OpenHands-Cloud/actions/workflows/image-scan-gate.yml/runs?event=pull_request&head_sha=@SHA@&per_page=1")
     cat "$FIXTURES/runs.json" ;;
   *) echo "unexpected gh call: $*" >&2; exit 99 ;;
 esac
-"""
+""".replace("@BRANCH@", RELEASE_BRANCH).replace("@SHA@", HEAD_SHA)
 
 
 def _run_step(tmp_path, job, step_name, env, fixtures):
@@ -388,6 +389,18 @@ def test_refresh_leaves_everything_else_alone(tmp_path, fixtures):
     result, calls, _ = _refresh(tmp_path, **fixtures)
     assert result.returncode == 0, result.stderr
     assert "/rerun" not in calls
+
+
+def test_refresh_finds_the_release_pr_and_its_run_with_exact_server_side_filters(tmp_path):
+    result, calls, _ = _refresh(tmp_path, **{"pulls.json": _pr(), "runs.json": _runs("completed")})
+    assert result.returncode == 0, result.stderr
+    assert "unexpected gh call" not in result.stderr
+    assert calls.splitlines()[:2] == [
+        "api repos/OpenHands/OpenHands-Cloud/pulls?state=open&base=main"
+        f"&head=OpenHands:{RELEASE_BRANCH}",
+        "api repos/OpenHands/OpenHands-Cloud/actions/workflows/image-scan-gate.yml/runs"
+        f"?event=pull_request&head_sha={HEAD_SHA}&per_page=1",
+    ]
 
 
 def test_refresh_does_not_fail_when_the_rerun_is_refused(tmp_path):
