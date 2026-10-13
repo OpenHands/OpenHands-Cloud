@@ -7,6 +7,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ import image_scan_diff as diff
 from image_scan_diff import Finding, ImageChange
 
 WORKFLOW = Path(".github/workflows/image-scan-comment.yml")
+SCAN_WORKFLOW = Path(".github/workflows/scan-docker-images.yml")
 
 
 def finding(id, package="libfoo", severity="HIGH", installed="1.0", fixed="1.1"):
@@ -226,6 +228,17 @@ def test_collect_changes_scans_only_images_whose_ref_changed(monkeypatch):
     assert [f.id for f in changes[0].new] == ["ghcr.io/o/agent-server:2.1.0"]
 
 
+def test_image_sources_match_the_images_scan_docker_images_discovers():
+    discover = YAML(typ="safe").load(SCAN_WORKFLOW.read_text())["jobs"]["discover_images"]
+    script = next(s for s in discover["steps"] if s.get("id") == "extract")["run"]
+    discovered = {
+        (file, tuple(query.removesuffix(".tag").strip(".").split(".")))
+        for query, file in re.findall(r"=\$\(yq '([^']+)' (\S+)\)", script)
+    }
+    assert discovered
+    assert set(diff.IMAGE_SOURCES.values()) == discovered
+
+
 def _workflow():
     return YAML(typ="safe").load(WORKFLOW.read_text())
 
@@ -234,6 +247,7 @@ def test_workflow_is_advisory_and_limited_to_same_repo_prs():
     workflow = _workflow()
     job = workflow["jobs"]["image-scan-comment"]
     assert "head.repo.full_name == github.repository" in job["if"]
+    assert "github.actor != 'dependabot[bot]'" in job["if"]
     assert job["permissions"] == {"contents": "read", "pull-requests": "write"}
     assert workflow["permissions"] == {"contents": "read"}
     assert "continue-on-error" not in job
