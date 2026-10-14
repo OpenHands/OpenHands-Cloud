@@ -73,7 +73,7 @@ spec:
               BACKUP="${DB_NAME}_backup_$(printf '%s' "$CURRENT" | tr -c 'A-Za-z0-9' '_')"
               TMP="${BACKUP}_incomplete"
               if [ -n "$(q -d postgres -c "SELECT 1 FROM pg_database WHERE datname = '$BACKUP'")" ]; then
-                echo "Backup database \"$BACKUP\" already exists; keeping it."
+                echo "Backup database \"$BACKUP\" already exists from an earlier upgrade attempt; keeping it. It may be older than the live data. For a fresh copy, drop it and upgrade again."
                 exit 0
               fi
 

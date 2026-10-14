@@ -827,7 +827,7 @@ spec:
             image:
               repository: '{{repl LocalRegistryNamespace }}/keycloak-config-cli'
           waitForDb:
-            image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/postgresql:latest'
+            image: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/postgresql:17.11-202610050823-minimal-trixie'
         postgresql:
           image:
             repository: '{{repl LocalRegistryNamespace }}/postgresql'
