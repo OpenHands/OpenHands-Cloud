@@ -56,6 +56,7 @@ jobs:
       - name: Run scripts tests
         env:
           KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.3.3
+          KEYCLOAK_BACKUP_TEST_POSTGRES_IMAGE: postgres:16
         run: >-
           uv run
           --with pytest

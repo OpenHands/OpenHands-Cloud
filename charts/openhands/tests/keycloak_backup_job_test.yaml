@@ -62,9 +62,29 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie
-      - matchRegex:
-          path: spec.template.spec.containers[0].args[0]
-          pattern: pg_dump
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: oh-main-postgresql
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_PORT
+            value: "5432"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGSSLMODE
+            value: prefer
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-password
+                key: username
       - contains:
           path: spec.template.spec.containers[0].env
           content:

@@ -46,3 +46,38 @@ tests:
     asserts:
       - notMatchRegexRaw:
           pattern: "both cache backends are enabled"
+  - it: names the pre-upgrade backup database in the 26.3 upgrade warning
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+    kubernetesProvider: &live-keycloak-26-3
+      scheme:
+        "apps/v1/StatefulSet":
+          gvr: {group: apps, version: v1, resource: statefulsets}
+          namespaced: true
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata: {name: keycloak, namespace: NAMESPACE}
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0
+    asserts:
+      - matchRegexRaw:
+          pattern: "backup\\s+is in bitnami_keycloak_backup_26_3_0 "
+  - it: does not claim a backup exists when the pre-upgrade backup is disabled
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.preUpgradeBackup.enabled: false
+    kubernetesProvider: *live-keycloak-26-3
+    asserts:
+      - matchRegexRaw:
+          pattern: "moves Keycloak from docker.io/bitnamilegacy/keycloak:26.3.0"
+      - notMatchRegexRaw:
+          pattern: "_backup_"
