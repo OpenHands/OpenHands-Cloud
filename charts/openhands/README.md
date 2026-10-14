@@ -691,6 +691,17 @@ To upgrade the chart:
 helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 ```
 
+### Keycloak 26.3 to 26.8
+
+The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.0. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards. Back up the Keycloak database before upgrading so a rollback is possible:
+
+```bash
+kubectl exec -n openhands <release>-postgresql-0 -- \
+  sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U postgres -Fc -d bitnami_keycloak' > keycloak-26.3.dump
+```
+
+With an external database, run the same `pg_dump` against the Keycloak database there. To roll back, scale the `keycloak` StatefulSet to 0, restore the dump into an empty `bitnami_keycloak` database with `pg_restore`, and upgrade with `keycloak.image` set back to `docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0`.
+
 ## Uninstallation
 
 To uninstall the chart:
