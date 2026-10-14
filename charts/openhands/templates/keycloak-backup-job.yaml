@@ -1,13 +1,8 @@
 {{- /*
-Pre-upgrade Keycloak database backup. Keycloak migrates its schema one way on
-first start of a newer version, so before an upgrade that changes the Keycloak
-version this copies the database into a sibling database named after the schema
-version it holds (e.g. bitnami_keycloak_backup_26_3_0). Rollback is then a pair
-of renames instead of a restore from a dump the operator may not have taken.
-Runs while the old Keycloak is still serving; pg_dump reads a consistent
-snapshot. A failure fails the upgrade before any manifest is applied.
-Gated on .Release.IsUpgrade like the budget preflight: `helm template` (ArgoCD)
-never sets it, and a fresh install has nothing to back up.
+Keycloak migrates its schema one way on first start of a newer version, so copy
+the database to a backup database first. This is safe while the old Keycloak is
+still serving, because pg_dump reads a consistent snapshot. `helm template`
+(ArgoCD) never sets .Release.IsUpgrade, so those installs must back up by hand.
 */ -}}
 {{- if and .Values.keycloak.enabled .Values.keycloak.preUpgradeBackup.enabled .Release.IsUpgrade }}
 {{- $db := .Values.keycloak.externalDatabase }}
