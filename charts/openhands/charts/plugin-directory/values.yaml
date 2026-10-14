@@ -14,8 +14,8 @@ databaseMigrations:
 # Client container configuration (React Router SSR)
 client:
   image:
-    repository: ghcr.io/openhands/patched/plugin-directory-client
-    tag: "1.2.0-patched@sha256:667252f537f005dd9da6e52a20398c87276cb18608996d734e0a070f395f818c"
+    repository: ghcr.io/openhands/plugin-directory-client
+    tag: "1.2.0-r1@sha256:8d74aa59e423d50aaa8bb4558a4aab8325463de7bccb761f10ed55c823358aff"
   resources:
     requests:
       memory: 256Mi
@@ -26,10 +26,10 @@ client:
 # Server container configuration (FastAPI backend)
 server:
   image:
-    repository: ghcr.io/openhands/patched/plugin-directory-server
+    repository: ghcr.io/openhands/plugin-directory-server
     # You must use a stable, semver tag. Do not use sha-based tags.
     # If you are hotfixing, you MUST create a patch release and use the semver tag.
-    tag: "1.2.0-patched@sha256:463981dfb39efa6574f7ccaf1dfa40363330cbc2123ef0f793314eef94993640"
+    tag: "1.2.0-r1@sha256:bf35b82bdcdcf37abba673ef5b40bdbed22ccc3af67b4793c7bcb21fdf11aa4d"
   resources:
     requests:
       memory: 256Mi
@@ -160,6 +160,11 @@ datadog:
 env: {}
 
 global:
+  # psql/pg_isready image for the database init containers and jobs. The openhands
+  # umbrella's global wins; this default only applies when rendering the subchart alone.
+  postgresClientImage:
+    repository: docker.io/alpine/psql
+    tag: 18.6@sha256:08f354a83552fcefa508116268463b371717577fe49d3fcb7b82cf8d2be464b8
   scheduling:
     # Affinity applied to this chart's pods when `affinity` above is empty. The
     # openhands umbrella sets this once for every chart it owns; this default
