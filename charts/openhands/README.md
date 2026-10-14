@@ -709,7 +709,7 @@ ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_0;
 ALTER DATABASE bitnami_keycloak_backup_26_3_0 RENAME TO bitnami_keycloak;
 ```
 
-With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`.
+With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`. The hook never drops backups, and every later upgrade that changes the Keycloak version, patch releases included, adds another full copy of the database, so drop old `bitnami_keycloak_backup_*` databases before they fill the PostgreSQL volume.
 
 ## Uninstallation
 

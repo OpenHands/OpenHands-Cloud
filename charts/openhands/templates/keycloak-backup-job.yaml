@@ -40,6 +40,8 @@ spec:
         {{- . | nindent 8 }}
       {{- end }}
       volumes:
+        # Holds the uncompressed dump on node ephemeral storage; a very large Keycloak
+        # database can fill it and evict the pod, failing the upgrade before Keycloak changes.
         - name: dump
           emptyDir: {}
       containers:
@@ -67,20 +69,26 @@ spec:
                 exit 0
               fi
 
+              # $BACKUP only ever appears through the rename below, so an existing one is complete.
               BACKUP="${DB_NAME}_backup_$(printf '%s' "$CURRENT" | tr -c 'A-Za-z0-9' '_')"
+              TMP="${BACKUP}_incomplete"
               if [ -n "$(q -d postgres -c "SELECT 1 FROM pg_database WHERE datname = '$BACKUP'")" ]; then
                 echo "Backup database \"$BACKUP\" already exists; keeping it."
                 exit 0
               fi
 
               echo "Keycloak schema $CURRENT will migrate to $TARGET_VERSION; copying \"$DB_NAME\" to \"$BACKUP\"..."
-              pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Fc -f /dump/keycloak.dump
-              q -d postgres -c "CREATE DATABASE \"$BACKUP\""
-              if ! pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$BACKUP" --no-owner --exit-on-error /dump/keycloak.dump; then
-                q -d postgres -c "DROP DATABASE \"$BACKUP\""
+              # Dump to a file rather than a pipe so a failed pg_dump stops the script (sh has no pipefail).
+              pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --no-owner -f /dump/keycloak.sql
+              q -d postgres -c "DROP DATABASE IF EXISTS \"$TMP\""
+              q -d postgres -c "CREATE DATABASE \"$TMP\""
+              # pg_dump 17 emits SET transaction_timeout, which servers older than 17 reject.
+              if ! sed '/^SET transaction_timeout = /d' /dump/keycloak.sql | q -d "$TMP" --single-transaction -q -o /dev/null; then
+                q -d postgres -c "DROP DATABASE \"$TMP\""
                 exit 1
               fi
-              rm -f /dump/keycloak.dump
+              q -d postgres -c "ALTER DATABASE \"$TMP\" RENAME TO \"$BACKUP\""
+              rm -f /dump/keycloak.sql
               echo "Backed up \"$DB_NAME\" (schema $CURRENT) to \"$BACKUP\"."
           volumeMounts:
             - name: dump
