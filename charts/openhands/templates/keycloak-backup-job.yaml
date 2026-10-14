@@ -15,7 +15,9 @@ metadata:
     app.kubernetes.io/component: keycloak-backup
   annotations:
     "helm.sh/hook": pre-upgrade
-    "helm.sh/hook-weight": "0"
+    # Last pre-upgrade hook, so a failing check (e.g. the budget preflight) stops
+    # the upgrade before a backup exists that a retry would keep.
+    "helm.sh/hook-weight": "10"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 0
