@@ -6,6 +6,10 @@ still serving, because pg_dump reads a consistent snapshot. `helm template`
 */ -}}
 {{- if and .Values.keycloak.enabled .Values.keycloak.preUpgradeBackup.enabled .Release.IsUpgrade }}
 {{- $db := .Values.keycloak.externalDatabase }}
+{{- $deadline := int .Values.keycloak.preUpgradeBackup.activeDeadlineSeconds }}
+{{- if lt $deadline 120 }}
+{{- fail (printf "keycloak.preUpgradeBackup.activeDeadlineSeconds must be at least 120 (got %d): the copy gets it minus 60s for image pull and startup" $deadline) }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -21,7 +25,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: {{ .Values.keycloak.preUpgradeBackup.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ $deadline }}
   template:
     metadata:
       labels:
@@ -54,8 +58,19 @@ spec:
             - |
               set -eu
               trap '[ $? -eq 0 ] || echo "Keycloak backup failed, so the upgrade stopped before Keycloak changed. Fix the error above, or back up \"$DB_NAME\" yourself and upgrade with keycloak.preUpgradeBackup.enabled=false."' EXIT
-              export PGPASSWORD="$DB_PASS"
-              q() { psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -v ON_ERROR_STOP=1 -tAX "$@"; }
+              export PGHOST="$DB_HOST" PGPORT="$DB_PORT" PGUSER="$DB_USER" PGPASSWORD="$DB_PASS"
+              q() { psql -v ON_ERROR_STOP=1 -tAX "$@"; }
+              # Past activeDeadlineSeconds the pod is killed and deleted with its log before
+              # the trap can run, so the copy stops itself earlier and says why.
+              END=$(( $(date +%s) + COPY_TIMEOUT_SECONDS ))
+              timed() {
+                step=$1; shift
+                rc=124
+                left=$(( END - $(date +%s) ))
+                [ "$left" -le 0 ] || { timeout "$left" "$@" && return 0 || rc=$?; }
+                [ "$rc" -ne 124 ] || echo "$step did not finish within ${COPY_TIMEOUT_SECONDS}s (keycloak.preUpgradeBackup.activeDeadlineSeconds minus 60s)."
+                return "$rc"
+              }
 
               if [ -z "$(q -d postgres -c "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")" ]; then
                 echo "Keycloak database \"$DB_NAME\" does not exist yet; nothing to back up."
@@ -81,11 +96,12 @@ spec:
 
               echo "Keycloak schema $CURRENT will migrate to $TARGET_VERSION; copying \"$DB_NAME\" to \"$BACKUP\"..."
               # Dump to a file rather than a pipe so a failed pg_dump stops the script (sh has no pipefail).
-              pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --no-owner -f /dump/keycloak.sql
+              timed "Dumping \"$DB_NAME\"" pg_dump -d "$DB_NAME" --no-owner -f /dump/keycloak.sql
               q -d postgres -c "DROP DATABASE IF EXISTS \"$TMP\""
               q -d postgres -c "CREATE DATABASE \"$TMP\""
               # pg_dump 17 emits SET transaction_timeout, which servers older than 17 reject.
-              if ! sed '/^SET transaction_timeout = /d' /dump/keycloak.sql | q -d "$TMP" --single-transaction -q -o /dev/null; then
+              if ! sed '/^SET transaction_timeout = /d' /dump/keycloak.sql \
+                  | timed "Restoring into \"$TMP\"" psql -X -v ON_ERROR_STOP=1 -d "$TMP" --single-transaction -q -o /dev/null; then
                 q -d postgres -c "DROP DATABASE \"$TMP\""
                 exit 1
               fi
@@ -116,6 +132,8 @@ spec:
                   key: {{ $db.existingSecretPasswordKey }}
             - name: TARGET_VERSION
               value: {{ include "openhands.keycloakVersion" . | quote }}
+            - name: COPY_TIMEOUT_SECONDS
+              value: {{ sub $deadline 60 | quote }}
           resources:
             {{- toYaml .Values.keycloak.preUpgradeBackup.resources | nindent 12 }}
 {{- end }}

@@ -8,6 +8,7 @@ import os
 import subprocess
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ def render_job() -> dict:
     container = yaml.safe_load(out)["spec"]["template"]["spec"]["containers"][0]
     env = {e["name"]: e.get("value") for e in container["env"]}
     return {"image": container["image"], "script": container["args"][0],
-            "target": env["TARGET_VERSION"]}
+            "target": env["TARGET_VERSION"], "copy_timeout": env["COPY_TIMEOUT_SECONDS"]}
 
 
 @pytest.fixture(scope="module")
@@ -74,16 +75,41 @@ def keycloak_db(server, *versions):
     return db
 
 
-def run_job(server, db):
+def run_job(server, db, copy_timeout=None):
     job = server["job"]
     return subprocess.run(
         ["docker", "run", "--rm", "--network", server["net"], "--tmpfs", "/dump:mode=1777",
          "-e", f"DB_HOST={server['name']}", "-e", "DB_PORT=5432", "-e", f"DB_NAME={db}",
          "-e", "DB_USER=postgres", "-e", "DB_PASS=pw", "-e", "PGSSLMODE=disable",
          "-e", f"TARGET_VERSION={job['target']}",
+         "-e", f"COPY_TIMEOUT_SECONDS={copy_timeout or job['copy_timeout']}",
          "--entrypoint", "/bin/sh", job["image"], "-c", job["script"]],
         capture_output=True, text=True, timeout=180,
     )
+
+
+@contextmanager
+def table_locked(server, db, table):
+    """Hold an ACCESS EXCLUSIVE lock on a table, which blocks pg_dump, until the block exits."""
+    holder = subprocess.Popen(
+        ["docker", "exec", server["name"], "psql", "-U", "postgres", "-d", db, "-v", "ON_ERROR_STOP=1",
+         "-c", f"BEGIN; LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(120);"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    granted = (f"SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+               f"WHERE c.relname = '{table}' AND l.mode = 'AccessExclusiveLock' AND l.granted")
+    try:
+        for _ in range(30):
+            if sql(server, db, granted) == "1":
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(f"lock on {table} was never granted")
+        yield
+    finally:
+        sql(server, "postgres", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                                f"WHERE datname = '{db}' AND query LIKE '%pg_sleep(120)%'")
+        holder.wait(timeout=30)
 
 
 def test_copies_the_database_named_after_the_current_schema(server):
@@ -138,4 +164,21 @@ def test_a_failed_restore_fails_the_job_and_leaves_no_backup(server):
 
     assert result.returncode != 0
     assert "upgrade stopped" in result.stdout
+    assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
+
+
+def test_a_dump_past_the_time_limit_fails_the_job_with_a_message(server):
+    # Past activeDeadlineSeconds the pod is killed and deleted along with its log,
+    # so the script has to give up first and say why.
+    db = keycloak_db(server, "26.3.0")
+
+    with table_locked(server, db, "realm"):
+        started = time.monotonic()
+        result = run_job(server, db, copy_timeout=3)
+        elapsed = time.monotonic() - started
+
+    assert result.returncode != 0
+    assert f'Dumping "{db}" did not finish within 3s' in result.stdout
+    assert "upgrade stopped" in result.stdout
+    assert elapsed < 60
     assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}

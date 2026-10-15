@@ -103,6 +103,37 @@ tests:
               secretKeyRef:
                 name: postgres-password
                 key: password
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COPY_TIMEOUT_SECONDS
+            value: "240"
+
+  - it: gives the copy the Job deadline minus a minute for image pull
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.preUpgradeBackup.activeDeadlineSeconds: 540
+    asserts:
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 540
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COPY_TIMEOUT_SECONDS
+            value: "480"
+
+  - it: fails on a Job deadline too short to leave the copy a minute
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.preUpgradeBackup.activeDeadlineSeconds: 119
+    asserts:
+      - failedTemplate:
+          errorPattern: activeDeadlineSeconds must be at least 120
 
   - it: derives the target version from the image tag
     release:

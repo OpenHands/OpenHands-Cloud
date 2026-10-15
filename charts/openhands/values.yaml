@@ -484,6 +484,8 @@ keycloak:
     enabled: true
     # Includes image pull time. Keep it under Helm's hook timeout (600s on Replicated)
     # so a stuck backup fails with the Job's own error rather than a Helm timeout.
+    # The copy gets this minus 60s, then fails with a message in the Job log;
+    # raise it for a large Keycloak database. Minimum 120.
     activeDeadlineSeconds: 300
     resources:
       requests:
