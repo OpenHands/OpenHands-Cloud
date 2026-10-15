@@ -327,7 +327,7 @@ spec:
 
     - name: llm_configuration
       title: LLM Configuration
-      description: Configure your Large Language Model provider
+      description: Configure your Large Language Model provider. Provider credentials stay in the bundled LiteLLM proxy and are not exposed to sandboxes, so users select the models listed here by their managed names (openhands/<model>). Provider-direct names such as azure/..., bedrock/... or vertex_ai/... do not authenticate.
       items:
         - name: llm_provider
           title: LLM Provider
@@ -1546,7 +1546,7 @@ spec:
 
     - name: upgrade_checks
       title: Upgrade Checks
-      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed. Separately, the Admin Console preflight before each upgrade warns, without blocking, about saved LLM settings that use provider-direct models (azure/..., bedrock/..., vertex_ai/...).
       items:
         - name: budget_preflight_mode
           title: Pre-upgrade Budget Preflight
