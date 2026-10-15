@@ -263,7 +263,6 @@ bitbucketDataCenter:
 azureDevOps:
   enabled: false
   tenantId: ""
-  organization: ""
   auth:
     existingSecret: azure-devops-app
 
