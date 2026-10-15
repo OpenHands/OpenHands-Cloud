@@ -8,6 +8,8 @@ through the bundled LiteLLM proxy, so provider settings belong only in
 For every provider configuration, set each password-type config item to a
 sentinel, apply the matching optionalValues blocks the way KOTS does, and
 require that no sentinel ends up in the effective ``agentServerEnv`` map.
+Also require that the map holds only the allowlisted CA-bundle and proxy keys,
+which catches values from non-password items and hardcoded literals.
 """
 
 from __future__ import annotations
@@ -27,6 +29,17 @@ from test_replicated_llm_provider_routes import (
 
 SENTINEL = "SENTINEL-"
 CA_BUNDLE_KEYS = {"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"}
+# Every key the agent-server env may hold: the CA-bundle paths and the proxy
+# block's vars. Adding one here should be a deliberate decision.
+ALLOWED_KEYS = CA_BUNDLE_KEYS | {
+    "GIT_SSL_CAINFO",
+    "CURL_CA_BUNDLE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "SSL_VERIFY",
+    "GIT_SSL_NO_VERIFY",
+}
 
 
 def _password_overrides() -> dict[str, str]:
@@ -87,3 +100,9 @@ def test_agent_server_env_has_no_password_values(provider: str) -> None:
     assert CA_BUNDLE_KEYS <= env.keys()
     leaked = sorted(key for key, value in env.items() if SENTINEL in value)
     assert not leaked, f"{provider}: password config values in agentServerEnv: {leaked}"
+
+
+@pytest.mark.parametrize("provider", sorted(PROVIDERS))
+def test_agent_server_env_has_only_allowlisted_keys(provider: str) -> None:
+    unexpected = sorted(agent_server_env(provider).keys() - ALLOWED_KEYS)
+    assert not unexpected, f"{provider}: unexpected agentServerEnv keys: {unexpected}"
