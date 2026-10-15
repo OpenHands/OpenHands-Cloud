@@ -350,19 +350,25 @@
       key: webhook-secret
       optional: true
 {{- end }}
+{{- /*
+  FQDN (not the bare Service name) for the bundled proxy so it resolves from
+  any namespace. This URL is persisted into each user's LLM profile at first
+  use, so it must be resolvable from sandboxes that run in a separate
+  namespace. No-op for same-namespace installs.
+*/}}
+{{- $liteLlmUrl := .Values.litellm.url }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
-- name: LITE_LLM_API_URL
-  # FQDN (not the bare Service name) so it resolves from any namespace. This URL
-  # is persisted into each user's LLM profile at first use, so it must be
-  # resolvable from sandboxes that run in a separate namespace. No-op for
-  # same-namespace installs.
-  value: http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}.svc.cluster.local:4000
-{{- else }}
-- name: LITE_LLM_API_URL
-  value: {{ .Values.litellm.url }}
+{{- $liteLlmUrl = printf "http://%s-litellm.%s.svc.cluster.local:4000" .Release.Name .Release.Namespace }}
 {{- end }}
+- name: LITE_LLM_API_URL
+  value: {{ $liteLlmUrl }}
+{{- /*
+  Rendered as a value, not $(LITE_LLM_API_URL): an env.LITE_LLM_API_URL
+  override is appended after this entry, and Kubernetes only expands
+  references to earlier vars.
+*/}}
 - name: OPENHANDS_PROVIDER_BASE_URL
-  value: $(LITE_LLM_API_URL)
+  value: {{ (.Values.env).LITE_LLM_API_URL | default $liteLlmUrl }}
 {{- if and (index .Values "litellm-helm") (index .Values "litellm-helm" "enabled") }}
 - name: LITE_LLM_API_KEY
   valueFrom:
