@@ -1,0 +1,82 @@
+suite: direct model preflight (Admin Console)
+# secrets.yaml includes the troubleshoot.preflights define from preflights.yaml,
+# which is not an underscore partial, so it must be listed to resolve.
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+tests:
+  - it: adds nothing by default
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "direct-model-preflight"
+
+  - it: adds a runPod in the release namespace running the scan from the app image
+    template: troubleshoot/secrets.yaml
+    release:
+      namespace: openhands
+    set:
+      directModelPreflight.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'runPod:\n\s+name: direct-model-preflight\n\s+namespace: openhands\n'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'python -m run_direct_model_preflight'
+
+  - it: gives the scan database access and nothing else from the app env
+    template: troubleshoot/secrets.yaml
+    set:
+      directModelPreflight.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'name: DB_PASS\n\s+valueFrom:\n\s+secretKeyRef:'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'name: DB_HOST'
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'GITHUB_APP_PRIVATE_KEY|KEYCLOAK_ADMIN_PASSWORD|KEYCLOAK_CLIENT_SECRET|LITE_LLM_API_KEY'
+
+  - it: reports an all-clear row and a provider-direct models row
+    template: troubleshoot/secrets.yaml
+    set:
+      directModelPreflight.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'checkName: "Saved LLM settings and sandbox credentials"'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'checkName: "Saved LLM settings that use provider-direct models"'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'regex: ''\(\?m\)\^  \(\?:azure\|bedrock\|vertex_ai\)/'
+
+  - it: skips the analyzers when the pod could not run, for example on a fresh install
+    template: troubleshoot/secrets.yaml
+    set:
+      directModelPreflight.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'fileName: direct-model-preflight/direct-model-preflight\.log\n\s+ignoreIfNoFiles: true'
