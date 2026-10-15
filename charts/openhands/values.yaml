@@ -1459,9 +1459,10 @@ global:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
     allowInsecureImages: true
-  # Env the app injects into every per-session runtime (LLM provider creds,
-  # proxy vars, CA paths): serialised into OH_AGENT_SERVER_ENV on the app AND
-  # mirrored into each warm-runtime entry's env by the runtime-api subchart —
+  # Env the app injects into every per-session runtime (proxy vars, CA
+  # paths; never secrets, sandboxes see it as plain env): serialised into
+  # OH_AGENT_SERVER_ENV on the app AND mirrored into each warm-runtime
+  # entry's env by the runtime-api subchart —
   # runtime-api claims warm pods by exact env match, so a key present here but
   # absent from the warm env would make the pool unclaimable.
   agentServerEnv: {}
