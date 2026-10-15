@@ -1,7 +1,8 @@
 """Keep the agent-server env limited to non-sensitive runtime settings.
 
-``global.agentServerEnv`` is serialised into ``OH_AGENT_SERVER_ENV`` and
-mirrored into each warm-runtime config. The agent-server reaches the LLM
+``OH_AGENT_SERVER_ENV`` is folded from ``env.OH_AGENT_SERVER_ENV`` (JSON),
+``global.agentServerEnv`` (also mirrored into each warm-runtime config) and the
+legacy top-level ``agentServerEnv``. The agent-server reaches the LLM
 through the bundled LiteLLM proxy, so provider settings belong only in
 ``litellm-env-secrets``.
 
@@ -14,6 +15,7 @@ which catches values from non-password items and hardcoded literals.
 
 from __future__ import annotations
 
+import json
 from functools import cache
 
 import pytest
@@ -54,39 +56,63 @@ def _password_overrides() -> dict[str, str]:
     return values
 
 
-def _agent_server_env_blocks() -> list[tuple[str, dict[str, str]]]:
+def _agent_server_env_sources() -> list[tuple[str, str, object]]:
+    """(when, kind, value) for every input the chart folds into the env."""
     doc = next(
         d
         for d in yaml.safe_load_all(OPENHANDS.read_text(encoding="utf-8"))
         if isinstance(d, dict) and d.get("metadata", {}).get("name") == "openhands"
     )
     spec = doc["spec"]
-    blocks = [("true", spec["values"]["global"]["agentServerEnv"])]
-    for entry in spec.get("optionalValues", []):
-        env = (entry.get("values", {}).get("global") or {}).get("agentServerEnv")
-        if env:
-            blocks.append((entry["when"], env))
-    return blocks
+    entries = [("true", spec["values"])] + [
+        (entry["when"], entry.get("values", {}))
+        for entry in spec.get("optionalValues", [])
+    ]
+    sources: list[tuple[str, str, object]] = []
+    for when, values in entries:
+        raw = (values.get("env") or {}).get("OH_AGENT_SERVER_ENV")
+        if raw:
+            sources.append((when, "json", raw))
+        for kind, env in (
+            ("global", (values.get("global") or {}).get("agentServerEnv")),
+            ("top", values.get("agentServerEnv")),
+        ):
+            if env:
+                sources.append((when, kind, env))
+    return sources
 
 
 @cache
 def agent_server_env(provider: str) -> dict[str, str]:
-    """Effective global.agentServerEnv for a provider with sentinel passwords."""
+    """Effective OH_AGENT_SERVER_ENV map for a provider with sentinel passwords."""
     cfg = _config_options({**PROVIDERS[provider][0], **_password_overrides()})
-    blocks = _agent_server_env_blocks()
-    whens = _helm_render({f"w{i}": when for i, (when, _) in enumerate(blocks)}, cfg)
-    active = [env for i, (_, env) in enumerate(blocks) if str(whens[f"w{i}"]) == "true"]
-    fields = {
-        f"b{i}k{j}": value
-        for i, env in enumerate(active)
-        for j, value in enumerate(env.values())
-    }
+    sources = _agent_server_env_sources()
+    whens = _helm_render(
+        {f"w{i}": when for i, (when, _, _) in enumerate(sources)}, cfg
+    )
+    active = [
+        (kind, value)
+        for i, (_, kind, value) in enumerate(sources)
+        if str(whens[f"w{i}"]) == "true"
+    ]
+    fields: dict[str, str] = {}
+    for i, (kind, value) in enumerate(active):
+        if kind == "json":
+            fields[f"b{i}"] = value
+        else:
+            fields.update({f"b{i}k{j}": v for j, v in enumerate(value.values())})
     rendered = _helm_render(fields, cfg)
-    result: dict[str, str] = {}
-    for i, env in enumerate(active):
-        for j, key in enumerate(env):
-            result[key] = str(rendered[f"b{i}k{j}"])
-    return result
+    # Same precedence as openhands.env: JSON base, then the global map, then
+    # the top-level map.
+    base: dict[str, str] = {}
+    maps: dict[str, dict[str, str]] = {"global": {}, "top": {}}
+    for i, (kind, value) in enumerate(active):
+        if kind == "json":
+            base = json.loads(str(rendered[f"b{i}"]))
+        else:
+            for j, key in enumerate(value):
+                maps[kind][key] = str(rendered[f"b{i}k{j}"])
+    return {**base, **maps["global"], **maps["top"]}
 
 
 def test_sentinels_reach_the_config() -> None:
