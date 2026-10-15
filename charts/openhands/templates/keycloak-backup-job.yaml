@@ -57,7 +57,7 @@ spec:
           args:
             - |
               set -eu
-              trap '[ $? -eq 0 ] || echo "Keycloak backup failed, so the upgrade stopped before Keycloak changed. Fix the error above, or back up \"$DB_NAME\" yourself and upgrade with keycloak.preUpgradeBackup.enabled=false."' EXIT
+              trap '[ $? -eq 0 ] || echo "Keycloak backup failed, so the upgrade stopped before Keycloak changed. Fix the error above, or back up \"$DB_NAME\" yourself and upgrade with keycloak.preUpgradeBackup.enabled=false (in the Replicated admin console, turn off \"Back Up Keycloak Database Before Upgrade\")."' EXIT
               export PGHOST="$DB_HOST" PGPORT="$DB_PORT" PGUSER="$DB_USER" PGPASSWORD="$DB_PASS"
               q() { psql -v ON_ERROR_STOP=1 -tAX "$@"; }
               # Past activeDeadlineSeconds the pod is killed and deleted with its log before

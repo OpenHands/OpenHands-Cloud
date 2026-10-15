@@ -164,6 +164,7 @@ def test_a_failed_restore_fails_the_job_and_leaves_no_backup(server):
 
     assert result.returncode != 0
     assert "upgrade stopped" in result.stdout
+    assert '"Back Up Keycloak Database Before Upgrade"' in result.stdout
     assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
 
 
