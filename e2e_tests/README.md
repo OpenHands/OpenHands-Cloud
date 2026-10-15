@@ -112,6 +112,27 @@ candidate enterprise image. Download the Playwright artifact and retain the
 JSON evidence with the tested image SHA and release sequence. Scheduled runs
 reuse the same protected contract.
 
+### Super Admin dashboard and first install
+
+Both specs need the instance's **Enable Super Admin Dashboard** option (the
+`ENABLE_SUPER_ADMIN` and `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`
+variables). They skip when it is off.
+
+`tests/013-super-admin-dashboard.spec.ts` opens the dashboard from Settings,
+then works through organization, Super Admin, membership and account actions
+on a throwaway user and organizations. It deletes them afterwards. It runs for
+whichever role is a Super Admin, and skips unless user provisioning is enabled.
+Its emails use `example.com`, because the server rejects `.test` addresses.
+
+`tests/012-first-install.spec.ts` walks the `/install` wizard. That wizard only
+exists for the first user to sign in after a fresh install with the option
+already on. The spec therefore runs only when the Returning User is that first
+Super Admin and the wizard is still pending, and skips on every long-lived
+instance. When the wizard sends a user to `/install` at sign-in, the login
+helper goes to the app home and leaves the wizard for the spec. To run the spec
+again on the same instance, the first Super Admin can reopen the wizard with
+`PATCH /api/admin/setup-state` and the body `{"wizard_completed": false}`.
+
 ### Run through an Argo WorkflowTemplate
 
 Operators with access to an Argo installation can submit the test harness from
@@ -189,7 +210,7 @@ Three credential sets are required before any test run:
 
 The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
 
-`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `.e2e.test` namespace (RFC 2606 reserves `.test` from being a real TLD). Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
+`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
 
 ### Environment variables
 
@@ -202,7 +223,7 @@ Keycloak admin (cleanup):
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
 - `KEYCLOAK_ADMIN_PASSWORD` — admin password.
-- `KEYCLOAK_NEW_USER_EMAIL` — email of the synthetic New User. Must be under the reserved `.e2e.test` namespace (RFC 2606); enforced by `assertE2eOnlyEmail`.
+- `KEYCLOAK_NEW_USER_EMAIL` — email of the synthetic New User. Must be under the reserved `e2e.example.com` namespace (RFC 2606); enforced by `assertE2eOnlyEmail`.
 
 The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
 

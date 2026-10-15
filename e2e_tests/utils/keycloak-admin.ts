@@ -24,7 +24,7 @@ import { assertE2eOnlyEmail, type KeycloakAdminConfig } from "./config";
  *  - Users are looked up by exact email match in the target realm (default
  *    ``allhands``) and every match is deleted.
  *  - The email under ``config.newUserEmail`` is under a reserved e2e-only
- *    TLD (see ``assertE2eOnlyEmail``), so the delete-by-email call cannot
+ *    domain (see ``assertE2eOnlyEmail``), so the delete-by-email call cannot
  *    ever match a real user.
  */
 
@@ -110,7 +110,7 @@ async function deleteUser(
  * Delete every user in the target realm whose email matches the New User's
  * email. Returns the number of users deleted.
  *
- * The email is required to be under an e2e-only TLD (see
+ * The email is required to be under an e2e-only domain (see
  * ``assertE2eOnlyEmail``); this is a defense-in-depth guard against a config
  * typo pointing the delete at a real account.
  */

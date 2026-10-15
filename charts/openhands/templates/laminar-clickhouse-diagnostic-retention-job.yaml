@@ -24,7 +24,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: apply-retention
-          image: {{ dig "images" "clickhouse" "repository" "clickhouse/clickhouse-server" .Values.laminar }}:{{ dig "images" "clickhouse" "tag" "25.10" .Values.laminar }}
+          image: {{ dig "images" "clickhouse" "repository" "clickhouse/clickhouse-server" .Values.laminar }}:{{ dig "images" "clickhouse" "tag" "26.3-alpine" .Values.laminar }}
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:

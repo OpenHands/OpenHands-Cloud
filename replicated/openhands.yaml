@@ -113,6 +113,11 @@ spec:
       # falls back to the WebClientFeatureFlags model default (False).
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
       ENABLE_BYOR_EXPORT: 'repl{{ ConfigOptionEquals "enable_byor_export" "1" }}'
+      # Super Admin dashboard. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # The server reads the bare ENABLE_SUPER_ADMIN to mount the /api/admin
+      # directory routes; the web client reads feature_flags.enable_super_admin.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
+      ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
@@ -182,12 +187,12 @@ spec:
         existingSecretUserKey: username
         existingSecretPasswordKey: password
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/third-party-images/keycloak'
       keycloakConfigCli:
         image:
           repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/keycloak-config-cli'
       waitForDb:
-        image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql:latest'
+        image: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie'
       # caBundle wiring: mount the trust-manager Bundle ConfigMap and point
       # Keycloak's truststore at the merged PEM. Repeats the chart's default
       # KC_* env vars because helm value merging replaces arrays — adding
@@ -445,7 +450,7 @@ spec:
               # LITE_LLM_API_URL for the bundled litellm-helm (FQDN of
               # <releaseName>-litellm in <namespace>, both pinned above).
               OH_LLM_API_KEY_REFRESH_BASE_URLS: "http://openhands-litellm.openhands.svc.cluster.local:4000"
-              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${OH_SESSION_API_KEYS_0}"}'
+              OH_LLM_API_KEY_REFRESH_HEADERS: '{"X-Session-API-Key": "${SESSION_API_KEY}"}'
               OH_LLM_API_KEY_REFRESH_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/keys/llm/managed/current'
               OH_VSCODE_PORT: "60001"
               OH_WEBHOOKS_0_BASE_URL: 'https://{{repl ConfigOption "computed_app_hostname" }}/api/v1/webhooks'
@@ -501,7 +506,7 @@ spec:
       # conventional device-plugin priority.
       priorityClassName: system-node-critical
       image:
-        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/squat/generic-device-plugin'
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/generic-device-plugin'
         # Do not override the image tag here. Pin to a stable version in the chart.
       initImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/library/busybox'

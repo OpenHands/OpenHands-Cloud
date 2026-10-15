@@ -1,7 +1,7 @@
 {{- define "runtime-api.dbInitContainers" }}
 {{- if .Values.databaseMigrations.waitForDatabase }}
 - name: wait-for-db
-  image: "bitnamilegacy/postgresql:latest"
+  image: "ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie"
   command: ['sh', '-c']
   args:
     - |
@@ -18,7 +18,7 @@
 {{- end }}
 {{- if .Values.databaseMigrations.createDatabases }}
 - name: create-db
-  image: "bitnamilegacy/postgresql:latest"
+  image: "ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie"
   command: ['sh', '-c']
   args:
     - |

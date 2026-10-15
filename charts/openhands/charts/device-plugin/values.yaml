@@ -13,10 +13,10 @@
 #   helm install device-plugin charts/openhands/charts/device-plugin
 
 image:
-  repository: ghcr.io/squat/generic-device-plugin
-  # Upstream publishes no semver releases, only short-git-sha tags and a
-  # moving `latest`. Pin a sha so installs are reproducible.
-  tag: 2cc50b0
+  # Our fork of squat/generic-device-plugin: upstream is inactive and its image
+  # ships unpatched CVEs. The fork publishes only commit tags, so pin one.
+  repository: ghcr.io/openhands/generic-device-plugin
+  tag: 5cb2f8c
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

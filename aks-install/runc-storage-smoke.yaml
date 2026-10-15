@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openhands-runtimes
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: runc-storage-smoke
+  namespace: openhands-runtimes
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: runc-storage-smoke
+  namespace: openhands-runtimes
+spec:
+  nodeSelector:
+    workload: openhands-sandbox
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: ubuntu:24.04
+      command: [bash, -lc]
+      args:
+        - 'set -eu; id; uname -r; echo aks-runc-storage-ok > /workspace/probe.txt; cat /workspace/probe.txt; test -w /workspace; echo RUNC_AZURE_DISK_PASS'
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+  volumes:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: runc-storage-smoke
