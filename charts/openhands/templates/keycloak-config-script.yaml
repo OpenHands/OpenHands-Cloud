@@ -437,6 +437,27 @@ data:
         echo "  Created identity provider: enterprise_sso"
       fi
 
+      jq -n '{
+        name: "identity-provider",
+        identityProviderAlias: "enterprise_sso",
+        identityProviderMapper: "hardcoded-attribute-idp-mapper",
+        config: {
+          attribute: "identity_provider",
+          "attribute.value": "enterprise_sso:saml",
+          syncMode: "FORCE"
+        }
+      }' > /tmp/mapper-enterprise-sso.json || exit 1
+      keycloak_api_call "curl -s \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers\" $AUTH" || exit 1
+      EXISTING_MAPPER_ID=$(printf '%s\n' "$RESPONSE" | jq -r \
+        '.[] | objects | select(.name == "identity-provider") | .id // empty') || exit 1
+      if [ -n "$EXISTING_MAPPER_ID" ]; then
+        jq --arg id "$EXISTING_MAPPER_ID" '. + {id: $id}' /tmp/mapper-enterprise-sso.json > /tmp/mapper-enterprise-sso-update.json || exit 1
+        keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso/mappers/$EXISTING_MAPPER_ID" /tmp/mapper-enterprise-sso-update.json || exit 1
+        echo "  Updated mapper: enterprise_sso/identity-provider"
+      else
+        keycloak_write POST "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" /tmp/mapper-enterprise-sso.json || exit 1
+        echo "  Created mapper: enterprise_sso/identity-provider"
+      fi
       # Import the profile attributes documented for enterprise SAML providers.
       # Keycloak does not map these plain attribute names automatically when the
       # IdP uses a persistent NameID. IMPORT avoids forcing later profile updates.
@@ -466,29 +487,8 @@ data:
         fi
       done
 
-      jq -n '{
-        name: "identity-provider",
-        identityProviderAlias: "enterprise_sso",
-        identityProviderMapper: "hardcoded-attribute-idp-mapper",
-        config: {
-          attribute: "identity_provider",
-          "attribute.value": "enterprise_sso:saml",
-          syncMode: "FORCE"
-        }
-      }' > /tmp/mapper-enterprise-sso.json || exit 1
-      keycloak_api_call "curl -s \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers\" $AUTH" || exit 1
-      EXISTING_MAPPER_ID=$(printf '%s\n' "$RESPONSE" | jq -r \
-        '.[] | objects | select(.name == "identity-provider") | .id // empty') || exit 1
-      if [ -n "$EXISTING_MAPPER_ID" ]; then
-        jq --arg id "$EXISTING_MAPPER_ID" '. + {id: $id}' /tmp/mapper-enterprise-sso.json > /tmp/mapper-enterprise-sso-update.json || exit 1
-        keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso/mappers/$EXISTING_MAPPER_ID" /tmp/mapper-enterprise-sso-update.json || exit 1
-        echo "  Updated mapper: enterprise_sso/identity-provider"
-      else
-        keycloak_write POST "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" /tmp/mapper-enterprise-sso.json || exit 1
-        echo "  Created mapper: enterprise_sso/identity-provider"
-      fi
       echo "enterprise_sso SAML identity provider configured."
-    ) || echo "WARNING: enterprise_sso auto-configuration failed (details above). Fix the SAML metadata URL and redeploy to retry; continuing startup." >&2
+    ) || echo "WARNING: enterprise_sso auto-configuration failed (details above). Check metadata retrieval and Keycloak provider/mapper errors above, then redeploy to retry; continuing startup." >&2
     {{- else if not .Values.enterpriseSSO.enabled }}
     # Reconcile on every toggle-off rollout, but only modify a provider stamped
     # as chart-managed by the auto-configuration path.

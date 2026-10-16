@@ -322,8 +322,8 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
      idpMetadataUrl: "https://idp.example.com/saml/metadata"
    # When idpMetadataUrl is provided, the chart automatically creates and keeps updated the
    # enterprise_sso SAML identity provider in the bundled Keycloak on every pod start.
-   # The managed provider validates SAML signatures, trusts the assertion email for account
-   # linking, and stores an ownership marker in Keycloak. Turning enabled off disables only
+   # The managed provider validates SAML signatures, marks the imported IdP email verified,
+   # and stores an ownership marker in Keycloak. Turning enabled off disables only
    # a provider with that marker, even if idpMetadataUrl is cleared in the same rollout.
    # Leave idpMetadataUrl empty to configure the provider manually in the Keycloak admin
    # console instead; the chart does not disable providers without its ownership marker.
@@ -336,6 +336,25 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
    - Attribute: `identity_provider`
    - Value: `enterprise_sso:saml`
    - Sync mode: `FORCE`
+
+   Configure the IdP to send attributes named exactly `email`, `firstName`, and
+   `lastName` (case-sensitive). With a persistent NameID, these attributes populate
+   the new user's email and names. Entra/ADFS default claim URIs need explicit
+   remapping. Attribute NameFormat does not change matching by attribute name.
+
+   The chart manages `openhands-profile-email`, `openhands-profile-firstName`,
+   and `openhands-profile-lastName` using `saml-user-attribute-idp-mapper` with
+   `attribute.name` and `user.attribute` set to the corresponding attribute,
+   `attribute.name.format: ATTRIBUTE_FORMAT_UNSPECIFIED`, and `syncMode: IMPORT`.
+   Add these mappers too when setting up the provider manually. Chart-managed
+   mapper edits are overwritten on startup; use distinct names for custom mappers
+   and avoid multiple conflicting importers for the same user field.
+
+   IMPORT fills profiles only for new users. It does not backfill existing accounts
+   or synchronize later IdP email/name changes. The provider's `trustEmail: true`
+   marks an imported email verified; it does not automatically link an existing
+   account. Preserve the first-broker-login ownership verification flow and test
+   existing-email collisions and application organization/invitation policies.
 
 ### LiteLLM configuration
 
