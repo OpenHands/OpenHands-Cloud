@@ -354,6 +354,7 @@ def test_enterprise_sso_uses_one_canonical_values_key() -> None:
     assert "enterpriseSso" not in schema["properties"]
     assert set(schema["properties"]["enterpriseSSO"]["properties"]) == {
         "enabled",
+        "enforceOnly",
         "displayName",
         "idpMetadataUrl",
     }

@@ -51,3 +51,7 @@ script in its usage-error path, so refuse it at render time instead.
 {{- if and .Values.enabled .Values.budgetReconcileGate.enabled (not (has (toString .Values.budgetReconcileGate.mode) (list "strict" "acknowledge"))) -}}
 {{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
 {{- end -}}
+
+{{- if and .Values.enabled .Values.enterpriseSSO.enforceOnly (or (not .Values.enterpriseSSO.enabled) (not .Values.enterpriseSSO.idpMetadataUrl) (not (include "openhands.keycloakProvisionRealm" .))) -}}
+{{- fail "enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning." -}}
+{{- end -}}

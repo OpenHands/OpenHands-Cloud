@@ -127,6 +127,7 @@ spec:
     # provider in Keycloak from this metadata URL on every pod start.
     enterpriseSSO:
       enabled: repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}
+      enforceOnly: repl{{ and (ConfigOptionEquals "enterprise_sso_enabled" "1") (ConfigOptionEquals "enterprise_sso_enforce_only" "1") }}
       displayName: repl{{ ConfigOption "enterprise_sso_display_name" | mustToJson }}
       idpMetadataUrl: repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}
 

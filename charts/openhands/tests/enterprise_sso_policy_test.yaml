@@ -1,0 +1,54 @@
+suite: Persistent enterprise SSO-only policy
+templates:
+  - deployment.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  - litellm-config-script.yaml
+  - validations.yaml
+tests:
+  - it: rejects enforcement without enabled managed SAML
+    set:
+      enterpriseSSO.enforceOnly: true
+    asserts:
+      - template: validations.yaml
+        failedTemplate:
+          errorMessage: enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning.
+  - it: renders persistent policy with both backend and client flags
+    set:
+      keycloak.enabled: true
+      enterpriseSSO.enabled: true
+      enterpriseSSO.enforceOnly: true
+      enterpriseSSO.idpMetadataUrl: https://idp.example.test/metadata
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENFORCE_ENTERPRISE_SSO
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_WEB_CLIENT_FEATURE_FLAGS_ENFORCE_ENTERPRISE_SSO
+            value: "true"
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'SSO_ONLY_ENABLED=true'
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'apply_sso_only_client.*refusing startup'
+  - it: leaves ordinary login unchanged by default
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENFORCE_ENTERPRISE_SSO
+            value: "false"
+      - template: keycloak-config-script.yaml
+        notMatchRegex:
+          path: data["keycloak-config.sh"]
+          pattern: 'ensure_sso_only_flow'

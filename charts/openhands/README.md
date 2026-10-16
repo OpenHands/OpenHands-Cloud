@@ -356,6 +356,51 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
    account. Preserve the first-broker-login ownership verification flow and test
    existing-email collisions and application organization/invitation policies.
 
+##### Require corporate SSO for interactive sign-in
+
+`enterpriseSSO.enforceOnly: true` is a default-off policy for chart-managed
+Keycloak. It requires `enterpriseSSO.enabled: true` and a working HTTPS metadata
+URL. Deploy it only with an Enterprise server build that implements
+`ENFORCE_ENTERPRISE_SSO` (the companion application change), after testing SAML
+and the administrator recovery procedure on a separate installation.
+
+Replicated exposes **Require Enterprise SSO for sign-in** under Enterprise SSO.
+The Helm equivalent is:
+
+```yaml
+enterpriseSSO:
+  enabled: true
+  enforceOnly: true
+  idpMetadataUrl: "https://idp.example.com/saml/metadata"
+```
+
+Each startup reconciles managed Git brokers to account-linking-only and assigns
+the OpenHands client a dedicated browser flow containing only a required
+enterprise SSO redirector. It also disables password grants for that client.
+Normal and no-hint authorization goes to SAML; empty hints and other direct
+broker logins fail rather than expose local-password login. Existing custom
+brokers must already be disabled or link-only; otherwise startup refuses to
+complete instead of overwriting their credentials. A conflicting custom flow
+under the managed alias also fails closed.
+
+Users still authorize GitHub/Azure DevOps separately under Settings > Integrations.
+App installation/consent and repository permissions remain necessary. A GitHub
+identity already linked to another OpenHands user cannot be silently moved;
+private GitHub Apps may also exclude a second test identity. Test with an eligible
+identity and preserve organization membership and history. The policy does not
+automatically grant organization access or repository permissions.
+
+This controls new interactive login; existing application sessions, refresh/offline
+tokens, API keys and running automations are not universally revoked. Native
+(non-Keycloak) OAuth/SAML/password session creation is blocked by the companion
+server policy. Plan explicit revocation and offboarding separately. Keycloak's
+master-realm administrative recovery remains separate from OpenHands login.
+
+To undo the policy, set `enforceOnly: false` and redeploy with SAML retained.
+The managed provider flags and client settings return to their chart defaults;
+the unused managed flow and existing users/links are retained. Test the normal
+login method again. No database reset or user deletion is part of rollback.
+
 ### LiteLLM configuration
 
 > [!IMPORTANT]
