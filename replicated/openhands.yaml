@@ -19,8 +19,11 @@ spec:
       # local-registry variants only override the repository (and tag, for the
       # admin-supplied custom image). The default tag is pinned in the chart's
       # global.agentServerImage.
+      # `variant` (full|slim) comes from the sandbox_image_variant option; the
+      # chart appends its fullTagSuffix to the pinned tag for `full`.
       agentServerImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+        variant: '{{repl ConfigOption "sandbox_image_variant" }}'
       # Runtime (agent-server sandbox) env vars. The chart serialises this map
       # into OH_AGENT_SERVER_ENV and mirrors it into every warm-runtime entry's
       # env (runtime-api claims warm pods by exact env match, so a key here
@@ -807,6 +810,8 @@ spec:
           agentServerImage:
             repository: 'repl{{ ConfigOption "custom_sandbox_image_repository" }}'
             tag: 'repl{{ ConfigOption "custom_sandbox_image_tag" }}'
+            # The admin's tag is used as written, whatever the variant option says.
+            variant: custom
     - when: '{{repl HasLocalRegistry }}'
       recursiveMerge: true
       values:
@@ -1445,6 +1450,11 @@ spec:
             RUNTIME_NODE_SELECTOR: '{"openhands.dev/sandbox":"true"}'
 
   builder:
+    # The airgap bundle is built from this one render, so it carries a single
+    # agent-server image: the one the sandbox_image_variant option defaults to.
+    global:
+      agentServerImage:
+        variant: full
     keycloak:
       enabled: true
     litellm-helm:

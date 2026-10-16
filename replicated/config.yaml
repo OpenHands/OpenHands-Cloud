@@ -1425,6 +1425,21 @@ spec:
             regex:
               pattern: ^(0|[1-9][0-9]*)$
               message: Must be a non-negative integer
+        - name: sandbox_image_variant
+          title: Sandbox Image
+          help_text: |
+            Which OpenHands agent-server image sandboxes run.
+            Full includes VS Code and the built-in ACP clients (Claude Code, Codex, Gemini CLI). It is larger and carries more third-party components to keep patched.
+            Slim leaves out VS Code and the built-in ACP clients. Browser and Docker support are kept.
+            Ignored when a custom sandbox image is enabled below.
+          type: select_one
+          default: "full"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "0" }}'
+          items:
+            - name: "full"
+              title: "Full (VS Code and ACP clients included)"
+            - name: "slim"
+              title: "Slim (no VS Code or ACP clients)"
         - name: custom_sandbox_image_enabled
           title: Use a Custom Sandbox Image
           help_text: Use this if you bundle a custom agent-server image.

@@ -1,0 +1,74 @@
+suite: agent-server image variant
+# global.agentServerImage.variant picks the slim or full agent-server image for
+# the app's sandbox spec (AGENT_SERVER_IMAGE_TAG) and for the warm-runtime pool.
+# The two must agree: warm pods are claimed by exact image match.
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+  - charts/runtime-api/templates/warm-runtimes-configmap.yaml
+tests:
+  - it: uses the pinned tag as-is by default (slim)
+    set:
+      enabled: true
+      global.agentServerImage.tag: 9.9.9-python
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_SERVER_IMAGE_TAG
+            value: 9.9.9-python
+      - template: charts/runtime-api/templates/warm-runtimes-configmap.yaml
+        matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "ghcr.io/openhands/agent-server:9.9.9-python"'
+
+  - it: appends the full suffix to the app and warm-runtime tags
+    set:
+      enabled: true
+      global.agentServerImage.tag: 9.9.9-python
+      global.agentServerImage.variant: full
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_SERVER_IMAGE_TAG
+            value: 9.9.9-python-full
+      - template: charts/runtime-api/templates/warm-runtimes-configmap.yaml
+        matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "ghcr.io/openhands/agent-server:9.9.9-python-full"'
+
+  - it: uses the tag verbatim for a custom image
+    set:
+      enabled: true
+      global.agentServerImage.repository: registry.example.com/agent-server
+      global.agentServerImage.tag: my-build
+      global.agentServerImage.variant: custom
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_SERVER_IMAGE_TAG
+            value: my-build
+      - template: charts/runtime-api/templates/warm-runtimes-configmap.yaml
+        matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "registry.example.com/agent-server:my-build"'
+
+  - it: lets runtime.image.tag override the variant-derived tag
+    set:
+      enabled: true
+      global.agentServerImage.variant: full
+      runtime.image.tag: pinned-by-operator
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_SERVER_IMAGE_TAG
+            value: pinned-by-operator

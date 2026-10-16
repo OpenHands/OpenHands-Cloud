@@ -125,3 +125,16 @@ entirely. A chart-level `affinity` value wins over the umbrella-wide
 {{- toYaml . -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Agent-server image tag for the selected variant: global.agentServerImage.tag
+as-is, or with fullTagSuffix appended when variant is "full".
+*/}}
+{{- define "runtime-api.agentServerImageTag" -}}
+{{- $image := .Values.global.agentServerImage -}}
+{{- if eq $image.variant "full" -}}
+{{- printf "%s%s" $image.tag $image.fullTagSuffix -}}
+{{- else -}}
+{{- $image.tag -}}
+{{- end -}}
+{{- end -}}
