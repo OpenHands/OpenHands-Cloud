@@ -18,7 +18,7 @@ OpenHands Cloud is deployed to a Kubernetes cluster using Helm charts, with mini
 
 * [Kubernetes](https://kubernetes.io) (compute for OpenHands UI, agent and runtimes)
 * [PostgreSQL](https://www.postgresql.org) (databases for several of the components)
-* [Redis](https://redis.io) (caching)
+* [Valkey](https://valkey.io) (caching)
 * [Keycloak](https://www.keycloak.org) (authentication)
 * [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) (handles connections to AI Language models)
 * AI Language Models
