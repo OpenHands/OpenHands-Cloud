@@ -66,7 +66,9 @@ image + env match**, so this must be reconciled **before** the upgrade:
 
 - If the customer pins the tag, update it in `values.yaml` first —
   `global.agentServerImage.tag`, or per pool
-  `runtime-api.warmRuntimes.configsByName.<name>.image`.
+  `runtime-api.warmRuntimes.configsByName.<name>.image`. The tag names the slim
+  flavor; with `global.agentServerImage.variant: full` (the Replicated "Sandbox
+  Image" option) the chart appends `fullTagSuffix` (`-full`) to it.
 - If they do not pin it, the warm pool inherits the new default automatically; no
   change is needed.
 

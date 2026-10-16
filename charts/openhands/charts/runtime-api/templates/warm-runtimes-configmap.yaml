@@ -18,7 +18,7 @@
 {{- end }}
 {{- end }}
 {{- /* Default image for any entry that omits one: the global agent-server image. */ -}}
-{{- $agentServerImage := printf "%s:%s" .Values.global.agentServerImage.repository .Values.global.agentServerImage.tag }}
+{{- $agentServerImage := printf "%s:%s" .Values.global.agentServerImage.repository (include "runtime-api.agentServerImageTag" .) }}
 {{- /*
   The app injects global.agentServerEnv (LLM provider creds, proxy vars, CA
   paths) into every per-session runtime request, and runtime-api claims warm

@@ -373,9 +373,14 @@ global:
   # Canonical agent-server image. Defaults any warm-runtime configsByName entry
   # that omits its own `image`. In the openhands umbrella the parent chart's
   # global wins; this default only applies when rendering the subchart alone.
+  #
+  # `variant: full` appends `fullTagSuffix` to `tag`; any other value uses `tag`
+  # verbatim. See the openhands chart's global.agentServerImage.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.50.1-python
+    variant: slim
+    fullTagSuffix: -full
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

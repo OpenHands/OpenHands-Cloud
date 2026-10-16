@@ -1452,9 +1452,16 @@ global:
   # Canonical agent-server image. Defaults the runtime image (runtime.image) and
   # any warm-runtime configsByName entry that omits its own `image`. Override
   # either of those for per-use exceptions; set it here to move them together.
+  #
+  # `tag` names the default (slim) flavor: no VS Code, no built-in ACP clients.
+  # `variant: full` selects the full flavor, whose tag is `tag` + `fullTagSuffix`
+  # (1.50.1-python -> 1.50.1-python-full). Any other variant value (the Replicated
+  # installer sets `custom` for admin-supplied images) uses `tag` verbatim.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.50.1-python
+    variant: slim
+    fullTagSuffix: -full
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
