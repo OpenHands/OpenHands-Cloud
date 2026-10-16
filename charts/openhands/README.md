@@ -395,6 +395,16 @@ tokens, API keys and running automations are not universally revoked. Native
 (non-Keycloak) OAuth/SAML/password session creation is blocked by the companion
 server policy. Plan explicit revocation and offboarding separately. Keycloak's
 master-realm administrative recovery remains separate from OpenHands login.
+Existing sessions can still mint API keys and authorize device credentials.
+Revoke sessions and issued credentials explicitly during offboarding. Startup
+checks do not prevent an administrator from subsequently adding an unrestricted
+broker; reconcile and audit authentication configuration after administrative changes.
+
+The released server image ignores `ENFORCE_ENTERPRISE_SSO`. Hiding alternative
+buttons and blocking native login paths require the companion Enterprise build.
+This candidate has not been deployed to Azure: no new Okta-first GitHub link or
+clone has succeeded there, and the second identity received a GitHub App OAuth
+404 before consent. Local synthetic-IdP tests do not establish live readiness.
 
 To undo the policy, set `enforceOnly: false` and redeploy with SAML retained.
 The managed provider flags and client settings return to their chart defaults;

@@ -13,7 +13,7 @@ tests:
       - template: validations.yaml
         failedTemplate:
           errorMessage: enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning.
-  - it: renders persistent policy with both backend and client flags
+  - it: renders persistent policy without replacing unrelated feature flags
     set:
       keycloak.enabled: true
       enterpriseSSO.enabled: true
@@ -27,11 +27,11 @@ tests:
             name: ENFORCE_ENTERPRISE_SSO
             value: "true"
       - template: deployment.yaml
-        contains:
+        notContains:
           path: spec.template.spec.containers[0].env
           content:
             name: OH_WEB_CLIENT_FEATURE_FLAGS_ENFORCE_ENTERPRISE_SSO
-            value: "true"
+          any: true
       - template: keycloak-config-script.yaml
         matchRegex:
           path: data["keycloak-config.sh"]
@@ -43,12 +43,18 @@ tests:
   - it: leaves ordinary login unchanged by default
     asserts:
       - template: deployment.yaml
-        contains:
+        notContains:
           path: spec.template.spec.containers[0].env
           content:
             name: ENFORCE_ENTERPRISE_SSO
-            value: "false"
+          any: true
       - template: keycloak-config-script.yaml
         notMatchRegex:
           path: data["keycloak-config.sh"]
           pattern: 'ensure_sso_only_flow'
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_WEB_CLIENT_FEATURE_FLAGS_ENFORCE_ENTERPRISE_SSO
+          any: true

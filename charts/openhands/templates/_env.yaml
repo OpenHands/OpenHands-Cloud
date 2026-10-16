@@ -690,10 +690,10 @@ the app UI and webhook users are matched by email. */}}
       key: client-secret
 {{- end }}
 
+{{- if .Values.enterpriseSSO.enforceOnly }}
 - name: ENFORCE_ENTERPRISE_SSO
-  value: {{ .Values.enterpriseSSO.enforceOnly | toString | quote }}
-- name: OH_WEB_CLIENT_FEATURE_FLAGS_ENFORCE_ENTERPRISE_SSO
-  value: {{ .Values.enterpriseSSO.enforceOnly | toString | quote }}
+  value: "true"
+{{- end }}
 
 {{- if .Values.enterpriseSSO.enabled }}
 - name: ENABLE_ENTERPRISE_SSO
