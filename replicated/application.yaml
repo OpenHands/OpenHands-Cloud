@@ -66,8 +66,8 @@ spec:
     - openhands/service/openhands-redis-master
 
     # lite-llm
-    - openhands/deployment/openhands-litellm
-    - openhands/service/openhands-litellm
+    - '{{repl if ConfigOptionEquals "enable_litellm" "1" }}openhands/deployment/openhands-litellm{{repl end}}'
+    - '{{repl if ConfigOptionEquals "enable_litellm" "1" }}openhands/service/openhands-litellm{{repl end}}'
 
     # minio
     - openhands/deployment/openhands-minio

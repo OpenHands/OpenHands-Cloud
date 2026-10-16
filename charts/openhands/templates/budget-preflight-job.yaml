@@ -6,7 +6,7 @@ prints one JSON artifact line (artifact_type: org_budget_preflight) to its log.
 Gated on .Release.IsUpgrade: `helm template` (ArgoCD) never sets it, and a fresh
 install has no organizations to inspect.
 */ -}}
-{{- if and .Values.enabled .Values.budgetPreflight.enabled .Release.IsUpgrade }}
+{{- if and .Values.enabled .Values.litellm.enabled .Values.budgetPreflight.enabled .Release.IsUpgrade }}
 apiVersion: batch/v1
 kind: Job
 metadata:

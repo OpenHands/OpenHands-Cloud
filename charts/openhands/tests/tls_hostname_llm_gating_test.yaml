@@ -1,0 +1,48 @@
+suite: TLS hostname preflight gated on litellm-helm enablement
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+release:
+  name: openhands
+tests:
+  - it: includes the LLM proxy hostname check when litellm-helm is enabled
+    set:
+      replicated.enabled: true
+      keycloak.ingress.secrets:
+        - certificate: "dummy-cert-pem"
+      litellm-helm.enabled: true
+      litellm-helm.ingress.hosts:
+        - host: llm.example.com
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "SAN_LLM=OK"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'TLS certificate covers the LLM proxy hostname'
+
+  - it: omits the LLM proxy hostname check when litellm-helm is disabled
+    set:
+      replicated.enabled: true
+      keycloak.ingress.secrets:
+        - certificate: "dummy-cert-pem"
+      litellm-helm.enabled: false
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "SAN_LLM"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 0
+        notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "LLM proxy hostname"
