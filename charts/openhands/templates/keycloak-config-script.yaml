@@ -437,6 +437,35 @@ data:
         echo "  Created identity provider: enterprise_sso"
       fi
 
+      # Import the profile attributes documented for enterprise SAML providers.
+      # Keycloak does not map these plain attribute names automatically when the
+      # IdP uses a persistent NameID. IMPORT avoids forcing later profile updates.
+      for profile_attribute in email firstName lastName; do
+        MAPPER_NAME="openhands-profile-$profile_attribute"
+        jq -n --arg name "$MAPPER_NAME" --arg attribute "$profile_attribute" '{
+          name: $name,
+          identityProviderAlias: "enterprise_sso",
+          identityProviderMapper: "saml-user-attribute-idp-mapper",
+          config: {
+            "attribute.name": $attribute,
+            "attribute.name.format": "ATTRIBUTE_FORMAT_UNSPECIFIED",
+            "user.attribute": $attribute,
+            syncMode: "IMPORT"
+          }
+        }' > /tmp/mapper-enterprise-sso-profile.json || exit 1
+        keycloak_api_call "curl -s \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers\" $AUTH" || exit 1
+        PROFILE_MAPPER_ID=$(printf '%s\n' "$RESPONSE" | jq -r --arg name "$MAPPER_NAME" \
+          '.[] | objects | select(.name == $name) | .id // empty') || exit 1
+        if [ -n "$PROFILE_MAPPER_ID" ]; then
+          jq --arg id "$PROFILE_MAPPER_ID" '. + {id: $id}' /tmp/mapper-enterprise-sso-profile.json > /tmp/mapper-enterprise-sso-profile-update.json || exit 1
+          keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso/mappers/$PROFILE_MAPPER_ID" /tmp/mapper-enterprise-sso-profile-update.json || exit 1
+          echo "  Updated mapper: enterprise_sso/$MAPPER_NAME"
+        else
+          keycloak_write POST "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" /tmp/mapper-enterprise-sso-profile.json || exit 1
+          echo "  Created mapper: enterprise_sso/$MAPPER_NAME"
+        fi
+      done
+
       jq -n '{
         name: "identity-provider",
         identityProviderAlias: "enterprise_sso",

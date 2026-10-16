@@ -181,8 +181,8 @@ def test_enterprise_sso_writes_use_status_checked_helper() -> None:
 
     provider_path = '"$KC_REALM/identity-provider/instances/enterprise_sso'
     instances_path = '"$KC_REALM/identity-provider/instances'
-    assert script.count(f"keycloak_write PUT {provider_path}") == 3
-    assert script.count(f"keycloak_write POST {instances_path}") == 2
+    assert script.count(f"keycloak_write PUT {provider_path}") == 4
+    assert script.count(f"keycloak_write POST {instances_path}") == 3
     assert not re.search(
         r'keycloak_api_call "curl -s -X (?:POST|PUT) [^\n]*enterprise_sso',
         script,
