@@ -709,6 +709,8 @@ ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_0;
 ALTER DATABASE bitnami_keycloak_backup_26_3_0 RENAME TO bitnami_keycloak;
 ```
 
+If you skip the swap, the hook stops the upgrade with a message, because Keycloak 26.3 cannot start on the 26.8 schema.
+
 The rollback does not keep changes made on 26.8, such as new Keycloak users. They stay in `bitnami_keycloak_26_8_0`.
 
 On Replicated, the admin console has no rollback button, so run these steps on the cluster. For an online install, keep the image proxy path: run `helm upgrade` with `--reuse-values`, `keycloak.image.repository=proxy/openhands/docker.io/bitnamilegacy/keycloak`, and `keycloak.image.tag=26.3.0-debian-12-r0`. The admin console does not know about this `helm upgrade` and continues to show the new release. The next deploy from the admin console applies Keycloak 26.8 again. This includes a **Redeploy**, a config change, and an update. The hook backs up the restored 26.3 database again before Keycloak migrates it.

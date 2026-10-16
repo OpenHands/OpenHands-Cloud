@@ -85,6 +85,12 @@ spec:
                 echo "Keycloak schema is already at $TARGET_VERSION; no migration, no backup needed."
                 exit 0
               fi
+              if [ "$(printf '%s\n%s\n' "$CURRENT" "$TARGET_VERSION" | sort -V | tail -n 1)" = "$CURRENT" ]; then
+                # Turning the hook off would let Keycloak start on a newer schema, so skip the trap's advice.
+                trap - EXIT
+                echo "Keycloak schema $CURRENT in \"$DB_NAME\" is newer than the Keycloak image version $TARGET_VERSION, and Keycloak cannot start on a newer schema. To roll back, swap the databases first, as the rollback steps in the chart README describe, and then upgrade again."
+                exit 1
+              fi
 
               # $BACKUP only ever appears through the rename below, so an existing one is complete.
               BACKUP="${DB_NAME}_backup_$(printf '%s' "$CURRENT" | tr -c 'A-Za-z0-9' '_')"

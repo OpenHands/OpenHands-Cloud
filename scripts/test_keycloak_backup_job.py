@@ -131,6 +131,25 @@ def test_skips_when_the_schema_is_already_at_the_target(server):
     assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
 
 
+def newer_minor(version):
+    """Two minors up: as text, 26.10.0 sorts before 26.8.0, so this catches a text comparison."""
+    major, minor, _ = version.split(".", 2)
+    return f"{major}.{int(minor) + 2}.0"
+
+
+@pytest.mark.parametrize("schema", [newer_minor, lambda _: "99.0.0"], ids=["next-minors", "next-major"])
+def test_stops_when_the_schema_is_newer_than_the_image(server, schema):
+    newer = schema(server["job"]["target"])
+    db = keycloak_db(server, "26.3.0", newer)
+
+    result = run_job(server, db)
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert f"schema {newer}" in result.stdout and "swap the databases" in result.stdout, result.stdout
+    assert "preUpgradeBackup.enabled=false" not in result.stdout, result.stdout
+    assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
+
+
 def test_keeps_an_existing_backup(server):
     db = keycloak_db(server, "26.3.0")
     sql(server, "postgres", f"CREATE DATABASE {db}_backup_26_3_0")
