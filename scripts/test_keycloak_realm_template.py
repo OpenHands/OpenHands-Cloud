@@ -324,7 +324,7 @@ def test_replicated_keycloak_identity_provider_socket_timeout() -> None:
 
 def enterprise_sso_idp_jq_filter(script_template: str) -> str:
     match = re.search(
-        r'echo "\$IMPORT_RESPONSE" \| jq \\\n'
+        r'jq \\\n'
         r'\s*--arg display "\$ENTERPRISE_SSO_DISPLAY_NAME" \\\n'
         r"\s*'(?P<filter>\{.*?\})' > /tmp/idp-enterprise-sso\.json",
         script_template,
@@ -336,7 +336,7 @@ def enterprise_sso_idp_jq_filter(script_template: str) -> str:
 
 def enterprise_sso_import_guard(script_template: str) -> str:
     match = re.search(
-        r'if ! echo "\$IMPORT_RESPONSE" \| jq -e \\\n'
+        r'jq -e \\\n'
         r"\s*'(?P<filter>[^']+)' \\\n",
         script_template,
     )
