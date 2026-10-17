@@ -73,6 +73,7 @@ spec:
         imagePullPolicy: Always
         image: '{{.Values.image.repository}}:{{.Values.image.tag | default .Chart.AppVersion }}'
         env:
+        {{- include "openhands.caBundle.env" . | nindent 8 }}
         {{- include "openhands.env" . | nindent 8 }}
         - name: KEYCLOAK_ADMIN_UI_PASSWORD
           valueFrom:
@@ -80,6 +81,19 @@ spec:
               name: keycloak-admin
               key: admin-ui-password
               optional: true
+        {{- if and .Values.enterpriseSSO.enabled (eq .Values.enterpriseSSO.protocol "oidc") }}
+        - name: ENTERPRISE_SSO_DISPLAY_NAME
+          value: {{ .Values.enterpriseSSO.displayName | quote }}
+        - name: ENTERPRISE_SSO_OIDC_ISSUER
+          value: {{ .Values.enterpriseSSO.oidc.issuerUrl | quote }}
+        - name: ENTERPRISE_SSO_OIDC_CLIENT_ID
+          value: {{ .Values.enterpriseSSO.oidc.clientId | quote }}
+        - name: ENTERPRISE_SSO_OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.enterpriseSSO.oidc.existingSecret | quote }}
+              key: {{ .Values.enterpriseSSO.oidc.clientSecretKey | quote }}
+        {{- end }}
         {{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
         {{- /* Keep these init-only; openhands.env already emits .Values.env overrides. */}}
         {{- if not (hasKey (.Values.env | default dict) "ENTERPRISE_SSO_DISPLAY_NAME") }}
@@ -92,6 +106,7 @@ spec:
         {{- end }}
         {{- end }}
         volumeMounts:
+        {{- include "openhands.caBundle.volumeMount" . | nindent 8 }}
         - name: keycloak-config-script
           mountPath: /scripts
         - name: keycloak-realm-template

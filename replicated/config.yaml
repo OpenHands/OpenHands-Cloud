@@ -1070,8 +1070,8 @@ spec:
           required: true
 
     - name: enterprise_sso_authentication
-      title: Enterprise SSO (SAML) Authentication
-      description: Let users sign in with your corporate SAML identity provider.
+      title: Enterprise SSO Authentication
+      description: Let users sign in with a corporate SAML or OpenID Connect identity provider.
       items:
         - name: enterprise_sso_enabled
           title: Enable Enterprise SSO Authentication
@@ -1083,7 +1083,37 @@ spec:
           help_text: Require corporate SAML for new interactive sign-ins while retaining Git provider account connections. Existing sessions and API keys are not revoked. Configure and test SAML before enabling this policy.
           type: bool
           default: "0"
+          when: 'repl{{ and (ConfigOptionEquals "enterprise_sso_enabled" "1") (not (ConfigOptionEquals "enterprise_sso_protocol" "oidc")) }}'
+        - name: enterprise_sso_protocol
+          title: Identity Provider Protocol
+          type: select_one
+          default: saml
           when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+          items:
+            - name: saml
+              title: SAML
+            - name: oidc
+              title: OpenID Connect
+        - name: enterprise_sso_oidc_issuer
+          title: OIDC Issuer URL
+          type: text
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "enterprise_sso_enabled" "1") (ConfigOptionEquals "enterprise_sso_protocol" "oidc") }}'
+          help_text: Exact HTTPS issuer. Use a separate installation when changing protocols.
+          validation:
+            regex:
+              pattern: '^https://[^[:space:]?#@]+$'
+              message: Must be an HTTPS issuer without credentials, query or fragment.
+        - name: enterprise_sso_oidc_client_id
+          title: OIDC Client ID
+          type: text
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "enterprise_sso_enabled" "1") (ConfigOptionEquals "enterprise_sso_protocol" "oidc") }}'
+        - name: enterprise_sso_oidc_client_secret
+          title: OIDC Client Secret
+          type: password
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "enterprise_sso_enabled" "1") (ConfigOptionEquals "enterprise_sso_protocol" "oidc") }}'
         - name: enterprise_sso_display_name
           title: Identity Provider Display Name
           help_text: Name shown for the identity provider on the sign-in page.
@@ -1094,7 +1124,7 @@ spec:
           title: SAML Metadata URL
           help_text: HTTPS URL of your identity provider's SAML metadata.
           type: text
-          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
+          when: 'repl{{ and (ConfigOptionEquals "enterprise_sso_enabled" "1") (not (ConfigOptionEquals "enterprise_sso_protocol" "oidc")) }}'
           required: true
           validation:
             regex:

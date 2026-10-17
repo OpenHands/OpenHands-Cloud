@@ -71,6 +71,32 @@
         "idpMetadataUrl": {
           "type": "string",
           "pattern": "^$|^https://[^\\s]+$"
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "saml",
+            "oidc"
+          ]
+        },
+        "oidc": {
+          "type": "object",
+          "properties": {
+            "issuerUrl": {
+              "type": "string",
+              "pattern": "^$|^https://[^\\s?#@]+$"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "clientSecretKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },

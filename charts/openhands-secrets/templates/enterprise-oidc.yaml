@@ -1,0 +1,10 @@
+{{- if .Values.config.enterprise_sso_oidc_client_secret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: enterprise-oidc
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  client-secret: {{ .Values.config.enterprise_sso_oidc_client_secret | b64enc | quote }}
+{{- end }}

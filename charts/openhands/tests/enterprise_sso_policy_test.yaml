@@ -12,7 +12,7 @@ tests:
     asserts:
       - template: validations.yaml
         failedTemplate:
-          errorMessage: enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning.
+          errorMessage: enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning (SAML only).
   - it: renders persistent policy without replacing unrelated feature flags
     set:
       keycloak.enabled: true

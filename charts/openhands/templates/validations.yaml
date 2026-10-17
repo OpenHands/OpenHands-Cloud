@@ -52,6 +52,27 @@ script in its usage-error path, so refuse it at render time instead.
 {{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
 {{- end -}}
 
-{{- if and .Values.enabled .Values.enterpriseSSO.enforceOnly (or (not .Values.enterpriseSSO.enabled) (not .Values.enterpriseSSO.idpMetadataUrl) (not (include "openhands.keycloakProvisionRealm" .))) -}}
-{{- fail "enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning." -}}
+{{- if and .Values.enabled .Values.enterpriseSSO.enforceOnly (or (ne .Values.enterpriseSSO.protocol "saml") (not .Values.enterpriseSSO.enabled) (not .Values.enterpriseSSO.idpMetadataUrl) (not (include "openhands.keycloakProvisionRealm" .))) -}}
+{{- fail "enterpriseSSO.enforceOnly requires enabled Enterprise SSO, an idpMetadataUrl, and chart-managed Keycloak realm provisioning (SAML only)." -}}
+{{- end -}}
+
+{{- if and .Values.enabled .Values.enterpriseSSO.enabled (eq .Values.enterpriseSSO.protocol "oidc") -}}
+{{- if not (include "openhands.keycloakProvisionRealm" .) -}}
+{{- fail "enterpriseSSO OIDC requires chart-managed realm provisioning." -}}
+{{- end -}}
+{{- if .Values.enterpriseSSO.idpMetadataUrl -}}
+{{- fail "OIDC cannot be combined with SAML idpMetadataUrl." -}}
+{{- end -}}
+{{- if or (not .Values.enterpriseSSO.oidc.issuerUrl) (not .Values.enterpriseSSO.oidc.clientId) (not .Values.enterpriseSSO.oidc.existingSecret) -}}
+{{- fail "OIDC requires issuerUrl, clientId and existingSecret." -}}
+{{- end -}}
+{{- end -}}
+
+{{- if and .Values.enabled .Values.enterpriseSSO.enabled (eq .Values.enterpriseSSO.protocol "oidc") -}}
+{{- range $name := list "ENTERPRISE_SSO_DISPLAY_NAME" "ENTERPRISE_SSO_OIDC_ISSUER" "ENTERPRISE_SSO_OIDC_CLIENT_ID" "ENTERPRISE_SSO_OIDC_CLIENT_SECRET" -}}
+{{- if hasKey ($.Values.env | default dict) $name -}}
+{{- fail (printf "%s must be configured through enterpriseSSO, not env." $name) -}}
+{{- end -}}
+{{- end -}}
+
 {{- end -}}
