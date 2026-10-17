@@ -19,7 +19,7 @@ import pytest
 TEMPLATE = Path(__file__).resolve().parents[1] / (
     "charts/openhands/templates/keycloak-config-script.yaml"
 )
-MARKER = "{{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}"
+MARKER = "{{- else if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}"
 DISABLE_MARKER = "{{- else if not .Values.enterpriseSSO.enabled }}"
 
 

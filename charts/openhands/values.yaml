@@ -248,6 +248,13 @@ enterpriseSSO:
   enforceOnly: false
   displayName: "Company SSO"
   idpMetadataUrl: ""
+  # Upstream broker protocol. OIDC requires an isolated/new enterprise_sso alias.
+  protocol: saml
+  oidc:
+    issuerUrl: ""
+    clientId: ""
+    existingSecret: ""
+    clientSecretKey: client-secret
 
 # sha256 of all secret (password) config values, injected by KOTS. Changing any
 # secret-backed config changes this value, which changes the openhands pod

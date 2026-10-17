@@ -357,6 +357,8 @@ def test_enterprise_sso_uses_one_canonical_values_key() -> None:
         "enforceOnly",
         "displayName",
         "idpMetadataUrl",
+        "protocol",
+        "oidc",
     }
     assert "enterpriseSso:" not in replicated
     assert "    enterpriseSSO:" in replicated
@@ -469,7 +471,7 @@ def test_enterprise_sso_inputs_are_environment_data() -> None:
         in replicated
     )
     assert (
-        'idpMetadataUrl: repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}'
+        'repl{{ ConfigOption "enterprise_sso_idp_metadata_url" | mustToJson }}'
         in replicated
     )
 

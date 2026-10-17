@@ -796,3 +796,77 @@ a removed limit from cached authorization data, even after a successful save.
 This increases authorization database reads; production throughput has not been
 load-tested. It does not enable or disable LLM response caching. If you use an
 external LiteLLM proxy, configure and validate the same behavior there.
+
+### Managed upstream OIDC (unreleased candidate)
+
+Current released Enterprise SSO instructions describe SAML. This source candidate
+adds `enterpriseSSO.protocol: oidc`; do not infer support in an older chart/image.
+It requires chart-managed realm provisioning and a new/isolated `enterprise_sso`
+provider. Do not convert existing SAML users in place.
+
+```yaml
+enterpriseSSO:
+  enabled: true
+  protocol: oidc
+  displayName: Company SSO
+  idpMetadataUrl: ""
+  oidc:
+    issuerUrl: https://company.okta.com
+    clientId: YOUR_CLIENT_ID
+    existingSecret: enterprise-oidc
+    clientSecretKey: client-secret
+```
+
+Create the referenced Secret with your secret manager; the client secret is
+injected only into the provisioning init container. An external Secret change
+requires an application rollout to rerun reconciliation. Replicated's candidate
+password field contributes to the existing secret checksum and triggers rollout.
+
+The issuer must match discovery exactly. Required endpoints must share its HTTPS
+origin; discovery redirects are rejected. Basic client-secret authentication,
+S256 PKCE, signature/JWKS validation and nonce checking are required. The broker
+requires `email_verified: true`, preferring the validated ID-token claim and
+falling back to subject-bound UserInfo only when that claim is absent. An explicit
+false ID-token claim cannot be overridden. An admin-only FORCE attribute and a
+post-broker flow reject false/missing verification on every broker login. Profile
+claims also use FORCE sync. New email/username collisions are rejected, without
+automatic account linking or account-linking email. Federated identity uses upstream
+subject under the immutable issuer/client/broker configuration. Existing providers
+must carry both ownership markers; issuer/client changes are refused.
+
+OIDC provisioning failures block startup of the new pod. `enabled: false`
+disables the managed broker on the next reconciliation; it does not delete users,
+revoke existing application sessions or offboard repository credentials. Rollback
+must retain compatible application/chart versions and requires separate session
+handling. No corporate-only login enforcement is added by this setting.
+
+Concurrent OIDC provisioners serialize the realm-create/update path and managed
+broker, mapper, profile and authentication-flow changes with a Keycloak client
+lock in the `master` realm. Each application realm has a different lock client ID:
+`openhands-oidc-provisioning-lock-v1-` followed by the first 24 hexadecimal characters of the
+SHA-256 of its exact realm name. This works before the application realm exists.
+It requires the bootstrap administrator's access to master-realm clients; no new
+Kubernetes permissions or database access are used. SAML startup is unchanged.
+
+The lock client is disabled, public, and has all login and service-account flows
+disabled. It grants no application access. The winner re-reads broker state and
+closes an existing managed broker before shared realm updates, then enables it
+only after its verification policy is reconciled. The child startup validates its
+inherited lock context; standalone OIDC reconciliation uses the same lock. Only
+the owner's lock is removed after completion or a handled failure. Contenders
+wait up to 30 seconds before failing startup; subsequent pod retries may succeed.
+
+An interrupted process can leave a lock behind. Locks are never stolen based on
+age because a paused owner could resume and overlap a new writer. For recovery,
+first establish that all prior provisioning processes have stopped. In the
+Keycloak Admin Console for the `master` realm, inspect the target-specific disabled lock
+client and confirm its description is `OpenHands managed OIDC provisioning lock
+v1; do not edit` and its `openhandsLockOwner` attribute matches its internal ID.
+Remove only that abandoned lock client, then retry the deployment. Do not remove a
+live owner's lock or an unexpected resource with the same name. An ownership or
+cleanup conflict blocks startup instead of silently allowing another writer.
+
+The `identity_provider` marker is `enterprise_sso:oidc`. Use an Enterprise image
+with the matching login-only callback fix; otherwise the app can initiate an
+unnecessary offline Git authorization. Real local Keycloak provisioning is a
+protocol/component test, not full managed OpenHands end-to-end acceptance.

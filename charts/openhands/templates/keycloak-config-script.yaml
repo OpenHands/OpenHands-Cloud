@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
 data:
+  namespace-realm-ids.py: |
+{{ .Files.Get "files/namespace-realm-ids.py" | indent 4 }}
+  enterprise-oidc.py: |
+{{ .Files.Get "files/enterprise-oidc.py" | indent 4 }}
   keycloak-config.sh: |
     #!/bin/sh
     set -e
@@ -233,6 +237,17 @@ data:
       fi
     fi
 
+    {{- if and .Values.enterpriseSSO.enabled (eq .Values.enterpriseSSO.protocol "oidc") }}
+    # Serialize the entire realm-create/update path, not only the OIDC flows.
+    # A master-realm lock exists even before the application realm is created.
+    export ACCESS_TOKEN
+    if [ -z "${OPENHANDS_OIDC_STARTUP_LOCK:-}" ]; then
+      python /scripts/enterprise-oidc.py --startup-script /scripts/keycloak-config.sh
+      exit $?
+    fi
+    python /scripts/enterprise-oidc.py --verify-startup-lock
+    {{- end }}
+
     ERROR_MESSAGE=$(curl -s "$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.error')
     echo "Error message: $ERROR_MESSAGE"
     export GITHUB_BASE_URL=""
@@ -246,6 +261,10 @@ data:
     export GITLAB_HOST=${GITLAB_HOST:-"gitlab.com"}
     export AZURE_DEVOPS_TENANT_ID=${AZURE_DEVOPS_TENANT_ID:-"common"}
     envsubst '$WEB_HOST,$AUTH_WEB_HOST,$LAMINAR_WEB_HOST,$KEYCLOAK_REALM_NAME,$KEYCLOAK_CLIENT_ID,$KEYCLOAK_CLIENT_SECRET,$GITHUB_APP_CLIENT_ID,$GITHUB_APP_CLIENT_SECRET,$GITLAB_APP_CLIENT_ID,$GITLAB_APP_CLIENT_SECRET,$GITLAB_HOST,$BITBUCKET_APP_CLIENT_ID,$BITBUCKET_APP_CLIENT_SECRET,$GITHUB_BASE_URL,$KEYCLOAK_SMTP_PASSWORD,$BITBUCKET_DATA_CENTER_HOST,$BITBUCKET_DATA_CENTER_CLIENT_ID,$BITBUCKET_DATA_CENTER_CLIENT_SECRET,$AZURE_DEVOPS_TENANT_ID,$AZURE_DEVOPS_CLIENT_ID,$AZURE_DEVOPS_CLIENT_SECRET'< /realm-template/allhands-realm-github-provider.json.tmpl > /tmp/allhands-realm-github-provider.json
+    # UUIDs in exported realm templates are globally unique in Keycloak.
+    # Namespace them for a non-default realm so an isolated realm can coexist.
+    python /scripts/namespace-realm-ids.py "$KEYCLOAK_REALM_NAME" < /tmp/allhands-realm-github-provider.json > /tmp/namespaced-realm.json
+    mv /tmp/namespaced-realm.json /tmp/allhands-realm-github-provider.json
     # Apply realm SSO session lifetimes (seconds) on top of the rendered realm
     # JSON. These are numeric realm-level fields, so they are set with jq (the
     # template must stay valid JSON) and flow through both the create path and
@@ -411,7 +430,21 @@ data:
       echo "Updated allhands realm configuration."
     fi
 
-    {{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
+    {{- if and .Values.enterpriseSSO.enabled (eq .Values.enterpriseSSO.protocol "oidc") }}
+    # Fail startup if the desired managed OIDC provider cannot be reconciled.
+    refresh_access_token
+    export ACCESS_TOKEN
+    python /scripts/enterprise-oidc.py
+    unset ACCESS_TOKEN
+    {{- else if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
+    # Protocol changes would reuse federated subjects under the same alias.
+    # Refuse outside the warning-only SAML metadata import subshell.
+    refresh_access_token
+    keycloak_get_optional "$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME/identity-provider/instances/enterprise_sso"
+    if printf '%s' "$RESPONSE" | jq -e '.config.openhandsProtocol == "oidc"' >/dev/null 2>&1; then
+      echo "ERROR: cannot replace managed OIDC with SAML; use a separate realm." >&2
+      exit 1
+    fi
     # Enterprise SSO: upsert the enterprise_sso SAML identity provider from the
     # operator-supplied IdP metadata URL, plus the identity_provider user
     # attribute mapper the app relies on to detect SAML logins. Runs after the

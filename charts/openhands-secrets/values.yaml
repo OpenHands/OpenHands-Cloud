@@ -6,6 +6,7 @@ automation:
   enabled: false
 
 config:
+  enterprise_sso_oidc_client_secret: ""
   # Security secrets
   admin_password: ""
   postgres_username: "postgres"
