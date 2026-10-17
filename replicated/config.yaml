@@ -1078,6 +1078,12 @@ spec:
           help_text: Add an Enterprise SSO button to the OpenHands login page.
           type: bool
           default: "0"
+        - name: enterprise_sso_enforce_only
+          title: Require Enterprise SSO for sign-in
+          help_text: Require corporate SAML for new interactive sign-ins while retaining Git provider account connections. Existing sessions and API keys are not revoked. Configure and test SAML before enabling this policy.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "enterprise_sso_enabled" "1" }}'
         - name: enterprise_sso_display_name
           title: Identity Provider Display Name
           help_text: Name shown for the identity provider on the sign-in page.
