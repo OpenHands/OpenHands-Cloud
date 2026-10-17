@@ -352,9 +352,11 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
 
    IMPORT fills profiles only for new users. It does not backfill existing accounts
    or synchronize later IdP email/name changes. The provider's `trustEmail: true`
-   marks an imported email verified; it does not automatically link an existing
-   account. Preserve the first-broker-login ownership verification flow and test
-   existing-email collisions and application organization/invitation policies.
+   marks an imported email verified. This chart does not change the
+   first-broker-login flow; whether a verified imported email links to an
+   existing account depends on that flow and is untested. Preserve ownership
+   verification and test existing-email collisions and application
+   organization/invitation policies.
 
 ### LiteLLM configuration
 
