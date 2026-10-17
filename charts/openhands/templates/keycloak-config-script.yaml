@@ -240,6 +240,7 @@ data:
     {{- if and .Values.enterpriseSSO.enabled (eq .Values.enterpriseSSO.protocol "oidc") }}
     # Serialize the entire realm-create/update path, not only the OIDC flows.
     # A master-realm lock exists even before the application realm is created.
+    export USE_PROVISIONER
     export ACCESS_TOKEN
     if [ -z "${OPENHANDS_OIDC_STARTUP_LOCK:-}" ]; then
       python /scripts/enterprise-oidc.py --startup-script /scripts/keycloak-config.sh

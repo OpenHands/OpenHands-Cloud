@@ -9,7 +9,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -192,7 +192,9 @@ def _owned_lock(value, owner, client_id=LOCK_CLIENT):
 
 
 @contextmanager
-def provisioning_lock(realm, token, api=request, client_id=LOCK_CLIENT):
+def provisioning_lock(
+    realm, token, api=request, client_id=LOCK_CLIENT, refresh_token=None
+):
     """Serialize writers with Keycloak's unique per-realm client ID.
 
     The disabled client grants no login/service-account access. There is no
@@ -221,6 +223,8 @@ def provisioning_lock(realm, token, api=request, client_id=LOCK_CLIENT):
     }
     deadline = time.monotonic() + LOCK_WAIT_SECONDS
     while True:
+        if refresh_token:
+            token = refresh_token()
         try:
             api(url, token=token, body=desired, method="POST")
             break
@@ -245,11 +249,15 @@ def provisioning_lock(realm, token, api=request, client_id=LOCK_CLIENT):
                 break
             raise
     try:
+        if refresh_token:
+            token = refresh_token()
         existing = api(own_url, token=token)
         if not _owned_lock(existing, owner, client_id):
             raise ConfigurationError("OIDC provisioning lock ownership conflict")
         yield owner
     finally:
+        if refresh_token:
+            token = refresh_token()
         existing = api(own_url, token=token, optional=True)
         if not existing or not _owned_lock(existing, owner, client_id):
             raise ConfigurationError(
@@ -259,6 +267,61 @@ def provisioning_lock(realm, token, api=request, client_id=LOCK_CLIENT):
 
 
 STARTUP_LOCK_ENV = "OPENHANDS_OIDC_STARTUP_LOCK"
+
+
+def refresh_admin_token(env):
+    """Renew as the selected startup principal; never log token responses."""
+    # ACCESS_TOKEN-only embedding remains supported. The chart always exports
+    # USE_PROVISIONER so its long-running startup/cleanup can renew credentials.
+    if "USE_PROVISIONER" not in env:
+        return env["ACCESS_TOKEN"]
+    if env["USE_PROVISIONER"] == "true":
+        fields = {
+            "client_id": env.get("KEYCLOAK_ADMIN_CLIENT_ID", "").strip()
+            or "openhands-provisioner",
+            "grant_type": "client_credentials",
+            "client_secret": env.get("KEYCLOAK_ADMIN_CLIENT_SECRET")
+            or env["KEYCLOAK_ADMIN_PASSWORD"],
+        }
+    else:
+        fields = {
+            "client_id": "admin-cli",
+            "grant_type": "password",
+            "username": "admin",
+            "password": env["KEYCLOAK_ADMIN_PASSWORD"],
+        }
+    url = (
+        env["KEYCLOAK_SERVER_URL"].rstrip("/")
+        + "/realms/master/protocol/openid-connect/token"
+    )
+    try:
+        with build_opener(NoRedirect()).open(
+            Request(
+                url,
+                urlencode(fields).encode(),
+                {"Content-Type": "application/x-www-form-urlencoded"},
+            ),
+            timeout=30,
+        ) as response:
+            raw = response.read(1024 * 1024 + 1)
+        if len(raw) > 1024 * 1024:
+            raise ValueError()
+        token = json.loads(raw).get("access_token")
+        if not isinstance(token, str) or not token:
+            raise ValueError()
+    except (
+        HTTPError,
+        URLError,
+        TimeoutError,
+        ConnectionError,
+        ValueError,
+        AttributeError,
+    ):
+        raise ConfigurationError(
+            "Could not renew Keycloak provisioning access token"
+        ) from None
+    env["ACCESS_TOKEN"] = token
+    return token
 
 
 def startup_lock_target(env):
@@ -287,9 +350,12 @@ def verify_startup_lock(env, api=request):
 
 
 def startup_script(env, script, api=request, run=subprocess.run):
+    env = dict(env)
     https_url(env["ENTERPRISE_SSO_OIDC_ISSUER"])
     master, client_id = startup_lock_target(env)
-    with provisioning_lock(master, env["ACCESS_TOKEN"], api, client_id) as owner:
+    with provisioning_lock(
+        master, env["ACCESS_TOKEN"], api, client_id, lambda: refresh_admin_token(env)
+    ) as owner:
         # Common realm updates can replace user-profile attributes. Keep the
         # broker closed throughout those updates, before rebuilding its policy.
         realm = (
@@ -543,13 +609,20 @@ def reconcile_mappers(url, token, api=request):
 
 
 def reconcile(env, api=request):
+    env = dict(env)
     https_url(env["ENTERPRISE_SSO_OIDC_ISSUER"])
     if env.get(STARTUP_LOCK_ENV):
         verify_startup_lock(env, api)
         _reconcile_locked(env, api)
     else:
         master, client_id = startup_lock_target(env)
-        with provisioning_lock(master, env["ACCESS_TOKEN"], api, client_id):
+        with provisioning_lock(
+            master,
+            env["ACCESS_TOKEN"],
+            api,
+            client_id,
+            lambda: refresh_admin_token(env),
+        ):
             _reconcile_locked(env, api)
 
 

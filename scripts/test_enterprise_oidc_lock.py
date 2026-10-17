@@ -60,6 +60,74 @@ def test_provisioning_exception_releases_own_lock():
     assert not clients.items and len(clients.deleted) == 1
 
 
+@pytest.mark.parametrize("child_fails", [False, True])
+def test_cleanup_renews_token_after_child_outlives_original(child_fails):
+    clients = Clients()
+    current = [0]
+    seen = []
+
+    def renew():
+        current[0] += 1
+        return str(current[0])
+
+    def api(url, token=None, **kwargs):
+        assert token == str(current[0]), "stale token used"
+        seen.append((kwargs.get("method"), token))
+        return clients(url, token="synthetic-admin", **kwargs)
+
+    try:
+        with oidc.provisioning_lock(REALM, "expired", api, refresh_token=renew):
+            current[0] += 1  # Child runs beyond the parent's token lifetime.
+            if child_fails:
+                raise ValueError("child failed")
+    except ValueError:
+        assert child_fails
+    assert not clients.items
+    assert seen[-1] == ("DELETE", "4")
+
+
+@pytest.mark.parametrize("provisioner", [True, False])
+def test_token_renewal_uses_selected_principal_without_logging(
+    monkeypatch, provisioner
+):
+    import io
+    import json
+    from urllib.parse import parse_qs
+
+    env = {
+        **ENV,
+        "USE_PROVISIONER": str(provisioner).lower(),
+        "KEYCLOAK_ADMIN_CLIENT_ID": " fixture-admin ",
+        "KEYCLOAK_ADMIN_CLIENT_SECRET": "synthetic-client-secret",
+        "KEYCLOAK_ADMIN_PASSWORD": "synthetic-password",
+    }
+
+    class Opener:
+        def open(self, req, timeout):
+            fields = parse_qs(req.data.decode())
+            assert (
+                req.full_url
+                == "http://localhost/realms/master/protocol/openid-connect/token"
+            )
+            if provisioner:
+                assert fields == {
+                    "client_id": ["fixture-admin"],
+                    "grant_type": ["client_credentials"],
+                    "client_secret": ["synthetic-client-secret"],
+                }
+            else:
+                assert fields == {
+                    "client_id": ["admin-cli"],
+                    "grant_type": ["password"],
+                    "username": ["admin"],
+                    "password": ["synthetic-password"],
+                }
+            return io.BytesIO(json.dumps({"access_token": "renewed"}).encode())
+
+    monkeypatch.setattr(oidc, "build_opener", lambda *args: Opener())
+    assert oidc.refresh_admin_token(env) == env["ACCESS_TOKEN"] == "renewed"
+
+
 def test_lost_post_response_adopts_only_own_uuid():
     clients = Clients()
     clients.lose_post_response = True
