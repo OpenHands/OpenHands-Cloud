@@ -18,6 +18,7 @@ import {
  */
 
 const submitted: URLSearchParams[] = [];
+const assets: string[] = [];
 
 function startLocalAuthServer(formAction?: string): Promise<{
   server: Server;
@@ -27,6 +28,16 @@ function startLocalAuthServer(formAction?: string): Promise<{
 }> {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    if (req.method === "GET" && url.pathname.startsWith("/resources/")) {
+      assets.push(url.pathname);
+      res.writeHead(200, {
+        "Content-Type": url.pathname.endsWith(".css")
+          ? "text/css"
+          : "application/javascript",
+      });
+      res.end("");
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(`<!doctype html><html><body>
@@ -49,6 +60,7 @@ function startLocalAuthServer(formAction?: string): Promise<{
       }
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(`<!doctype html><html><body>
+        <link rel="stylesheet" href="/resources/x/login/keycloak.v2/css/styles.css"><script src="/resources/x/login/keycloak.v2/js/passwordVisibility.js"></script>
         <form id="kc-form-login" action="${formAction ?? "/realms/allhands/protocol/openid-connect/auth?client_id=allhands"}" method="post">
           <input id="username" name="username" type="text" />
           <input id="password" name="password" type="password" />
@@ -109,6 +121,7 @@ test("loginToPreviewOrigin drives a real local HTTP keycloak login", async ({
   const fixture = await startLocalAuthServer();
   activeServer = fixture;
   submitted.length = 0;
+  assets.length = 0;
   const creds: PreviewLoginCredentials = {
     username: "e2e-preview-user",
     password: "preview-password",
@@ -119,6 +132,7 @@ test("loginToPreviewOrigin drives a real local HTTP keycloak login", async ({
     fixture.appOrigin,
   ]);
 
+  expect(assets).toHaveLength(2);
   expect(submitted).toHaveLength(1);
   expect(submitted[0].get("username")).toBe("e2e-preview-user@e2e.test");
   expect(submitted[0].get("password")).toBe("preview-password");

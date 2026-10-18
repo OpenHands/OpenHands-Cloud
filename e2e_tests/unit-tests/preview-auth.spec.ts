@@ -50,3 +50,27 @@ test("allows only exact approved origins inside the allowlist", () => {
     ),
   ).toBe(false);
 });
+
+test("allows Keycloak resources only on the exact approved auth origin", () => {
+  const origins = resolvePreviewAuthOrigins(
+    "https://pr-12.staging.all-hands.dev",
+  );
+  expect(
+    isPreviewLoginOrigin(
+      "https://pr-12.auth.staging.all-hands.dev/resources/x/login/keycloak.v2/css/styles.css",
+      origins,
+    ),
+  ).toBe(true);
+  expect(
+    isPreviewLoginOrigin(
+      "https://attacker.example/resources/style.css",
+      origins,
+    ),
+  ).toBe(false);
+  expect(
+    isPreviewLoginOrigin(
+      "https://pr-12.auth.staging.all-hands.dev/admin/realms",
+      origins,
+    ),
+  ).toBe(false);
+});

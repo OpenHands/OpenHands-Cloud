@@ -39,7 +39,10 @@ export function isPreviewLoginOrigin(
   }
   if (candidate.includes(".auth.")) {
     const pathAndQuery = `${url.pathname}${url.search}`;
-    if (!pathAndQuery.startsWith("/realms/")) {
+    if (
+      !pathAndQuery.startsWith("/realms/") &&
+      !pathAndQuery.startsWith("/resources/")
+    ) {
       return false;
     }
   }

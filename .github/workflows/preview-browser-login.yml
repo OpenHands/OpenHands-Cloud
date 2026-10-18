@@ -92,10 +92,10 @@ jobs:
           PREVIEW_TEST_PASSWORD: ${{ secrets.PREVIEW_TEST_PASSWORD }}
           PREVIEW_TEST_EMAIL: ${{ secrets.PREVIEW_TEST_EMAIL }}
         run: |
-          test -n "$PREVIEW_TEST_USERNAME" && test -n "$PREVIEW_TEST_PASSWORD" && test -n "$PREVIEW_TEST_EMAIL" || {
+          if [[ -z "$PREVIEW_TEST_USERNAME" || -z "$PREVIEW_TEST_PASSWORD" || -z "$PREVIEW_TEST_EMAIL" ]]; then
             echo "Configure PREVIEW_TEST_USERNAME, PREVIEW_TEST_PASSWORD and PREVIEW_TEST_EMAIL in the protected environment" >&2
             exit 1
-          }
+          fi
       - name: Verify real preview login
         env:
           BASE_URL: ${{ needs.validate.outputs.base_url }}
