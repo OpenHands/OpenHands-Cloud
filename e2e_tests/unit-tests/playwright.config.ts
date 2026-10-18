@@ -6,4 +6,9 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: "list",
+  use: {
+    launchOptions: {
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    },
+  },
 });

@@ -1,0 +1,111 @@
+name: Preview Browser Login
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_pr:
+        description: "Maintainer-created saas-deploy feature PR number"
+        required: true
+        type: string
+      expected_org_id:
+        description: "Disposable test organization ID expected after login"
+        required: true
+        default: "b188a41e-c747-5933-ae7d-602c0f41fbbe"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: preview-browser-login-${{ inputs.preview_pr }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      base_url: ${{ steps.target.outputs.base_url }}
+      head_sha: ${{ steps.target.outputs.head_sha }}
+    steps:
+      - name: Validate preview target
+        id: target
+        shell: bash
+        env:
+          PREVIEW_PR: ${{ inputs.preview_pr }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          if [[ ! "$PREVIEW_PR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid preview PR number" >&2
+            exit 1
+          fi
+          test -n "$GH_TOKEN" || { echo "PAT_TOKEN with saas-deploy pull-request read access is required" >&2; exit 1; }
+          gh api "repos/OpenHands/saas-deploy" --jq '.private' | grep -qx true
+          gh api "repos/OpenHands/saas-deploy/pulls/$PREVIEW_PR" > "$RUNNER_TEMP/preview-pr.json"
+          jq -e '.state == "open" and .base.ref == "main" and .head.repo.full_name == "OpenHands/saas-deploy" and any(.labels[]; .name == "feature")' "$RUNNER_TEMP/preview-pr.json" >/dev/null
+          echo "base_url=https://pr-$PREVIEW_PR.staging.all-hands.dev" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(jq -r '.head.sha' "$RUNNER_TEMP/preview-pr.json")" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Maintainer-trusted preview target"
+            echo "- PR: https://github.com/OpenHands/saas-deploy/pull/$PREVIEW_PR"
+            echo "- Head: $(jq -r '.head.sha' "$RUNNER_TEMP/preview-pr.json")"
+            echo "- Private-repository feature preview selected by a maintainer; shared non-production credentials will be used."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  login:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: preview-browser-tests
+    defaults:
+      run:
+        working-directory: e2e_tests
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e_tests/package-lock.json
+      - name: Install trusted harness
+        run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Recheck preview revision before login
+        shell: bash
+        env:
+          PREVIEW_PR: ${{ inputs.preview_pr }}
+          VALIDATED_HEAD: ${{ needs.validate.outputs.head_sha }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "PAT_TOKEN with saas-deploy pull-request read access is required" >&2; exit 1; }
+          gh api "repos/OpenHands/saas-deploy" --jq '.private' | grep -qx true
+          gh api "repos/OpenHands/saas-deploy/pulls/$PREVIEW_PR" > "$RUNNER_TEMP/preview-pr-recheck.json"
+          jq -e --arg sha "$VALIDATED_HEAD" '.state == "open" and .head.sha == $sha and .base.ref == "main" and .head.repo.full_name == "OpenHands/saas-deploy" and any(.labels[]; .name == "feature")' "$RUNNER_TEMP/preview-pr-recheck.json" >/dev/null
+      - name: Require provisioned test credentials
+        shell: bash
+        env:
+          PREVIEW_TEST_USERNAME: ${{ secrets.PREVIEW_TEST_USERNAME }}
+          PREVIEW_TEST_PASSWORD: ${{ secrets.PREVIEW_TEST_PASSWORD }}
+          PREVIEW_TEST_EMAIL: ${{ secrets.PREVIEW_TEST_EMAIL }}
+        run: |
+          test -n "$PREVIEW_TEST_USERNAME" && test -n "$PREVIEW_TEST_PASSWORD" && test -n "$PREVIEW_TEST_EMAIL" || {
+            echo "Configure PREVIEW_TEST_USERNAME, PREVIEW_TEST_PASSWORD and PREVIEW_TEST_EMAIL in the protected environment" >&2
+            exit 1
+          }
+      - name: Verify real preview login
+        env:
+          BASE_URL: ${{ needs.validate.outputs.base_url }}
+          PREVIEW_TEST_USERNAME: ${{ secrets.PREVIEW_TEST_USERNAME }}
+          PREVIEW_TEST_PASSWORD: ${{ secrets.PREVIEW_TEST_PASSWORD }}
+          PREVIEW_TEST_EMAIL: ${{ secrets.PREVIEW_TEST_EMAIL }}
+          PREVIEW_TEST_ORG_ID: ${{ inputs.expected_org_id }}
+        run: npx playwright test --config=playwright.preview.config.ts
+      - name: Remove private browser artifacts
+        if: always()
+        shell: bash
+        run: |
+          rm -rf test-results playwright-report

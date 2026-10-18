@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/budget-e2e.yml"
       - ".github/workflows/e2e-static.yml"
+      - ".github/workflows/preview-browser-login.yml"
       - "e2e_tests/**"
 
 permissions:
