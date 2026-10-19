@@ -91,9 +91,26 @@ export async function loginToPreviewOrigin(
     throw new Error("Test origin overrides must use loopback HTTP");
   }
   let blocked = false;
+  const blockedError = () =>
+    new Error("Preview login blocked an unapproved origin");
+  // Rejects the moment a navigation leaves the approved origins, so the caller
+  // fails fast with the real reason instead of the login helper's form timeout.
+  let rejectBlocked: (error: Error) => void = () => {};
+  const blockedFailure = new Promise<never>((_, reject) => {
+    rejectBlocked = reject;
+  });
+  blockedFailure.catch(() => {});
   const guard = async (route: import("@playwright/test").Route) => {
-    if (!isPreviewLoginOrigin(route.request().url(), origins)) {
-      blocked = true;
+    const request = route.request();
+    if (!isPreviewLoginOrigin(request.url(), origins)) {
+      // Every off-origin request is aborted, but only a navigation counts as
+      // the flow escaping the approved origins. A real preview pulls
+      // third-party subresources (fonts, analytics) on every page view, and
+      // counting those aborts as a violation rejected every successful login.
+      if (request.isNavigationRequest()) {
+        blocked = true;
+        rejectBlocked(blockedError());
+      }
       await route.abort("blockedbyclient");
       return;
     }
@@ -103,8 +120,11 @@ export async function loginToPreviewOrigin(
   await page.context().route("**/*", guard);
   try {
     await page.goto(origins[0]);
-    await loginWithKeycloakPassword(page, creds);
-    if (blocked) throw new Error("Preview login blocked an unapproved origin");
+    await Promise.race([
+      loginWithKeycloakPassword(page, creds),
+      blockedFailure,
+    ]);
+    if (blocked) throw blockedError();
   } finally {
     await page.context().unroute("**/*", guard);
   }

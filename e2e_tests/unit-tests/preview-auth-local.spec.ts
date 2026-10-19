@@ -20,7 +20,10 @@ import {
 const submitted: URLSearchParams[] = [];
 const assets: string[] = [];
 
-function startLocalAuthServer(formAction?: string): Promise<{
+function startLocalAuthServer(
+  formAction?: string,
+  options: { offOriginAsset?: string; loginHref?: string } = {},
+): Promise<{
   server: Server;
   port: number;
   appOrigin: string;
@@ -41,7 +44,8 @@ function startLocalAuthServer(formAction?: string): Promise<{
     if (req.method === "GET" && url.pathname === "/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(`<!doctype html><html><body>
-        <button type="button" id="login" onclick="window.location.href='/realms/allhands/protocol/openid-connect/auth?client_id=allhands&kc_idp_hint=github&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%2Foauth%2Fkeycloak%2Fcallback&state=localstate&scope=openid'">Log in with GitHub</button>
+        ${options.offOriginAsset ? `<link rel="stylesheet" href="${options.offOriginAsset}">` : ""}
+        <button type="button" id="login" onclick="window.location.href='${options.loginHref ?? "/realms/allhands/protocol/openid-connect/auth?client_id=allhands&kc_idp_hint=github&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%2Foauth%2Fkeycloak%2Fcallback&state=localstate&scope=openid"}'">Log in with GitHub</button>
       </body></html>`);
       return;
     }
@@ -182,5 +186,53 @@ test("blocks a cross-origin credential form without submitting the password", as
       [fixture.appOrigin],
     ),
   ).rejects.toThrow();
+  expect(submitted).toHaveLength(0);
+});
+
+test("ignores an off-origin subresource loaded during the page load", async ({
+  page,
+}) => {
+  // A real preview pulls third-party assets (fonts, analytics) while the app
+  // page renders. Aborting those must not count as the login escaping the
+  // approved origins, or every successful login is rejected.
+  const fixture = await startLocalAuthServer(undefined, {
+    offOriginAsset: "https://fonts.example.invalid/font.css",
+  });
+  activeServer = fixture;
+  submitted.length = 0;
+  const creds: PreviewLoginCredentials = {
+    username: "e2e-preview-user",
+    password: "preview-password",
+    email: "e2e-preview-user@e2e.test",
+  };
+
+  await loginToPreviewOrigin(page, fixture.appOrigin, creds, [
+    fixture.appOrigin,
+  ]);
+
+  expect(submitted).toHaveLength(1);
+  expect(page.url()).toContain("/oauth/keycloak/callback");
+});
+
+test("blocks a login that navigates away from the approved origins", async ({
+  page,
+}) => {
+  const fixture = await startLocalAuthServer(undefined, {
+    loginHref: "https://attacker.example.invalid/login",
+  });
+  activeServer = fixture;
+  submitted.length = 0;
+  await expect(
+    loginToPreviewOrigin(
+      page,
+      fixture.appOrigin,
+      {
+        username: "test",
+        email: "test@e2e.test",
+        password: "test-only-password",
+      },
+      [fixture.appOrigin],
+    ),
+  ).rejects.toThrow(/blocked an unapproved origin/);
   expect(submitted).toHaveLength(0);
 });
