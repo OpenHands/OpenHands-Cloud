@@ -1,0 +1,159 @@
+suite: keycloak pre-upgrade backup hook job
+templates:
+  - keycloak-backup-job.yaml
+tests:
+  - it: renders nothing on install
+    set:
+      keycloak.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when Keycloak is disabled
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when the backup is disabled
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.preUpgradeBackup.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a pre-upgrade hook Job on upgrade
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-keycloak-backup
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "10"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 300
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: oh-main-postgresql
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_PORT
+            value: "5432"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGSSLMODE
+            value: prefer
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-password
+                key: username
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_NAME
+            value: bitnami_keycloak
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TARGET_VERSION
+            value: 26.8.0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_PASS
+            valueFrom:
+              secretKeyRef:
+                name: postgres-password
+                key: password
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COPY_TIMEOUT_SECONDS
+            value: "240"
+
+  - it: gives the copy the Job deadline minus a minute for image pull
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.preUpgradeBackup.activeDeadlineSeconds: 540
+    asserts:
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 540
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COPY_TIMEOUT_SECONDS
+            value: "480"
+
+  - it: fails on a Job deadline too short to leave the copy a minute
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.preUpgradeBackup.activeDeadlineSeconds: 119
+    asserts:
+      - failedTemplate:
+          errorPattern: activeDeadlineSeconds must be at least 120
+
+  - it: derives the target version from the image tag
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.image.tag: 26.9.1-debian-12-r3
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TARGET_VERSION
+            value: 26.9.1
+
+  - it: fails on an image tag without a Keycloak version
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.image.tag: latest
+    asserts:
+      - failedTemplate:
+          errorPattern: does not start with a Keycloak version

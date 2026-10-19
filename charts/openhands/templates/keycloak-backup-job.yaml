@@ -1,0 +1,145 @@
+{{- /*
+Keycloak migrates its schema one way on first start of a newer version, so copy
+the database to a backup database first. This is safe while the old Keycloak is
+still serving, because pg_dump reads a consistent snapshot. `helm template`
+(ArgoCD) never sets .Release.IsUpgrade, so those installs must back up by hand.
+*/ -}}
+{{- if and .Values.keycloak.enabled .Values.keycloak.preUpgradeBackup.enabled .Release.IsUpgrade }}
+{{- $db := .Values.keycloak.externalDatabase }}
+{{- $deadline := int .Values.keycloak.preUpgradeBackup.activeDeadlineSeconds }}
+{{- if lt $deadline 120 }}
+{{- fail (printf "keycloak.preUpgradeBackup.activeDeadlineSeconds must be at least 120 (got %d): the copy gets it minus 60s for image pull and startup" $deadline) }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-keycloak-backup
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-backup
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    # Last pre-upgrade hook, so a failing check (e.g. the budget preflight) stops
+    # the upgrade before a backup exists that a retry would keep.
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $deadline }}
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-backup
+    spec:
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "openhands.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      volumes:
+        # Holds the uncompressed dump on node ephemeral storage; a very large Keycloak
+        # database can fill it and evict the pod, failing the upgrade before Keycloak changes.
+        - name: dump
+          emptyDir: {}
+      containers:
+        - name: keycloak-backup
+          image: {{ .Values.keycloak.waitForDb.image | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              trap '[ $? -eq 0 ] || echo "Keycloak backup failed, so the upgrade stopped before Keycloak changed. Fix the error above, or back up \"$DB_NAME\" yourself and upgrade with keycloak.preUpgradeBackup.enabled=false (in the Replicated admin console, turn off \"Back Up Keycloak Database Before Upgrade\")."' EXIT
+              export PGHOST="$DB_HOST" PGPORT="$DB_PORT" PGUSER="$DB_USER" PGPASSWORD="$DB_PASS"
+              q() { psql -v ON_ERROR_STOP=1 -tAX "$@"; }
+              # Past activeDeadlineSeconds the pod is killed and deleted with its log before
+              # the trap can run, so the copy stops itself earlier and says why.
+              END=$(( $(date +%s) + COPY_TIMEOUT_SECONDS ))
+              timed() {
+                step=$1; shift
+                rc=124
+                left=$(( END - $(date +%s) ))
+                [ "$left" -le 0 ] || { timeout "$left" "$@" && return 0 || rc=$?; }
+                [ "$rc" -ne 124 ] || echo "$step did not finish within ${COPY_TIMEOUT_SECONDS}s (keycloak.preUpgradeBackup.activeDeadlineSeconds minus 60s)."
+                return "$rc"
+              }
+
+              if [ -z "$(q -d postgres -c "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")" ]; then
+                echo "Keycloak database \"$DB_NAME\" does not exist yet; nothing to back up."
+                exit 0
+              fi
+              if [ "$(q -d "$DB_NAME" -c "SELECT to_regclass('public.migration_model') IS NOT NULL")" != t ]; then
+                echo "Keycloak has not initialized \"$DB_NAME\" yet; nothing to back up."
+                exit 0
+              fi
+              CURRENT=$(q -d "$DB_NAME" -c "SELECT version FROM migration_model ORDER BY update_time DESC LIMIT 1")
+              if [ "$CURRENT" = "$TARGET_VERSION" ]; then
+                echo "Keycloak schema is already at $TARGET_VERSION; no migration, no backup needed."
+                exit 0
+              fi
+              if [ "$(printf '%s\n%s\n' "$CURRENT" "$TARGET_VERSION" | sort -V | tail -n 1)" = "$CURRENT" ]; then
+                # Turning the hook off would let Keycloak start on a newer schema, so skip the trap's advice.
+                trap - EXIT
+                echo "Keycloak schema $CURRENT in \"$DB_NAME\" is newer than the Keycloak image version $TARGET_VERSION, and Keycloak cannot start on a newer schema. To roll back, swap the databases first, as the rollback steps in the chart README describe, and then upgrade again."
+                exit 1
+              fi
+
+              # $BACKUP only ever appears through the rename below, so an existing one is complete.
+              BACKUP="${DB_NAME}_backup_$(printf '%s' "$CURRENT" | tr -c 'A-Za-z0-9' '_')"
+              TMP="${BACKUP}_incomplete"
+              if [ -n "$(q -d postgres -c "SELECT 1 FROM pg_database WHERE datname = '$BACKUP'")" ]; then
+                echo "Backup database \"$BACKUP\" already exists from an earlier upgrade attempt; keeping it. It may be older than the live data. For a fresh copy, drop it and upgrade again."
+                exit 0
+              fi
+
+              echo "Keycloak schema $CURRENT will migrate to $TARGET_VERSION; copying \"$DB_NAME\" to \"$BACKUP\"..."
+              # Dump to a file rather than a pipe so a failed pg_dump stops the script (sh has no pipefail).
+              timed "Dumping \"$DB_NAME\"" pg_dump -d "$DB_NAME" --no-owner -f /dump/keycloak.sql
+              q -d postgres -c "DROP DATABASE IF EXISTS \"$TMP\""
+              q -d postgres -c "CREATE DATABASE \"$TMP\""
+              # pg_dump 17 emits SET transaction_timeout, which servers older than 17 reject.
+              if ! sed '/^SET transaction_timeout = /d' /dump/keycloak.sql \
+                  | timed "Restoring into \"$TMP\"" psql -X -v ON_ERROR_STOP=1 -d "$TMP" --single-transaction -q -o /dev/null; then
+                q -d postgres -c "DROP DATABASE \"$TMP\""
+                exit 1
+              fi
+              q -d postgres -c "ALTER DATABASE \"$TMP\" RENAME TO \"$BACKUP\""
+              rm -f /dump/keycloak.sql
+              echo "Backed up \"$DB_NAME\" (schema $CURRENT) to \"$BACKUP\"."
+          volumeMounts:
+            - name: dump
+              mountPath: /dump
+          env:
+            - name: DB_HOST
+              value: {{ $db.host | quote }}
+            - name: DB_PORT
+              value: {{ $db.port | default 5432 | quote }}
+            - name: DB_NAME
+              value: {{ $db.database | quote }}
+            - name: PGSSLMODE
+              value: {{ $db.sslMode | default "prefer" | quote }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $db.existingSecret }}
+                  key: {{ $db.existingSecretUserKey }}
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $db.existingSecret }}
+                  key: {{ $db.existingSecretPasswordKey }}
+            - name: TARGET_VERSION
+              value: {{ include "openhands.keycloakVersion" . | quote }}
+            - name: COPY_TIMEOUT_SECONDS
+              value: {{ sub $deadline 60 | quote }}
+          resources:
+            {{- toYaml .Values.keycloak.preUpgradeBackup.resources | nindent 12 }}
+{{- end }}

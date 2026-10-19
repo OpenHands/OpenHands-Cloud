@@ -5,8 +5,11 @@
 WARNING: this upgrade moves Keycloak from {{ .image }} to 26.8.
 On first start Keycloak migrates its database to the 26.8 schema, one way:
 Keycloak 26.3 cannot run against it afterwards, so rolling back needs a backup
-of the Keycloak database taken before this upgrade. See "Keycloak 26.3 to 26.8"
-in the chart README.
+of the Keycloak database taken before this upgrade.
+{{- if $.Values.keycloak.preUpgradeBackup.enabled }} The pre-upgrade hook's backup
+is in {{ $.Values.keycloak.externalDatabase.database }}_backup_{{ regexFind "26\\.3\\.[0-9]+" .image | replace "." "_" }} (see the
+{{ $.Release.Name }}-keycloak-backup Job log).
+{{- end }} See "Keycloak 26.3 to 26.8" in the chart README.
 
 {{ end }}
 {{- end }}
