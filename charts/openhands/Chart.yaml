@@ -1,7 +1,7 @@
 apiVersion: v2
 description: OpenHands is an AI-driven autonomous software engineer
 name: openhands
-appVersion: sha-522c97e
+appVersion: sha-cc0ced6
 version: 0.84.0-rc.1
 dependencies:
   - name: keycloak

@@ -105,7 +105,11 @@ export const ROLE_ONLY_SPECS: Record<RunUser, readonly string[]> = {
 /** `testIgnore` for a role's test projects: setup files and the other role's specs. */
 export function testIgnoreFor(user: RunUser): Array<string | RegExp> {
   const other: RunUser = user === "returning" ? "new-user" : "returning";
-  return [/setup\//, ...ROLE_ONLY_SPECS[other].map((file) => `**/${file}`)];
+  return [
+    /setup\//,
+    /preview-smoke\.spec\.ts$/,
+    ...ROLE_ONLY_SPECS[other].map((file) => `**/${file}`),
+  ];
 }
 
 export const DEFAULT_KEYCLOAK_REALM = "allhands";
