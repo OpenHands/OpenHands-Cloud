@@ -1,14 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { test, expect } from "@playwright/test";
+import { test } from "@playwright/test";
 import { HomePage, ConversationPage } from "../pages";
-import { env, runUser } from "../utils/config";
+import { runUser } from "../utils/config";
 
 /**
  * Conversation controls specs.
  *
  * Ported from saas_deploy's `e2e_tests/tests/smoke.spec.ts` (the conversation
- * launch, repository/VSCode, navigation, and external-tool flows). Originally
+ * launch, navigation, and external-tool flows). Originally
  * written against the enterprise "legacy" launcher (a separate button that
  * navigated to a launch route); Canvas replaced that with an atomic composer
  * — `home-chat-launcher` creates the conversation *and* sends the first user
@@ -85,140 +85,6 @@ test.describe("legacy conversations @conversations", () => {
 
     console.log(
       "Legacy conversation launch test passed: agent reversed the word",
-    );
-  });
-
-  test("should be able to select repository and use VSCode integration", async ({
-    page,
-  }, testInfo) => {
-    // TODO(canvas): the enterprise VSCode-iframe integration (the
-    // `conversation-tab-vscode` tab, the `file-diff-viewer-outer` +
-    // `changes-refresh-button` git-changes panel) has no equivalent yet in
-    // the Canvas conversation view — its Files panel is a separate story
-    // (`use-canvas-extensions-*` module) that renders a filesystem tree
-    // without the diff/editor iframe this test asserts on. Skip until Canvas
-    // ships an equivalent surface (or an explicit "open in VSCode Web" tab)
-    // that we can drive; the "reverse a string" and "Tavily search" tests
-    // still exercise the launch → sandbox → agent-reply path end to end.
-    test.skip(
-      true,
-      "Canvas conversation view has no VSCode-tab / diff-viewer equivalent yet",
-    );
-    test.info().annotations.push({
-      type: "user",
-      description: runUser(testInfo),
-    });
-
-    // Cloning the repo and editing the README is multi-minute work, so lift
-    // the timeout to give waitForTaskCompleteMessage's budget room to apply.
-    test.setTimeout(240_000);
-
-    // Use the shared fixture repo (env.testRepoUrl, default
-    // OpenHands/deploy ~12 MiB) rather than hardcoding OpenHands/OpenHands
-    // (~407 MiB). The clone is the dominant cost in this test; the smaller
-    // repo keeps it well under the timeout budget while still exercising the
-    // full clone → edit → diff-viewer → VSCode flow.
-    const TEST_REPO_URL = env.testRepoUrl;
-
-    await homePage.goto();
-
-    await homePage.selectRepository(TEST_REPO_URL);
-    console.log(`Selected repository: ${TEST_REPO_URL}`);
-
-    // Canvas' launcher sends the first user message atomically with the
-    // create-conversation call, so seed the README-edit prompt here rather
-    // than sending it separately once we've navigated to the conversation.
-    const prompt =
-      "Append the phrase 'Terms and Conditions May Apply!' to the end of README.md in the current working directory (the repo root) — actually edit the file and save it.";
-    console.log(`Sending prompt: "${prompt}"`);
-    await homePage.startNewConversation(prompt);
-
-    conversationPage = new ConversationPage(page);
-    await conversationPage.waitForConversationReady();
-
-    // Wait for the task to start.
-    const waitingForTaskText = conversationPage.page.getByText("Running task");
-    await expect(waitingForTaskText).toBeVisible({ timeout: 30_000 });
-
-    await conversationPage.waitForTaskCompleteMessage();
-    console.log(
-      "Status is 'Agent has finished the task' - README append task completed",
-    );
-
-    await page.screenshot({
-      path: "test-results/screenshots/conversation-with-repo.png",
-    });
-
-    // The README should have been updated and appear in the diff viewer.
-    const readMe = conversationPage.page
-      .getByTestId("file-diff-viewer-outer")
-      .locator("div")
-      .filter({ hasText: /^README\.md$/ });
-
-    // The changes panel is repopulated by WebSocket ActionEvents invalidating
-    // the `file_changes` cache; there is no timer and no refresh on the
-    // FINISHED status (see use-unified-get-git-changes.ts). If the final
-    // file-edit event was missed or its refetch transiently failed (retry:
-    // false), the panel stays empty and no amount of waiting will repopulate
-    // it. As a safety net, if the README hasn't appeared within the initial
-    // budget, click the editor tab's refresh button (which calls refetch())
-    // once and re-wait.
-    const fileChangesRefreshButton = conversationPage.page.getByTestId(
-      "changes-refresh-button",
-    );
-
-    await expect(readMe)
-      .toBeVisible({ timeout: 10_000 })
-      .catch(async () => {
-        console.log(
-          "Changes panel empty after task completion; clicking refresh to refetch git changes",
-        );
-        await fileChangesRefreshButton.click().catch(() => {});
-        await page.waitForTimeout(1_000);
-      });
-
-    await expect(readMe).toBeVisible();
-    await readMe.click();
-
-    // Appending a phrase should have inserted at least one new line.
-    await expect(page.locator(".cdr.line-insert").first()).toBeVisible({
-      timeout: 10_000,
-    });
-
-    // Open the VSCode tab.
-    const vscodeTabButton = page.getByTestId("conversation-tab-vscode");
-    await vscodeTabButton.click();
-    console.log("Clicked VSCode tab button");
-
-    // Wait for the VS Code iframe and the explorer viewlet (combined 30s).
-    // The iframe may not be visible initially, and the explorer viewlet can
-    // take additional time to appear after the iframe loads.
-    const vsCodeFrameLocator = page.locator('iframe[title="VS Code"]');
-    const startTime = Date.now();
-    const totalTimeout = 30_000;
-
-    await expect(vsCodeFrameLocator).toBeVisible({ timeout: totalTimeout });
-
-    const elapsed = Date.now() - startTime;
-    const remainingTimeout = Math.max(totalTimeout - elapsed, 0);
-
-    // VS Code's explorer shows the cloned repo's top-level folder, which is
-    // named after the repo (e.g. "deploy" for OpenHands/deploy) — not a fixed
-    // string — so derive the expected name from the configured repo URL.
-    const repoFolderName = TEST_REPO_URL.split("/").pop() ?? "";
-    const vsCodeFrame = vsCodeFrameLocator.contentFrame();
-    const explorerViewlet = vsCodeFrame
-      .locator("a")
-      .filter({ hasText: repoFolderName });
-    await expect(explorerViewlet).toBeVisible({ timeout: remainingTimeout });
-    console.log(`VSCode loaded with repository folder: ${repoFolderName}`);
-
-    await page.screenshot({
-      path: "test-results/screenshots/vscode-openhands.png",
-    });
-
-    console.log(
-      "VSCode integration test passed: repository loaded successfully",
     );
   });
 
