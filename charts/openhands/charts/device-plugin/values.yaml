@@ -13,8 +13,8 @@
 #   helm install device-plugin charts/openhands/charts/device-plugin
 
 image:
-  # Upstream 2cc50b0 built from our fork, which bumps the dependencies upstream
-  # leaves with fixable CVEs (github.com/OpenHands/third-party-images).
+  # squat/generic-device-plugin 2cc50b0 plus dependency CVE fixes upstream never
+  # shipped, built from our fork in github.com/OpenHands/third-party-images.
   repository: ghcr.io/openhands/third-party-images/generic-device-plugin
   tag: 2cc50b0-oh1
   pullPolicy: IfNotPresent
