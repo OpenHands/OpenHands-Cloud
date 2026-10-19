@@ -42,6 +42,8 @@ spec:
 
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
+    directModelPreflight:
+      enabled: true
     budgetPreflight:
       mode: 'repl{{ ConfigOption "budget_preflight_mode" }}'
     budgetReconcileGate:

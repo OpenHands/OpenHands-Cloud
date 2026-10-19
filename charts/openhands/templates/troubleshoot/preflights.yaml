@@ -12,6 +12,9 @@ spec:
     {{- if $tls.cert }}
     {{- include "troubleshoot.collectors.tlsHostname" . | nindent 4 }}
     {{- end }}
+    {{- if .Values.directModelPreflight.enabled }}
+    {{- include "troubleshoot.collectors.directModel" . | nindent 4 }}
+    {{- end }}
   analyzers:
     {{- include "troubleshoot.analyzers.shared" . | nindent 4 }}
     {{- if $sysbox.selected }}
@@ -22,5 +25,8 @@ spec:
     {{- end }}
     {{- if $tls.cert }}
     {{- include "troubleshoot.analyzers.tlsHostname" . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.directModelPreflight.enabled }}
+    {{- include "troubleshoot.analyzers.directModel" . | nindent 4 }}
     {{- end }}
 {{- end -}}

@@ -976,6 +976,14 @@ budgetMaintenance:
       memory: "1Gi"
       cpu: "500m"
 
+# Warns, in the Replicated Admin Console preflight, about saved LLM settings
+# that use a provider-direct model (azure/, bedrock/, vertex_ai/) with no API
+# key of their own. Those relied on provider credentials that used to be
+# injected into sandboxes. Report-only: it never blocks an upgrade. Enabled by
+# the Replicated spec; plain Helm installs never injected those credentials.
+directModelPreflight:
+  enabled: false
+
 # Budget upgrade checks. Both run as Helm hook Jobs on the enterprise image
 # around every `helm upgrade` (never on install, and never under ArgoCD, which
 # renders with `helm template`). mode is "strict" (a blocking finding fails the
