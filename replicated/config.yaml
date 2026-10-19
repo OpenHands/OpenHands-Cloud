@@ -462,12 +462,25 @@ spec:
           value: "mistral-large-latest\ncodestral-latest"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
           required: true
+        - name: azure_provider_mode
+          title: Azure Providers
+          help_text: Use Azure OpenAI, Azure AI Foundry, or both. Existing Azure OpenAI model names are preserved.
+          type: select_one
+          default: "azure"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          items:
+            - name: azure
+              title: Azure OpenAI
+            - name: azure_ai
+              title: Azure AI Foundry
+            - name: both
+              title: Azure OpenAI and Azure AI Foundry
         - name: azure_auth_method
           title: Azure Authentication Method
           help_text: Authentication method for Azure OpenAI. Service Principal (Microsoft Entra ID) is recommended for production.
           type: select_one
           default: "api_key"
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
           items:
             - name: "api_key"
@@ -478,38 +491,38 @@ spec:
           title: Azure OpenAI API Key
           help_text: Your Azure OpenAI API key
           type: password
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "api_key") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "api_key") }}'
           required: true
         - name: azure_tenant_id
           title: Microsoft Entra Tenant ID
           help_text: The Microsoft Entra directory (tenant) ID (under Microsoft Entra ID → Overview in the Azure portal).
           type: text
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
           required: true
         - name: azure_client_id
           title: Microsoft Entra Application (Client) ID
           help_text: The Application (client) ID of the Entra app registration. Grant it the "Cognitive Services OpenAI User" role on your Azure OpenAI resource.
           type: text
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
           required: true
         - name: azure_client_secret
           title: Microsoft Entra Client Secret
           help_text: The client secret for the Entra ID app registration.
           type: password
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
           required: true
         - name: azure_endpoint
           title: Azure OpenAI Endpoint
           help_text: Your Azure OpenAI endpoint URL (e.g., https://my-resource.openai.azure.com). Regional endpoints (e.g., https://eastus2.api.cognitive.microsoft.com) only work with API Key auth, not Microsoft Entra ID.
           type: text
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
         - name: azure_api_version
           title: Azure OpenAI API Version
           help_text: The API version for your Azure OpenAI deployment
           type: text
           default: "2024-10-21"
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
         # Legacy single-deployment field, superseded by azure_deployments.
         # Kept hidden (not removed) so the stored value of upgraded installs
@@ -518,14 +531,43 @@ spec:
           title: Azure OpenAI Deployment Name (legacy)
           type: text
           hidden: true
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
         - name: azure_deployments
           title: Azure OpenAI Deployments
           help_text: Azure OpenAI deployment names served through the bundled LiteLLM proxy, one per line (set when you deployed the models in Azure). All deployments must be reachable at the endpoint and API version configured above.
           type: textarea
           value: '{{repl ConfigOption "azure_deployment_name"}}'
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
+        - name: azure_drop_params
+          title: Drop Unsupported Azure OpenAI Parameters
+          help_text: Allow LiteLLM to omit parameters it identifies as unsupported by the selected model. This does not remove arbitrary provider-specific parameters.
+          type: bool
+          default: "0"
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
+        - name: azure_ai_api_key
+          title: Azure AI Foundry API Key
+          type: password
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
+        - name: azure_ai_endpoint
+          title: Azure AI Foundry Endpoint
+          help_text: The resource base URL for your models (e.g., https://my-resource.openai.azure.com). For GPT deployments, omit /openai/v1/ and deployment-specific paths. Use the endpoint supplied by Azure for other model families.
+          type: text
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
+        - name: azure_ai_deployments
+          title: Azure AI Foundry Deployments
+          help_text: Deployment names, one per line, without the azure_ai/ prefix. All must use the endpoint above. Models appear as azure_ai-<deployment> in OpenHands.
+          type: textarea
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
+        - name: azure_ai_drop_params
+          title: Drop Unsupported Azure AI Foundry Parameters
+          help_text: Allow LiteLLM to omit parameters it identifies as unsupported by the selected model. This does not remove arbitrary provider-specific parameters.
+          type: bool
+          default: "0"
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
         - name: groq_api_key
           title: Groq API Key
           help_text: Your Groq API key
