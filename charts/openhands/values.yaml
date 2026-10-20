@@ -619,10 +619,17 @@ laminar:
   # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
   images:
     redis:
-      tag: "9.1.2-alpine"
+      tag: "9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
     clickhouse:
-      tag: "26.3-alpine"
-    # Digest is frontend-ee's; frontend.subPath.enabled swaps in frontend-ee-basepath and needs its own pin.
+      tag: "26.3-alpine@sha256:813a5f7edfec0a8bfcfc1810b34f944428565232d5242de72aa1891c50c89ff9"
+    nginx:
+      tag: "1.31.7@sha256:bc4cad49969aaf95eb4eecec5572846f86e59f1e8332aba36ed64b91aff8b724"
+    rabbitmq:
+      tag: "4.4.0@sha256:71be6ca71cd3ad92f29b354ec381b1ee587894aaaac21f185b8cf43fb50d3feb"
+    curl:
+      tag: "8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"
+    # frontend-ee's digest. With frontend.subPath.enabled, override with frontend-ee-basepath's
+    # (0.1.825@sha256:b6bcea02ec0e48e562e2dd3cf921c3587be23f9374919540fb9f54c9409328e1).
     frontend:
       tag: "0.1.825@sha256:6724e5f7a633b3932671f8a255a42139f4c0731d1f860196beeffe3e5a4ab534"
     appServer:
