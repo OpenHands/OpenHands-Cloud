@@ -1640,6 +1640,11 @@ spec:
           help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
           type: bool
           default: "0"
+        - name: auth_v2_enabled
+          title: Enable OAuth V2 Login
+          help_text: Use the OAuth V2 login flow.
+          type: bool
+          default: "0"
 
     - name: analytics_configuration
       title: Analytics Configuration

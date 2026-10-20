@@ -118,6 +118,9 @@ spec:
       # directory routes; the web client reads feature_flags.enable_super_admin.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
       ENABLE_SUPER_ADMIN: 'repl{{ ConfigOptionEquals "super_admin_dashboard_enabled" "1" }}'
+      # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
