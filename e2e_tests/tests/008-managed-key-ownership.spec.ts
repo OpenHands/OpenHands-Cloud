@@ -5,7 +5,8 @@ import {
   type APIResponse,
 } from "@playwright/test";
 
-import { runUser } from "../utils/config";
+import { runUser, superAdminApiKey } from "../utils/config";
+import { createOrg, provisionUser } from "../utils/org-management";
 
 interface CurrentUser {
   id: string;
@@ -139,40 +140,34 @@ test.describe.serial("managed LLM key ownership @managed-key", () => {
       );
       originalOrgId = organizations.current_org_id;
 
-      const org = await json<Organization>(
-        await page.request.post("/api/organizations", {
-          data: {
-            name: `managed-key-e2e-${suffix}`,
-            contact_name: "Managed Key E2E",
-            contact_email: "managed-key-e2e@openhands.dev",
-          },
-        }),
-        "create test organization",
-      );
+      const adminKey = superAdminApiKey();
+      const org = await createOrg(baseURL || "", adminKey, {
+        name: `managed-key-e2e-${suffix}`,
+        contact_name: "Managed Key E2E",
+        contact_email: "managed-key-e2e@openhands.dev",
+      });
       orgId = org.id;
 
-      const owner = await json<ProvisionedUser>(
-        await page.request.post("/api/organizations/provision-user", {
-          headers: { "X-Org-Id": orgId },
-          data: {
-            email: me.email,
-            role: "owner",
-            api_key_name: `managed-key-e2e-owner-${suffix}`,
-          },
-        }),
-        "provision owner",
+      const owner: ProvisionedUser = await provisionUser(
+        baseURL || "",
+        adminKey,
+        orgId,
+        {
+          email: me.email,
+          role: "owner",
+          api_key_name: `managed-key-e2e-owner-${suffix}`,
+        },
       );
       expect(owner.user_id).toBe(me.id);
-      const secondary = await json<ProvisionedUser>(
-        await page.request.post("/api/organizations/provision-user", {
-          headers: { "X-Org-Id": orgId },
-          data: {
-            email: secondaryEmail,
-            role: "member",
-            api_key_name: `managed-key-e2e-member-${suffix}`,
-          },
-        }),
-        "provision secondary member",
+      const secondary: ProvisionedUser = await provisionUser(
+        baseURL || "",
+        adminKey,
+        orgId,
+        {
+          email: secondaryEmail,
+          role: "member",
+          api_key_name: `managed-key-e2e-member-${suffix}`,
+        },
       );
 
       await json<Organization>(

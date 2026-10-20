@@ -251,8 +251,8 @@ Test fixtures (optional overrides):
 - `TEST_PROMPT` — prompt used in conversations (default: `Flip a coin!`).
 - `TEST_ENV` — label for the environment.
 - `MANAGED_KEY_E2E_MUTATION_CONFIRMED` — set to `true` only on a disposable
-  install to enable the managed-key ownership scenario. The first authenticated
-  user must be the instance superadmin, and user provisioning must be enabled.
+  install to enable the managed-key ownership scenario. It creates the test
+  organization with `SUPER_ADMIN_API_KEY`, and user provisioning must be enabled.
 
 ### Storage-state files
 
