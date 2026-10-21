@@ -46,7 +46,7 @@ data:
           "name": {{ $config.name | quote }},
           "image": {{ $config.image | default $agentServerImage | quote }},
           "working_dir": {{ $config.working_dir | quote }},
-          {{- with $config.count }}
+          {{- if hasKey $config "count" }}
           "count": {{ $config.count }},
           {{- end }}
           {{- /* Omitted when false/unset: the loader defaults fuse_s3_mount to false. */}}
@@ -55,6 +55,12 @@ data:
           {{- end }}
           "command": {{ $config.command | toJson }},
           "environment": {{ mergeOverwrite (deepCopy ($config.environment | default dict)) (deepCopy $globalAgentEnv) | toJson }}
+          {{- with $config.display_name }},
+          "display_name": {{ . | toJson }}
+          {{- end }}
+          {{- with $config.resources }},
+          "resources": {{ . | toJson }}
+          {{- end }}
           {{- with $config.run_as_user }},
           "run_as_user": {{ $config.run_as_user }}
           {{- end }}
