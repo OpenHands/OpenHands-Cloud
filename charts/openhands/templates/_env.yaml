@@ -698,6 +698,11 @@ the app UI and webhook users are matched by email. */}}
       key: client-secret
 {{- end }}
 
+{{- if .Values.enterpriseSSO.enforceOnly }}
+- name: ENFORCE_ENTERPRISE_SSO
+  value: "true"
+{{- end }}
+
 {{- if .Values.enterpriseSSO.enabled }}
 - name: ENABLE_ENTERPRISE_SSO
   value: "true"

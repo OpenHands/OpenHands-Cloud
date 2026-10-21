@@ -244,6 +244,8 @@ bitbucket:
 # enterprise_sso identity provider on every pod start.
 enterpriseSSO:
   enabled: false
+  # Require corporate SAML for interactive login; Git brokers become link-only.
+  enforceOnly: false
   displayName: "Company SSO"
   idpMetadataUrl: ""
 

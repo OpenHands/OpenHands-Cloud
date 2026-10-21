@@ -3,11 +3,11 @@
 import json
 import os
 import subprocess
-import textwrap
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -90,13 +90,38 @@ def keycloak():
         )
 
 
+@lru_cache(maxsize=1)
+def admin_bootstrap_script():
+    # Execute rendered shell, not Go template expressions. Helm/dependencies
+    # are already prepared by the scripts-test workflow.
+    import yaml
+
+    rendered = subprocess.check_output(
+        [
+            "helm",
+            "template",
+            "admin-auth-test",
+            str(ROOT / "charts/openhands"),
+            "--set",
+            "keycloak.enabled=true",
+        ],
+        text=True,
+    )
+    config = next(
+        doc
+        for doc in yaml.safe_load_all(rendered)
+        if doc
+        and doc.get("kind") == "ConfigMap"
+        and doc["metadata"]["name"] == "keycloak-config-script"
+    )
+    return (
+        config["data"]["keycloak-config.sh"].split("ERROR_MESSAGE=$(curl", 1)[0]
+        + "\nrefresh_access_token\n"
+    )
+
+
 def reconcile(url, password="", success=True, client_id="", client_secret=""):
-    template = (
-        ROOT / "charts/openhands/templates/keycloak-config-script.yaml"
-    ).read_text()
-    script = textwrap.dedent(template.split("keycloak-config.sh: |\n", 1)[1])
-    script = script.split("ERROR_MESSAGE=$(curl", 1)[0]
-    script += "\nrefresh_access_token\n"
+    script = admin_bootstrap_script()
     env = dict(
         os.environ,
         KEYCLOAK_SERVER_URL=url,

@@ -103,6 +103,11 @@ data:
       esac
     }
 
+    SSO_ONLY_ENABLED={{ .Values.enterpriseSSO.enforceOnly | toString }}
+    {{- if .Values.enterpriseSSO.enforceOnly }}
+{{ .Files.Get "files/keycloak-sso-only.sh" | indent 4 }}
+    {{- end }}
+
     echo "Waiting for Keycloak to be ready..."
     until curl --output /dev/null --silent --head --fail $KEYCLOAK_SERVER_URL; do
         echo '.'
@@ -275,6 +280,22 @@ data:
     echo "Applied deployment SMTP settings to realm smtpServer."
     {{- end }}
 
+    {{- if .Values.enterpriseSSO.enforceOnly }}
+    KC_REALM="$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME"
+    # Persist broker restrictions in both realm-create and startup-update paths.
+    jq '.identityProviders |= map(.linkOnly = true)' "$REALM_JSON" > /tmp/sso-only-realm.json
+    mv /tmp/sso-only-realm.json "$REALM_JSON"
+    if [ "$ERROR_MESSAGE" = "Realm not found." ]; then
+      # Keep the application client closed until the SAML provider and its
+      # dedicated browser flow have been successfully provisioned.
+      jq --arg client "$KEYCLOAK_CLIENT_ID" '.clients |= map(if .clientId == $client then .enabled = false | .directAccessGrantsEnabled = false else . end)' "$REALM_JSON" > /tmp/sso-only-realm.json
+    else
+      ensure_sso_only_flow || exit 1
+      jq --arg client "$KEYCLOAK_CLIENT_ID" --arg flow "$SSO_FLOW_ID" '.clients |= map(if .clientId == $client then .directAccessGrantsEnabled = false | .authenticationFlowBindingOverrides.browser = $flow else . end)' "$REALM_JSON" > /tmp/sso-only-realm.json
+    fi
+    mv /tmp/sso-only-realm.json "$REALM_JSON"
+    {{- end }}
+
     if [ "$ERROR_MESSAGE" = "Realm not found." ]; then
       echo "Creating allhands realm..."
       keycloak_api_call "curl -s -X POST \"$KEYCLOAK_SERVER_URL/admin/realms\" -H \"Authorization: Bearer $ACCESS_TOKEN\" -H \"Content-Type: application/json\" --data \"@$REALM_JSON\""
@@ -317,6 +338,21 @@ data:
         EXISTING_UUID=$(curl -s "$KC_REALM/clients?clientId=$cid" \
           -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.[0].id')
         if [ -n "$EXISTING_UUID" ] && [ "$EXISTING_UUID" != "null" ]; then
+    {{- if not .Values.enterpriseSSO.enforceOnly }}
+          if [ "$cid" = "$KEYCLOAK_CLIENT_ID" ]; then
+            # Keycloak merges binding maps: {} does not remove an override.
+            # Clear only our owned flow; preserve customer-managed bindings.
+            keycloak_get_optional "$KC_REALM/clients/$EXISTING_UUID" || exit 1
+            PREVIOUS_BROWSER_FLOW=$(printf '%s\n' "$RESPONSE" | jq -r '.authenticationFlowBindingOverrides.browser // empty')
+            if [ -n "$PREVIOUS_BROWSER_FLOW" ]; then
+              keycloak_get_optional "$KC_REALM/authentication/flows" || exit 1
+              if printf '%s\n' "$RESPONSE" | jq -e --arg id "$PREVIOUS_BROWSER_FLOW" 'any(.[]; .id == $id and .alias == "openhands-enterprise-sso-only" and .description == "Managed by OpenHands enterpriseSSO.enforceOnly")' >/dev/null; then
+                jq '.authenticationFlowBindingOverrides.browser = ""' /tmp/client.json > /tmp/client-reset.json || exit 1
+                mv /tmp/client-reset.json /tmp/client.json
+              fi
+            fi
+          fi
+    {{- end }}
           keycloak_api_call "curl -s -X PUT \"$KC_REALM/clients/$EXISTING_UUID\" $AUTH $CT --data \"@/tmp/client.json\""
           echo "  Updated client: $cid"
         else
@@ -488,7 +524,10 @@ data:
       done
 
       echo "enterprise_sso SAML identity provider configured."
-    ) || echo "WARNING: enterprise_sso auto-configuration failed (details above). Check metadata retrieval and Keycloak provider/mapper errors above, then redeploy to retry; continuing startup." >&2
+    ) || {
+      echo "WARNING: enterprise_sso auto-configuration failed (details above). Check metadata retrieval and Keycloak provider/mapper errors above, then redeploy to retry." >&2
+      if [ "${SSO_ONLY_ENABLED:-false}" = true ]; then exit 1; fi
+    }
     {{- else if not .Values.enterpriseSSO.enabled }}
     # Reconcile on every toggle-off rollout, but only modify a provider stamped
     # as chart-managed by the auto-configuration path.
@@ -504,4 +543,9 @@ data:
       fi
     ) || echo "WARNING: could not disable the managed enterprise_sso identity provider; continuing startup." >&2
     {{- end }}
+    {{- if .Values.enterpriseSSO.enforceOnly }}
+    refresh_access_token || exit 1
+    apply_sso_only_client || { echo "ERROR: required SSO-only login policy could not be applied; refusing startup." >&2; exit 1; }
+    {{- end }}
+
 {{- end }}
