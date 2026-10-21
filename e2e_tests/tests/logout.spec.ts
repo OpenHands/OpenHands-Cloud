@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { HomePage } from "../pages";
 import { runUser } from "../utils/config";
+import { githubLoginOption } from "../utils/auth-helpers";
 
 /**
  * Logout specs.
@@ -34,9 +35,7 @@ test.describe("logout @logout", () => {
 
     // Verify the login screen is visible — the GitHub login option renders
     // once the redirect back from Keycloak completes.
-    const loginSection = page.getByRole("button", {
-      name: "Log in with GitHub",
-    });
+    const loginSection = githubLoginOption(page);
     await expect(loginSection).toBeVisible({ timeout: 10_000 });
 
     // Verify the keycloak_auth cookie is cleared on logout.

@@ -32,6 +32,17 @@ export async function checkIfAuthenticated(page: Page): Promise<boolean> {
 }
 
 /**
+ * The login page renders "Log in with GitHub" as a button when GitHub is the
+ * only identity provider, and as a link when several providers are listed.
+ */
+export function githubLoginOption(page: Page): Locator {
+  const name = "Log in with GitHub";
+  return page
+    .getByRole("button", { name })
+    .or(page.getByRole("link", { name }));
+}
+
+/**
  * Drive the full GitHub OAuth login flow for a set of credentials.
  *
  * Handles: the "Log in with GitHub" button, GitHub login page, 2FA (when a
@@ -51,11 +62,7 @@ export async function authenticateWithGitHub(
       "Already on GitHub page (Keycloak valid, GitHub session expired)",
     );
   } else {
-    // Click the GitHub login button
-    const githubButton = page.getByRole("button", {
-      name: "Log in with GitHub",
-    });
-    await githubButton.click();
+    await githubLoginOption(page).click();
 
     // Wait for redirect - could be GitHub.com, home page, or accept-tos
     // If user is already logged into Keycloak, they may be redirected back to the app
@@ -159,10 +166,7 @@ export async function loginWithKeycloakPassword(
     },
   );
 
-  const githubButton = page.getByRole("button", {
-    name: "Log in with GitHub",
-  });
-  await githubButton.click();
+  await githubLoginOption(page).click();
 
   // With the hint stripped Keycloak renders its own Sign-In form. The input
   // ids are stable across Keycloak versions (they come from the built-in
