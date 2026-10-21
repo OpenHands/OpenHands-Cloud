@@ -25,13 +25,13 @@ test.describe("api keys", () => {
       description: runUser(testInfo),
     });
 
-    // Navigate to home and open the user menu to reach API Keys.
+    // Home is now the Canvas SPA (no user-avatar dropdown → no clickable
+    // link to the API Keys sub-page). API Keys still lives in the enterprise
+    // Settings shell at /settings/api-keys, so navigate there directly; going
+    // through Canvas' /settings drawer just to click the same link would
+    // exercise navigation the Settings screen already tests.
     await homePage.goto();
-    await homePage.openUserMenu();
-
-    const apiKeysLink = page.getByRole("link", { name: /api keys/i });
-    await apiKeysLink.click();
-
+    await page.goto("/settings/api-keys");
     await page.waitForURL(/\/settings\/api-keys/, { timeout: 30_000 });
     console.log("Navigated to API Keys page");
 

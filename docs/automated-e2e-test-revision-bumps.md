@@ -15,9 +15,22 @@ The sender lives in
    `event_type: bump-e2e-test-revision`.
 
 `saas-deploy` owns the edit. Its receiver opens or updates one rolling pull
-request that moves the pin to the newest revision. Merging that pull request is
-what decides the revision the e2e runners use, so a revision is skipped by
-leaving the pull request unmerged rather than by gating this dispatch.
+request that moves the pin to the newest revision and queues auto-merge on it.
+Merging that pull request is what decides the revision the e2e runners use.
+
+After dispatching, the sender polls the `openhands-e2e` Argo WorkflowTemplate
+until its `test-revision` is the pushed commit (up to 45 minutes), then starts
+an unstable E2E run through
+[`e2e-replicated.yml`](../.github/workflows/e2e-replicated.yml). A newer push
+cancels an older wait, so only the newest revision gets a run. If the pin never
+arrives, the job fails and points at the bump pull request.
+
+The wait reads the template with the repo-level, read-only
+`ARGO_WORKFLOWS_GATE_TOKEN` (the `openhands-e2e-gate` identity in
+`saas-deploy`), not the environment-scoped `ARGO_WORKFLOWS_E2E_TOKEN`. The
+submit identity's template `get` is scoped to the template name, and Argo
+Server checks this read without a name, so it is always denied. A 401, 403, or
+404 fails the job at once rather than after 45 minutes.
 
 ## Dispatch payload
 

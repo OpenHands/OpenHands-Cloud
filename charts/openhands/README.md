@@ -18,6 +18,28 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### Organization condenser defaults
+
+Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Any positive integer is accepted. Condensation triggers on the smaller of this value and the agent LLM's effective input limit, so a value above that limit has no effect; it does not change the model context window, and event-count condensation may still occur first.
+
+These values only take effect from the app version that reads the `OPENHANDS_ORG_DEFAULTS_CONDENSER_*` environment variables, which is tracked in [OpenHands/enterprise#337](https://github.com/OpenHands/enterprise/pull/337). The current chart `appVersion` does not include that reader, so on it these values render into the pod and do nothing.
+
+```yaml
+orgDefaults:
+  condenser:
+    maxTokens: 200000
+    applyToExisting: true
+    overwriteExisting: true
+```
+
+New applicable OpenHands org settings receive the configured value. Existing org rows are only updated when `applyToExisting: true`; existing non-null values are only replaced when `overwriteExisting: true`. Missing and JSON-null `condenser.max_tokens` values are treated as unset.
+
+Reconciliation is triggered from the app server's startup lifespan, so it runs once per `saas_server` worker process every time one starts, and it stays armed for as long as these values remain in the release. The maintenance CronJobs that share this env block never trigger it, because they run standalone `python -m` entrypoints that do not start the app. A concurrent database lock serializes overlapping runs, so repeated runs converge on the same result rather than conflicting.
+
+The practical consequence is that this is not a rollout-scoped, one-time operation. If `overwriteExisting: true` stays in a site values file, a pod restart, rollout, HPA scale-up, or node eviction re-applies it and overwrites org-admin UI changes made since the last start. Remove `applyToExisting`/`overwriteExisting` once the rollout completes. Then remove `orgDefaults.condenser.maxTokens` as well if you want to stop future defaulting and reconciliation.
+
+`overwriteExisting: true` is destructive for prior org-level `max_tokens` values. Take a database backup before enabling it. Removing `orgDefaults.condenser.maxTokens` later does not restore previous org-specific values; restore from backup or run corrective SQL if rollback is required.
+
 ### Email (Resend)
 
 To enable organization invitation emails via Resend, set `resend.enabled: true` and create a Kubernetes secret named `resend-api-key` with key `resend-api-key` containing your Resend API key. The secret name can be overridden with `resend.auth.existingSecret`.
@@ -669,6 +691,34 @@ To upgrade the chart:
 helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 ```
 
+### Keycloak 26.3 to 26.8
+
+The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.0. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards.
+
+`helm upgrade` backs the database up first. A pre-upgrade hook (`keycloak.preUpgradeBackup`) reads the schema version from Keycloak's `migration_model` table and, when it differs from the version in `keycloak.image.tag`, copies `bitnami_keycloak` to `bitnami_keycloak_backup_26_3_0` on the same server while Keycloak 26.3 is still running. It runs after the other pre-upgrade hooks, so a failed check such as a Strict budget preflight stops the upgrade before the copy. If the copy fails, the upgrade stops before anything changes; the reason is in the log of the `<release>-keycloak-backup` Job. That includes a copy still running after `keycloak.preUpgradeBackup.activeDeadlineSeconds` minus 60 seconds (240 by default), for example one blocked by a lock on a Keycloak table; raise it for a large database. If the backup database already exists, the hook keeps it rather than copying again. So if an earlier attempt stopped after the backup but before Keycloak 26.8 started (for example, a manifest failed to apply or the 26.8 image could not be pulled), drop `bitnami_keycloak_backup_26_3_0` before retrying, or the backup will miss changes made since that attempt. The hook needs a database user that can `CREATE DATABASE` (the bundled `postgres` user can) and PostgreSQL 17 or older, since it runs `pg_dump` 17. If yours does not, back up the database yourself and upgrade with `keycloak.preUpgradeBackup.enabled=false` (on Replicated, untick **Back Up Keycloak Database Before Upgrade** under **Upgrade Checks**). The hook does not run under `helm template`, so ArgoCD and similar tools must back up by hand:
+
+```bash
+kubectl exec -n openhands <release>-postgresql-0 -- \
+  sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U postgres -Fc -d bitnami_keycloak' > keycloak-26.3.dump
+```
+
+To roll back, scale the `keycloak` StatefulSet to 0, swap the databases, and upgrade with `keycloak.image` set back to `docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0`:
+
+```sql
+ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_0;
+ALTER DATABASE bitnami_keycloak_backup_26_3_0 RENAME TO bitnami_keycloak;
+```
+
+If you skip the swap, the hook stops the upgrade with a message, because Keycloak 26.3 cannot start on the 26.8 schema.
+
+The rollback does not keep changes made on 26.8, such as new Keycloak users. They stay in `bitnami_keycloak_26_8_0`.
+
+On Replicated, the admin console has no rollback button, so run these steps on the cluster. For an online install, keep the image proxy path: run `helm upgrade` with `--reuse-values`, `keycloak.image.repository=proxy/openhands/docker.io/bitnamilegacy/keycloak`, and `keycloak.image.tag=26.3.0-debian-12-r0`. The admin console does not know about this `helm upgrade` and continues to show the new release. The next deploy from the admin console applies Keycloak 26.8 again. This includes a **Redeploy**, a config change, and an update. The hook backs up the restored 26.3 database again before Keycloak migrates it.
+
+To go forward to 26.8 again, find the cause in the `keycloak-0` log of the failed 26.8 start. If the cause is in your setup, fix it, and then upgrade without the 26.3 image setting. On Replicated, deploy from the admin console. If the cause is in Keycloak 26.8 or in this chart, contact OpenHands support. Do not deploy until a release with a fix is available. If automatic deployments are on, turn them off until then.
+
+With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`. The hook never drops backups, and every later upgrade that changes the Keycloak version, patch releases included, adds another full copy of the database, so drop old `bitnami_keycloak_backup_*` databases before they fill the PostgreSQL volume.
+
 ## Uninstallation
 
 To uninstall the chart:
@@ -678,3 +728,14 @@ helm uninstall openhands -n openhands
 ```
 
 Note: This will not delete any PVCs or secrets created. You'll need to delete those manually if desired.
+
+### Budget policy changes
+
+The bundled LiteLLM proxy uses unmodified 1.100.5 pinned by digest and
+`litellm-helm.proxy_config.general_settings.user_api_key_cache_ttl: 0`.
+Both are required for a budget change (including disabling a user's limit)
+to affect the next request using an existing key. Older proxies can keep enforcing
+a removed limit from cached authorization data, even after a successful save.
+This increases authorization database reads; production throughput has not been
+load-tested. It does not enable or disable LLM response caching. If you use an
+external LiteLLM proxy, configure and validate the same behavior there.

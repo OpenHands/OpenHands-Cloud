@@ -6,10 +6,12 @@ templates:
   - troubleshoot/_shared.tpl
   - troubleshoot/_sysbox.tpl
   - troubleshoot/_tls-hostname.tpl
+  - troubleshoot/_sandbox-nodes.tpl
+  - troubleshoot/_sandbox-capacity.tpl
 release:
   name: openhands
 tests:
-  - it: collects desired and applied budget state without managed keys
+  - it: runs the read-only budget preflight in the openhands container
     set:
       replicated.enabled: true
     asserts:
@@ -17,59 +19,52 @@ tests:
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
-          pattern: "collectorName: openhands-budget-diagnostics"
+          pattern: "collectorName: openhands-budget-preflight\\n\\s+namespace: \\S+\\n\\s+selector:\\n\\s+- app=openhands\\n\\s+containerName: openhands\\n"
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
         matchRegex:
           path: stringData.support-bundle-spec
-          pattern: 'org_budget_settings'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'litellm_applied_state'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'members_missing_cycle_baseline'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'known_member_cycle_baseline_missing'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'degraded_reasons'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'members_without_expected_private_budget'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'litellm_budget_table'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: '/team/info\?'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'max_budget_in_team'
-      - template: troubleshoot/secrets.yaml
-        documentIndex: 1
-        matchRegex:
-          path: stringData.support-bundle-spec
-          pattern: 'if not desired\["requires_private_budget"\]:[\s\S]*return not has_private_budget'
+          pattern: "cd /app && BUDGET_PREFLIGHT_PHASE=pre BUDGET_PREFLIGHT_MODE=acknowledge exec python -m run_budget_preflight\\n"
+      # The post phase reconciles LiteLLM; a support bundle must never write.
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
         notMatchRegex:
           path: stringData.support-bundle-spec
-          pattern: 'budget-diagnostics[\s\S]*SELECT[^\n]*_llm_api_key'
+          pattern: "BUDGET_PREFLIGHT_PHASE=post"
+
+  - it: collects recent budget maintenance tasks
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "FROM maintenance_tasks \"\\n\\s+\"WHERE processor_type LIKE '%OrgBudgetMaintenanceProcessor'"
+
+  # maxAge becomes sinceTime, which drops a finished Job's whole log once the
+  # upgrade that ran it is older than the limit.
+  - it: collects the budget upgrade Job logs regardless of age
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "name: app/budget-preflight/logs\\n\\s+namespace: \\S+\\n\\s+selector:\\n\\s+- app=openhands-budget-preflight\\n"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "name: app/budget-preflight/logs\\n(?: {8}.*\\n)* +maxAge:"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "name: app/budget-reconcile-gate/logs\\n\\s+namespace: \\S+\\n\\s+selector:\\n\\s+- app=openhands-budget-reconcile-gate\\n"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "name: app/budget-reconcile-gate/logs\\n(?: {8}.*\\n)* +maxAge:"

@@ -1,0 +1,204 @@
+"""Opt-in: run the rendered keycloak-backup Job script against a real PostgreSQL.
+
+KEYCLOAK_BACKUP_TEST_POSTGRES_IMAGE=postgres:16 (the bundled server is 16.x, which
+also exercises the transaction_timeout strip for pg_dump 17).
+"""
+
+import os
+import subprocess
+import time
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+SERVER_IMAGE = os.environ.get("KEYCLOAK_BACKUP_TEST_POSTGRES_IMAGE")
+pytestmark = pytest.mark.skipif(
+    not SERVER_IMAGE, reason="Set KEYCLOAK_BACKUP_TEST_POSTGRES_IMAGE to run"
+)
+
+
+def render_job() -> dict:
+    out = subprocess.run(
+        ["helm", "template", "oh", str(ROOT / "charts/openhands"), "--is-upgrade",
+         "--set", "keycloak.enabled=true", "-s", "templates/keycloak-backup-job.yaml"],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    container = yaml.safe_load(out)["spec"]["template"]["spec"]["containers"][0]
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    return {"image": container["image"], "script": container["args"][0],
+            "target": env["TARGET_VERSION"], "copy_timeout": env["COPY_TIMEOUT_SECONDS"]}
+
+
+@pytest.fixture(scope="module")
+def server():
+    tag = uuid.uuid4().hex[:8]
+    net, name = f"kcb-{tag}", f"kcb-pg-{tag}"
+    subprocess.run(["docker", "network", "create", net], check=True, capture_output=True)
+    subprocess.run(["docker", "run", "-d", "--name", name, "--network", net,
+                    "-e", "POSTGRES_PASSWORD=pw", SERVER_IMAGE], check=True, capture_output=True)
+    try:
+        for _ in range(60):
+            if subprocess.run(["docker", "exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1"],
+                              capture_output=True).returncode == 0:
+                break
+            time.sleep(1)
+        yield {"net": net, "name": name, "job": render_job()}
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        subprocess.run(["docker", "network", "rm", net], capture_output=True)
+
+
+def sql(server, db, query):
+    return subprocess.run(
+        ["docker", "exec", server["name"], "psql", "-U", "postgres", "-d", db,
+         "-v", "ON_ERROR_STOP=1", "-tAXc", query],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+def databases(server):
+    return set(sql(server, "postgres", "SELECT datname FROM pg_database").split())
+
+
+def keycloak_db(server, *versions):
+    """A Keycloak database whose migration_model rows are applied in the given order."""
+    db = f"kc_{uuid.uuid4().hex[:8]}"
+    sql(server, "postgres", f"CREATE DATABASE {db}")
+    sql(server, db, "CREATE TABLE migration_model (id text, version text, update_time bigint);"
+                    "CREATE TABLE realm (name text); INSERT INTO realm VALUES ('openhands')")
+    for i, v in enumerate(versions):
+        sql(server, db, f"INSERT INTO migration_model VALUES ('{i}', '{v}', {1000 + i})")
+    return db
+
+
+def run_job(server, db, copy_timeout=None):
+    job = server["job"]
+    return subprocess.run(
+        ["docker", "run", "--rm", "--network", server["net"], "--tmpfs", "/dump:mode=1777",
+         "-e", f"DB_HOST={server['name']}", "-e", "DB_PORT=5432", "-e", f"DB_NAME={db}",
+         "-e", "DB_USER=postgres", "-e", "DB_PASS=pw", "-e", "PGSSLMODE=disable",
+         "-e", f"TARGET_VERSION={job['target']}",
+         "-e", f"COPY_TIMEOUT_SECONDS={copy_timeout or job['copy_timeout']}",
+         "--entrypoint", "/bin/sh", job["image"], "-c", job["script"]],
+        capture_output=True, text=True, timeout=180,
+    )
+
+
+@contextmanager
+def table_locked(server, db, table):
+    """Hold an ACCESS EXCLUSIVE lock on a table, which blocks pg_dump, until the block exits."""
+    holder = subprocess.Popen(
+        ["docker", "exec", server["name"], "psql", "-U", "postgres", "-d", db, "-v", "ON_ERROR_STOP=1",
+         "-c", f"BEGIN; LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(120);"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    granted = (f"SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+               f"WHERE c.relname = '{table}' AND l.mode = 'AccessExclusiveLock' AND l.granted")
+    try:
+        for _ in range(30):
+            if sql(server, db, granted) == "1":
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(f"lock on {table} was never granted")
+        yield
+    finally:
+        sql(server, "postgres", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                                f"WHERE datname = '{db}' AND query LIKE '%pg_sleep(120)%'")
+        holder.wait(timeout=30)
+
+
+def test_copies_the_database_named_after_the_current_schema(server):
+    db = keycloak_db(server, "24.0.0", "26.3.0")
+
+    result = run_job(server, db)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sql(server, f"{db}_backup_26_3_0", "SELECT name FROM realm") == "openhands"
+    assert f"{db}_backup_26_3_0_incomplete" not in databases(server)
+
+
+def test_skips_when_the_schema_is_already_at_the_target(server):
+    db = keycloak_db(server, server["job"]["target"])
+
+    result = run_job(server, db)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
+
+
+def newer_minor(version):
+    """Two minors up: as text, 26.10.0 sorts before 26.8.0, so this catches a text comparison."""
+    major, minor, _ = version.split(".", 2)
+    return f"{major}.{int(minor) + 2}.0"
+
+
+@pytest.mark.parametrize("schema", [newer_minor, lambda _: "99.0.0"], ids=["next-minors", "next-major"])
+def test_stops_when_the_schema_is_newer_than_the_image(server, schema):
+    newer = schema(server["job"]["target"])
+    db = keycloak_db(server, "26.3.0", newer)
+
+    result = run_job(server, db)
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert f"schema {newer}" in result.stdout and "swap the databases" in result.stdout, result.stdout
+    assert "preUpgradeBackup.enabled=false" not in result.stdout, result.stdout
+    assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
+
+
+def test_keeps_an_existing_backup(server):
+    db = keycloak_db(server, "26.3.0")
+    sql(server, "postgres", f"CREATE DATABASE {db}_backup_26_3_0")
+    sql(server, f"{db}_backup_26_3_0", "CREATE TABLE earlier_attempt ()")
+
+    result = run_job(server, db)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sql(server, f"{db}_backup_26_3_0", "SELECT to_regclass('earlier_attempt') IS NOT NULL") == "t"
+
+
+def test_replaces_a_leftover_incomplete_copy(server):
+    db = keycloak_db(server, "26.3.0")
+    sql(server, "postgres", f"CREATE DATABASE {db}_backup_26_3_0_incomplete")
+
+    result = run_job(server, db)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sql(server, f"{db}_backup_26_3_0", "SELECT name FROM realm") == "openhands"
+    assert f"{db}_backup_26_3_0_incomplete" not in databases(server)
+
+
+def test_a_failed_restore_fails_the_job_and_leaves_no_backup(server):
+    db = keycloak_db(server, "26.3.0")
+    # New databases clone template1, so the restore's CREATE TABLE realm collides.
+    sql(server, "template1", "CREATE TABLE realm (name text)")
+    try:
+        result = run_job(server, db)
+    finally:
+        sql(server, "template1", "DROP TABLE realm")
+
+    assert result.returncode != 0
+    assert "upgrade stopped" in result.stdout
+    assert '"Back Up Keycloak Database Before Upgrade"' in result.stdout
+    assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}
+
+
+def test_a_dump_past_the_time_limit_fails_the_job_with_a_message(server):
+    # Past activeDeadlineSeconds the pod is killed and deleted along with its log,
+    # so the script has to give up first and say why.
+    db = keycloak_db(server, "26.3.0")
+
+    with table_locked(server, db, "realm"):
+        started = time.monotonic()
+        result = run_job(server, db, copy_timeout=3)
+        elapsed = time.monotonic() - started
+
+    assert result.returncode != 0
+    assert f'Dumping "{db}" did not finish within 3s' in result.stdout
+    assert "upgrade stopped" in result.stdout
+    assert elapsed < 60
+    assert not {d for d in databases(server) if d.startswith(f"{db}_backup")}

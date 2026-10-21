@@ -1,0 +1,121 @@
+suite: org defaults condenser env wiring
+templates:
+  - deployment.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: leaves org condenser env unset by default
+    set:
+      enabled: true
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING")]
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING")]
+
+  - it: renders without org condenser env when the orgDefaults block is null
+    set:
+      enabled: true
+      orgDefaults: null
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS")]
+
+  - it: renders without org condenser env when the condenser block is null
+    set:
+      enabled: true
+      orgDefaults:
+        condenser: null
+    asserts:
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS")]
+
+  - it: wires false rollout flags when only a threshold is configured
+    set:
+      enabled: true
+      orgDefaults.condenser.maxTokens: 200000
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+            value: "200000"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+            value: "false"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+            value: "false"
+
+  - it: defaults null rollout flags to false rather than an empty value
+    set:
+      enabled: true
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: null
+      orgDefaults.condenser.overwriteExisting: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+            value: "false"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+            value: "false"
+
+  - it: renders an exponent-notation threshold as a plain integer
+    set:
+      enabled: true
+      orgDefaults:
+        condenser:
+          maxTokens: 1.0e+6
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+            value: "1000000"
+
+  - it: wires configured org condenser rollout settings
+    set:
+      enabled: true
+      orgDefaults.condenser.maxTokens: 200000
+      orgDefaults.condenser.applyToExisting: true
+      orgDefaults.condenser.overwriteExisting: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_MAX_TOKENS
+            value: "200000"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_APPLY_TO_EXISTING
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
+            value: "true"

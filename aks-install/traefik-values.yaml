@@ -1,0 +1,18 @@
+# Used by the installation sequence in .agents/skills/aks-install.md.
+nodeSelector:
+  workload: openhands-platform
+service:
+  type: LoadBalancer
+ports:
+  web:
+    asDefault: false
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    asDefault: true
+providers:
+  kubernetesCRD:
+    defaultTLSResourcesNamespace: openhands

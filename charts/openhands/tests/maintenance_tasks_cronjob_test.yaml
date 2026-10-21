@@ -1,0 +1,73 @@
+suite: openhands maintenance tasks cronjob
+templates:
+  - maintenance-tasks-cronjob.yaml
+tests:
+  - it: is enabled by default
+    set:
+      enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: CronJob
+
+  - it: renders a CronJob running the maintenance tasks command
+    set:
+      enabled: true
+      maintenanceTasks.enabled: true
+      maintenanceTasks.concurrencyPolicy: Forbid
+      maintenanceTasks.failedJobsHistoryLimit: 3
+      maintenanceTasks.successfulJobsHistoryLimit: 3
+      maintenanceTasks.backoffLimit: 3
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: CronJob
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-maintenance-tasks
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 1800
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: Never
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].name
+          value: maintenance-tasks
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "python -m run_maintenance_tasks"
+
+  - it: passes activeDeadlineSeconds through from values
+    set:
+      enabled: true
+      maintenanceTasks.enabled: true
+      maintenanceTasks.activeDeadlineSeconds: 600
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 600
+
+  - it: renders nothing when maintenanceTasks is disabled
+    set:
+      enabled: true
+      maintenanceTasks.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when the release is disabled
+    set:
+      enabled: false
+      maintenanceTasks.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0

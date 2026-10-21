@@ -1,0 +1,74 @@
+{{- /*
+Pre-upgrade budget preflight. A Helm pre-upgrade hook, so it runs on the new
+image before any manifest is applied and before the migrate-db init container:
+it reads the not-yet-migrated database and the live LiteLLM team state and
+prints one JSON artifact line (artifact_type: org_budget_preflight) to its log.
+Gated on .Release.IsUpgrade: `helm template` (ArgoCD) never sets it, and a fresh
+install has no organizations to inspect.
+*/ -}}
+{{- if and .Values.enabled .Values.budgetPreflight.enabled .Release.IsUpgrade }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-budget-preflight
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: budget-preflight
+    app: {{ .Release.Name }}-budget-preflight
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "5"
+    # Keep the last run (and the artifact in its pod log) until the next upgrade.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.budgetPreflight.activeDeadlineSeconds }}
+  template:
+    metadata:
+      name: budget-preflight
+      labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: budget-preflight
+        app: {{ .Release.Name }}-budget-preflight
+    spec:
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "openhands.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.caBundle.enabled }}
+      volumes:
+        {{- include "openhands.caBundle.volume" . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: budget-preflight
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          command: ["/bin/sh", "-c"]
+          workingDir: /app
+          args:
+            - |
+              echo "Running budget upgrade preflight (mode: ${BUDGET_PREFLIGHT_MODE})..."
+              python -m run_budget_preflight
+          {{- if .Values.caBundle.enabled }}
+          volumeMounts:
+            {{- include "openhands.caBundle.volumeMount" . | nindent 12 }}
+          {{- end }}
+          env:
+            {{- include "openhands.env" . | nindent 12 }}
+            {{- include "openhands.caBundle.env" . | nindent 12 }}
+            - name: BUDGET_PREFLIGHT_PHASE
+              value: pre
+            - name: BUDGET_PREFLIGHT_MODE
+              value: {{ .Values.budgetPreflight.mode | quote }}
+          resources:
+            {{- toYaml .Values.budgetPreflight.resources | nindent 12 }}
+{{- end }}

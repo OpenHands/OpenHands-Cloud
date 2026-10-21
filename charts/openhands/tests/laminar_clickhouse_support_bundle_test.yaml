@@ -24,3 +24,18 @@ tests:
         notMatchRegex:
           path: stringData.support-bundle-spec
           pattern: "position\\(create_table_query, 'TTL'\\)"
+  - it: collects laminar app-server and app-server-consumer pod logs
+    set:
+      laminar.enabled: true
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "app=laminar-app-server\\b"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "app=laminar-app-server-consumer"

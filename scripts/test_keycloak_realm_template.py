@@ -377,7 +377,8 @@ def test_enterprise_sso_uses_keycloak_import_contract() -> None:
         script,
         re.DOTALL,
     )
-    assert "--data-urlencode" not in script
+    import_call = script.split('identity-provider/import-config"', 1)[1].split("|| exit 1", 1)[0]
+    assert "--data-urlencode" not in import_call
     assert 'providerId: "saml"' in script
     assert "fromUrl: $from_url" in script
     assert 'has("idpEntityId")' in script

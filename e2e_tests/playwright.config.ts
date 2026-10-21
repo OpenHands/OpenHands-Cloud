@@ -11,6 +11,7 @@ import {
   authReturningFile,
   authNewUserFile,
   isUserEnabled,
+  testIgnoreFor,
 } from "./utils/config";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
@@ -56,6 +57,7 @@ const matchFor = (enabled: boolean, pattern: RegExp) =>
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: /preview-smoke\.spec\.ts$/,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1,
@@ -115,24 +117,27 @@ export default defineConfig({
   projects: [
     // --- Setup projects -------------------------------------------------
 
-    // Delete the New User from Keycloak so their next login creates a fresh
-    // account. Node-only (no browser). Skipped entirely (no matched tests)
-    // when NEW_GITHUB_USERNAME is unset.
+    // Delete the synthetic New User from Keycloak so setup:new-user can
+    // recreate it fresh with a known password. Node-only (no browser).
+    // Skipped entirely (no matched tests) when KEYCLOAK_NEW_USER_USERNAME is
+    // unset.
     {
       name: "keycloak-cleanup",
       testMatch: matchFor(hasNewUser, /setup\/keycloak-cleanup\.ts/),
     },
 
-    // Authenticate the Returning User via GitHub. Matches no tests (so it
-    // doesn't launch a browser) when RETURNING_GITHUB_USERNAME is unset.
+    // Authenticate the Returning User via GitHub (federated through
+    // Keycloak's GitHub identity provider). Matches no tests (so it doesn't
+    // launch a browser) when RETURNING_GITHUB_USERNAME is unset.
     {
       name: "setup:returning",
       testMatch: matchFor(hasReturningUser, /setup\/setup-returning\.ts/),
     },
 
-    // Authenticate the New User via GitHub. Depends on keycloak-cleanup so
-    // the account is gone before this login runs. Matches no tests when
-    // NEW_GITHUB_USERNAME is unset.
+    // Create the synthetic New User in Keycloak and authenticate via
+    // Keycloak-native login (no GitHub). Depends on keycloak-cleanup so any
+    // prior user is deleted before this recreates and logs in. Matches no
+    // tests when KEYCLOAK_NEW_USER_USERNAME is unset.
     {
       name: "setup:new-user",
       testMatch: matchFor(hasNewUser, /setup\/setup-new-user\.ts/),
@@ -143,14 +148,15 @@ export default defineConfig({
     //
     // Each spec file (*.spec.ts) is picked up by both the returning and
     // new-user variants of every browser, so the same suite runs once per
-    // user role. The active role is exposed to specs via project metadata
-    // (`project.metadata.user`); see utils/config.ts#runUser.
+    // user role. Specs listed in ROLE_ONLY_SPECS (utils/config.ts) run only
+    // in their own role. The active role is exposed to specs via project
+    // metadata (`project.metadata.user`); see utils/config.ts#runUser.
 
     // Chromium (primary browser)
     {
       name: "chromium:returning",
       testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("returning"),
       use: {
         ...devices["Desktop Chrome"],
         storageState: authReturningFile,
@@ -161,7 +167,7 @@ export default defineConfig({
     {
       name: "chromium:new-user",
       testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("new-user"),
       use: {
         ...devices["Desktop Chrome"],
         storageState: authNewUserFile,
@@ -174,7 +180,7 @@ export default defineConfig({
     {
       name: "firefox:returning",
       testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("returning"),
       use: {
         ...devices["Desktop Firefox"],
         storageState: authReturningFile,
@@ -185,7 +191,7 @@ export default defineConfig({
     {
       name: "firefox:new-user",
       testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("new-user"),
       use: {
         ...devices["Desktop Firefox"],
         storageState: authNewUserFile,
@@ -198,7 +204,7 @@ export default defineConfig({
     {
       name: "webkit:returning",
       testMatch: matchFor(hasReturningUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("returning"),
       use: {
         ...devices["Desktop Safari"],
         storageState: authReturningFile,
@@ -209,7 +215,7 @@ export default defineConfig({
     {
       name: "webkit:new-user",
       testMatch: matchFor(hasNewUser, /.*\.spec\.ts$/),
-      testIgnore: /setup\//,
+      testIgnore: testIgnoreFor("new-user"),
       use: {
         ...devices["Desktop Safari"],
         storageState: authNewUserFile,

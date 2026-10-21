@@ -45,7 +45,7 @@ export function getReportPortalReporter(): ReporterDescription | undefined {
       description: revision
         ? `OpenHands Cloud release revision ${revision}`
         : undefined,
-      includeTestSteps: true,
+      includeTestSteps: false,
       includePlaywrightProjectNameToCodeReference: true,
       skippedIssue: false,
       uploadTrace: true,

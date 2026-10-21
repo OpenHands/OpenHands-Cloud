@@ -1,0 +1,39 @@
+suite: automation support bundle data
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+  - troubleshoot/_sandbox-nodes.tpl
+  - troubleshoot/_sandbox-capacity.tpl
+release:
+  name: openhands
+tests:
+  - it: reports whether the KV store secret is set, from the automation pod that holds it
+    set:
+      replicated.enabled: true
+      automation.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "collectorName: automation-config-snapshot\\n\\s+namespace: \\S+\\n\\s+selector:\\n\\s+- app=automation\\n"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: 'SECRET_PRESENCE = \["AUTOMATION_KV_SECRET"\]'
+
+  - it: leaves the automation snapshot out when automations are disabled
+    set:
+      replicated.enabled: true
+      automation.enabled: false
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "automation-config-snapshot"

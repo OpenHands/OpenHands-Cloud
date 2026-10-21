@@ -7,9 +7,9 @@ This directory contains the Playwright harness and release-level end-to-end test
 - Node.js 20 or newer
 - A supported Playwright browser
 - An explicit non-production or intentionally selected release target
-- Three credential sets: Keycloak admin, Returning User (GitHub), and New User (GitHub) — or pre-generated Playwright storage states for the two user roles
+- Three credential sets: Keycloak admin, Returning User (GitHub), and New User (synthetic Keycloak-native) — or pre-generated Playwright storage states for the two user roles
 
-> **Opt-in roles:** Each user role is enabled by setting its `*_GITHUB_USERNAME` env var. Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
+> **Opt-in roles:** Each user role is enabled by setting its own username env var (`RETURNING_GITHUB_USERNAME` for the federated GitHub user, `KEYCLOAK_NEW_USER_USERNAME` for the synthetic Keycloak-native user). Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
 
 ## Install
 
@@ -34,6 +34,104 @@ npm run lint
 BASE_URL=https://release-under-test.example.test \
   npx playwright test tests/001-home.spec.ts --list
 ```
+
+### Budget certification
+
+`tests/009-budgets.spec.ts` is a destructive, serial certification suite for a
+dedicated test organization. It verifies stable cycle-anchored caps,
+authoritative LiteLLM reporting, optional Slack alerts, direct SDK enforcement,
+missing membership recovery, unmapped service identities, and cleanup from
+fresh database sessions. It will not run unless
+`BUDGET_E2E_MUTATION_CONFIRMED=true`, and it rejects personal or non-test
+organizations by default.
+
+`tests/010-personal-budget-guards.spec.ts` is a non-destructive companion that
+drives every budget entry point against the returning user's own personal
+workspace. Each call must be rejected with `400` and the personal-workspace
+detail message. When `BUDGET_E2E_DATABASE_URL` is configured, the test also
+verifies that none of the budget tables gained a row for the personal org — the
+same invariant the `148_remove_personal_org_budget_settings` migration enforces.
+The database verification is optional; the functional API rejection tests provide
+high confidence even without database access.
+
+Configure the protected GitHub environment `budget-e2e-staging` with:
+
+| Kind     | Name                                  | Purpose                                                      |
+| -------- | ------------------------------------- | ------------------------------------------------------------ |
+| Variable | `BUDGET_E2E_SCHEDULE_ENABLED`         | Set to `true` only after the protected contract is ready     |
+| Variable | `BUDGET_E2E_RUNNER`                   | Optional runner label with network access; defaults to `ubuntu-latest` |
+| Variable | `BUDGET_E2E_BASE_URL`                 | HTTPS URL of the test deployment                             |
+| Variable | `BUDGET_E2E_ORG_ID`                   | Dedicated non-personal test organization UUID                |
+| Variable | `BUDGET_E2E_LITELLM_URL`              | Admin-reachable URL of the deployment's LiteLLM proxy        |
+| Variable | `BUDGET_E2E_DIRECT_MODEL`             | Billable proxy model alias used by direct SDK-style requests |
+| Variable | `BUDGET_E2E_EXPECTED_LITELLM_VERSION` | Expected readiness version; defaults to `1.94.1`             |
+| Variable | `BUDGET_E2E_SERVICE_USER_ID`          | Existing LiteLLM-only identity in the test organization team |
+| Variable | `BUDGET_E2E_SLACK_CHANNEL_ID`         | Optional test alert channel ID                               |
+| Variable | `BUDGET_E2E_SLACK_CHANNEL_NAME`       | Optional test alert channel name                             |
+| Variable | `BUDGET_E2E_SLACK_TEAM_ID`            | Optional Slack workspace/team ID                             |
+| Secret   | `BUDGET_E2E_GITHUB_USERNAME`          | Returning test administrator username                        |
+| Secret   | `BUDGET_E2E_GITHUB_PASSWORD`          | Returning test administrator password                        |
+| Secret   | `BUDGET_E2E_GITHUB_TOTP_SECRET`       | Optional TOTP seed for that account                          |
+| Secret   | `BUDGET_E2E_DATABASE_URL`             | PostgreSQL connection string for the test deployment         |
+| Secret   | `BUDGET_E2E_LITELLM_API_KEY`          | LiteLLM admin key                                            |
+| Secret   | `BUDGET_E2E_SERVICE_API_KEY`          | Virtual key for the LiteLLM-only service identity            |
+| Secret   | `BUDGET_E2E_SLACK_BOT_TOKEN`          | Optional token allowed to read the test alert channel        |
+
+The suite opens a direct PostgreSQL connection to snapshot cycle state and
+restore it after the destructive run. For a Replicated instance whose database
+is private, set `BUDGET_E2E_RUNNER` to a self-hosted runner label with network
+access to that database. Do not expose PostgreSQL publicly for a GitHub-hosted
+runner. `ubuntu-latest` is appropriate only when every configured endpoint is
+intentionally reachable from GitHub Actions.
+
+Scheduled certification is opt-in. Leave `BUDGET_E2E_SCHEDULE_ENABLED` unset
+or set to `false` while provisioning the environment; manual dispatch remains
+available. Enable the schedule only after a complete manual run passes.
+
+Slack verification is optional. Configure all four `BUDGET_E2E_SLACK_*`
+settings together to exercise the alert path. If all four are omitted, the
+suite executes the non-Slack scenarios and explicitly reports issue 5 as
+skipped. A partial Slack configuration is rejected.
+
+For Azure coverage, point `BUDGET_E2E_DIRECT_MODEL` at an Azure-backed model
+alias already configured in the deployment's LiteLLM proxy. Direct requests use
+only the generated virtual key in the `Authorization` header, matching an
+OpenAI-compatible SDK configured with the LiteLLM base URL. Calls sent directly
+to Azure or another provider bypass the deployment and are intentionally
+outside this budget contract.
+
+Before the first run, create the LiteLLM-only service identity and virtual key
+in the dedicated team, but do not add that identity to the OpenHands
+organization. Give it no member cap or a deliberately chosen cap; the suite
+records the original value and proves maintenance does not rewrite it. When
+Slack verification is enabled, use a test channel because the suite emits a
+real alert.
+
+Run the protected `Budget Incident E2E` workflow manually after deploying the
+candidate enterprise image. Download the Playwright artifact and retain the
+JSON evidence with the tested image SHA and release sequence. Scheduled runs
+reuse the same protected contract.
+
+### Super Admin dashboard and first install
+
+Both specs need the instance's **Enable Super Admin Dashboard** option (the
+`ENABLE_SUPER_ADMIN` and `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`
+variables). They skip when it is off.
+
+`tests/013-super-admin-dashboard.spec.ts` opens the dashboard from Settings,
+then works through organization, Super Admin, membership and account actions
+on a throwaway user and organizations. It deletes them afterwards. It runs for
+whichever role is a Super Admin, and skips unless user provisioning is enabled.
+Its emails use `example.com`, because the server rejects `.test` addresses.
+
+`tests/012-first-install.spec.ts` walks the `/install` wizard. That wizard only
+exists for the first user to sign in after a fresh install with the option
+already on. The spec therefore runs only when the Returning User is that first
+Super Admin and the wizard is still pending, and skips on every long-lived
+instance. When the wizard sends a user to `/install` at sign-in, the login
+helper goes to the app home and leaves the wizard for the spec. To run the spec
+again on the same instance, the first Super Admin can reopen the wizard with
+`PATCH /api/admin/setup-state` and the body `{"wizard_completed": false}`.
 
 ### Run through an Argo WorkflowTemplate
 
@@ -72,8 +170,10 @@ submitting a run.
 
 ReportPortal reporting is disabled unless `REPORTPORTAL_ENABLED=true`. When it
 is enabled, the harness keeps the existing Playwright reporters and also uploads
-test results, steps, traces, videos, screenshots, and other Playwright
-attachments through `@reportportal/agent-js-playwright`.
+test results, traces, videos, screenshots, and other Playwright attachments
+through `@reportportal/agent-js-playwright`. It reports one row per test, not one
+row per browser action. Each test row keeps its error, skip reason, and
+attachments.
 
 Required variables:
 
@@ -101,14 +201,16 @@ OpenHands Cloud uses Keycloak as its identity provider, federating identities fr
 
 Three credential sets are required before any test run:
 
-| Role | Provider | Credentials | Purpose |
-| --- | --- | --- | --- |
-| Keycloak admin | Keycloak | username + password | Administers Keycloak; deletes the New User before each run |
-| Super admin | API key | unbound superadmin API key | Creates orgs and provisions users via the REST API (org-management specs) |
-| Returning User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account already exists |
-| New User | GitHub | username + password + optional TOTP secret | A user whose OpenHands account is deleted at the start of the run so they get a fresh account (and a fresh user id) on next login |
+| Role           | Provider          | Credentials                                | Purpose                                                                                                                           |
+| -------------- | ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Keycloak admin | Keycloak          | username + password                        | Administers Keycloak; deletes and recreates the synthetic New User before each run                                                |
+| Super admin    | API key           | unbound superadmin API key                 | Creates orgs and provisions users via the REST API (org-management specs)                                                         |
+| Returning User | GitHub (via Keycloak IdP) | username + password + optional TOTP secret | An existing federated user; exercises the full app ↔ Keycloak ↔ GitHub round-trip on every run                             |
+| New User       | Keycloak (native) | Keycloak username + password + reserved e2e-only email | A synthetic account the harness deletes and recreates each run; exercises the app's first-login onboarding path deterministically |
 
-The New User's Keycloak account is identified by email. At the start of a run, the Keycloak admin logs in and deletes any existing user whose email matches `KEYCLOAK_NEW_USER_EMAIL`. The New User then logs in via GitHub and is provisioned from scratch, exercising the onboarding path.
+The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
+
+`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
 
 ### Environment variables
 
@@ -121,13 +223,15 @@ Keycloak admin (cleanup):
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
 - `KEYCLOAK_ADMIN_PASSWORD` — admin password.
-- `KEYCLOAK_NEW_USER_EMAIL` — email of the New User to delete.
+- `KEYCLOAK_NEW_USER_EMAIL` — email of the synthetic New User. Must be under the reserved `e2e.example.com` namespace (RFC 2606); enforced by `assertE2eOnlyEmail`.
 
 The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain with `auth.` (e.g. `https://staging.all-hands.dev` → `https://auth.staging.all-hands.dev`).
 
 Super admin (org management):
 
-- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by the org-management specs (`006-org-management.spec.ts`) to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
+- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by `006-org-management.spec.ts` and `011-automations.spec.ts` to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
+
+The `011-automations` suite also probes `/api/automation/v1?limit=1` for reachability and skips the whole suite when the automation subchart is not deployed on the target cluster; no additional env var is required.
 
 Returning User (GitHub):
 
@@ -135,11 +239,11 @@ Returning User (GitHub):
 - `RETURNING_GITHUB_PASSWORD` — required when the role is enabled.
 - `RETURNING_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
 
-New User (GitHub):
+New User (synthetic Keycloak-native account):
 
-- `NEW_GITHUB_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup) entirely.
-- `NEW_GITHUB_PASSWORD` — required when the role is enabled.
-- `NEW_GITHUB_TOTP_SECRET` (optional) — 2FA secret.
+- `KEYCLOAK_NEW_USER_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup + creation) entirely.
+- `KEYCLOAK_NEW_USER_PASSWORD` — required when the role is enabled. Set on the user by the Admin API and submitted through Keycloak's local login form.
+- `KEYCLOAK_NEW_USER_EMAIL` — required when the role is enabled (see above). Also used by `006-org-management.spec.ts` to provision the user into a test org via the REST API.
 
 Test fixtures (optional overrides):
 
@@ -147,8 +251,8 @@ Test fixtures (optional overrides):
 - `TEST_PROMPT` — prompt used in conversations (default: `Flip a coin!`).
 - `TEST_ENV` — label for the environment.
 - `MANAGED_KEY_E2E_MUTATION_CONFIRMED` — set to `true` only on a disposable
-  install to enable the managed-key ownership scenario. The first authenticated
-  user must be the instance superadmin, and user provisioning must be enabled.
+  install to enable the managed-key ownership scenario. It creates the test
+  organization with `SUPER_ADMIN_API_KEY`, and user provisioning must be enabled.
 
 ### Storage-state files
 
@@ -168,7 +272,7 @@ chromium:new-user  ──▶ setup:new-user
 (and firefox / webkit variants)
 ```
 
-Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
+Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. A spec that tests only one role is listed in `ROLE_ONLY_SPECS` (`utils/config.ts`), and the other role's projects do not schedule it, so it never shows up as a skipped test. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
 
 Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
 

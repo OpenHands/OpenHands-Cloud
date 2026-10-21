@@ -1,6 +1,6 @@
 import { Page, Locator, expect } from "@playwright/test";
 import { generate } from "otplib";
-import type { GitHubCredentials } from "./config";
+import type { GitHubCredentials, NewUserCredentials } from "./config";
 
 /**
  * Shared authentication helpers used by the per-user setup projects.
@@ -99,10 +99,115 @@ export async function authenticateWithGitHub(
     await handle2FA(page, creds.totpSecret);
   }
 
+  // GitHub may interrupt with a one-time "verify your 2FA settings" reminder
+  // between 2FA and the OAuth grant; dismiss it so the authorize form renders.
+  await dismissTwoFactorReminder(page);
+
   // Handle OAuth authorization if needed
   await handleOAuthAuthorization(page);
 
   console.log("GitHub authentication flow completed");
+}
+
+/**
+ * Drive Keycloak's local username/password login form for a synthetic
+ * Keycloak-native user.
+ *
+ * The new-user setup project creates a fresh, non-federated user in the
+ * ``allhands`` realm via the Keycloak Admin API and then calls this helper to
+ * establish a browser session as that user. GitHub is deliberately not
+ * involved: driving the real OAuth flow against github.com is what made the
+ * previous new-user setup fragile (see the commit history of
+ * ``dismissTwoFactorReminder``), and the returning-user path already covers
+ * the app ↔ Keycloak ↔ GitHub round-trip.
+ *
+ * The Keycloak login page renders a native Sign-In form alongside the
+ * "Log in with GitHub" social button; this helper fills the native form's
+ * ``#username`` / ``#password`` inputs (Keycloak stable ids) and submits.
+ */
+export async function loginWithKeycloakPassword(
+  page: Page,
+  creds: NewUserCredentials,
+): Promise<void> {
+  console.log("Starting Keycloak-native login for new user...");
+
+  // The app's "Log in with GitHub" button sends the browser to Keycloak with
+  // ``kc_idp_hint=github``, which makes Keycloak 302 straight to GitHub OAuth
+  // and skip its own login form. We want the local form, so intercept the
+  // request to Keycloak's ``/protocol/openid-connect/auth`` endpoint and
+  // strip the hint before it reaches the server. Everything else (client_id,
+  // redirect_uri, state, PKCE) is left untouched, so the eventual callback
+  // still passes the app's state validation.
+  //
+  // Uses ``route.fallback`` rather than ``route.continue`` so any
+  // previously-registered handler (unit-test fixtures, cross-cutting fixtures
+  // added by the caller) still runs — ``route.continue`` sends the request
+  // straight to the network and would short-circuit them.
+  //
+  // The ``**`` glob matches the auth host regardless of environment
+  // (staging vs. self-hosted vs. an explicit AUTH_BASE_URL).
+  await page.route(
+    "**/realms/*/protocol/openid-connect/auth**",
+    async (route) => {
+      const url = new URL(route.request().url());
+      if (!url.searchParams.has("kc_idp_hint")) {
+        await route.fallback();
+        return;
+      }
+      url.searchParams.delete("kc_idp_hint");
+      await route.fallback({ url: url.toString() });
+    },
+  );
+
+  const githubButton = page.getByRole("button", {
+    name: "Log in with GitHub",
+  });
+  await githubButton.click();
+
+  // With the hint stripped Keycloak renders its own Sign-In form. The input
+  // ids are stable across Keycloak versions (they come from the built-in
+  // ``login.ftl`` template).
+  const usernameField = page.locator("#username");
+  const passwordField = page.locator("#password");
+  const signInButton = page.locator("#kc-login");
+
+  await usernameField.waitFor({ state: "visible", timeout: 30_000 });
+  // This realm is email-as-username (``registrationEmailAsUsername`` in
+  // ``allhands-realm-github-provider.json.tmpl``), so the login identifier is
+  // the email; a bare username is ``user_not_found``.
+  await usernameField.fill(creds.email);
+  await passwordField.fill(creds.password);
+  await signInButton.click();
+
+  // A rejected login otherwise burns the 60s navigation wait in
+  // ``completeLoginAndOnboard``. Success leaves Keycloak's ``/realms/`` pages;
+  // failure re-renders the form with this error.
+  const invalidCredsError = page.getByText(/invalid username or password/i);
+  const outcome = await Promise.race([
+    page
+      .waitForURL((url) => !url.toString().includes("/realms/"), {
+        timeout: 30_000,
+      })
+      .then(() => "left-keycloak" as const)
+      .catch(() => "timeout" as const),
+    invalidCredsError
+      .waitFor({ state: "visible", timeout: 30_000 })
+      .then(() => "invalid-credentials" as const)
+      .catch(() => "no-error" as const),
+  ]);
+
+  if (outcome === "invalid-credentials") {
+    throw new Error(
+      `Keycloak rejected the new-user login for "${creds.email}" ` +
+        `("Invalid username or password"). The allhands realm uses ` +
+        `email-as-username (registrationEmailAsUsername=true, ` +
+        `loginWithEmailAllowed=false), so the account's login identifier is ` +
+        `its email. Verify the user was created and that its email matches ` +
+        `KEYCLOAK_NEW_USER_EMAIL.`,
+    );
+  }
+
+  console.log("Keycloak-native login form submitted.");
 }
 
 /**
@@ -111,27 +216,78 @@ export async function authenticateWithGitHub(
  */
 const ONBOARDING_PATHS = ["/accept-tos", "/onboarding"];
 
+/**
+ * True on the first-install wizard, where the server sends an instance's first
+ * Super Admin after sign-in. Only the path is matched: GitHub's
+ * `/apps/<slug>/installations` pages must not count.
+ */
+function isInstallWizardUrl(urlString: string): boolean {
+  const { pathname } = new URL(urlString);
+  return pathname === "/install" || pathname.startsWith("/install/");
+}
+
 /** True if the URL is one of the onboarding-intermediate pages. */
 function isOnboardingUrl(urlString: string): boolean {
-  return ONBOARDING_PATHS.some((p) => urlString.includes(p));
+  return (
+    ONBOARDING_PATHS.some((p) => urlString.includes(p)) ||
+    isInstallWizardUrl(urlString)
+  );
 }
 
 /**
  * URL predicate for a "settled" post-redirect destination: either an
  * onboarding-intermediate page (accept-tos, onboarding form) or the final
  * app URL with no intermediate auth/redirect hosts left in the chain.
+ *
+ * Only the host and path are checked: the app lands on e.g.
+ * `/canvas?login_method=github`, whose query must not read as a login page.
  */
-function isSettledAppUrl(urlString: string, allowOnboarding: boolean): boolean {
+export function isSettledAppUrl(
+  urlString: string,
+  allowOnboarding: boolean,
+): boolean {
   if (allowOnboarding && isOnboardingUrl(urlString)) {
     return true;
   }
+  const url = new URL(urlString);
+  const hostAndPath = `${url.host}${url.pathname}`;
   return (
-    !urlString.includes("github.com") &&
-    !urlString.includes("login") &&
-    !urlString.includes("keycloak") &&
-    !urlString.includes("sessions/verified-device") &&
+    !hostAndPath.includes("github.com") &&
+    !hostAndPath.includes("login") &&
+    !hostAndPath.includes("keycloak") &&
+    !hostAndPath.includes("/realms/") &&
+    !hostAndPath.includes("sessions/verified-device") &&
     !isOnboardingUrl(urlString)
   );
+}
+
+/**
+ * Origin, path and query parameter names of a URL. Query values are dropped
+ * because redirect URLs can carry OAuth codes and state.
+ */
+function describeUrlWithoutValues(urlString: string): string {
+  const url = new URL(urlString);
+  const keys = [...url.searchParams.keys()];
+  const query = keys.length ? ` (query keys: ${keys.join(", ")})` : "";
+  return `${url.origin}${url.pathname}${query}`;
+}
+
+async function waitForSettledAppUrl(
+  page: Page,
+  allowOnboarding: boolean,
+): Promise<void> {
+  try {
+    await page.waitForURL(
+      (url) => isSettledAppUrl(url.toString(), allowOnboarding),
+      { timeout: 60_000 },
+    );
+  } catch (error) {
+    throw new Error(
+      `Login redirect did not settle on the app; last URL was ` +
+        `${describeUrlWithoutValues(page.url())}`,
+      { cause: error },
+    );
+  }
 }
 
 /**
@@ -159,21 +315,20 @@ export async function completeLoginAndOnboard(
   // run before the final-URL wait — otherwise waitForURL would resolve on
   // /accept-tos or /onboarding (neither contains the excluded substrings) and
   // skip the onboarding steps.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), true), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, true);
 
   // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
-  // sequence — loop until we're past both.
+  // sequence — loop until we're past both. A step can start another redirect
+  // chain (TOS → Keycloak offline token → /install), so settle again after
+  // each one before checking where we are.
   while (isOnboardingUrl(page.url())) {
     await runOnboardingSteps(page, userIdentifier);
+    await waitForSettledAppUrl(page, true);
   }
 
   // Phase 3: wait for the final app URL (no intermediate auth hosts, no
   // onboarding pages) and assert the home screen is visible.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), false), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, false);
 
   await expect(page.getByTestId("home-screen")).toBeVisible({
     timeout: 30_000,
@@ -184,13 +339,22 @@ export async function completeLoginAndOnboard(
  * Run the onboarding step the user is currently on.
  *
  * Dispatches to the TOS handler or the onboarding-form handler based on the
- * current URL. Each handler completes its step and waits for the page to
- * navigate to the next destination (another onboarding step or the app).
+ * current URL, or leaves the first-install wizard. Each handler completes its
+ * step and waits for the page to navigate to the next destination (another
+ * onboarding step or the app).
  */
 async function runOnboardingSteps(
   page: Page,
   userIdentifier?: string,
 ): Promise<void> {
+  if (isInstallWizardUrl(page.url())) {
+    // The wizard stays pending on the server, so 012-first-install.spec.ts
+    // can walk it. The app home does not send the user back to /install.
+    console.log("Onboarding: leaving the first-install wizard for its spec...");
+    await page.goto("/");
+    return;
+  }
+
   if (page.url().includes("/accept-tos")) {
     console.log("Onboarding: accepting Terms of Service...");
     await handleTOSAcceptance(page);
@@ -473,16 +637,119 @@ async function generateTOTP(secret: string): Promise<string> {
 }
 
 /**
+ * Dismiss GitHub's "Verify your two-factor authentication (2FA) settings"
+ * reminder if it is shown.
+ *
+ * GitHub interrupts the login flow (page `/sessions/two-factor`) with a
+ * one-time reminder to verify recently configured 2FA credentials, offering
+ * "Verify 2FA now" or "skip 2FA verification (we'll remind you again
+ * tomorrow)". It sits between 2FA entry and the OAuth authorize page, so
+ * leaving it up means the authorize form never renders and the grant stalls.
+ * We click "skip": it resumes the interrupted navigation and, unlike "Verify
+ * 2FA now", needs no extra TOTP entry, so it is safe to repeat every run.
+ *
+ * Returns true when the reminder was found and dismissed; false (no-op) when
+ * it is not shown.
+ */
+export async function dismissTwoFactorReminder(page: Page): Promise<boolean> {
+  const skip = page.getByRole("button", { name: "skip 2FA verification" });
+  const shown = await skip
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) {
+    return false;
+  }
+  console.log(
+    'Dismissing GitHub "verify your 2FA settings" reminder (skip)...',
+  );
+  await skip.click();
+  // Skipping resumes the interrupted flow; wait for GitHub to leave the
+  // reminder page before the caller continues.
+  await page
+    .waitForURL((url) => !url.toString().includes("/sessions/two-factor"), {
+      timeout: 15_000,
+    })
+    .catch(() => {});
+  return true;
+}
+
+/** URL prefix of GitHub's OAuth authorize page. */
+const OAUTH_AUTHORIZE_URL_PREFIX = "https://github.com/login/oauth/authorize";
+
+/** Overall budget for completing the OAuth authorization grant. */
+const OAUTH_AUTHORIZE_TIMEOUT_MS = 30_000;
+
+/**
+ * Submit the GitHub OAuth authorize form from within the page.
+ *
+ * The authorize page's Authorize button is kept disabled by GitHub's
+ * clickjacking protection (it requires document.hasFocus(), which never
+ * resolves in headless Playwright), so we grant access by submitting the
+ * authorize form directly. The form carries all the server-rendered hidden
+ * fields (client_id, redirect_uri, state, scope); we only set authorize=1.
+ *
+ * Returns "submitted" when the form was found and submitted, or "missing"
+ * when no authorize form is present in the DOM yet. A first-time consent
+ * page can render the form a beat after the URL changes, so "missing" is a
+ * retryable state — not proof that GitHub already redirected.
+ */
+async function submitAuthorizeForm(
+  page: Page,
+): Promise<"submitted" | "missing"> {
+  return page.evaluate(() => {
+    // Prefer the exact relative action GitHub renders, then fall back to a
+    // looser match (absolute action, or any form carrying the authorize
+    // control) so a first-time-grant page variant is still handled.
+    const form =
+      document.querySelector<HTMLFormElement>(
+        'form[action="/login/oauth/authorize"]',
+      ) ??
+      document.querySelector<HTMLFormElement>(
+        'form[action*="/login/oauth/authorize"]',
+      ) ??
+      Array.from(document.querySelectorAll<HTMLFormElement>("form")).find((f) =>
+        f.querySelector('button[name="authorize"], input[name="authorize"]'),
+      ) ??
+      null;
+    if (!form) {
+      return "missing";
+    }
+    let input = form.querySelector<HTMLInputElement>('input[name="authorize"]');
+    if (!input) {
+      input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "authorize";
+      form.appendChild(input);
+    }
+    input.value = "1";
+    form.submit();
+    return "submitted";
+  });
+}
+
+/**
  * Handle the OAuth authorization prompt if it appears.
  *
- * After 2FA, GitHub either lands on the OAuth authorize page (if the app
- * hasn't been authorized yet) or redirects straight back to the app (if it
- * has). The authorize page's Authorize button is kept disabled by GitHub's
- * clickjacking protection, which requires document.hasFocus() — this never
- * resolves in Playwright. So instead of waiting for the button, we submit
- * the form directly via JavaScript.
+ * After 2FA, GitHub either lands on the OAuth authorize page (app not yet
+ * authorized for this account — the first-time / new-user path) or redirects
+ * straight back to the app (app already authorized — the returning-user
+ * path).
+ *
+ * For a new user whose account has no standing grant, GitHub renders the
+ * first-time consent page and the authorize form can appear slightly after
+ * the URL settles. The previous implementation submitted the form once and,
+ * if it was not yet present, assumed GitHub had "already redirected" and
+ * returned — leaving the browser stranded on the authorize page, so the
+ * downstream `completeLoginAndOnboard` wait timed out with a misleading
+ * stack. Instead, retry until the grant actually completes (the page leaves
+ * the authorize URL) and fail loudly with context if it never does.
  */
-async function handleOAuthAuthorization(page: Page): Promise<void> {
+export async function handleOAuthAuthorization(
+  page: Page,
+  options: { timeoutMs?: number } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? OAUTH_AUTHORIZE_TIMEOUT_MS;
   // Wait for navigation to a stable destination: either the OAuth authorize
   // page (app not yet authorized) or a non-GitHub URL (redirected back to
   // the app). Using a positive condition avoids matching intermediate
@@ -492,7 +759,7 @@ async function handleOAuthAuthorization(page: Page): Promise<void> {
       (url) => {
         const urlString = url.toString();
         return (
-          urlString.startsWith("https://github.com/login/oauth/authorize") ||
+          urlString.startsWith(OAUTH_AUTHORIZE_URL_PREFIX) ||
           !urlString.includes("github.com")
         );
       },
@@ -502,61 +769,72 @@ async function handleOAuthAuthorization(page: Page): Promise<void> {
 
   // If we're not on the OAuth authorize page, GitHub skipped it (the app was
   // previously authorized) and redirected straight back to the app.
-  const currentUrl = page.url();
-  if (!currentUrl.startsWith("https://github.com/login/oauth/authorize")) {
+  if (!page.url().startsWith(OAUTH_AUTHORIZE_URL_PREFIX)) {
     console.log("No OAuth authorization page shown (redirected back to app).");
     return;
   }
 
-  console.log("On OAuth authorization page, submitting form directly...");
+  console.log("On OAuth authorization page, granting access...");
 
-  // Submit the authorize form directly. The form contains all the hidden
-  // fields (client_id, redirect_uri, state, scope) server-rendered; we just
-  // need to set authorize=1 and submit. This bypasses the disabled button
-  // and GitHub's clickjacking protection entirely.
-  //
-  // GitHub may auto-redirect away from the authorize page at any moment
-  // (when the app was recently authorized). In that case the form won't
-  // exist or the execution context will be destroyed — both are handled
-  // below as a bypass.
-  try {
-    await page.evaluate(() => {
-      const form = document.querySelector<HTMLFormElement>(
-        'form[action="/login/oauth/authorize"]',
-      );
-      if (!form) {
-        throw new Error("OAuth authorize form not found on page");
-      }
-      let input = form.querySelector<HTMLInputElement>(
-        'input[name="authorize"]',
-      );
-      if (!input) {
-        input = document.createElement("input");
-        input.type = "hidden";
-        input.name = "authorize";
-        form.appendChild(input);
-      }
-      input.value = "1";
-      form.submit();
-    });
-  } catch (e) {
-    const msg = String(e);
-    // "Execution context was destroyed" means form.submit() triggered a
-    // navigation — the form was submitted successfully.
-    // "form not found" means GitHub already redirected away from the
-    // authorize page (bypass) — nothing to do.
-    if (
-      !msg.includes("Execution context was destroyed") &&
-      !msg.includes("form not found")
-    ) {
-      throw e;
-    }
-    if (msg.includes("form not found")) {
-      console.log(
-        "Authorize page bypassed (form not found, already redirected).",
-      );
+  // Retry submitting the authorize form until the grant completes: success is
+  // defined as GitHub leaving the authorize URL, not merely "form submitted"
+  // (a first-time consent page can re-render, and a submit can race the DOM).
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    // Grant is done once GitHub has taken us off the authorize page.
+    if (!page.url().startsWith(OAUTH_AUTHORIZE_URL_PREFIX)) {
+      console.log("OAuth authorization complete (left authorize page).");
       return;
     }
+
+    attempt += 1;
+    let result: "submitted" | "missing" | "navigated";
+    try {
+      result = await submitAuthorizeForm(page);
+    } catch (e) {
+      // "Execution context was destroyed" means form.submit() triggered a
+      // navigation while page.evaluate was running — the grant went through.
+      if (String(e).includes("Execution context was destroyed")) {
+        result = "navigated";
+      } else {
+        throw e;
+      }
+    }
+
+    if (result === "submitted" || result === "navigated") {
+      console.log(`OAuth authorize form submitted (attempt ${attempt}).`);
+      // Wait for GitHub to redirect away from the authorize page.
+      await page
+        .waitForURL(
+          (url) => !url.toString().startsWith(OAUTH_AUTHORIZE_URL_PREFIX),
+          {
+            timeout: 15_000,
+          },
+        )
+        .catch(() => {});
+      if (!page.url().startsWith(OAUTH_AUTHORIZE_URL_PREFIX)) {
+        console.log("OAuth authorization complete.");
+        return;
+      }
+      // Still on the authorize page — pause briefly, then retry.
+      await page.waitForTimeout(1_000);
+    } else {
+      // No authorize form yet. GitHub may be showing its one-time "verify your
+      // 2FA settings" reminder in place of the grant; dismiss it and retry
+      // straight away. Otherwise give the consent form a moment to render
+      // before the next attempt.
+      const dismissedReminder = await dismissTwoFactorReminder(page);
+      if (!dismissedReminder) {
+        await page.waitForTimeout(1_000);
+      }
+    }
   }
-  console.log("OAuth authorize form submitted.");
+
+  throw new Error(
+    `OAuth authorization did not complete: still on ${page.url()} after ` +
+      `${Math.round(timeoutMs / 1000)}s. GitHub did not redirect back to ` +
+      "the app after submitting the authorize form (the new-user first-time " +
+      "consent page may not have been granted).",
+  );
 }

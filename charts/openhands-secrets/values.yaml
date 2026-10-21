@@ -12,6 +12,7 @@ config:
   postgres_password: ""
   redis_password: ""
   jwt_secret: ""
+  keycloak_admin_ui_password: ""
   keycloak_admin_password: ""
   keycloak_client_secret: ""
   litellm_api_key: ""
@@ -39,6 +40,8 @@ config:
   google_vertex_location: ""
   deepseek_api_key: ""
   mistral_api_key: ""
+  azure_ai_api_key: ""
+  azure_ai_endpoint: ""
   azure_api_key: ""
   azure_tenant_id: ""
   azure_client_id: ""
@@ -104,6 +107,8 @@ config:
   # Automation secrets
   automation_service_key: ""
   automation_webhook_secret: ""
+  automation_git_sync_secret: ""
+  automation_kv_secret: ""
   automations_db_password: ""
 
   # TLS certificates

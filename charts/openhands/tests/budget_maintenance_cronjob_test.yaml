@@ -44,6 +44,9 @@ tests:
           path: spec.jobTemplate.spec.backoffLimit
           value: 3
       - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 1800
+      - equal:
           path: spec.jobTemplate.spec.template.spec.restartPolicy
           value: Never
       - equal:
@@ -52,6 +55,16 @@ tests:
       - matchRegex:
           path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
           pattern: "python -m run_budget_maintenance"
+
+  - it: passes activeDeadlineSeconds through from values
+    set:
+      enabled: true
+      budgetMaintenance.enabled: true
+      budgetMaintenance.activeDeadlineSeconds: 600
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 600
 
   - it: sizes the job container from budgetMaintenance.resources
     set:

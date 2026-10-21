@@ -54,6 +54,25 @@ context pointing at the target cluster are available.
 - Resource names are release-fixed (`deploy/openhands`, `openhands-postgresql-0`);
   namespace and release name are customer-specific — use `<namespace>` / the real
   release name in customer notes.
+- **Three images move on a version bump:** `enterprise-server` (used by
+  `deploy/openhands`, mcp, integrations), `runtime-api`, and the sandbox
+  `agent-server` that warm runtimes run. Check all three in the diff.
+
+## Warm runtimes (handle before upgrading)
+
+A version bump usually ships a new sandbox `agent-server` image (e.g. 0.60.0 used
+`1.44.1-python`, 0.64.0 uses `1.46.0-python`). Warm pods are claimed by an **exact
+image + env match**, so this must be reconciled **before** the upgrade:
+
+- If the customer pins the tag, update it in `values.yaml` first —
+  `global.agentServerImage.tag`, or per pool
+  `runtime-api.warmRuntimes.configsByName.<name>.image`.
+- If they do not pin it, the warm pool inherits the new default automatically; no
+  change is needed.
+
+A stale pinned tag leaves the pool **unclaimable**: new conversations cold-start and
+the old sandbox keeps serving. Discover the new tag from the diff's
+`agent-server` image line.
 
 ## Procedure
 
@@ -110,10 +129,11 @@ as safe:
   and only randomizes when the secret is absent; `helm diff` cannot resolve that
   lookup, so it shows a phantom `rootPassword`. A real upgrade preserves it. Ignore.
 
-Confirm there are no image versions other than the expected old→new pair:
+Confirm there are no image versions other than the expected old→new bumps — including
+the sandbox `agent-server` image that warm runtimes claim on an exact match:
 
 ```bash
-grep -E '^[+-].*image:' <diff> | grep -iE 'enterprise-server|runtime-api' | sort -u
+grep -E '^[+-].*image:' <diff> | grep -iE 'enterprise-server|runtime-api|agent-server' | sort -u
 ```
 
 Instruct the customer: proceed only if the diff contains only the expected changes;
@@ -139,7 +159,16 @@ verifying.
 
 Re-run the step-1 checks. Expect the images at Y, the app `alembic_version`
 **advanced** (record the from→to), and no unhealthy pods. Note whether
-`runtime_api_db` advanced too. Then have the user run a real conversation.
+`runtime_api_db` advanced too. Confirm the sandbox/warm pods run the new
+`agent-server` image, so warm claims actually hit:
+
+```bash
+kubectl get pods -n <namespace> \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\n"}{end}' \
+  | grep agent-server
+```
+
+Then have the user run a real conversation.
 
 ### 6. Rollback (only if needed)
 
@@ -157,6 +186,97 @@ kubectl rollout status deploy/openhands -n <namespace>
 Verify: images back at X, `alembic_version` back at the X value, pods healthy, no
 `migrate-db` crash-loop.
 
+## Budget policy hooks and LiteLLM external state
+
+Charts that carry `budget-preflight-job.yaml` run two Helm hook Jobs on every
+`helm upgrade` of the `openhands` release (never on install, and never under
+ArgoCD, which renders with `helm template`):
+
+| Job | Hook | Default mode | What it does |
+|---|---|---|---|
+| `<release-name>-budget-preflight` | pre-upgrade | `acknowledge` | Read-only. Runs the new image against the not-yet-migrated database and reports each enabled organization's budget state as found. |
+| `<release-name>-budget-reconcile-gate` | post-upgrade | `strict` | Reconciles every enabled organization's LiteLLM caps and verifies them by readback. |
+
+Modes come from `budgetPreflight.mode` / `budgetReconcileGate.mode` (Replicated
+Config group "Upgrade Checks"). `strict` fails `helm upgrade` on a blocking
+finding; `acknowledge` records the same findings and exits 0, which is the
+explicit availability-recovery mode. Expect both Jobs as substantive lines in
+the step-3 diff the first time a customer upgrades onto such a chart.
+
+Blocking finding codes: `litellm_unreachable`, `last_sync_error`,
+`maintenance_failed`, `member_missing_from_litellm`, `member_baseline_missing`,
+`cap_drift`. Informational: `unmapped_member`, `over_cap_team`,
+`over_cap_member`, `snapshot_stale`, `sync_never_ran`, `schema_missing_columns`.
+On a database that predates app migration 149 every governed member reports
+`member_baseline_missing`; that is expected, the first post-upgrade sync
+recovers those members from live spend (OpenHands/enterprise#347), and it is
+why the preflight defaults to `acknowledge`.
+
+### Capture the before/after artifacts (with step 5)
+
+Both Jobs are retained until the next upgrade, so their logs are readable after
+`helm upgrade` returns, and the support bundle collects them:
+
+```bash
+kubectl logs job/<release-name>-budget-preflight -n <namespace> \
+  | jq -c 'select(.artifact_type=="org_budget_preflight")' > pre<Y>_budget_preflight.json
+kubectl logs job/<release-name>-budget-reconcile-gate -n <namespace> \
+  | jq -c 'select(.artifact_type=="org_budget_preflight")' > post<Y>_budget_reconcile.json
+jq '.summary' post<Y>_budget_reconcile.json
+```
+
+The artifacts hold organization and user UUIDs, cap and spend figures, and sync
+status; no keys or e-mail addresses. Keep both next to the DB dump.
+
+### When the strict gate fails
+
+`helm upgrade` reports `post-upgrade hooks failed`. The Deployments are already
+on the new version and keep serving, but the release (and the Replicated
+version) is marked failed. Read `post<Y>_budget_reconcile.json`, fix what the
+findings point at (add the member to the LiteLLM team, repair the key, restore
+LiteLLM availability), then run the upgrade again (Replicated: Redeploy) so the
+hooks re-run. To accept the state instead, set
+`budgetReconcileGate.mode: acknowledge` (Config item "Post-upgrade Budget
+Reconciliation Gate") and run the upgrade again.
+
+To run the preflight by hand, on a deployment where hooks do not run (ArgoCD)
+or outside an upgrade:
+
+```bash
+kubectl exec deploy/openhands -n <namespace> -- \
+  env BUDGET_PREFLIGHT_MODE=acknowledge python -m run_budget_preflight
+```
+
+### Rolling back LiteLLM-side state
+
+`pg_dump` covers the Enterprise settings rows only; the caps LiteLLM enforces
+live in LiteLLM's own database, and `helm rollback` runs no upgrade hooks. After
+the step-6 restore and rollback, bring LiteLLM back in line with the restored
+settings by either:
+
+1. re-running maintenance on the rolled-back version, which recomputes every
+   cap from the restored baselines:
+
+   ```bash
+   kubectl create job --from=cronjob/<release-name>-budget-maintenance \
+     budget-resync-$(date +%s) -n <namespace>
+   ```
+
+2. or re-applying the caps recorded in `pre<Y>_budget_preflight.json`
+   (`orgs[].litellm.team_max_budget` and
+   `orgs[].litellm.members[<user_id>].max_budget`) with the LiteLLM admin key:
+
+   ```bash
+   curl -sS -X POST "$LITE_LLM_API_URL/team/update" \
+     -H "x-goog-api-key: $LITE_LLM_API_KEY" -H 'Content-Type: application/json' \
+     -d '{"team_id":"<org_id>","max_budget":<team_max_budget>}'
+   curl -sS -X POST "$LITE_LLM_API_URL/team/member_update" \
+     -H "x-goog-api-key: $LITE_LLM_API_KEY" -H 'Content-Type: application/json' \
+     -d '{"team_id":"<org_id>","user_id":"<user_id>","max_budget_in_team":<max_budget>}'
+   ```
+
+Then run the preflight by hand (above) and confirm `summary.blocking` is false.
+
 ## Non-obvious findings to bake into the notes
 
 - **Only `deploy/openhands` needs scaling down** before the restore. Verify no other
@@ -169,9 +289,11 @@ Verify: images back at X, `alembic_version` back at the X value, pods healthy, n
   SQL
   ```
   Zero rows after the scale-down confirms the single scale-down is sufficient.
-- **`--clean` leaves orphan tables** that Y's migration added (they are not in the X
-  dump, so they are not dropped). They are harmless — X ignores them — but call them
-  out. Identify them by diffing current tables against the dump's `CREATE TABLE` list:
+- **`--clean` leaves orphan tables only when Y adds new tables.** Column-only
+  migrations (e.g. 155→157, which just add columns) leave none and restore cleanly.
+  When Y does add tables they are not in the X dump, so `--clean` cannot drop them;
+  they are harmless — X ignores them — but call them out. Identify them by diffing
+  current tables against the dump's `CREATE TABLE` list:
   ```bash
   kubectl exec -i openhands-postgresql-0 -n <namespace> -- bash -c \
     'PGPASSWORD=$POSTGRES_PASSWORD psql -U postgres -d openhands -tAc \
@@ -186,29 +308,35 @@ Verify: images back at X, `alembic_version` back at the X value, pods healthy, n
   (stick to `pg_dump`), and do not reference cloud-specific storage (EBS/PD) — the
   customer's platform may differ from the test rig.
 
-## Worked example (0.55.0 → 0.60.0)
+## Worked example (0.60.0 → 0.64.0)
 
 Concrete result of running this procedure once, as a reference for tone and content:
 
-- Images: `enterprise-server 1.56.0 → 1.57.0`, `runtime-api 0.8.2 → 0.9.0`.
-- App DB alembic `153 → 155`; `runtime_api_db` unchanged.
-- Substantive diff: the two image bumps; the single `openhands-runtime-api-cleanup`
-  CronJob replaced by four (`-reaper`, `-k8s-garbage`, `-snapshotter`, `-retention`);
-  Keycloak ConfigMaps gained a managed `enterprise_sso` SAML IdP, auto-disabled when
-  `enterpriseSSO.*` is unset (no effect on existing auth).
+- Images: `enterprise-server 1.57.0 → 1.59.1`, `runtime-api 0.9.0 → 0.10.0`, and the
+  sandbox/warm `agent-server 1.44.1-python → 1.46.0-python`.
+- App DB alembic `155 → 157` (adds only columns — org budget-spend snapshot, then a
+  user-disabled flag); `runtime_api_db` unchanged.
+- Substantive diff: the three image bumps; one CronJob added
+  (`openhands-app-conversation-start-task-clean`, daily at 03:00); no workloads removed.
 - Artifacts: label/version churn and the phantom `openhands-minio` secret change.
-- `--clean` orphan tables from 155: `feature_flags`, `feature_flag_rules` (harmless).
-- No new values required.
+- Rollback restored cleanly with **no orphan tables** (column-only migration).
+- No new values required — except re-pinning the warm-runtime `agent-server` tag.
 
 ## Output template (write to a single .md file)
 
 ```markdown
 # OpenHands Enterprise — Upgrade <X> → <Y>
 
-No new values are required — your existing `values.yaml` carries over.
+No new values are required — your existing `values.yaml` carries over — **except**
+the warm-runtime `agent-server` image if you pin it (see Warm runtimes below).
 
 Prereq: the `helm-diff` plugin
 (`helm plugin install https://github.com/databus23/helm-diff`).
+
+## Warm runtimes — update the pinned agent-server image (only if you pin it)
+<Y> ships agent-server `<new-tag>` (<X> used `<old-tag>`). If you pin it, set it in
+`values.yaml` **before** upgrading; if you do not pin it, the pool inherits the new
+default automatically. A stale pinned tag leaves the warm pool unclaimable.
 
 ## 1. Take a DB dump (required for rollback)
 <pg_dump --clean --if-exists command>
@@ -217,20 +345,30 @@ Prereq: the `helm-diff` plugin
 <helm diff command with --context=0 so only changed lines show>
 Proceed only if the output contains only the changes below; otherwise stop and
 investigate, then send the investigation notes to the OpenHands team.
-Expected — substantive: <discovered image bumps / workload changes>
-Expected — cosmetic (safe to ignore): label churn; phantom openhands-minio secret.
+
+Expected — substantive:
+- <image bump: enterprise-server old → new>
+- <image bump: runtime-api old → new>
+- <image bump: agent-server old → new>
+- <added/removed workloads, if any>
+
+Expected — cosmetic (safe to ignore, on ~20 resources):
+- label/version churn (`helm.sh/chart`, `app.kubernetes.io/version`)
+- phantom `openhands-minio` secret change
 
 ## 3. Upgrade
 <helm upgrade command>
 The app DB migrates automatically (alembic <from> → <to>) on startup.
 
 ## 4. Verify
-<kubectl get pods>  then log in and start a conversation.
+<kubectl get pods>; confirm sandbox pods run agent-server `<new-tag>`, then log in
+and start a conversation.
 
 ## Rollback (only if needed)
 Restore the pre-upgrade dump, then roll back the release:
 <scale down / psql restore / helm rollback commands>
-> Note: --clean does not drop the tables <Y> added (<orphans>); <X> ignores them.
+> Note: if <Y> added tables, --clean does not drop them (<orphans>) and <X> ignores
+> them; column-only migrations leave no orphans.
 ```
 
 Keep the final notes lean: only what the customer runs and what to expect.
