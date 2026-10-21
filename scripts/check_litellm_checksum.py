@@ -46,7 +46,7 @@ OPENHANDS_REL = pathlib.Path("replicated/openhands.yaml")
 # checksum annotation. It is secondary to total-coverage accounting (which
 # catches a simultaneous add-plus-remove that leaves the count unchanged), but
 # it is a real assertion that independently fails the checker.
-EXPECTED_DEPENDENCY_COUNT = 25
+EXPECTED_DEPENDENCY_COUNT = 27
 
 # Chart config keys whose value in replicated/secrets.yaml is derived from a
 # DIFFERENT ConfigOption than the key name. bedrock_model_id is derived from the

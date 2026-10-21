@@ -248,8 +248,13 @@ export class ConversationPage extends BasePage {
     if (outcome === "timeout") {
       // Surface the most recent messages to make diagnosis easier on failure.
       const allMessages = await this.getMessages();
+      const agentStatus = await this.statusIndicator
+        .first()
+        .innerText({ timeout: 1_000 })
+        .catch(() => "<not shown>");
       throw new Error(
         `Timeout waiting for message containing "${expectedText}" after ${timeout}ms. ` +
+          `Agent status: ${JSON.stringify(agentStatus.trim())}. ` +
           `Messages found: ${JSON.stringify(allMessages.slice(-5))}`,
       );
     }
