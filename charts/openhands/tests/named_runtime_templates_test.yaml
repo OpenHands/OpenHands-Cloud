@@ -46,3 +46,21 @@ tests:
       - matchRegex:
           path: data["warm-runtimes.json"]
           pattern: '"count": 2'
+
+  - it: inherits the global count when the per-template count is null
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 2
+      runtime-api.warmRuntimes.configs:
+        - name: nullable
+          count: null
+          working_dir: /workspace
+          command: [agent-server]
+          environment: {}
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count":\s*,'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 2'

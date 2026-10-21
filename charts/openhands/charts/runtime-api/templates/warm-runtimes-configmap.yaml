@@ -46,8 +46,8 @@ data:
           "name": {{ $config.name | quote }},
           "image": {{ $config.image | default $agentServerImage | quote }},
           "working_dir": {{ $config.working_dir | quote }},
-          {{- if hasKey $config "count" }}
-          "count": {{ $config.count }},
+          {{- if and (hasKey $config "count") (not (kindIs "invalid" $config.count)) }}
+          "count": {{ $config.count | toJson }},
           {{- end }}
           {{- /* Omitted when false/unset: the loader defaults fuse_s3_mount to false. */}}
           {{- with $config.fuse_s3_mount }}
