@@ -2,7 +2,8 @@
 TLS SAN + DNS hostname preflight: checks the uploaded cert covers every hostname
 OpenHands serves and that those names resolve. A runPod runs openssl + nslookup
 and prints SAN_<svc>=OK|FAIL / DNS_<svc>=OK|FAIL tokens that the analyzers turn
-into per-hostname warnings. Gated in preflights.yaml on the cert being present.
+into per-hostname warnings. Gated in preflights.yaml on an uploaded cert or
+tls.existingSecret.
 */}}
 
 {{/*
@@ -11,6 +12,8 @@ the collector/analyzer templates re-parse with fromYaml. dig is avoided on .Valu
 (its type assertion rejects Helm's Values type); default dict / index traverse it
 safely. Value paths:
   cert (decoded PEM) ..... keycloak.ingress.secrets[0].certificate (b64-encoded here)
+  existingSecret ......... tls.existingSecret; when set the probe mounts it from
+                           the release namespace instead of reading cert
   appHost ................ ingress.host
   authHost ............... keycloak.ingress.hostname
   llmHost ................ litellm-helm.ingress.hosts[0].host
@@ -42,6 +45,8 @@ safely. Value paths:
 {{- $lamFrontIng := ($lam.frontend | default dict).ingress | default dict -}}
 {{- $repo := (.Values.image | default dict).repository | default "" -}}
 cert: {{ $cert | b64enc | quote }}
+existingSecret: {{ (.Values.tls | default dict).existingSecret | default "" | quote }}
+namespace: {{ .Release.Namespace | quote }}
 appHost: {{ (.Values.ingress | default dict).host | default "" | quote }}
 authHost: {{ $kcIng.hostname | default "" | quote }}
 llmHost: {{ $llmHost | quote }}
@@ -60,10 +65,20 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
     name: tls-hostname-check
     # 'default' exists at the pre-install gate (the release namespace may not
     # yet); KOTS injects the proxy pull secret onto the pod regardless of ns.
-    namespace: default
+    {{- /* An existing secret can only be mounted from its own namespace. */}}
+    namespace: {{ if $p.existingSecret }}{{ $p.namespace }}{{ else }}default{{ end }}
     timeout: 90s
     podSpec:
       restartPolicy: Never
+      {{- if $p.existingSecret }}
+      # optional, so a missing secret reports through the secret analyzer
+      # instead of leaving the probe pod stuck in ContainerCreating.
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $p.existingSecret | quote }}
+            optional: true
+      {{- end }}
       # Satisfy restricted Pod Security Standards (also satisfies baseline); the
       # probe reads the cert from an env var, so no writable filesystem.
       securityContext:
@@ -89,7 +104,11 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
               # The cert env is base64 of the decoded PEM. Decode it and pull the
               # leaf cert's DNS SANs into a newline list. openssl x509 reads only
               # the first PEM block, so a full chain still yields the leaf's SANs.
+              {{- if $p.existingSecret }}
+              CERT_PEM=$(cat /etc/openhands-tls/tls.crt 2>/dev/null)
+              {{- else }}
               CERT_PEM=$(printf '%s' "${CERT_B64:-}" | base64 -d 2>/dev/null)
+              {{- end }}
               SANS=$(printf '%s' "$CERT_PEM" | openssl x509 -noout -ext subjectAltName 2>/dev/null \
                 | tr ',' '\n' | sed -n 's/.*DNS:\([^,[:space:]]*\).*/\1/p')
 
@@ -160,9 +179,17 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
               if [ "$ANALYTICS_ON" = "1" ]; then
                 check_san ANALYTICS "$H_ANALYTICS"; check_dns ANALYTICS "$H_ANALYTICS"
               fi
+          {{- if $p.existingSecret }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/openhands-tls
+              readOnly: true
+          {{- end }}
           env:
+            {{- if not $p.existingSecret }}
             - name: CERT_B64
               value: {{ $p.cert | quote }}
+            {{- end }}
             - name: ROUTING
               value: {{ $p.routingMode | quote }}
             - name: SEPARATOR
@@ -181,6 +208,29 @@ probeImage: {{ printf "%s/docker.io/alpine/openssl:3.5.6" (trimSuffix "/ghcr.io/
               value: {{ $p.rtBaseHost | quote }}
             - name: H_ANALYTICS
               value: {{ $p.analyticsHost | quote }}
+{{- end -}}
+
+{{- define "troubleshoot.collectors.tlsExistingSecret" -}}
+{{- $p := include "troubleshoot.tlsHostname.vars" . | fromYaml -}}
+- secret:
+    name: {{ $p.existingSecret | quote }}
+    namespace: {{ $p.namespace | quote }}
+    key: tls.crt
+    includeValue: false
+{{- end -}}
+
+{{- define "troubleshoot.analyzers.tlsExistingSecret" -}}
+{{- $p := include "troubleshoot.tlsHostname.vars" . | fromYaml -}}
+- secret:
+    checkName: "TLS certificate secret exists"
+    secretName: {{ $p.existingSecret | quote }}
+    namespace: {{ $p.namespace | quote }}
+    key: tls.crt
+    outcomes:
+      - fail:
+          message: 'Secret {{ $p.existingSecret }} with a tls.crt entry was not found in namespace {{ $p.namespace }}. Create the kubernetes.io/tls secret there before deploying, or every hostname will serve the ingress controller''s default certificate.'
+      - pass:
+          message: 'Secret {{ $p.existingSecret }} exists in namespace {{ $p.namespace }}.'
 {{- end -}}
 
 {{- define "troubleshoot.analyzers.tlsHostname" -}}
