@@ -1838,3 +1838,39 @@ spec:
             own user management system.
           type: bool
           default: "0"
+        - name: sandbox_selector_enabled
+          title: Enable Sandbox Template Selector (Beta)
+          help_text: >-
+            Show a Sandbox menu next to Open Repository and Plugins on the Agent
+            Canvas home page, so users can start a conversation with a named
+            image-and-size template instead of the default sandbox. Choosing a
+            template affects only the new conversation, never the user's saved
+            default. Only organizations listed in Organization Sandbox Templates
+            see the menu. The built-in template ID is v1_current. To add others,
+            such as a larger size or a custom image, set display_name and
+            resources on a config with the Runtime API admin endpoint
+            PUT /api/admin/warm-runtime-configs/{name} (see Runtime API Admin
+            Password). Use count 0 for templates that should cold-start
+            instead of keeping warm sandboxes idle.
+          type: bool
+          default: "0"
+        # The app parses this at startup and refuses to start on invalid JSON or
+        # an inconsistent policy, so the regex rejects obvious shape errors here
+        # rather than letting a typo fail the deploy. The app validates the rest.
+        - name: sandbox_template_org_config
+          title: Organization Sandbox Templates (JSON)
+          help_text: >-
+            JSON object keyed by organization ID. Each entry lists the template
+            IDs that organization can choose and its default, which must be in
+            the list. Example:
+            {"11111111-1111-4111-8111-111111111111": {"template_ids": ["v1_current", "monorepo_large"], "default_template_id": "v1_current"}}.
+            Organizations not listed keep today's behavior. Invalid values stop
+            the OpenHands server from starting, so the deploy fails.
+          type: textarea
+          default: ""
+          required: true
+          when: 'repl{{ ConfigOptionEquals "sandbox_selector_enabled" "1" }}'
+          validation:
+            regex:
+              pattern: '(?s)^\s*\{\s*"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"\s*:\s*\{[^{}]*\}\s*(,\s*"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"\s*:\s*\{[^{}]*\}\s*)*\}\s*$'
+              message: Must be a JSON object mapping organization IDs (UUIDs) to {"template_ids":[...],"default_template_id":"..."}
