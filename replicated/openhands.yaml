@@ -1303,6 +1303,21 @@ spec:
       values:
         userProvisioning:
           enabled: true
+    # Sandbox template selector. The policy is set only together with the flag:
+    # the app fails to start on an empty SANDBOX_TEMPLATE_ORG_CONFIG, and its
+    # own default ({}) applies when unset. mustToJson keeps the JSON a single
+    # safely-quoted YAML scalar whatever the textarea contains.
+    - when: '{{repl ConfigOptionEquals "sandbox_selector_enabled" "1" }}'
+      recursiveMerge: true
+      values:
+        env:
+          ENABLE_SANDBOX_SELECTOR: "true"
+          SANDBOX_TEMPLATE_ORG_CONFIG: repl{{ ConfigOption "sandbox_template_org_config" | trim | mustToJson }}
+        runtime-api:
+          warmRuntimes:
+            configsByName:
+              default:
+                display_name: 'Standard (repl{{ ConfigOption "sandbox_memory_limit" }})'
     - when: '{{repl ConfigOptionEquals "plugin_directory_enabled" "1" }}'
       recursiveMerge: true
       values:
