@@ -26,11 +26,14 @@ def config():
     return yaml.safe_load((ROOT / "replicated/openhands.yaml").read_text())["spec"]
 
 
-@pytest.mark.parametrize("mode", ["online", "airgap", "builder"])
+@pytest.mark.parametrize("mode", ["chart", "online", "airgap", "builder"])
 def test_minio_server_and_jobs_use_verified_images(mode, tmp_path):
     spec = config()
     values = copy.deepcopy(spec["values"]["minio"])
-    if mode == "builder":
+    if mode == "chart":
+        chart = yaml.safe_load((ROOT / "charts/openhands/values.yaml").read_text())
+        values = chart["minio"]
+    elif mode == "builder":
         values.update(spec["builder"]["minio"])
     elif mode == "airgap":
         local = next(
@@ -52,6 +55,7 @@ def test_minio_server_and_jobs_use_verified_images(mode, tmp_path):
     values = yaml.safe_load(text)
     for key, (name, tag, digest) in IMAGES.items():
         expected_repo = {
+            "chart": f"ghcr.io/openhands/{name}",
             "online": f"images.r9.all-hands.dev/proxy/test-app/ghcr.io/openhands/{name}",
             "airgap": f"registry.test/test-app/{name}",
             "builder": f"ghcr.io/openhands/{name}",
@@ -94,4 +98,4 @@ def test_minio_server_and_jobs_use_verified_images(mode, tmp_path):
     assert all(
         c["image"] == f"{client['repository']}:{client['tag']}" for c in containers
     )
-    assert job_pod["imagePullSecrets"] == [{"name": "test-registry"}]
+    assert job_pod.get("imagePullSecrets", []) == values.get("imagePullSecrets", [])

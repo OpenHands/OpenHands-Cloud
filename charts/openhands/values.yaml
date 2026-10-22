@@ -800,6 +800,17 @@ minio:
   enabled: false
   replicas: 1
   mode: standalone
+  # OpenHands-hosted copies of the MinIO server and client releases this chart
+  # pins, because quay.io/minio no longer serves them. The images are
+  # byte-identical to the originals but linux/amd64 only
+  # (docs/minio-image-recovery.md).
+  image:
+    repository: ghcr.io/openhands/ohe-minio
+    tag: RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279
+  mcImage:
+    repository: ghcr.io/openhands/ohe-minio-mc
+    tag: RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701
+  imagePullSecrets: []
   persistence:
     enabled: false
   buckets:
