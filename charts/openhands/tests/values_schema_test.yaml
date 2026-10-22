@@ -79,18 +79,18 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "minio/enabled.*want boolean"
-  - it: rejects ClickHouse diagnostic retention above the supported bound
+  - it: rejects ClickHouse system log retention above the supported bound
     set:
-      laminar.clickhouse.diagnostics.retentionDays: 4
+      laminar.clickhouse.systemLogs.retentionDays: 4
     asserts:
       - failedTemplate:
-          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*maximum: got 4, want 3"
-  - it: rejects ClickHouse diagnostic retention below the supported bound
+          errorPattern: "laminar/clickhouse/systemLogs/retentionDays.*maximum: got 4, want 3"
+  - it: rejects ClickHouse system log retention below the supported bound
     set:
-      laminar.clickhouse.diagnostics.retentionDays: 0
+      laminar.clickhouse.systemLogs.retentionDays: 0
     asserts:
       - failedTemplate:
-          errorPattern: "laminar/clickhouse/diagnostics/retentionDays.*minimum: got 0, want 1"
+          errorPattern: "laminar/clickhouse/systemLogs/retentionDays.*minimum: got 0, want 1"
   - it: rejects a non-string filestore.region
     set:
       filestore.region: true
@@ -129,7 +129,7 @@ tests:
       filestore.accessKeyIdKey: access-key
       enterpriseSSO.idpMetadataUrl: https://idp.example.com/metadata
       filestore.secretAccessKeyKey: secret-key
-      laminar.clickhouse.diagnostics.retentionDays: 2
+      laminar.clickhouse.systemLogs.retentionDays: 2
       orgDefaults.condenser.maxTokens: 200000
       orgDefaults.condenser.applyToExisting: true
       orgDefaults.condenser.overwriteExisting: false

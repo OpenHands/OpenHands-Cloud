@@ -644,10 +644,8 @@ laminar:
       tag: "26.3-alpine"
 
   clickhouse:
-    diagnostics:
-      # Retention, in days, for high-volume ClickHouse system diagnostic tables
-      # used by Laminar. The chart applies this with a Helm install/upgrade hook
-      # so it survives Replicated/KOTS reconciliation and upgrades.
+    systemLogs:
+      # Days ClickHouse keeps system.query_log and system.error_log; its other system logs are disabled.
       retentionDays: 3
 
   frontend:

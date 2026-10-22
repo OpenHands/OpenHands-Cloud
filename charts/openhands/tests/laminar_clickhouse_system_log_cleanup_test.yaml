@@ -1,0 +1,58 @@
+suite: laminar clickhouse system log cleanup
+templates:
+  - laminar-clickhouse-system-log-cleanup-job.yaml
+tests:
+  - it: renders nothing when Laminar is disabled
+    set:
+      laminar.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when Laminar's system log config is turned off
+    set:
+      laminar.enabled: true
+      laminar.clickhouse.systemLogs.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: drops disabled and renamed system log tables after every install and upgrade
+    set:
+      laminar.enabled: true
+      laminar.images.clickhouse.tag: "25.1"
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: clickhouse/clickhouse-server:25.1
+      - equal:
+          path: spec.template.spec.volumes[0].configMap.name
+          value: laminar-clickhouse-system-logs-config
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /etc/laminar-clickhouse
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: 'remove="1".*/etc/laminar-clickhouse/system_logs\.xml'
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: "match\\(name, '_log_\\[0-9\\]\\+\\$'\\)"
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: '--max_table_size_to_drop=0 --query "DROP TABLE IF EXISTS system\.\$\{table\} SYNC"'
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: '(?s)SYSTEM FLUSH LOGS.*SELECT name FROM system\.tables'
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: "MODIFY TTL"
