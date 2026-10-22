@@ -1640,6 +1640,19 @@ spec:
           help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
           type: bool
           default: "0"
+        - name: super_admin_emails
+          title: Super Admin Emails
+          help_text: >-
+            Comma-separated email addresses that always hold the instance-level
+            Super Admin role, regardless of how the account was created.
+            Matched case-insensitively and granted (if not already held) on
+            every successful OAuth V2 login. Use this to recover or guarantee
+            admin access without database access. Leave empty to disable (the
+            default); setting it does not change any existing behavior for
+            other users.
+          type: text
+          default: ""
+          required: false
         - name: auth_v2_enabled
           title: Enable OAuth V2 Login
           help_text: Use the OAuth V2 login flow.
