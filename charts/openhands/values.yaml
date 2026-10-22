@@ -730,15 +730,9 @@ litellm-helm:
   # 1.100.5 is the 1.100.x patch release that backports dependency security
   # fixes (PyJWT, anyio, pypdf, urllib3, Python); same Prisma schema as 1.100.1.
   #
-  # 1.103.0 removes the duplicate user budget hook (_PROXY_MaxBudgetLimiter)
-  # that returned 429 on zero-cost models for over-budget users
-  # (BerriAI/litellm#41345); auth now enforces user budgets once, so the
-  # zero-cost exemption applies. It also loads the first remote pricing/model
-  # catalog synchronously and retries failed fetches in the background
-  # (BerriAI/litellm#40350), so a startup catalog failure no longer leaves
-  # newly released models missing from routing until a pod restart.
+  # 1.103.6 includes the zero-cost model budget fix and startup model-catalog retries.
   image:
-    tag: "1.103.0@sha256:f4f114b1996c5923c4d62a7bbdcecb2ccf9df17bdebce76050f609be97f75f5c"
+    tag: "1.103.6@sha256:76ad306ce3927ce5224f6fac0139e08badbfa2b32a178032296c1e867abd4cbe"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
