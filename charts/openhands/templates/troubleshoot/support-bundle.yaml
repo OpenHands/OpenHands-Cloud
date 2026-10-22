@@ -8,6 +8,7 @@ spec:
     {{- /* Presence of admin-configured/optional secrets: a key renders only when its KOTS
     value is set, so includeValue:false keyExists ⇔ value-set -- presence only, never the value.
     Always-generated internal secrets are omitted; they'd read "set" unconditionally. */}}
+    {{- $tlsSecret := .Values.tls.existingSecret | default "openhands-tls" }}
     {{- $secretKeys := dict
       "azure-devops-app"          (list "client-id" "client-secret")
       "bitbucket-data-center-app" (list "host" "client-id" "client-secret" "bot-token")
@@ -17,7 +18,7 @@ spec:
       "keycloak-realm"            (list "client-id" "client-secret" "smtp-password")
       "litellm-env-secrets"       (list "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GOOGLE_API_KEY" "GOOGLE_APPLICATION_CREDENTIALS_JSON" "VERTEXAI_PROJECT" "VERTEXAI_LOCATION" "DEEPSEEK_API_KEY" "MISTRAL_API_KEY" "AZURE_API_KEY" "AZURE_TENANT_ID" "AZURE_CLIENT_ID" "AZURE_CLIENT_SECRET" "AZURE_API_BASE" "AZURE_API_VERSION" "GROQ_API_KEY" "OPENROUTER_API_KEY" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME" "CUSTOM_API_KEY" "CUSTOM_API_BASE")
       "openhands-env-secrets"     (list "LLM_API_KEY" "LLM_MODEL" "LLM_BASE_URL" "LLM_API_VERSION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME")
-      "openhands-tls"             (list "tls.crt" "ca.crt")
+      $tlsSecret                  (list "tls.crt" "ca.crt")
       "postgres-password"         (list "postgres-password")
       "redis"                     (list "redis-password")
       "s3-credentials"            (list "access-key" "secret-key")

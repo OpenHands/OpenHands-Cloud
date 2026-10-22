@@ -95,3 +95,23 @@ destination on the rule's ports, so it fails the render instead.
     {{- toYaml . | nindent 4 }}
   {{- end }}
 {{- end -}}
+
+{{/*
+TLS secret the chart's ingresses serve. tls.existingSecret must not name a
+secret the installer renders, or switching to it would get it deleted.
+*/}}
+{{- define "openhands.tlsSecretName" -}}
+{{- $rendered := printf "app-all-hands-%v-tls" (.Values.tls.env | default "") -}}
+{{- $reserved := list "openhands-tls" $rendered -}}
+{{- with ((.Values.keycloak | default dict).ingress | default dict).hostname -}}
+{{- $reserved = append $reserved (printf "%s-tls" .) -}}
+{{- end -}}
+{{- with .Values.tls.existingSecret -}}
+{{- if has . $reserved -}}
+{{- fail (printf "tls.existingSecret %q is managed by the installer; copy the certificate into a secret with a different name" .) -}}
+{{- end -}}
+{{- . -}}
+{{- else -}}
+{{- $rendered -}}
+{{- end -}}
+{{- end -}}
