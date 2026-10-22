@@ -17,7 +17,7 @@ def test_helm_and_replicated_disable_stale_authorization_cache():
     documents = yaml.safe_load_all((ROOT / "replicated/openhands.yaml").read_text())
     chart = next(doc for doc in documents if doc and doc.get("kind") == "HelmChart")
     assert values["litellm-helm"]["image"]["tag"] == (
-        "1.100.5@sha256:65cdef1d78a9a966dfa6797951ea01602826430b6978bc9fa3957da6913dcc7f"
+        "1.103.0@sha256:f4f114b1996c5923c4d62a7bbdcecb2ccf9df17bdebce76050f609be97f75f5c"
     )
     assert "tag" not in chart["spec"]["values"]["litellm-helm"]["image"]
     for config in [values, chart["spec"]["values"]]:
