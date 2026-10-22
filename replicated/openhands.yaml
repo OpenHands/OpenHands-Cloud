@@ -121,6 +121,13 @@ spec:
       # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
+      # comma-separated emails that always hold the instance-level Super Admin
+      # role, granted on every successful OAuth V2 login regardless of the
+      # first-user heuristic. Deliberately not gated on another toggle — it's
+      # meant to recover admin access even when other auth config is broken.
+      # Empty by default: unset, this is a no-op.
+      SUPER_ADMIN_EMAILS: 'repl{{ ConfigOption "super_admin_emails" }}'
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
