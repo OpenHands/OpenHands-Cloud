@@ -154,7 +154,7 @@ spec:
     tlsStore:
       enabled: true
       name: default
-      secretName: openhands-tls
+      secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
 
     tls:
       enabled: true
@@ -294,7 +294,7 @@ spec:
       ingress:
         enabled: true
         className: traefik
-        # Replicated uses the customer-uploaded openhands-tls Secret.
+        # Replicated serves the secret named by computed_tls_certificate_name.
         annotations: null
         hosts:
           - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
@@ -302,7 +302,7 @@ spec:
               - path: /
                 pathType: Prefix
         tls:
-          - secretName: openhands-tls
+          - secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
             hosts:
               - '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
       proxy_config:
@@ -360,7 +360,7 @@ spec:
         className: traefik
         host: '{{repl ConfigOption "computed_runtime_api_hostname" }}'
         tls: true
-        tlsSecretName: openhands-tls
+        tlsSecretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
         # Suppress the chart's default letsencrypt annotation: Replicated
         # installs use a manually-uploaded TLS cert (openhands-tls), and the
         # cluster-issuer annotation triggers cert-manager to take SSA
@@ -636,6 +636,20 @@ spec:
         {{repl ConfigOptionData "tls_ca_certificate" | nindent 8 }}
 
   optionalValues:
+    # The operator owns the certificate, so nothing here may render a TLS secret.
+    - when: '{{repl ConfigOptionEquals "tls_certificate_source" "secret" }}'
+      recursiveMerge: true
+      values:
+        tls:
+          existingSecret: '{{repl ConfigOption "tls_existing_certificate_name" }}'
+        keycloak:
+          ingress:
+            tls: false
+            secrets: []
+            extraTls:
+              - hosts:
+                  - '{{repl ConfigOption "computed_auth_hostname" }}'
+                secretName: '{{repl ConfigOption "tls_existing_certificate_name" }}'
     - when: '{{repl ne (ConfigOption "additional_cors_origins" | trim) "" }}'
       recursiveMerge: true
       values:
@@ -1183,13 +1197,13 @@ spec:
             RUNTIME_URL_SEPARATOR: "/"
             USE_GATEWAY_API: "true"
             GATEWAY_NAME: "sandbox-gateway"
-            RUNTIME_CERT_SECRET: "openhands-tls"
+            RUNTIME_CERT_SECRET: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           ingressBase:
             enabled: false
           sandboxGateway:
             enabled: true
             hostname: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
-            tlsSecretName: openhands-tls
+            tlsSecretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
     - when: '{{repl ConfigOptionEquals "analytics_enabled" "1" }}'
       recursiveMerge: true
       values:
@@ -1279,7 +1293,7 @@ spec:
               className: "traefik"
               tls:
                 enabled: true
-                secretName: "openhands-tls"
+                secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
                 clusterIssuer: "" # leave empty — cert-manager not needed
             env:
               nextauthUrl: 'https://{{repl ConfigOption "computed_analytics_hostname" }}'
@@ -1290,7 +1304,7 @@ spec:
             className: "traefik"
             tls:
               enabled: true
-              secretName: "openhands-tls"
+              secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           postgres:
             persistence:
               storageClass: "openebs-hostpath"
@@ -1363,7 +1377,7 @@ spec:
             path: /canvas
             tls:
               enabled: true
-              secretName: openhands-tls
+              secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           staticServer:
             basePath: /canvas
             authRequired: false
