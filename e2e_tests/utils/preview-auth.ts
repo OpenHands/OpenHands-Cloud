@@ -121,7 +121,9 @@ export async function loginToPreviewOrigin(
   try {
     await page.goto(origins[0]);
     await Promise.race([
-      loginWithKeycloakPassword(page, creds),
+      // Previews render the legacy login page (``preview-smoke.spec.ts``
+      // expects its button after logout).
+      loginWithKeycloakPassword(page, creds, "legacy"),
       blockedFailure,
     ]);
     if (blocked) throw blockedError();

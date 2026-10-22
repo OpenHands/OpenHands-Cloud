@@ -1,5 +1,6 @@
 import { Page, Locator, expect } from "@playwright/test";
 import { generate } from "otplib";
+import type { WebClientConfig } from "./billing";
 import type { GitHubCredentials, NewUserCredentials } from "./config";
 
 /**
@@ -32,8 +33,24 @@ export async function checkIfAuthenticated(page: Page): Promise<boolean> {
 }
 
 /**
- * The login page renders "Log in with GitHub" as a button when GitHub is the
- * only identity provider, and as a link when several providers are listed.
+ * How the app's login page hands the browser to Keycloak, chosen by
+ * ``feature_flags.enable_oauth_v2_login``:
+ *
+ * - ``legacy``: "Log in with GitHub" is a button whose script navigates
+ *   straight to Keycloak's ``/protocol/openid-connect/auth``.
+ * - ``oauth-v2``: each row of ``/oauth/idp-providers`` is a link to the app's
+ *   ``/oauth/{id}/login``, which redirects to the provider's authorization
+ *   URL and returns through ``/oauth/{id}/callback``.
+ */
+export type LoginFlow = "legacy" | "oauth-v2";
+
+export function loginFlow(config: WebClientConfig): LoginFlow {
+  return config.feature_flags?.enable_oauth_v2_login ? "oauth-v2" : "legacy";
+}
+
+/**
+ * "Log in with GitHub" on the login page: a button in the legacy flow, a link
+ * in the OAuth V2 flow (see ``LoginFlow``).
  */
 export function githubLoginOption(page: Page): Locator {
   const name = "Log in with GitHub";
@@ -116,6 +133,84 @@ export async function authenticateWithGitHub(
   console.log("GitHub authentication flow completed");
 }
 
+interface IdpHintStrip {
+  requestsRouted: number;
+  stripped: boolean;
+}
+
+/**
+ * Legacy flow: the login button navigates straight to Keycloak's
+ * ``/protocol/openid-connect/auth``, so strip the hint from that request.
+ * Everything else (client_id, redirect_uri, state, PKCE) is left untouched,
+ * so the eventual callback still passes the app's state validation.
+ *
+ * Uses ``route.fallback`` rather than ``route.continue`` so any
+ * previously-registered handler (unit-test fixtures, cross-cutting fixtures
+ * added by the caller) still runs — ``route.continue`` sends the request
+ * straight to the network and would short-circuit them.
+ *
+ * The ``**`` glob matches the auth host regardless of environment
+ * (staging vs. self-hosted vs. an explicit AUTH_BASE_URL).
+ */
+async function stripIdpHintFromKeycloakRequest(
+  page: Page,
+): Promise<IdpHintStrip> {
+  const hint: IdpHintStrip = { requestsRouted: 0, stripped: false };
+  await page.route(
+    "**/realms/*/protocol/openid-connect/auth**",
+    async (route) => {
+      hint.requestsRouted += 1;
+      const url = new URL(route.request().url());
+      if (!url.searchParams.has("kc_idp_hint")) {
+        await route.fallback();
+        return;
+      }
+      url.searchParams.delete("kc_idp_hint");
+      hint.stripped = true;
+      await route.fallback({ url: url.toString() });
+    },
+  );
+  return hint;
+}
+
+/**
+ * OAuth V2 flow: the login link goes to the app's ``/oauth/{id}/login``,
+ * which redirects to Keycloak with the hint. Playwright does not route
+ * redirect hops, so the Keycloak request cannot be rewritten; instead fetch
+ * the app's redirect and strip the hint from its ``Location``. The app keeps
+ * its OAuth state in the ``state`` query parameter, which is left untouched.
+ *
+ * ``route.fetch`` sends the request to the network, bypassing handlers
+ * registered before this one; that is the only way to read the real redirect.
+ */
+async function stripIdpHintFromAppRedirect(page: Page): Promise<IdpHintStrip> {
+  const hint: IdpHintStrip = { requestsRouted: 0, stripped: false };
+  await page.route(
+    (url) => /^\/oauth\/[^/]+\/login$/.test(url.pathname),
+    async (route) => {
+      hint.requestsRouted += 1;
+      const response = await route.fetch({ maxRedirects: 0 });
+      const { location } = response.headers();
+      if (!location) {
+        await route.fulfill({ response });
+        return;
+      }
+      const target = new URL(location, route.request().url());
+      if (!target.searchParams.has("kc_idp_hint")) {
+        await route.fulfill({ response });
+        return;
+      }
+      target.searchParams.delete("kc_idp_hint");
+      hint.stripped = true;
+      await route.fulfill({
+        response,
+        headers: { ...response.headers(), location: target.toString() },
+      });
+    },
+  );
+  return hint;
+}
+
 /**
  * Drive Keycloak's local username/password login form for a synthetic
  * Keycloak-native user.
@@ -131,44 +226,23 @@ export async function authenticateWithGitHub(
  * The Keycloak login page renders a native Sign-In form alongside the
  * "Log in with GitHub" social button; this helper fills the native form's
  * ``#username`` / ``#password`` inputs (Keycloak stable ids) and submits.
+ *
+ * Both login flows reach Keycloak with ``kc_idp_hint=github``, which makes
+ * Keycloak redirect straight to GitHub and skip its own form. The helper
+ * removes the hint; ``flow`` says which request carries it (see
+ * ``LoginFlow``).
  */
 export async function loginWithKeycloakPassword(
   page: Page,
   creds: NewUserCredentials,
+  flow: LoginFlow,
 ): Promise<void> {
-  console.log("Starting Keycloak-native login for new user...");
+  console.log(`Starting Keycloak-native login for new user (${flow} flow)...`);
 
-  // The app's "Log in with GitHub" button sends the browser to Keycloak with
-  // ``kc_idp_hint=github``, which makes Keycloak 302 straight to GitHub OAuth
-  // and skip its own login form. We want the local form, so intercept the
-  // request to Keycloak's ``/protocol/openid-connect/auth`` endpoint and
-  // strip the hint before it reaches the server. Everything else (client_id,
-  // redirect_uri, state, PKCE) is left untouched, so the eventual callback
-  // still passes the app's state validation.
-  //
-  // Uses ``route.fallback`` rather than ``route.continue`` so any
-  // previously-registered handler (unit-test fixtures, cross-cutting fixtures
-  // added by the caller) still runs — ``route.continue`` sends the request
-  // straight to the network and would short-circuit them.
-  //
-  // The ``**`` glob matches the auth host regardless of environment
-  // (staging vs. self-hosted vs. an explicit AUTH_BASE_URL).
-  let keycloakAuthRequests = 0;
-  let idpHintStripped = false;
-  await page.route(
-    "**/realms/*/protocol/openid-connect/auth**",
-    async (route) => {
-      keycloakAuthRequests += 1;
-      const url = new URL(route.request().url());
-      if (!url.searchParams.has("kc_idp_hint")) {
-        await route.fallback();
-        return;
-      }
-      url.searchParams.delete("kc_idp_hint");
-      idpHintStripped = true;
-      await route.fallback({ url: url.toString() });
-    },
-  );
+  const hint =
+    flow === "legacy"
+      ? await stripIdpHintFromKeycloakRequest(page)
+      : await stripIdpHintFromAppRedirect(page);
 
   await githubLoginOption(page).click();
 
@@ -183,12 +257,12 @@ export async function loginWithKeycloakPassword(
     await usernameField.waitFor({ state: "visible", timeout: 30_000 });
   } catch (error) {
     // Keycloak sends the browser to GitHub when the hint is not stripped
-    // (Playwright does not route redirect hops) or when the realm redirects
-    // to an identity provider by default. Name which case this is.
+    // (e.g. ``flow`` does not match the app's login flow) or when the realm
+    // redirects to an identity provider by default. Name which case this is.
     throw new Error(
-      `Keycloak's login form did not appear; the browser is on ` +
-        `${new URL(page.url()).host}. Keycloak auth requests routed: ` +
-        `${keycloakAuthRequests}; kc_idp_hint stripped: ${idpHintStripped}.`,
+      `Keycloak's login form did not appear (${flow} login flow); the ` +
+        `browser is on ${new URL(page.url()).host}. Login requests routed: ` +
+        `${hint.requestsRouted}; kc_idp_hint stripped: ${hint.stripped}.`,
       { cause: error },
     );
   }
