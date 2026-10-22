@@ -24,6 +24,26 @@ tests:
         notMatchRegex:
           path: stringData.support-bundle-spec
           pattern: "position\\(create_table_query, 'TTL'\\)"
+  - it: sizes every system log table, including renamed leftovers, and samples only retained logs
+    set:
+      laminar.enabled: true
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "match\\(name, '_log\\(_\\[0-9\\]\\+\\)\\?\\$'\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "FROM system\\.error_log"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "FROM system\\.(trace_log|text_log)"
   - it: collects laminar app-server and app-server-consumer pod logs
     set:
       laminar.enabled: true
