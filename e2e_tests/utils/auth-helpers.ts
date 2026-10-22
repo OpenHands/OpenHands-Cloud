@@ -153,15 +153,19 @@ export async function loginWithKeycloakPassword(
   //
   // The ``**`` glob matches the auth host regardless of environment
   // (staging vs. self-hosted vs. an explicit AUTH_BASE_URL).
+  let keycloakAuthRequests = 0;
+  let idpHintStripped = false;
   await page.route(
     "**/realms/*/protocol/openid-connect/auth**",
     async (route) => {
+      keycloakAuthRequests += 1;
       const url = new URL(route.request().url());
       if (!url.searchParams.has("kc_idp_hint")) {
         await route.fallback();
         return;
       }
       url.searchParams.delete("kc_idp_hint");
+      idpHintStripped = true;
       await route.fallback({ url: url.toString() });
     },
   );
@@ -175,7 +179,19 @@ export async function loginWithKeycloakPassword(
   const passwordField = page.locator("#password");
   const signInButton = page.locator("#kc-login");
 
-  await usernameField.waitFor({ state: "visible", timeout: 30_000 });
+  try {
+    await usernameField.waitFor({ state: "visible", timeout: 30_000 });
+  } catch (error) {
+    // Keycloak sends the browser to GitHub when the hint is not stripped
+    // (Playwright does not route redirect hops) or when the realm redirects
+    // to an identity provider by default. Name which case this is.
+    throw new Error(
+      `Keycloak's login form did not appear; the browser is on ` +
+        `${new URL(page.url()).host}. Keycloak auth requests routed: ` +
+        `${keycloakAuthRequests}; kc_idp_hint stripped: ${idpHintStripped}.`,
+      { cause: error },
+    );
+  }
   // This realm is email-as-username (``registrationEmailAsUsername`` in
   // ``allhands-realm-github-provider.json.tmpl``), so the login identifier is
   // the email; a bare username is ``user_not_found``.
