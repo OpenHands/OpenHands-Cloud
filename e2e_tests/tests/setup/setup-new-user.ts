@@ -11,8 +11,10 @@ import {
 import {
   checkIfAuthenticated,
   completeLoginAndOnboard,
+  loginFlow,
   loginWithKeycloakPassword,
 } from "../../utils/auth-helpers";
+import { fetchWebClientConfig } from "../../utils/billing";
 import { createRealmUser } from "../../utils/keycloak-admin";
 
 /**
@@ -73,7 +75,8 @@ setup("authenticate new user", async ({ page, baseURL }) => {
     return;
   }
 
-  await loginWithKeycloakPassword(page, creds);
+  const flow = loginFlow(await fetchWebClientConfig(page.request));
+  await loginWithKeycloakPassword(page, creds, flow);
   await completeLoginAndOnboard(page, creds.username);
 
   await page.context().storageState({ path: authNewUserFile });

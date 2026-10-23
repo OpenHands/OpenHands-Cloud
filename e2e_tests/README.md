@@ -210,6 +210,15 @@ Three credential sets are required before any test run:
 
 The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
 
+### Login flows
+
+The app has two login pages, chosen by `feature_flags.enable_oauth_v2_login` in `/api/v1/web-client/config` (the instance's **OAuth V2 login** option):
+
+- **Legacy**: "Log in with GitHub" is a button that sends the browser straight to Keycloak, which returns to `/oauth/keycloak/callback`.
+- **OAuth V2**: the page lists one link per row of `/oauth/idp-providers`. Each link goes to the app's `/oauth/{id}/login`, which redirects to Keycloak and returns through `/oauth/{id}/callback`.
+
+Both reach Keycloak with `kc_idp_hint=github`, which skips Keycloak's own form. `setup:new-user` reads the flag and removes the hint where that flow carries it: from the Keycloak request (legacy) or from the app's `/oauth/{id}/login` redirect (OAuth V2, because Playwright cannot intercept redirect hops). `tests/014-login.spec.ts` checks each flow's login page and sign-in round trip as the New User; the describe for the flow the instance does not use is skipped and says why. Run one flow with `--grep @oauth-v1` or `--grep @oauth-v2`.
+
 `KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
 
 ### Environment variables
