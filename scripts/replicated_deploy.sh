@@ -45,7 +45,7 @@ why()  { local b; b="$(cat)"; jq -re '.error // empty' <<<"$b" 2>/dev/null \
 retry_gateway() {
   local delay=10 R verb="$1"; shift
   while :; do
-    R="$(TMO=120 api -H 'Content-Type: application/json' -X "$verb" "$@" || true)"
+    R="$(TMO="${GATEWAY_TIMEOUT_SECONDS:-120}" api -H 'Content-Type: application/json' -X "$verb" "$@" || true)"
     ok <<<"$R" && { printf '%s' "$R"; return 0; }
     { grep -Eq 'HTTP (000|502|503|504)' "$ERR" && waiting; } || { printf '%s' "$R"; return 1; }
     echo "  KOTS gateway hit a transient error ($(tr -s '\n' ' ' <"$ERR")); retrying in ${delay}s" >&2
