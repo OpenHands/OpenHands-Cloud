@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.77.0
+  tag: 1.79.0
 
 autoscaling:
   enabled: false
@@ -789,6 +789,14 @@ litellm-helm:
       request_timeout: 600
       context_window_fallbacks: []
       allowed_fails: 3
+    router_settings:
+      retry_policy:
+        # Return provider rate limits (429) to the agent instead of retrying them
+        # here. The agent SDK already retries 429s with backoff, so proxy retries
+        # only multiply requests to a throttled provider. Other errors keep
+        # num_retries above. Override with
+        # litellm-helm.proxy_config.router_settings.retry_policy.RateLimitErrorRetries.
+        RateLimitErrorRetries: 0
 
 minio:
   # Deploy the bundled in-cluster MinIO (a conditional dependency) — handy for
@@ -1484,7 +1492,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.57.0-python
+    tag: 1.58.1-python
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
