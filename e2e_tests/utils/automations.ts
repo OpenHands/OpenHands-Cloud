@@ -52,7 +52,13 @@ export interface AutomationResponse {
 }
 
 /** Terminal states for an automation run. */
-export type RunStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+export type RunStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED"
+  | "SKIPPED";
 
 /** Row shape of ``GET /api/automation/v1/{id}/runs``. */
 export interface AutomationRun {
@@ -165,23 +171,20 @@ export async function listRuns(
       `listRuns failed (${response.status} ${response.statusText}): ${body}`,
     );
   }
-  const parsed = (await response.json()) as
-    | AutomationRun[]
-    | { items: AutomationRun[] };
-  // Some endpoints wrap collections in ``{items: [...]}``; accept both shapes.
-  return Array.isArray(parsed) ? parsed : parsed.items;
+  const parsed = (await response.json()) as { runs: AutomationRun[] };
+  return parsed.runs;
 }
 
 /**
  * Poll the automation's runs until the most recent one reaches a terminal
- * status (``COMPLETED`` or ``FAILED``), or until ``timeoutMs`` elapses.
+ * status (anything past ``PENDING``/``RUNNING``), or until ``timeoutMs`` elapses.
  *
  * The automation service assigns a fresh run id on dispatch; when the first
  * poll finds any run at all we adopt its id and keep polling that specific
  * run so a later cron tick can't confuse the assertion.
  */
 function isTerminal(status: RunStatus): boolean {
-  return status === "COMPLETED" || status === "FAILED";
+  return status !== "PENDING" && status !== "RUNNING";
 }
 
 export async function waitForRunTerminal(

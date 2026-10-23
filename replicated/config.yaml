@@ -462,12 +462,25 @@ spec:
           value: "mistral-large-latest\ncodestral-latest"
           when: 'repl{{ ConfigOptionEquals "llm_provider" "mistral" }}'
           required: true
+        - name: azure_provider_mode
+          title: Azure Providers
+          help_text: Use Azure OpenAI, Azure AI Foundry, or both. Existing Azure OpenAI model names are preserved.
+          type: select_one
+          default: "azure"
+          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          items:
+            - name: azure
+              title: Azure OpenAI
+            - name: azure_ai
+              title: Azure AI Foundry
+            - name: both
+              title: Azure OpenAI and Azure AI Foundry
         - name: azure_auth_method
           title: Azure Authentication Method
           help_text: Authentication method for Azure OpenAI. Service Principal (Microsoft Entra ID) is recommended for production.
           type: select_one
           default: "api_key"
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
           items:
             - name: "api_key"
@@ -478,38 +491,38 @@ spec:
           title: Azure OpenAI API Key
           help_text: Your Azure OpenAI API key
           type: password
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "api_key") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "api_key") }}'
           required: true
         - name: azure_tenant_id
           title: Microsoft Entra Tenant ID
           help_text: The Microsoft Entra directory (tenant) ID (under Microsoft Entra ID → Overview in the Azure portal).
           type: text
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
           required: true
         - name: azure_client_id
           title: Microsoft Entra Application (Client) ID
           help_text: The Application (client) ID of the Entra app registration. Grant it the "Cognitive Services OpenAI User" role on your Azure OpenAI resource.
           type: text
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
           required: true
         - name: azure_client_secret
           title: Microsoft Entra Client Secret
           help_text: The client secret for the Entra ID app registration.
           type: password
-          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) (ConfigOptionEquals "azure_auth_method" "service_principal") }}'
           required: true
         - name: azure_endpoint
           title: Azure OpenAI Endpoint
           help_text: Your Azure OpenAI endpoint URL (e.g., https://my-resource.openai.azure.com). Regional endpoints (e.g., https://eastus2.api.cognitive.microsoft.com) only work with API Key auth, not Microsoft Entra ID.
           type: text
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
         - name: azure_api_version
           title: Azure OpenAI API Version
           help_text: The API version for your Azure OpenAI deployment
           type: text
           default: "2024-10-21"
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
         # Legacy single-deployment field, superseded by azure_deployments.
         # Kept hidden (not removed) so the stored value of upgraded installs
@@ -518,14 +531,43 @@ spec:
           title: Azure OpenAI Deployment Name (legacy)
           type: text
           hidden: true
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
         - name: azure_deployments
           title: Azure OpenAI Deployments
           help_text: Azure OpenAI deployment names served through the bundled LiteLLM proxy, one per line (set when you deployed the models in Azure). All deployments must be reachable at the endpoint and API version configured above.
           type: textarea
           value: '{{repl ConfigOption "azure_deployment_name"}}'
-          when: 'repl{{ ConfigOptionEquals "llm_provider" "azure" }}'
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
           required: true
+        - name: azure_drop_params
+          title: Drop Unsupported Azure OpenAI Parameters
+          help_text: Allow LiteLLM to omit parameters it identifies as unsupported by the selected model. This does not remove arbitrary provider-specific parameters.
+          type: bool
+          default: "0"
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure_ai")) }}'
+        - name: azure_ai_api_key
+          title: Azure AI Foundry API Key
+          type: password
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
+        - name: azure_ai_endpoint
+          title: Azure AI Foundry Endpoint
+          help_text: The resource base URL for your models (e.g., https://my-resource.openai.azure.com). For GPT deployments, omit /openai/v1/ and deployment-specific paths. Use the endpoint supplied by Azure for other model families.
+          type: text
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
+        - name: azure_ai_deployments
+          title: Azure AI Foundry Deployments
+          help_text: Deployment names, one per line, without the azure_ai/ prefix. All must use the endpoint above. Models appear as azure_ai-<deployment> in OpenHands.
+          type: textarea
+          required: true
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
+        - name: azure_ai_drop_params
+          title: Drop Unsupported Azure AI Foundry Parameters
+          help_text: Allow LiteLLM to omit parameters it identifies as unsupported by the selected model. This does not remove arbitrary provider-specific parameters.
+          type: bool
+          default: "0"
+          when: 'repl{{ and (ConfigOptionEquals "llm_provider" "azure") (not (ConfigOptionEquals "azure_provider_mode" "azure")) }}'
         - name: groq_api_key
           title: Groq API Key
           help_text: Your Groq API key
@@ -1546,8 +1588,13 @@ spec:
 
     - name: upgrade_checks
       title: Upgrade Checks
-      description: Budget policy checks that run as Helm hooks around each upgrade. Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
+      description: Checks that run as Helm hooks around each upgrade. For the budget checks, Strict fails the upgrade when problems are found; Acknowledge records them and lets the upgrade proceed.
       items:
+        - name: keycloak_pre_upgrade_backup
+          title: Back Up Keycloak Database Before Upgrade
+          help_text: When an upgrade changes the Keycloak version, copy the Keycloak database to a backup database named after the old version (e.g. bitnami_keycloak_backup_26_3_0) on the same PostgreSQL server before Keycloak migrates it one way, and stop the upgrade if the copy fails. Requires the database user to have CREATE DATABASE and PostgreSQL 17 or older. Disable only after backing up the Keycloak database yourself.
+          type: bool
+          default: "1"
         - name: budget_preflight_mode
           title: Pre-upgrade Budget Preflight
           help_text: Read-only check of each organization's budget state before the upgrade applies. Strict blocks the upgrade on missing baselines, members missing from LiteLLM, cap drift, or a failed last sync; Acknowledge only records the findings.
@@ -1588,6 +1635,29 @@ spec:
             regex:
               pattern: ^(github|https?)://
               message: Must start with github://, https://, or http://
+        - name: super_admin_dashboard_enabled
+          title: Enable Super Admin Dashboard
+          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
+          type: bool
+          default: "0"
+        - name: super_admin_emails
+          title: Super Admin Emails
+          help_text: >-
+            Comma-separated email addresses that always hold the instance-level
+            Super Admin role, regardless of how the account was created.
+            Matched case-insensitively and granted (if not already held) on
+            every successful OAuth V2 login. Use this to recover or guarantee
+            admin access without database access. Leave empty to disable (the
+            default); setting it does not change any existing behavior for
+            other users.
+          type: text
+          default: ""
+          required: false
+        - name: auth_v2_enabled
+          title: Enable OAuth V2 Login
+          help_text: Use the OAuth V2 login flow.
+          type: bool
+          default: "0"
 
     - name: analytics_configuration
       title: Analytics Configuration

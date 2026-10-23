@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-session-bucket
+  namespace: openhands
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload: openhands-platform
+      containers:
+        - name: create-bucket
+          image: amazon/aws-cli:2.34.0
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              aws --endpoint-url http://openhands-rustfs-svc:9000 s3api head-bucket --bucket openhands-sessions || aws --endpoint-url http://openhands-rustfs-svc:9000 s3api create-bucket --bucket openhands-sessions
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: filestore-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: filestore-credentials
+                  key: AWS_SECRET_ACCESS_KEY

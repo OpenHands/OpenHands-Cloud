@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.68.1
+  tag: 1.77.0
 
 autoscaling:
   enabled: false
@@ -469,8 +469,31 @@ uvicorn:
 
 keycloak:
   enabled: false
+  # Upstream 26.8.0 rebuilt in the Bitnami layout (github.com/OpenHands/third-party-images).
   image:
-    repository: bitnamilegacy/keycloak
+    registry: ghcr.io
+    repository: openhands/third-party-images/keycloak
+    tag: 26.8.0-debian-12-oh1
+  # Parent-chart pre-upgrade hook (not consumed by the Keycloak subchart): when
+  # the upgrade changes the Keycloak version, copy the database to
+  # <database>_backup_<old version> on the same server before Keycloak migrates
+  # it one way, and fail the upgrade if the copy fails. The database user needs
+  # CREATE DATABASE, and the server must run PostgreSQL 17 or older for the
+  # hook's pg_dump 17. Rollback: README, "Keycloak 26.3 to 26.8".
+  preUpgradeBackup:
+    enabled: true
+    # Includes image pull time. Keep it under Helm's hook timeout (600s on Replicated)
+    # so a stuck backup fails with the Job's own error rather than a Helm timeout.
+    # The copy gets this minus 60s, then fails with a message in the Job log;
+    # raise it for a large Keycloak database. Minimum 120.
+    activeDeadlineSeconds: 300
+    resources:
+      requests:
+        memory: "100Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
@@ -539,7 +562,7 @@ keycloak:
     - name: KC_DB_URL_PROPERTIES
       value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
   waitForDb:
-    image: "bitnamilegacy/postgresql:latest"
+    image: "ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie"
   initContainers:
     - name: wait-for-db
       # The Bitnami Keycloak subchart renders initContainers through common.tplvalues.render,
@@ -607,6 +630,18 @@ laminar:
   # HTTP port for Laminar app server (default: 443)
   # Set to 8000 for self-hosted environments where laminar exposes HTTP on port 8000
   httpPort: null
+
+  # Upstream laminar runs its Redis cache on valkey/valkey:latest (Debian), which
+  # moves on every pull and carries OS findings with fixes available. Pin the
+  # same Valkey release on the Alpine base. The cache has no persistent volume.
+  #
+  # Upstream laminar defaults ClickHouse to 25.10, which is out of support and
+  # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
+  images:
+    redis:
+      tag: "9.1.2-alpine"
+    clickhouse:
+      tag: "26.3-alpine"
 
   clickhouse:
     diagnostics:
@@ -691,8 +726,11 @@ litellm-helm:
   # 1.94.1 picks up the orphaned prisma query-engine reaping fix
   # (BerriAI/litellm#33424, released in v1.94.0), which addresses the gradual
   # per-worker memory growth seen on 1.93.0.
+  #
+  # 1.100.5 is the 1.100.x patch release that backports dependency security
+  # fixes (PyJWT, anyio, pypdf, urllib3, Python); same Prisma schema as 1.100.1.
   image:
-    tag: "1.100.1@sha256:fc44cf7f72786e636dc4dc1032b4e431818abfec9d54b8e04284fdea7ef03e2a"
+    tag: "1.100.5@sha256:65cdef1d78a9a966dfa6797951ea01602826430b6978bc9fa3957da6913dcc7f"
   masterkeySecretName: lite-llm-api-key
   masterkeySecretKey: lite-llm-api-key
   environmentSecrets: [litellm-env-secrets]
@@ -762,6 +800,17 @@ minio:
   enabled: false
   replicas: 1
   mode: standalone
+  # OpenHands-hosted copies of the MinIO server and client releases this chart
+  # pins, because quay.io/minio no longer serves them. The images are
+  # byte-identical to the originals but linux/amd64 only
+  # (docs/minio-image-recovery.md).
+  image:
+    repository: ghcr.io/openhands/ohe-minio
+    tag: RELEASE.2023-05-18T00-05-36Z-amd64@sha256:52c9c477179216d0418c95e8aad047db6d406fa475b7d624b5ba990fe7099279
+  mcImage:
+    repository: ghcr.io/openhands/ohe-minio-mc
+    tag: RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701
+  imagePullSecrets: []
   persistence:
     enabled: false
   buckets:
@@ -892,6 +941,10 @@ valkey:
   enabled: false
   image:
     repository: valkey/valkey
+    # The subchart defaults to its appVersion (9.1.1, Debian), which has
+    # critical/high OS findings with fixes available. The Alpine build of the
+    # current 9.1 patch has none.
+    tag: "9.1.2-alpine"
   auth:
     enabled: true
     # The same Secret the redis subchart reads.
@@ -1429,7 +1482,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.50.1-python-slim
+    tag: 1.57.0-python-slim
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

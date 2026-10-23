@@ -32,6 +32,17 @@ export async function checkIfAuthenticated(page: Page): Promise<boolean> {
 }
 
 /**
+ * The login page renders "Log in with GitHub" as a button when GitHub is the
+ * only identity provider, and as a link when several providers are listed.
+ */
+export function githubLoginOption(page: Page): Locator {
+  const name = "Log in with GitHub";
+  return page
+    .getByRole("button", { name })
+    .or(page.getByRole("link", { name }));
+}
+
+/**
  * Drive the full GitHub OAuth login flow for a set of credentials.
  *
  * Handles: the "Log in with GitHub" button, GitHub login page, 2FA (when a
@@ -51,11 +62,7 @@ export async function authenticateWithGitHub(
       "Already on GitHub page (Keycloak valid, GitHub session expired)",
     );
   } else {
-    // Click the GitHub login button
-    const githubButton = page.getByRole("button", {
-      name: "Log in with GitHub",
-    });
-    await githubButton.click();
+    await githubLoginOption(page).click();
 
     // Wait for redirect - could be GitHub.com, home page, or accept-tos
     // If user is already logged into Keycloak, they may be redirected back to the app
@@ -146,23 +153,24 @@ export async function loginWithKeycloakPassword(
   //
   // The ``**`` glob matches the auth host regardless of environment
   // (staging vs. self-hosted vs. an explicit AUTH_BASE_URL).
+  let keycloakAuthRequests = 0;
+  let idpHintStripped = false;
   await page.route(
     "**/realms/*/protocol/openid-connect/auth**",
     async (route) => {
+      keycloakAuthRequests += 1;
       const url = new URL(route.request().url());
       if (!url.searchParams.has("kc_idp_hint")) {
         await route.fallback();
         return;
       }
       url.searchParams.delete("kc_idp_hint");
+      idpHintStripped = true;
       await route.fallback({ url: url.toString() });
     },
   );
 
-  const githubButton = page.getByRole("button", {
-    name: "Log in with GitHub",
-  });
-  await githubButton.click();
+  await githubLoginOption(page).click();
 
   // With the hint stripped Keycloak renders its own Sign-In form. The input
   // ids are stable across Keycloak versions (they come from the built-in
@@ -171,7 +179,19 @@ export async function loginWithKeycloakPassword(
   const passwordField = page.locator("#password");
   const signInButton = page.locator("#kc-login");
 
-  await usernameField.waitFor({ state: "visible", timeout: 30_000 });
+  try {
+    await usernameField.waitFor({ state: "visible", timeout: 30_000 });
+  } catch (error) {
+    // Keycloak sends the browser to GitHub when the hint is not stripped
+    // (Playwright does not route redirect hops) or when the realm redirects
+    // to an identity provider by default. Name which case this is.
+    throw new Error(
+      `Keycloak's login form did not appear; the browser is on ` +
+        `${new URL(page.url()).host}. Keycloak auth requests routed: ` +
+        `${keycloakAuthRequests}; kc_idp_hint stripped: ${idpHintStripped}.`,
+      { cause: error },
+    );
+  }
   // This realm is email-as-username (``registrationEmailAsUsername`` in
   // ``allhands-realm-github-provider.json.tmpl``), so the login identifier is
   // the email; a bare username is ``user_not_found``.
@@ -216,27 +236,78 @@ export async function loginWithKeycloakPassword(
  */
 const ONBOARDING_PATHS = ["/accept-tos", "/onboarding"];
 
+/**
+ * True on the first-install wizard, where the server sends an instance's first
+ * Super Admin after sign-in. Only the path is matched: GitHub's
+ * `/apps/<slug>/installations` pages must not count.
+ */
+function isInstallWizardUrl(urlString: string): boolean {
+  const { pathname } = new URL(urlString);
+  return pathname === "/install" || pathname.startsWith("/install/");
+}
+
 /** True if the URL is one of the onboarding-intermediate pages. */
 function isOnboardingUrl(urlString: string): boolean {
-  return ONBOARDING_PATHS.some((p) => urlString.includes(p));
+  return (
+    ONBOARDING_PATHS.some((p) => urlString.includes(p)) ||
+    isInstallWizardUrl(urlString)
+  );
 }
 
 /**
  * URL predicate for a "settled" post-redirect destination: either an
  * onboarding-intermediate page (accept-tos, onboarding form) or the final
  * app URL with no intermediate auth/redirect hosts left in the chain.
+ *
+ * Only the host and path are checked: the app lands on e.g.
+ * `/canvas?login_method=github`, whose query must not read as a login page.
  */
-function isSettledAppUrl(urlString: string, allowOnboarding: boolean): boolean {
+export function isSettledAppUrl(
+  urlString: string,
+  allowOnboarding: boolean,
+): boolean {
   if (allowOnboarding && isOnboardingUrl(urlString)) {
     return true;
   }
+  const url = new URL(urlString);
+  const hostAndPath = `${url.host}${url.pathname}`;
   return (
-    !urlString.includes("github.com") &&
-    !urlString.includes("login") &&
-    !urlString.includes("keycloak") &&
-    !urlString.includes("sessions/verified-device") &&
+    !hostAndPath.includes("github.com") &&
+    !hostAndPath.includes("login") &&
+    !hostAndPath.includes("keycloak") &&
+    !hostAndPath.includes("/realms/") &&
+    !hostAndPath.includes("sessions/verified-device") &&
     !isOnboardingUrl(urlString)
   );
+}
+
+/**
+ * Origin, path and query parameter names of a URL. Query values are dropped
+ * because redirect URLs can carry OAuth codes and state.
+ */
+function describeUrlWithoutValues(urlString: string): string {
+  const url = new URL(urlString);
+  const keys = [...url.searchParams.keys()];
+  const query = keys.length ? ` (query keys: ${keys.join(", ")})` : "";
+  return `${url.origin}${url.pathname}${query}`;
+}
+
+async function waitForSettledAppUrl(
+  page: Page,
+  allowOnboarding: boolean,
+): Promise<void> {
+  try {
+    await page.waitForURL(
+      (url) => isSettledAppUrl(url.toString(), allowOnboarding),
+      { timeout: 60_000 },
+    );
+  } catch (error) {
+    throw new Error(
+      `Login redirect did not settle on the app; last URL was ` +
+        `${describeUrlWithoutValues(page.url())}`,
+      { cause: error },
+    );
+  }
 }
 
 /**
@@ -264,21 +335,20 @@ export async function completeLoginAndOnboard(
   // run before the final-URL wait — otherwise waitForURL would resolve on
   // /accept-tos or /onboarding (neither contains the excluded substrings) and
   // skip the onboarding steps.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), true), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, true);
 
   // Phase 2: run onboarding steps. TOS and the onboarding form may appear in
-  // sequence — loop until we're past both.
+  // sequence — loop until we're past both. A step can start another redirect
+  // chain (TOS → Keycloak offline token → /install), so settle again after
+  // each one before checking where we are.
   while (isOnboardingUrl(page.url())) {
     await runOnboardingSteps(page, userIdentifier);
+    await waitForSettledAppUrl(page, true);
   }
 
   // Phase 3: wait for the final app URL (no intermediate auth hosts, no
   // onboarding pages) and assert the home screen is visible.
-  await page.waitForURL((url) => isSettledAppUrl(url.toString(), false), {
-    timeout: 60_000,
-  });
+  await waitForSettledAppUrl(page, false);
 
   await expect(page.getByTestId("home-screen")).toBeVisible({
     timeout: 30_000,
@@ -289,13 +359,22 @@ export async function completeLoginAndOnboard(
  * Run the onboarding step the user is currently on.
  *
  * Dispatches to the TOS handler or the onboarding-form handler based on the
- * current URL. Each handler completes its step and waits for the page to
- * navigate to the next destination (another onboarding step or the app).
+ * current URL, or leaves the first-install wizard. Each handler completes its
+ * step and waits for the page to navigate to the next destination (another
+ * onboarding step or the app).
  */
 async function runOnboardingSteps(
   page: Page,
   userIdentifier?: string,
 ): Promise<void> {
+  if (isInstallWizardUrl(page.url())) {
+    // The wizard stays pending on the server, so 012-first-install.spec.ts
+    // can walk it. The app home does not send the user back to /install.
+    console.log("Onboarding: leaving the first-install wizard for its spec...");
+    await page.goto("/");
+    return;
+  }
+
   if (page.url().includes("/accept-tos")) {
     console.log("Onboarding: accepting Terms of Service...");
     await handleTOSAcceptance(page);

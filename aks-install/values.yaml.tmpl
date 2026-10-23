@@ -1,0 +1,116 @@
+# Evaluation only: embedded PostgreSQL and a supported S3-compatible filestore.
+# No credentials belong in this file.
+global:
+  scheduling:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: workload
+                  operator: In
+                  values: [openhands-platform]
+  agentServerEnv:
+    OH_WEBHOOKS_0_BASE_URL: https://app.${BASE_DOMAIN}/api/v1/webhooks
+    OH_ALLOW_CORS_ORIGINS_0: https://app.${BASE_DOMAIN}
+ingress:
+  enabled: true
+  host: app.${BASE_DOMAIN}
+  class: traefik
+  tls:
+    enabled: false
+tlsStore:
+  enabled: true
+  name: default
+  secretName: openhands-wildcard-tls
+github:
+  enabled: true
+postgresql:
+  auth:
+    database: openhands
+  primary:
+    nodeSelector:
+      workload: openhands-platform
+    persistence:
+      enabled: true
+      storageClass: managed-csi
+      size: 20Gi
+databaseMigrations:
+  createDatabases: true
+keycloak:
+  enabled: true
+  nodeSelector:
+    workload: openhands-platform
+  ingress:
+    enabled: true
+    hostname: auth.${BASE_DOMAIN}
+    tls: false
+sandbox:
+  apiHostname: https://runtime-api.${BASE_DOMAIN}
+env:
+  RUNTIME_URL_PATTERN: "https://{runtime_id}-runtime.${BASE_DOMAIN}"
+  LITELLM_DEFAULT_MODEL: litellm_proxy/claude-sonnet-4-5
+runtime-api:
+  sandbox_namespace: openhands-runtimes
+  ingress:
+    enabled: true
+    host: runtime-api.${BASE_DOMAIN}
+    tls: false
+  databaseMigrations:
+    createDatabases: true
+  env:
+    RUNTIME_BASE_URL: runtime.${BASE_DOMAIN}
+    RUNTIME_URL_SEPARATOR: "-"
+    RUNTIME_DISABLE_SSL: "false"
+    STORAGE_CLASS: managed-csi
+    RUNTIME_CLASS: ""
+    SET_HOST_USERS: "false"
+    RUNTIME_NODE_SELECTOR: '{"workload":"openhands-sandbox"}'
+    RUNTIME_TOLERATIONS: '[]'
+filestore:
+  type: s3
+  bucket: openhands-sessions
+  endpoint: http://openhands-rustfs-svc:9000
+  region: us-east-1
+  existingSecret: filestore-credentials
+minio:
+  enabled: false
+rustfs:
+  enabled: true
+  secret:
+    existingSecret: filestore-credentials
+  nodeSelector:
+    workload: openhands-platform
+  storageclass:
+    name: managed-csi
+    dataStorageSize: 20Gi
+    logStorageSize: 1Gi
+litellm-helm:
+  enabled: true
+  nodeSelector:
+    workload: openhands-platform
+  proxy_config:
+    model_list:
+      - model_name: claude-sonnet-4-5
+        litellm_params:
+          model: anthropic/claude-sonnet-4-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+redis:
+  master:
+    nodeSelector:
+      workload: openhands-platform
+replicated:
+  nodeSelector:
+    workload: openhands-platform
+agent-canvas:
+  enabled: true
+  ingress:
+    enabled: true
+    host: app.${BASE_DOMAIN}
+    className: traefik
+    path: /canvas
+    tls:
+      enabled: false
+  staticServer:
+    authRequired: false
+    lockToCloud: https://app.${BASE_DOMAIN}

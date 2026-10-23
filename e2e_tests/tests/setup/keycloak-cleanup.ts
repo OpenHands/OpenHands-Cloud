@@ -11,7 +11,7 @@ import { deleteNewUsersByEmail } from "../../utils/keycloak-admin";
  *
  * Runs before the New User setup project. Logs in to Keycloak as the admin and
  * deletes any user whose email matches the New User's email (a reserved
- * e2e-only ``.test`` address, enforced by ``assertE2eOnlyEmail``), so the
+ * e2e-only address, enforced by ``assertE2eOnlyEmail``), so the
  * synthetic New User can be recreated fresh with a known password.
  *
  * This is a Node-only step (no browser interaction), but it is implemented as

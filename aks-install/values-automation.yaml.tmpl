@@ -1,0 +1,39 @@
+# Enable after the normal conversation checkpoint passes.
+# Chart 0.74.0 / automation 1.15.1; evaluation RustFS package storage.
+automationServiceKey:
+  enabled: true
+automationWebhookSecret:
+  enabled: true
+automationService:
+  url: https://app.${BASE_DOMAIN}/api/automation
+  eventForwardingEnabled: true
+automation:
+  enabled: true
+  image:
+    tag: 1.15.1
+  openhandsApiUrl: https://app.${BASE_DOMAIN}
+  automationBaseUrl: https://app.${BASE_DOMAIN}
+  database:
+    host: openhands-postgresql.openhands.svc.cluster.local
+    port: "5432"
+    user: automation_user
+    name: automations
+    secretName: automation-db-secret
+    secretKey: db-password
+    createDatabaseUser: true
+    superuserName: postgres
+    superuserSecretName: postgres-password
+    superuserSecretKey: password
+  filestore:
+    type: s3
+    bucket: automation-data
+    endpoint: http://openhands-rustfs-svc:9000
+    region: us-east-1
+    createBucket: true
+    existingSecret: filestore-credentials
+  serviceKeyFromSecret:
+    name: automation-service-key
+    key: automation-service-key
+  automationWebhookSecretFromSecret:
+    name: automation-webhook-secret
+    key: webhook-secret

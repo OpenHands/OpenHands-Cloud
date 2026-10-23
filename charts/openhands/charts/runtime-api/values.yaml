@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.10.0
+  tag: 0.11.1
   pullPolicy: Always
 
 nameOverride: ""
@@ -340,6 +340,23 @@ podStatusLogger:
   enabled: true
   schedule: "*/5 * * * *" # Run every 5 minutes
 
+# CPU "danger zone" watcher configuration (crypto-mining abuse detection, OHE-3493).
+# Fires on `schedule`, but each run keeps sampling CPU usage every
+# `pollIntervalSeconds` for `runDurationSeconds` before exiting, rather than
+# taking a single sample - a single sample per cron tick can't distinguish a
+# brief spike from sustained high usage. concurrencyPolicy: Forbid (set in the
+# CronJob template) ensures only one sampler runs at a time.
+# runDurationSeconds should stay comfortably below the schedule's period (here
+# 15 minutes = 900s) so one run finishes before the next is due.
+cpuWatcher:
+  enabled: true
+  schedule: "*/15 * * * *" # Fires every 15 minutes
+  pollIntervalSeconds: 20
+  runDurationSeconds: 840 # ~14 minutes, leaving buffer before the next scheduled run
+  dangerThresholdPercent: 90 # % of a runtime's own CPU limit considered "danger zone"
+  gracePeriodSeconds: 60 # tolerate a brief dip below threshold without resetting the streak
+  activeDeadlineSeconds: 960 # hard kill safety net above runDurationSeconds
+
 monitoring:
   enabled: false
 
@@ -356,7 +373,7 @@ global:
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.50.1-python-slim
+    tag: 1.57.0-python-slim
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

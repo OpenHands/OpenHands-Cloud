@@ -60,21 +60,19 @@ spec:
         limits:
           maxAge: 336h
     # Budget upgrade hook Jobs. The last run of each is kept until the next
-    # upgrade and its log carries the JSON before/after artifact.
+    # upgrade and its log carries the JSON before/after artifact. No maxAge:
+    # it becomes sinceTime, which drops the whole log once that upgrade is
+    # more than 14 days old.
     - logs:
         name: app/budget-preflight/logs
         namespace: {{ .Release.Namespace }}
         selector:
           - app={{ .Release.Name }}-budget-preflight
-        limits:
-          maxAge: 336h
     - logs:
         name: app/budget-reconcile-gate/logs
         namespace: {{ .Release.Namespace }}
         selector:
           - app={{ .Release.Name }}-budget-reconcile-gate
-        limits:
-          maxAge: 336h
     {{- if .Values.postgresql.enabled }}
     # PostgreSQL logs (Bitnami chart)
     - logs:
@@ -617,10 +615,28 @@ spec:
                  "FROM (SELECT created_by_user_id, date_trunc('hour', created_at) AS h, COUNT(*) AS n "
                  "FROM v1_remote_sandbox WHERE created_at > now() - interval '14 days' GROUP BY 1, 2) x "
                  "GROUP BY 1 ORDER BY 3 DESC LIMIT 50"),
+                # Budget maintenance runs; info holds per-org error counts and messages.
+                ("budget maintenance tasks, latest 50",
+                 "SELECT id, status, started_at, created_at, updated_at, info FROM maintenance_tasks "
+                 "WHERE processor_type LIKE '%OrgBudgetMaintenanceProcessor' ORDER BY id DESC LIMIT 50"),
             ]
             for label, sql in queries:
                 run(label, sql)
         timeout: 30s
+    # Live budget state: the same read-only report as the budget-preflight
+    # upgrade hook, comparing each org's policy with LiteLLM's applied caps.
+    # The pre phase never reconciles, and acknowledge mode always exits 0.
+    - exec:
+        name: app/openhands-budget-preflight
+        collectorName: openhands-budget-preflight
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["sh", "-c"]
+        args:
+          - cd /app && BUDGET_PREFLIGHT_PHASE=pre BUDGET_PREFLIGHT_MODE=acknowledge exec python -m run_budget_preflight
+        timeout: 120s
     # Non-secret config/feature snapshot from the running pod: values for flags,
     # presence-only ("set"/"empty_or_unset") for secret-backed vars (never values).
     - exec:

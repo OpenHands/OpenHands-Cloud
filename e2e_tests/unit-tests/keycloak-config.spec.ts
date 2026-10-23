@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { keycloakAdminConfig } from "../utils/config";
+import { assertE2eOnlyEmail, keycloakAdminConfig } from "../utils/config";
 
 const configEnvKeys = [
   "AUTH_BASE_URL",
@@ -87,4 +87,22 @@ test("rejects a non-HTTP AUTH_BASE_URL", () => {
       "AUTH_BASE_URL must be a valid HTTP(S) URL.",
     );
   });
+});
+
+test("E2E_EMAIL_PATTERN accepts only e2e-only domains", () => {
+  for (const email of [
+    "e2e-new-user@e2e.example.com",
+    "e2e-new-user@staging.e2e.example.com",
+    "e2e-new-user@e2e.test",
+  ]) {
+    expect(() => assertE2eOnlyEmail(email)).not.toThrow();
+  }
+  for (const email of [
+    "new-user@example.com",
+    "e2e-new-user@e2e.example.com.attacker.dev",
+    "e2e-new-user@notreallye2e.example.com",
+    "someone@openhands.dev",
+  ]) {
+    expect(() => assertE2eOnlyEmail(email)).toThrow(/Refusing to use/);
+  }
 });

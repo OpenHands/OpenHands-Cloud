@@ -1,15 +1,18 @@
 # MinIO image distribution
 
-The Replicated configuration uses OpenHands-hosted copies of the existing MinIO
-server and client releases. This changes image distribution, not the server
-version, storage format, bucket policy, credentials, or PVC. The client image is
-also required by the chart's post-install/post-upgrade bucket and service-account
-job. Both images must be available before packaging a release.
+The Helm chart defaults and the Replicated configuration use OpenHands-hosted
+copies of the existing MinIO server and client releases. This changes image
+distribution, not the server version, storage format, bucket policy, credentials,
+or PVC. The client image is also required by the chart's
+post-install/post-upgrade bucket and service-account job. Both images must be
+available before packaging a release.
 
 These recovered artifacts contain **linux/amd64 only**, matching Embedded Cluster
 v2's [x86-64 requirement](https://docs.replicated.com/vendor/environment-setup).
-They are not multi-platform replacements. Direct Helm chart defaults are unchanged.
-Do not roll this configuration out to ARM-based KOTS installations.
+They are not multi-platform replacements. The bundled MinIO cannot run on ARM
+nodes, whether installed through KOTS or directly with Helm.
+
+Both GHCR packages are public, so direct Helm installs need no pull secret.
 
 | Component | Original release | Original linux/amd64 manifest |
 | --- | --- | --- |
@@ -43,9 +46,9 @@ skopeo copy --preserve-digests \
 ```
 
 Verify the destination manifest digest and every referenced blob against the
-source. Grant the existing Replicated GHCR integration pull access to both
-packages, then verify downloads through the licensed Replicated proxy. Receiving
-a registry token alone does not prove permission to push or pull the images.
+source. Keep both packages public, then verify anonymous pulls and downloads
+through the licensed Replicated proxy. Receiving a registry token alone does not
+prove permission to push or pull the images.
 
 ## Release acceptance
 
