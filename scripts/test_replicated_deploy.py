@@ -70,6 +70,10 @@ def make_handler(state):
                 total = len(state["deploy_paths"])
                 if state["deploy_502_then"] and total <= state["deploy_502_then"]:
                     return self.reply(502, None)
+                if total <= state["deploy_drop_then"]:
+                    # no reply at all: curl reports HTTP 000, as on a timeout
+                    self.close_connection = True
+                    return
                 if state["deploy_status"] != 200:
                     return self.reply(state["deploy_status"], state["deploy_body"])
                 state["deployed"] = CURSOR
@@ -123,7 +127,7 @@ def make_handler(state):
 def kots():
     state = {"deployed": "489", "pending": False, "past": [], "polls": 0,
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
-             "deploy_body": None, "deploy_502_then": 0, "deploy_paths": [],
+             "deploy_body": None, "deploy_502_then": 0, "deploy_drop_then": 0, "deploy_paths": [],
              "config_status": 200, "config_body": None, "config_502_then": 0,
              "config_paths": [], "config_bodies": [], "config_groups": None,
              "boot_status": 200, "boot_body": None,
@@ -257,6 +261,15 @@ def test_a_transient_502_on_the_deploy_post_is_retried(kots):
         "/api/v1/upgrade-service/app/openhands/deploy",
         "/api/v1/upgrade-service/app/openhands/deploy",
     ]
+
+
+def test_a_deploy_post_with_no_reply_is_retried(kots):
+    """kotsadm can also hold the connection open mid-restart until curl gives up."""
+    kots["deploy_drop_then"] = 1
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "HTTP 000" in r.stderr
+    assert len(kots["deploy_paths"]) == 2
 
 
 def test_a_transient_502_on_the_config_put_is_retried(kots):
