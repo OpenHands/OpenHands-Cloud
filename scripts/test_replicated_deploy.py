@@ -270,7 +270,7 @@ def test_a_transient_502_on_the_deploy_post_is_retried(kots):
 
 
 def test_a_deploy_post_with_no_reply_is_retried(kots):
-    """kotsadm can also hold the connection open mid-restart until curl gives up."""
+    """A connection dropped with no reply is HTTP 000 too, and gets the same retry."""
     kots["deploy_drop_then"] = 1
     r = kots["run"]()
     assert r.returncode == 0, r.stderr
@@ -279,7 +279,7 @@ def test_a_deploy_post_with_no_reply_is_retried(kots):
 
 
 def test_a_deploy_post_that_times_out_is_retried(kots):
-    """The production failure: curl gives up with (28) rather than an empty reply."""
+    """The production failure: kotsadm holds the deploy POST until curl times out (28)."""
     kots["deploy_hang_then"] = 1
     kots["extra_env"] = {"GATEWAY_TIMEOUT_SECONDS": "1"}
     r = kots["run"]()
