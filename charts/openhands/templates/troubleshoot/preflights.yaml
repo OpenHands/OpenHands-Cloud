@@ -9,7 +9,10 @@ metadata:
 spec:
   collectors:
     {{- include "troubleshoot.collectors.shared" . | nindent 4 }}
-    {{- if $tls.cert }}
+    {{- if $tls.existingSecret }}
+    {{- include "troubleshoot.collectors.tlsExistingSecret" . | nindent 4 }}
+    {{- end }}
+    {{- if or $tls.cert $tls.existingSecret }}
     {{- include "troubleshoot.collectors.tlsHostname" . | nindent 4 }}
     {{- end }}
   analyzers:
@@ -20,7 +23,10 @@ spec:
     {{- if $sandboxNodes.selected }}
     {{- include "troubleshoot.analyzers.sandboxNodes" . | nindent 4 }}
     {{- end }}
-    {{- if $tls.cert }}
+    {{- if $tls.existingSecret }}
+    {{- include "troubleshoot.analyzers.tlsExistingSecret" . | nindent 4 }}
+    {{- end }}
+    {{- if or $tls.cert $tls.existingSecret }}
     {{- include "troubleshoot.analyzers.tlsHostname" . | nindent 4 }}
     {{- end }}
 {{- end -}}

@@ -31,7 +31,7 @@ spec:
   tls:
   - hosts:
     - {{ $host }}
-    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+    secretName: {{ include "openhands.tlsSecretName" $ }}
   {{- end }}
   rules:
   - host: {{ $host }}
@@ -63,7 +63,7 @@ spec:
   tls:
   - hosts:
     - {{ $host }}
-    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+    secretName: {{ include "openhands.tlsSecretName" $ }}
   {{- end }}
   rules:
   - host: {{ $host }}
