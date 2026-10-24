@@ -275,6 +275,45 @@ spec:
       title: Certificate Configuration
       description: Configure TLS certificates for secure HTTPS connections
       items:
+        - name: tls_certificate_source
+          title: Certificate Source
+          help_text: |
+            • **Upload** — OpenHands stores the uploaded certificate and rewrites it on every deploy.
+            • **Existing secret** — OpenHands reads a `kubernetes.io/tls` secret you manage and never writes it, so a certificate renewed outside the Admin Console (by hand, cert-manager or another tool) stays in place across deploys.
+          type: select_one
+          # Upload is what every install before this option did, so it is the default for all of them.
+          default: "upload"
+          items:
+            - name: "upload"
+              title: "Upload"
+            - name: "secret"
+              title: "Existing secret"
+        - name: tls_existing_certificate_name
+          title: TLS Secret Name
+          # One source line per bullet, as on tls_certificate below.
+          help_text: |
+            Name of a `kubernetes.io/tls` secret in the `openhands` namespace, with `tls.crt` (the full chain) and `tls.key`. Create it before deploying. Do not use `openhands-tls` or any secret OpenHands created; switching sources deletes those.
+            {{repl if ConfigOptionEquals "hostname_mode" "wildcard" }}Use a single wildcard SAN:
+            • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl else }}It must cover:
+            • `{{repl ConfigOption "computed_app_hostname" }}`
+            • `{{repl ConfigOption "computed_auth_hostname" }}`
+            • `{{repl ConfigOption "computed_llm_proxy_hostname" }}`
+            • `{{repl ConfigOption "computed_runtime_api_hostname" }}`
+            • `{{repl ConfigOption "computed_analytics_hostname" }}`
+            • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl end }}
+          type: text
+          required: true
+          when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "secret" }}'
+          validation:
+            regex:
+              pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+              message: 'Must be a Kubernetes secret name: lowercase letters, digits, "-" and ".".'
+        # Every consumer of the serving certificate reads this name.
+        - name: computed_tls_certificate_name
+          title: Computed TLS Secret Name
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "tls_certificate_source" "secret" }}{{repl ConfigOption "tls_existing_certificate_name" }}{{repl else }}openhands-tls{{repl end }}'
         - name: tls_certificate
           title: TLS Certificate
           # help_text supports Go templates and the Admin Console re-renders it
@@ -294,6 +333,7 @@ spec:
             • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl end }}
           type: file
           required: true
+          when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "upload" }}'
           # Validation runs against the base64-decoded file contents, so we can
           # check for the PEM header directly. This catches the common mistake of
           # uploading the private key (or a key/cert swap) into the certificate field.
@@ -306,6 +346,7 @@ spec:
           help_text: Upload your TLS private key file (.key or .pem)
           type: file
           required: true
+          when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "upload" }}'
           # Matches PRIVATE KEY, RSA/EC/DSA/ENCRYPTED/OPENSSH PRIVATE KEY, but NOT
           # "BEGIN CERTIFICATE" -- so a cert accidentally uploaded here is rejected.
           validation:
