@@ -27,7 +27,7 @@ tests:
           pattern: "was not deployed by this release"
   - it: warns when both cache backends are enabled
     set:
-      valkey.enabled: true
+      redis.enabled: true
     asserts:
       - matchRegexRaw:
           pattern: "both cache backends are enabled"
@@ -38,7 +38,7 @@ tests:
   - it: warns about both backends even when the app is not deployed
     set:
       enabled: false
-      valkey.enabled: true
+      redis.enabled: true
     asserts:
       - matchRegexRaw:
           pattern: "both cache backends are enabled"
