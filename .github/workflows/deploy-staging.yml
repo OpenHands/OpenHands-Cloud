@@ -1,0 +1,200 @@
+name: Deploy to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'OpenHands image tag to deploy'
+        required: true
+        default: 'main'
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - both
+          - pathroute
+          - subdomain
+        default: 'both'
+      skip_secrets:
+        description: 'Skip applying secrets (use existing)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run (template only, no deploy)'
+        type: boolean
+        default: false
+
+env:
+  # Platform Team Sandbox infrastructure (shared with PR #580)
+  GCP_PROJECT: platform-team-sandbox
+  GCP_REGION: us-central1
+  GCP_CLUSTER: ohe-staging-cluster
+  BASE_DOMAIN: ohe-staging.platform-team.all-hands.dev
+
+jobs:
+  deploy:
+    name: Deploy to staging-${{ matrix.env.name }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - name: pathroute
+            namespace: openhands-pathroute
+            helm_release: openhands-pathroute
+            branch_name: pathroute
+            values_dir: envs/staging-pathroute
+          - name: subdomain
+            namespace: openhands-subdomain
+            helm_release: openhands-subdomain
+            branch_name: subdomain
+            values_dir: envs/staging-subdomain
+    # Only run for selected environment(s)
+    if: ${{ inputs.environment == 'both' || inputs.environment == matrix.env.name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install SOPS
+        run: |
+          curl -L "https://github.com/mozilla/sops/releases/download/v3.9.1/sops-v3.9.1.linux.amd64" -o sops
+          chmod +x sops
+          sudo mv sops /usr/local/bin/sops
+          sops --version
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install gke-gcloud-auth-plugin
+        run: gcloud components install gke-gcloud-auth-plugin
+
+      - name: Configure kubectl
+        run: |
+          gcloud container clusters get-credentials ${{ env.GCP_CLUSTER }} \
+            --region ${{ env.GCP_REGION }} \
+            --project ${{ env.GCP_PROJECT }}
+
+      - name: Create namespace if not exists
+        if: ${{ !inputs.dry_run }}
+        run: |
+          kubectl create namespace ${{ matrix.env.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Copy secrets from all-hands-system namespace
+        if: ${{ !inputs.skip_secrets && !inputs.dry_run }}
+        run: |
+          # Secrets are managed in the all-hands-system namespace (from PR #580 infrastructure)
+          # Copy required secrets to the deployment namespace
+          echo "Copying secrets from all-hands-system namespace..."
+          SECRETS=(
+            "ghcr-login-secret"
+            "postgres-password"
+            "redis"
+            "keycloak-admin"
+            "keycloak-db-secret"
+            "lite-llm-api-key"
+            "stripe-api-key"
+            "resend-api-key"
+            "github-app"
+            "bitbucket-app"
+            "gitlab-auth"
+            "automation-webhook-secret"
+            "automation-service-key"
+            "automation-db-secret"
+          )
+          
+          for secret in "${SECRETS[@]}"; do
+            if kubectl get secret "$secret" -n all-hands-system &>/dev/null; then
+              kubectl get secret "$secret" -n all-hands-system -o yaml | \
+                sed "s/namespace: all-hands-system/namespace: ${{ matrix.env.namespace }}/" | \
+                kubectl apply -n ${{ matrix.env.namespace }} -f -
+              echo "✓ Copied secret: $secret"
+            else
+              echo "⚠ Secret not found: $secret (may be optional)"
+            fi
+          done
+
+      - name: Update Helm dependencies
+        run: helm dependency update charts/openhands
+
+      - name: Helm template (dry run)
+        if: ${{ inputs.dry_run }}
+        run: |
+          helm template ${{ matrix.env.helm_release }} charts/openhands \
+            --namespace ${{ matrix.env.namespace }} \
+            --values testenv-charts/helm/environments/staging/base-values.yaml \
+            --values ${{ matrix.env.values_dir }}/values.yaml \
+            --set image.tag=${{ inputs.image_tag }} \
+            --set branchSanitized=${{ matrix.env.branch_name }} \
+            --debug
+
+      - name: Deploy with Helm
+        if: ${{ !inputs.dry_run }}
+        run: |
+          # Check current release status and rollback if needed
+          if helm status ${{ matrix.env.helm_release }} -n ${{ matrix.env.namespace }} &>/dev/null; then
+            status=$(helm status ${{ matrix.env.helm_release }} -n ${{ matrix.env.namespace }} -o json | jq -r '.info.status')
+            if [[ "$status" != "deployed" ]]; then
+              echo "Found release in non-deployed state ($status). Attempting rollback..."
+              helm rollback ${{ matrix.env.helm_release }} -n ${{ matrix.env.namespace }} || true
+            fi
+          fi
+
+          helm upgrade --install \
+            --wait \
+            --timeout 10m \
+            ${{ matrix.env.helm_release }} \
+            charts/openhands \
+            --namespace ${{ matrix.env.namespace }} \
+            --values testenv-charts/helm/environments/staging/base-values.yaml \
+            --values ${{ matrix.env.values_dir }}/values.yaml \
+            --set image.tag=${{ inputs.image_tag }} \
+            --set branchSanitized=${{ matrix.env.branch_name }} \
+            --debug
+
+      - name: Get deployment info
+        if: ${{ !inputs.dry_run }}
+        id: deployment_info
+        run: |
+          echo "## Deployment Summary (${{ matrix.env.name }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** staging-${{ matrix.env.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Namespace:** ${{ matrix.env.namespace }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag:** ${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          hostname=$(kubectl get ing -n ${{ matrix.env.namespace }} -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "N/A")
+          echo "- **Hostname:** https://$hostname" >> $GITHUB_STEP_SUMMARY
+          echo "hostname=$hostname" >> $GITHUB_OUTPUT
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pods Status" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n ${{ matrix.env.namespace }} -l app.kubernetes.io/instance=${{ matrix.env.helm_release }} >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify deployment health
+        if: ${{ !inputs.dry_run }}
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          kubectl rollout status deployment -n ${{ matrix.env.namespace }} -l app.kubernetes.io/instance=${{ matrix.env.helm_release }} --timeout=5m || true
+          echo ""
+          echo "Current pod status:"
+          kubectl get pods -n ${{ matrix.env.namespace }} -l app.kubernetes.io/instance=${{ matrix.env.helm_release }}
+
+    outputs:
+      hostname: ${{ steps.deployment_info.outputs.hostname }}
