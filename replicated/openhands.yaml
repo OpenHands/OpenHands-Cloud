@@ -65,6 +65,9 @@ spec:
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: true
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: true
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: true
+      # Fleet test only: seed the integrated password IdP (migration 179) so
+      # password login and sign-up links are available.
+      ENABLE_INTEGRATED_IDP: true
       # Keep account email immutable until OHE can reliably deliver Keycloak verification.
       EMAIL_CHANGE_ENABLED: false
       OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: false
