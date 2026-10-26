@@ -59,6 +59,12 @@ spec:
       ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_BILLING: false
       OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE: true
+      # Fleet test only: expose the Agent Context / Agent Profiles pages and
+      # org Agent Profile management (enterprise integration branch
+      # hieple/deploy-agent-profiles-2026-10-26). No KOTS item exists for them.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: true
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: true
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: true
       # Keep account email immutable until OHE can reliably deliver Keycloak verification.
       EMAIL_CHANGE_ENABLED: false
       OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: false
