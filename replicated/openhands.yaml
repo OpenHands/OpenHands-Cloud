@@ -132,7 +132,10 @@ spec:
       # Seed the integrated password IdP (migration 179) so "Login with
       # Password" is offered on the login page.
       ENABLE_INTEGRATED_IDP: true
-      # Enable the onboarding flow (server/config.py reads OH_ENABLE_ONBOARDING).
+      # Enable the onboarding flow. The web client reads
+      # feature_flags.enable_onboarding, which the app server builds from the
+      # OH_WEB_CLIENT_FEATURE_FLAGS_* envs; server/config.py reads the bare name.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ONBOARDING: true
       OH_ENABLE_ONBOARDING: true
 
     integrations:
