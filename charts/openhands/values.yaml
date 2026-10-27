@@ -633,7 +633,7 @@ laminar:
     frontend:
       tag: "0.1.825@sha256:6724e5f7a633b3932671f8a255a42139f4c0731d1f860196beeffe3e5a4ab534"
     appServer:
-      tag: "0.1.825@sha256:b9944f9a544d0bc8ddb4183df79a10340f99a01d905870fee459de0e201f0631"
+      tag: "0.1.853@sha256:2788f522f64ecde32f5bc6ce1b3992744b34e3f6662d74c1303adb9cfecc95bd"
     postgres:
       repository: ghcr.io/openhands/third-party-images/postgres
       tag: "15.19-oh1@sha256:5bcf9f7969fd50bd10dc754b83586f7d3e3e4f156d8057a4ce2b4aec329d86a5"
