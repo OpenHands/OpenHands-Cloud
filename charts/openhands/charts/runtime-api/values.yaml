@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: "0.10.0-r1@sha256:0fc88a8b366b507b90e688e8d19c22fe5bfc15b8580b5f6b6cd5403f5117042c"
+  tag: "0.10.0-r2@sha256:4ccdfb711b6addeb1c0c9eb651024f55e5a1d26e7eea54d45fb839fc8a05d5e5"
   pullPolicy: Always
 
 nameOverride: ""
