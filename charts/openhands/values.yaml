@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: "1.64.0-r1@sha256:6c137216f1c6afe1d560300e92990a52050064a1358472c314285ae8e0bf8307"
+  tag: "1.64.0-r2@sha256:b2fa3009edaec2d94148fb2692654c2f17c71c12d2a2dd03acfb10e9781ebf94"
 
 autoscaling:
   enabled: false
