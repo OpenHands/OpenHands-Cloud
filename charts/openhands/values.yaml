@@ -623,7 +623,7 @@ laminar:
     clickhouse:
       tag: "26.3-alpine@sha256:1d45e52080e6ed136a6377863046a0e53d69fb0418d799f12e23184ed6460c55"
     nginx:
-      tag: "1.31.7@sha256:bc4cad49969aaf95eb4eecec5572846f86e59f1e8332aba36ed64b91aff8b724"
+      tag: "1.31.8@sha256:6e67f8eaac94fc456588d4ff6c470d984841f5b5dc4279863d5cbe6ec5a60def"
     rabbitmq:
       tag: "4.4.0@sha256:71be6ca71cd3ad92f29b354ec381b1ee587894aaaac21f185b8cf43fb50d3feb"
     curl:
