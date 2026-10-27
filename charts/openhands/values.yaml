@@ -901,9 +901,9 @@ redis:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/redis
-    # Patch bump over chart 20.3.0's default (7.4.1); 7.4.3 fixes CVE-2025-21605.
-    tag: 7.4.3-debian-12-r0-oh1
-    digest: sha256:a4d2e84b8669166117f6a145c24f870e548fadf06b85a1e99c11abbb1dd629a7
+    # Patch bump over chart 20.3.0's default (7.4.1), built in its Bitnami layout.
+    tag: 7.4.12-debian-12-oh1
+    digest: sha256:92a3ed1e60836c352128a21608bb132a717a71b9a7ee774b9cd1374b264da6ba
   architecture: standalone
   auth:
     enabled: true
