@@ -860,9 +860,9 @@ postgresql:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/postgresql
-    # Same app version as chart 15.5.38's default (16.4.0), later OS-package rebuild.
-    tag: 16.4.0-debian-12-r28-oh1
-    digest: sha256:d71da928acd66f0c40d65e086e7314942de59a1b9e4ab6557376b21303c03ff3
+    # PostgreSQL 16.15 in the layout of chart 15.5.38's default image (16.4.0); minor upgrade, same data format.
+    tag: 16.15.0-debian-12-oh1
+    digest: sha256:f515876e897f2d90998e74d8c1c8f6647ad3523759215b55cc754f2b079a691e
   auth:
     username: postgres
     existingSecret: postgres-password
