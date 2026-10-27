@@ -1444,7 +1444,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: "1.49.5-r1-python@sha256:48d2fed84bdfeda95e800aa4768309df781a162e65a76d30d77ae22e493cc78e"
+    tag: "1.49.5-r2-python@sha256:061e5d2ef71cc78e6385d69c7025a46d51d4410f65e21869ddd0d0fa1bb8ab82"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
