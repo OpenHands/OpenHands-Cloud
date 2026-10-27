@@ -175,6 +175,26 @@ def test_plain_r1_enterprise_tag_resolves_to_the_release(tmp_path, fake_remote):
     assert "git/ref/tags/1.56.0" in fake_remote["calls"]
 
 
+def test_hotfix_branch_candidate_pins_resolve_to_the_release_they_rebuild(tmp_path, fake_remote):
+    digest = "@sha256:" + "e" * 64
+    fake_remote["commits/2809208"] = {"sha": "a" * 40}
+    write_charts(tmp_path, f"sha-2809208{digest}", f"hotfix-1.43.1-r2-python{digest}")
+    loader = AGENT_SERVER_PINS[-1]
+    document = yaml.safe_load((tmp_path / loader.path).read_text())
+    document["image"]["tag"] = "1.43.1-python"
+    (tmp_path / loader.path).write_text(yaml.safe_dump(document))
+
+    assert run_check(tmp_path)
+    assert "commits/2809208" in fake_remote["calls"]
+
+
+def test_hotfix_branch_agent_server_pin_still_fails_on_sdk_mismatch(tmp_path, fake_remote):
+    write_charts(tmp_path, "1.56.0", "hotfix-1.42.0-r2-python")
+
+    with pytest.raises(CheckError, match="1.42.0"):
+        run_check(tmp_path)
+
+
 def test_r1_agent_server_pin_still_fails_on_sdk_mismatch(tmp_path, fake_remote):
     write_charts(tmp_path, "1.56.0-r1", "1.42.0-r1-python")
 
