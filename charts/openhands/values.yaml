@@ -1679,7 +1679,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
-    tag: "1.23.0-r2@sha256:4b86481e3d25949455b51099af1a5375c07352b59c7d2b982c0aef4ed2992310"
+    tag: "1.23.0-r2@sha256:86a277a8c7fbec670b6c2c003a286954448cce5a97cdf3853271751debff7227"
 
   ingress:
     enabled: false
