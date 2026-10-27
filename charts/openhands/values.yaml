@@ -618,6 +618,8 @@ laminar:
   # Upstream laminar defaults ClickHouse to 25.10, which is out of support and
   # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
   images:
+    # Also prefixes piiRedactor (disabled), which third-party-images does not mirror.
+    repository: ghcr.io/openhands/third-party-images
     redis:
       repository: ghcr.io/openhands/third-party-images/valkey
       tag: "9.1.2-alpine-oh1@sha256:01c58c6a4259fe68aaed3712289b0510b974ccbdcd853f00283de874711e1d77"
@@ -633,11 +635,11 @@ laminar:
       repository: ghcr.io/openhands/third-party-images/curl
       tag: "8.23.0-oh1@sha256:3d230084cca1496b0e49d84d213a299133c78da6ccbe0b22a219db57f41849dd"
     # frontend-ee's digest. With frontend.subPath.enabled, override with frontend-ee-basepath's
-    # (0.1.825@sha256:b6bcea02ec0e48e562e2dd3cf921c3587be23f9374919540fb9f54c9409328e1).
+    # (0.1.825-oh1@sha256:38abb0d1eed27b22647a62872dd1e3dea796d183ec07e262235b90926bcac5a4).
     frontend:
-      tag: "0.1.825@sha256:6724e5f7a633b3932671f8a255a42139f4c0731d1f860196beeffe3e5a4ab534"
+      tag: "0.1.825-oh1@sha256:3e52a024f548366ed7c9ecc53cb8d339e40507eab4d9f2f61496fa51e41592e1"
     appServer:
-      tag: "0.1.825@sha256:b9944f9a544d0bc8ddb4183df79a10340f99a01d905870fee459de0e201f0631"
+      tag: "0.1.825-oh1@sha256:104ee652d2cc43ba68c7e3fc35d47a8934b0f423bd250ac413c2d39e58884a35"
     postgres:
       repository: ghcr.io/openhands/third-party-images/postgres
       tag: "15.19-oh1@sha256:5bcf9f7969fd50bd10dc754b83586f7d3e3e4f156d8057a4ce2b4aec329d86a5"
