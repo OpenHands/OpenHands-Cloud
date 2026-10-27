@@ -619,7 +619,8 @@ laminar:
   # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
   images:
     redis:
-      tag: "9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+      repository: ghcr.io/openhands/third-party-images/valkey
+      tag: "9.1.2-alpine-oh1@sha256:01c58c6a4259fe68aaed3712289b0510b974ccbdcd853f00283de874711e1d77"
     clickhouse:
       tag: "26.3-alpine@sha256:1d45e52080e6ed136a6377863046a0e53d69fb0418d799f12e23184ed6460c55"
     nginx:
