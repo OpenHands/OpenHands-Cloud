@@ -621,7 +621,7 @@ laminar:
     redis:
       tag: "9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
     clickhouse:
-      tag: "26.3-alpine@sha256:813a5f7edfec0a8bfcfc1810b34f944428565232d5242de72aa1891c50c89ff9"
+      tag: "26.3-alpine@sha256:1d45e52080e6ed136a6377863046a0e53d69fb0418d799f12e23184ed6460c55"
     nginx:
       tag: "1.31.7@sha256:bc4cad49969aaf95eb4eecec5572846f86e59f1e8332aba36ed64b91aff8b724"
     rabbitmq:
