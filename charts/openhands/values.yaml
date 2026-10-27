@@ -624,7 +624,8 @@ laminar:
     clickhouse:
       tag: "26.3-alpine@sha256:1d45e52080e6ed136a6377863046a0e53d69fb0418d799f12e23184ed6460c55"
     nginx:
-      tag: "1.31.8@sha256:6e67f8eaac94fc456588d4ff6c470d984841f5b5dc4279863d5cbe6ec5a60def"
+      repository: ghcr.io/openhands/third-party-images/nginx
+      tag: "1.31.8-oh1@sha256:55e26975943ee62ccdf297d9bfbc074a932b411770c612c01257ddcd29a69e97"
     rabbitmq:
       repository: ghcr.io/openhands/third-party-images/rabbitmq
       tag: "4.4.0-oh2@sha256:e87f1b840ba6fa5e5b2ba1d5f9fbb8619457fa07952a007628947fcb2a51f30c"
