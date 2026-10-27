@@ -424,9 +424,18 @@ export async function completeLoginAndOnboard(
   // onboarding pages) and assert the home screen is visible.
   await waitForSettledAppUrl(page, false);
 
-  await expect(page.getByTestId("home-screen")).toBeVisible({
-    timeout: 30_000,
-  });
+  try {
+    await expect(page.getByTestId("home-screen")).toBeVisible({
+      timeout: 30_000,
+    });
+  } catch (error) {
+    const pageText = (await page.locator("body").innerText()).slice(0, 300);
+    throw new Error(
+      `Home screen did not appear on ${describeUrlWithoutValues(page.url())}; ` +
+        `page text: ${JSON.stringify(pageText)}`,
+      { cause: error },
+    );
+  }
 }
 
 /**
