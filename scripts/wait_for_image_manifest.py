@@ -33,6 +33,13 @@ Monotonic = Callable[[], float]
 
 
 def inspect_with_docker(image_ref: str) -> CommandResult:
+    # Docker's manifest command resolves the tag even when a digest is supplied.
+    image_name, separator, digest = image_ref.partition("@")
+    if separator:
+        tag_separator = image_name.rfind(":")
+        if tag_separator > image_name.rfind("/"):
+            image_name = image_name[:tag_separator]
+        image_ref = f"{image_name}@{digest}"
     completed = subprocess.run(
         ["docker", "manifest", "inspect", image_ref],
         check=False,

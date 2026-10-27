@@ -195,8 +195,28 @@ def test_rejects_invalid_timing_configuration():
         )
 
 
-def test_docker_manifest_inspect_adapter_returns_command_result(monkeypatch):
-    image = "ghcr.io/openhands/runtime-api:0.3.1"
+@pytest.mark.parametrize(
+    ("image", "manifest_ref"),
+    [
+        ("ghcr.io/openhands/runtime-api:0.3.1", "ghcr.io/openhands/runtime-api:0.3.1"),
+        ("localhost:5000/app:latest", "localhost:5000/app:latest"),
+        (
+            "ghcr.io/openhands/runtime-api:0.10.0-r2@sha256:" + "a" * 64,
+            "ghcr.io/openhands/runtime-api@sha256:" + "a" * 64,
+        ),
+        (
+            "registry.example:5000/team/app:latest@sha256:" + "a" * 64,
+            "registry.example:5000/team/app@sha256:" + "a" * 64,
+        ),
+        (
+            "registry.example:5000/team/app@sha256:" + "a" * 64,
+            "registry.example:5000/team/app@sha256:" + "a" * 64,
+        ),
+    ],
+)
+def test_docker_manifest_inspect_adapter_returns_command_result(
+    monkeypatch, image, manifest_ref
+):
     received = {}
 
     class Completed:
@@ -213,7 +233,7 @@ def test_docker_manifest_inspect_adapter_returns_command_result(monkeypatch):
 
     result = wait.inspect_with_docker(image)
 
-    assert received["args"] == ["docker", "manifest", "inspect", image]
+    assert received["args"] == ["docker", "manifest", "inspect", manifest_ref]
     assert received["kwargs"] == {
         "check": False,
         "capture_output": True,
