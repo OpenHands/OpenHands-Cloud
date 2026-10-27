@@ -629,9 +629,9 @@ laminar:
     curl:
       tag: "8.23.0@sha256:11e64e28c5f58c8d93ee95fcf22ac055f48b0bc440e0ce7d8013bbb5ad6aa8ac"
     # frontend-ee's digest. With frontend.subPath.enabled, override with frontend-ee-basepath's
-    # (0.1.853@sha256:fce9bbebcd4c498c43ff5dc26e1c462ac68737c6c8a7d8ca2635fb7e3dd59d6c).
+    # (0.1.825@sha256:b6bcea02ec0e48e562e2dd3cf921c3587be23f9374919540fb9f54c9409328e1).
     frontend:
-      tag: "0.1.853@sha256:2fee6106b30a486743a7714394329a88364afe7afc3caf7d5e194f349f865125"
+      tag: "0.1.825@sha256:6724e5f7a633b3932671f8a255a42139f4c0731d1f860196beeffe3e5a4ab534"
     appServer:
       tag: "0.1.853@sha256:2788f522f64ecde32f5bc6ce1b3992744b34e3f6662d74c1303adb9cfecc95bd"
     postgres:
