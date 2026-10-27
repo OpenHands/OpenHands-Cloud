@@ -630,7 +630,8 @@ laminar:
       repository: ghcr.io/openhands/third-party-images/rabbitmq
       tag: "4.4.0-oh2@sha256:e87f1b840ba6fa5e5b2ba1d5f9fbb8619457fa07952a007628947fcb2a51f30c"
     curl:
-      tag: "8.23.0@sha256:11e64e28c5f58c8d93ee95fcf22ac055f48b0bc440e0ce7d8013bbb5ad6aa8ac"
+      repository: ghcr.io/openhands/third-party-images/curl
+      tag: "8.23.0-oh1@sha256:3d230084cca1496b0e49d84d213a299133c78da6ccbe0b22a219db57f41849dd"
     # frontend-ee's digest. With frontend.subPath.enabled, override with frontend-ee-basepath's
     # (0.1.825@sha256:b6bcea02ec0e48e562e2dd3cf921c3587be23f9374919540fb9f54c9409328e1).
     frontend:
