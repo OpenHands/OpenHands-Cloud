@@ -1,82 +1,44 @@
 # ClickHouse diagnostic log retention
 
-OpenHands Enterprise can deploy Laminar with an embedded ClickHouse instance.
-ClickHouse writes internal diagnostics to `system.*_log` MergeTree tables. These
-tables are useful for recent support investigations, but they are not Laminar
-application data and can grow quickly on busy installations.
+OpenHands Enterprise can deploy Laminar with an embedded ClickHouse instance. ClickHouse writes internal diagnostics to `system.*_log` MergeTree tables. They are not Laminar application data, and with ClickHouse's defaults they grow without bound.
 
-The OpenHands chart applies a bounded retention policy to high-volume ClickHouse
-diagnostic tables when Laminar analytics is enabled.
+## How retention is configured
 
-## Default retention
+Retention is set in ClickHouse's server configuration, which is the only layer that survives a restart. The Laminar chart mounts `system_logs.xml` into `/etc/clickhouse-server/config.d/` (Laminar values `clickhouse.systemLogs.*`). That file:
 
-Replicated/KOTS installs expose **Analytics Configuration → ClickHouse
-Diagnostic Log Retention** with these supported values:
+- disables every high-volume diagnostic table (`trace_log`, `text_log`, `metric_log`, `asynchronous_metric_log`, `part_log`, `processors_profile_log`, `query_thread_log`, `query_views_log`, `session_log`, and others), so ClickHouse never creates or writes them;
+- keeps `system.query_log` and `system.error_log`, with a TTL of `clickhouse.systemLogs.retentionDays` days.
 
-- `1 day`
-- `2 days`
-- `3 days`
+Replicated/KOTS installs set that TTL with **Analytics Configuration → ClickHouse Diagnostic Log Retention** (1, 2 or 3 days; default 3).
 
-The default is `3 days`.
+Do not change retention with `ALTER TABLE system.<table> MODIFY TTL`. On its next start, ClickHouse finds the table no longer matches its config, renames it to `<table>_<N>` with all its data, and creates a fresh table without the TTL. Nothing ever drops the renamed copy.
 
-The setting is rendered into Helm values and enforced by a Helm
-post-install/post-upgrade Job. Because KOTS owns the setting and the Job is part
-of the chart, the retention policy is reapplied after KOTS reconciliation and
-upgrades.
+## Upgrade cleanup
 
-The Job applies TTLs to these ClickHouse system tables when they exist:
+Disabling a table in config stops writes but leaves the existing table and its data on disk. A config change, such as a new retention value, also leaves a renamed `<table>_<N>` copy behind. After every install and upgrade, the OpenHands chart runs a Job, `<release>-laminar-clickhouse-system-log-cleanup`. It drops:
 
-- `system.asynchronous_metric_log`
-- `system.metric_log`
-- `system.query_log`
-- `system.query_thread_log`
-- `system.query_views_log`
-- `system.part_log`
-- `system.session_log`
-- `system.text_log`
-- `system.trace_log`
-- `system.crash_log`
-- `system.opentelemetry_span_log`
-- `system.zookeeper_log`
-- `system.blob_storage_log`
-- `system.processors_profile_log`
+- each `system` table that `system_logs.xml` marks `remove="1"`;
+- every `system.*_log_<N>` copy.
 
-## Cleaning up an already oversized table
+The Job reads the table list from the same ConfigMap ClickHouse mounts, so the two cannot disagree. It drops with `max_table_size_to_drop=0`, because diagnostic tables on long-running installs often exceed ClickHouse's 50 GB drop guard. Running it again is a no-op.
 
-TTL changes do not immediately reclaim all disk from an already oversized
-ClickHouse system log. ClickHouse removes expired rows during background merges.
-If a node is already under disk pressure, an administrator can safely truncate
-diagnostic-only system log tables.
+## Additional ClickHouse configuration
 
-This removes ClickHouse diagnostics, not Laminar application data:
+To add other server settings, mount your own file into `config.d/` with the Laminar values `clickhouse.extraVolumes` and `clickhouse.extraVolumeMounts`. ClickHouse merges `config.d/` files in name order, so a file named after `system_logs.xml` overrides it.
 
-```bash
-kubectl -n openhands exec statefulset/laminar-clickhouse -c clickhouse -- \
-  bash -ec 'clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --query "SYSTEM FLUSH LOGS"'
-
-kubectl -n openhands exec statefulset/laminar-clickhouse -c clickhouse -- \
-  bash -ec 'clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --query "TRUNCATE TABLE system.trace_log"'
+```yaml
+laminar:
+  clickhouse:
+    extraVolumes:
+      - name: clickhouse-extra-config
+        configMap:
+          name: my-clickhouse-config
+    extraVolumeMounts:
+      - name: clickhouse-extra-config
+        mountPath: /etc/clickhouse-server/config.d/zz-extra.xml
+        subPath: extra.xml
 ```
-
-To clear all managed diagnostic logs, run:
-
-```bash
-for table in \
-  asynchronous_metric_log metric_log query_log query_thread_log query_views_log \
-  part_log session_log text_log trace_log crash_log opentelemetry_span_log \
-  zookeeper_log blob_storage_log processors_profile_log
-do
-  kubectl -n openhands exec statefulset/laminar-clickhouse -c clickhouse -- \
-    bash -ec 'clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --query "$1"' -- \
-    "TRUNCATE TABLE IF EXISTS system.${table}"
-done
-```
-
-Use the namespace where OpenHands is installed if it is not `openhands`.
 
 ## Support bundles
 
-Support bundles collect recent Laminar ClickHouse pod logs, diagnostic table
-sizes, TTL metadata, and a small sample of recent `trace_log` and `text_log`
-rows. This preserves enough recent ClickHouse diagnostics for support while the
-database retention policy prevents unbounded local disk growth.
+Support bundles collect the Laminar ClickHouse pod logs, plus the size and TTL of every `system` log table, including any leftover `_<N>` copies. They also include the 50 most recent rows of `system.error_log` and the 50 most recent failed queries from `system.query_log`.

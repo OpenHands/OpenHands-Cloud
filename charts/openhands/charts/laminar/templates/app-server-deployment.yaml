@@ -1,0 +1,166 @@
+{{- if .Values.appServer.enabled }}
+{{- include "lmnr.validateAppServerVersion" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laminar.resourceName" "app-server" }}
+  labels:
+    app: {{ include "laminar.resourceName" "app-server" }}
+spec:
+  replicas: {{ .Values.appServer.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "app-server" }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "app-server" }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      {{- if .Values.appServer.waitForDependencies.enabled }}
+      initContainers:
+        {{- range .Values.appServer.waitForDependencies.services }}
+        - name: wait-for-{{ .name }}
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ .host }} {{ .port }}; do echo "waiting for {{ .name }}..."; sleep 2; done; echo "{{ .name }} is ready"']
+        {{- end }}
+        {{- if include "lmnr.quickwit.enabled" . }}
+        - name: wait-for-quickwit-searcher
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ include "laminar.resourceName" "quickwit-searcher" }} 7280; do echo "waiting for quickwit-searcher..."; sleep 2; done; echo "quickwit-searcher is ready"']
+        - name: wait-for-quickwit-indexer
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ include "laminar.resourceName" "quickwit-indexer" }} 7281; do echo "waiting for quickwit-indexer..."; sleep 2; done; echo "quickwit-indexer is ready"']
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: app-server
+          image: {{ .Values.images.repository }}/{{ .Values.images.appServer.name }}:{{ .Values.images.appServer.tag }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: 8000
+            - containerPort: 8001
+          resources:
+            {{- toYaml .Values.appServer.resources | nindent 12 }}
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: {{ .Values.appServer.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.appServer.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.appServer.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: {{ .Values.appServer.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.appServer.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.appServer.readinessProbe.failureThreshold }}
+          env:
+            - name: OPERATION_MODE
+              value: "producer"
+            - name: PORT
+              value: {{ .Values.appServer.env.port | quote }}
+            - name: GRPC_PORT
+              value: {{ .Values.appServer.env.grpcPort | quote }}
+            - name: AGENT_MANAGER_URL
+              value: {{ .Values.appServer.env.agentManagerUrl }}
+            - name: DATABASE_MAX_CONNECTIONS
+              value: {{ .Values.appServer.env.databaseMaxConnections | quote }}
+            - name: RABBITMQ_MAX_CHANNEL_POOL_SIZE
+              value: {{ .Values.appServer.env.rabbitmqMaxChannelPoolSize | quote }}
+            - name: RABBITMQ_AUTO_RECONNECT
+              value: {{ .Values.appServer.env.rabbitmqAutoReconnect | quote }}
+            - name: DB_WRITE_SPAN_BATCH_SIZE
+              value: {{ .Values.appServer.env.dbWriteSpanBatchSize | quote }}
+            - name: MAX_DB_SPAN_PAYLOAD_BYTES
+              value: {{ .Values.appServer.env.maxDbSpanPayloadBytes | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.appServer.env.redisUrl }}
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            - name: POSTGRES_SCHEMA
+              value: {{ .Values.global.postgresSchema | quote }}
+            - name: NEXT_PUBLIC_URL
+              value: {{ include "lmnr.nextPublicUrl" (dict "service" .Values.appServer.env "global" .Values.global) }}
+            - name: HTTP_PAYLOAD_LIMIT
+              value: {{ .Values.appServer.env.httpPayloadLimit | quote }}
+            - name: GRPC_PAYLOAD_LIMIT
+              value: {{ .Values.appServer.env.grpcPayloadLimit | quote }}
+            - name: AGGREGATE_TRACES
+              value: {{ .Values.appServer.env.aggregateTraces | quote }}
+            - name: ENABLE_TRACING
+              value: {{ .Values.appServer.env.enableTracing | quote }}
+            {{- if include "lmnr.quickwit.enabled" . }}
+            - name: QUICKWIT_SEARCH_URL
+              value: {{ .Values.appServer.env.quickwitSearchUrl }}
+            - name: QUICKWIT_INGEST_URL
+              value: {{ .Values.appServer.env.quickwitIngestUrl }}
+            {{- end }}
+            - name: LLM_PROVIDER
+              value: {{ .Values.appServer.env.llmProvider | quote }}
+            - name: LLM_BASE_URL
+              value: {{ .Values.appServer.env.llmBaseUrl | quote }}
+            {{- with .Values.appServer.env.llmDefaultHeaders }}
+            - name: LLM_DEFAULT_HEADERS_JSON
+              value: {{ toJson . | quote }}
+            {{- end }}
+            - name: LLM_MODEL_SMALL
+              value: {{ .Values.appServer.env.llmModelSmall | quote }}
+            - name: LLM_MODEL_MEDIUM
+              value: {{ .Values.appServer.env.llmModelMedium | quote }}
+            - name: LLM_MODEL_LARGE
+              value: {{ .Values.appServer.env.llmModelLarge | quote }}
+            {{- if .Values.piiRedactor.enabled }}
+            - name: PII_REDACTOR_URL
+              value: http://{{ include "laminar.resourceName" "pii-redactor-service" }}:{{ .Values.piiRedactor.service.port }}
+            {{- end }}
+            {{- if .Values.frontend.enabled }}
+            - name: NEXT_INTERNAL_URL
+              value: http://{{ include "laminar.resourceName" "frontend-service" }}:{{ .Values.frontend.service.port }}
+            {{- end }}
+            {{- with .Values.appServer.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.appServer.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        - name: nginx
+          image: {{ .Values.images.nginx.repository }}:{{ .Values.images.nginx.tag }}
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            {{- toYaml .Values.appServer.nginx.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{ include "laminar.resourceName" "app-server-nginx-config" }}
+            items:
+            - key: nginx.conf
+              path: nginx.conf
+        {{- with .Values.appServer.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.appServer "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.appServer "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.appServer "global" .Values.global) | nindent 6 }}
+{{- end }}

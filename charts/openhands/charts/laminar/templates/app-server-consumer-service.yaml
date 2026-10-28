@@ -1,0 +1,15 @@
+{{- if .Values.appServerConsumer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "app-server-consumer-service" }}
+spec:
+  selector:
+    app: {{ include "laminar.resourceName" "app-server-consumer" }}
+  ports:
+    - protocol: TCP
+      name: http
+      port: {{ .Values.appServerConsumer.service.port }}
+      targetPort: {{ .Values.appServerConsumer.service.targetPort }}
+  type: {{ .Values.appServerConsumer.service.type }}
+{{- end }}

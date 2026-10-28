@@ -1,0 +1,61 @@
+{{- if .Values.appServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "app-server-service" }}
+spec:
+  selector:
+    app: {{ include "laminar.resourceName" "app-server" }}
+  ports:
+    - protocol: TCP
+      name: http
+      port: {{ .Values.appServer.service.port }}
+      targetPort: {{ .Values.appServer.service.targetPort }}
+    {{- if .Values.appServer.ingress.hostname }}
+    - protocol: TCP
+      name: nginx
+      port: 8080
+      targetPort: 8080
+    - protocol: TCP
+      name: grpc
+      port: 8001
+      targetPort: 8001
+    {{- end }}
+  type: {{ .Values.appServer.service.type }}
+---
+{{- if .Values.appServer.loadBalancer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "app-server-load-balancer" }}
+  annotations:
+    {{- if .Values.appServer.loadBalancer.annotations }}
+    {{- range $key, $value := .Values.appServer.loadBalancer.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    {{- else }}
+    {{- if eq (default "aws" .Values.global.cloudProvider) "aws" }}
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: instance
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+    {{- end }}
+    {{- end }}
+    {{- if .Values.appServer.loadBalancer.hostname }}
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.appServer.loadBalancer.hostname | quote }}
+    {{- end }}
+spec:
+  selector:
+    app: {{ include "laminar.resourceName" "app-server" }}
+  ports:
+    - protocol: TCP
+      name: https
+      port: 443
+      targetPort: 8080
+    - protocol: TCP
+      name: grpc
+      port: 8443
+      targetPort: 8001
+  type: LoadBalancer
+{{- end }}
+{{- end }}

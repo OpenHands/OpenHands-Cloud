@@ -1,0 +1,135 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laminar.resourceName" "frontend" }}
+  labels:
+    app: {{ include "laminar.resourceName" "frontend" }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "frontend" }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "frontend" }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      {{- $preStopSleep := int .Values.frontend.preStopSleepSeconds }}
+      {{- $gracePeriod := int .Values.frontend.terminationGracePeriodSeconds }}
+      {{- if ge $preStopSleep $gracePeriod }}
+      {{- fail (printf "frontend.terminationGracePeriodSeconds (%d) must be greater than frontend.preStopSleepSeconds (%d), otherwise the pod is killed before it finishes in-flight requests" $gracePeriod $preStopSleep) }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $gracePeriod }}
+      {{- if .Values.frontend.waitForDependencies.enabled }}
+      initContainers:
+        {{- range .Values.frontend.waitForDependencies.services }}
+        - name: wait-for-{{ .name }}
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ .host }} {{ .port }}; do echo "waiting for {{ .name }}..."; sleep 2; done; echo "{{ .name }} is ready"']
+        {{- end }}
+        {{- if include "lmnr.quickwit.enabled" . }}
+        - name: wait-for-quickwit-searcher
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ include "laminar.resourceName" "quickwit-searcher" }} 7280; do echo "waiting for quickwit-searcher..."; sleep 2; done; echo "quickwit-searcher is ready"']
+        {{- end }}
+        {{- range .Values.frontend.waitForDependencies.httpChecks }}
+        - name: http-wait-for-{{ .name }}
+          image: {{ $.Values.images.curl.repository }}:{{ $.Values.images.curl.tag }}
+          command: ['sh', '-c', 'until curl -f {{ .url }}; do echo "waiting for {{ .name }}..."; sleep 2; done; echo "{{ .name }} is ready"']
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: {{ .Values.images.repository }}/{{ include "lmnr.frontend.imageName" . }}:{{ .Values.images.frontend.tag }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          # First launch runs all migrations to prepare databases, which can take several minutes.
+          # Larger initial delays are set to account for this.
+          # Probe the sub-path root: under frontend.subPath.enabled Next.js serves
+          # the app at /lmnr and returns 404 for /, which would fail the probes.
+          readinessProbe:
+            httpGet:
+              path: {{ include "lmnr.frontend.subPath" . | default "/" }}
+              port: 3000
+            initialDelaySeconds: {{ .Values.frontend.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.frontend.readinessProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ include "lmnr.frontend.subPath" . | default "/" }}
+              port: 3000
+            initialDelaySeconds: {{ .Values.frontend.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.frontend.livenessProbe.periodSeconds }}
+          {{- if gt $preStopSleep 0 }}
+          # Keep serving until the load balancer stops routing to this pod:
+          # Next.js stops accepting connections immediately on SIGTERM, which
+          # otherwise races target deregistration and yields 502s on rollout.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ $preStopSleep }}"]
+          {{- end }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          env:
+            - name: BACKEND_URL
+              value: {{ .Values.frontend.env.backendUrl }}
+            - name: BACKEND_RT_URL
+              value: {{ .Values.frontend.env.backendRtUrl }}
+            - name: NEXTAUTH_URL
+              value: {{ .Values.frontend.env.nextauthUrl }}
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            - name: POSTGRES_SCHEMA
+              value: {{ .Values.global.postgresSchema | quote }}
+            - name: POSTGRES_CREATE_SCHEMA
+              value: {{ .Values.frontend.env.postgresCreateSchema | quote }}
+            - name: CLICKHOUSE_POSTGRES_HOST
+              value: {{ .Values.frontend.env.clickhousePostgresHost | quote }}
+            - name: CLICKHOUSE_POSTGRES_PORT
+              value: {{ .Values.frontend.env.clickhousePostgresPort | quote }}
+            - name: NEXT_PUBLIC_URL
+              value: {{ include "lmnr.nextPublicUrl" (dict "service" .Values.frontend.env "global" .Values.global) }}
+            - name: REDIS_URL
+              value: {{ .Values.frontend.env.redisUrl }}
+            {{- if include "lmnr.quickwit.enabled" . }}
+            - name: QUICKWIT_SEARCH_URL
+              value: {{ .Values.frontend.env.quickwitSearchUrl }}
+            {{- end }}
+            - name: LLM_PROVIDER
+              value: {{ .Values.frontend.env.llmProvider | quote }}
+            - name: LLM_BASE_URL
+              value: {{ .Values.frontend.env.llmBaseUrl | quote }}
+            {{- with .Values.frontend.env.llmDefaultHeaders }}
+            - name: LLM_DEFAULT_HEADERS_JSON
+              value: {{ toJson . | quote }}
+            {{- end }}
+            - name: LLM_MODEL_SMALL
+              value: {{ .Values.frontend.env.llmModelSmall | quote }}
+            - name: LLM_MODEL_MEDIUM
+              value: {{ .Values.frontend.env.llmModelMedium | quote }}
+            - name: LLM_MODEL_LARGE
+              value: {{ .Values.frontend.env.llmModelLarge | quote }}
+            - name: SIGNALS_ENABLED
+              value: {{ .Values.frontend.env.signalsEnabled | quote }}
+            - name: AGENT_CHAT_ENABLED
+              value: {{ .Values.frontend.env.agentChatEnabled | quote }}
+            {{- with .Values.frontend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.frontend.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.frontend.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.frontend "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.frontend "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.frontend "global" .Values.global) | nindent 6 }}
+{{- end }}

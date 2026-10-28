@@ -1,0 +1,61 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laminar.resourceName" "redis" }}
+  labels:
+    app: {{ include "laminar.resourceName" "redis" }}
+spec:
+  replicas: {{ .Values.redis.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "redis" }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "redis" }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      containers:
+        - name: redis
+          image: {{ .Values.images.redis.repository }}:{{ .Values.images.redis.tag }}
+          ports:
+            - containerPort: {{ .Values.redis.service.port }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          {{- if include "lmnr.secrets.needsCSIMount" . }}
+          volumeMounts:
+            {{- if include "lmnr.secrets.awsEnabled" . }}
+            - name: secrets-store-aws
+              mountPath: "/mnt/secrets-store-aws"
+              readOnly: true
+            {{- end }}
+            {{- if include "lmnr.secrets.vaultEnabled" . }}
+            - name: secrets-store-vault
+              mountPath: "/mnt/secrets-store-vault"
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if include "lmnr.secrets.needsCSIMount" . }}
+      volumes:
+        {{- if include "lmnr.secrets.awsEnabled" . }}
+        - name: secrets-store-aws
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-aws
+        {{- end }}
+        {{- if include "lmnr.secrets.vaultEnabled" . }}
+        - name: secrets-store-vault
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-vault
+        {{- end }}
+      {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.redis "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.redis "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.redis "global" .Values.global) | nindent 6 }}
+{{- end }}

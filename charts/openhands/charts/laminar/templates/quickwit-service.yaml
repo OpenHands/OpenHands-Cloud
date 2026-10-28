@@ -1,0 +1,142 @@
+{{- if include "lmnr.quickwit.enabled" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-searcher" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7280
+      targetPort: rest
+      protocol: TCP
+      name: rest
+    - port: 7281
+      targetPort: grpc
+      name: grpc
+  selector:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/component: searcher
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-headless" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: udp
+      port: 7282
+      protocol: UDP
+    - name: tcp-http
+      port: 7280
+      protocol: TCP
+    - name: tcp-grpc
+      port: 7281
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-indexer" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7280
+      targetPort: rest
+      protocol: TCP
+      name: rest
+    - port: 7281
+      targetPort: grpc
+      name: grpc
+  selector:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/component: indexer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-metastore" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7280
+      targetPort: rest
+      protocol: TCP
+      name: rest
+    - port: 7281
+      targetPort: grpc
+      name: grpc
+  selector:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/component: metastore
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-control-plane" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7280
+      targetPort: rest
+      protocol: TCP
+      name: rest
+    - port: 7281
+      targetPort: grpc
+      name: grpc
+  selector:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/component: control-plane
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-janitor" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7280
+      targetPort: rest
+      protocol: TCP
+      name: rest
+    - port: 7281
+      targetPort: grpc
+      name: grpc
+  selector:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/component: janitor
+{{- end }}

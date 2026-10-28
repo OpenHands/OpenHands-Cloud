@@ -1,0 +1,166 @@
+{{- if .Values.appServerConsumer.enabled }}
+{{- include "lmnr.validateAppServerVersion" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laminar.resourceName" "app-server-consumer" }}
+  labels:
+    app: {{ include "laminar.resourceName" "app-server-consumer" }}
+spec:
+  replicas: {{ .Values.appServerConsumer.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "app-server-consumer" }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "app-server-consumer" }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      {{- if .Values.appServerConsumer.waitForDependencies.enabled }}
+      initContainers:
+        {{- range .Values.appServerConsumer.waitForDependencies.services }}
+        - name: wait-for-{{ .name }}
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ .host }} {{ .port }}; do echo "waiting for {{ .name }}..."; sleep 2; done; echo "{{ .name }} is ready"']
+        {{- end }}
+        {{- if include "lmnr.quickwit.enabled" . }}
+        - name: wait-for-quickwit-searcher
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ include "laminar.resourceName" "quickwit-searcher" }} 7280; do echo "waiting for quickwit-searcher..."; sleep 2; done; echo "quickwit-searcher is ready"']
+        - name: wait-for-quickwit-indexer
+          image: busybox:latest
+          command: ['sh', '-c', 'until nc -z {{ include "laminar.resourceName" "quickwit-indexer" }} 7281; do echo "waiting for quickwit-indexer..."; sleep 2; done; echo "quickwit-indexer is ready"']
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: app-server-consumer
+          image: {{ .Values.images.repository }}/{{ .Values.images.appServer.name }}:{{ .Values.images.appServer.tag }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          resources:
+            {{- toYaml .Values.appServerConsumer.resources | nindent 12 }}
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: {{ .Values.appServerConsumer.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.appServerConsumer.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.appServerConsumer.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: {{ .Values.appServerConsumer.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.appServerConsumer.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.appServerConsumer.readinessProbe.failureThreshold }}
+          env:
+            - name: OPERATION_MODE
+              value: "consumer"
+            - name: PORT
+              value: {{ .Values.appServerConsumer.env.port | quote }}
+            - name: CONSUMER_PORT
+              value: {{ .Values.appServerConsumer.env.consumerPort | quote }}
+            - name: DATABASE_MAX_CONNECTIONS
+              value: {{ .Values.appServerConsumer.env.databaseMaxConnections | quote }}
+            - name: NUM_SPANS_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSpansWorkers | quote }}
+            - name: NUM_BROWSER_EVENTS_WORKERS
+              value: {{ .Values.appServerConsumer.env.numBrowserEventsWorkers | quote }}
+            - name: NUM_NOTIFICATION_WORKERS
+              value: {{ .Values.appServerConsumer.env.numNotificationWorkers | quote }}
+            - name: NUM_CLUSTERING_WORKERS
+              value: {{ .Values.appServerConsumer.env.numClusteringWorkers | quote }}
+            - name: EVENT_CLUSTERING_BATCH_QUEUE_PREFETCH_COUNT
+              value: {{ .Values.appServerConsumer.env.eventClusteringBatchQueuePrefetchCount | quote }}
+            - name: NUM_SEMANTIC_EVENT_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSemanticEventWorkers | quote }}
+            - name: NUM_SPANS_INDEXER_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSpansIndexerWorkers | quote }}
+            - name: SPANS_INDEXER_QUEUE_PREFETCH_COUNT
+              value: {{ .Values.appServerConsumer.env.spansIndexerQueuePrefetchCount | quote }}
+            - name: NUM_SIGNAL_JOB_SUBMISSION_BATCH_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSignalJobSubmissionBatchWorkers | quote }}
+            - name: NUM_SIGNAL_JOB_PENDING_BATCH_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSignalJobPendingBatchWorkers | quote }}
+            - name: SIGNAL_JOB_PENDING_BATCH_SIZE
+              value: {{ .Values.appServerConsumer.env.signalJobPendingBatchSize | quote }}
+            - name: SIGNAL_JOB_MAX_ALLOWED_STEPS
+              value: {{ .Values.appServerConsumer.env.signalJobMaxAllowedSteps | quote }}
+            - name: SIGNAL_JOB_WAITING_QUEUE_TTL_MS
+              value: {{ .Values.appServerConsumer.env.signalJobWaitingQueueTtlMs | quote }}
+            - name: ENABLE_REPORTS
+              value: {{ .Values.appServerConsumer.env.enableReports | quote }}
+            - name: NUM_SIGNAL_JOB_REALTIME_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSignalJobRealtimeWorkers | quote }}
+            - name: NUM_SIGNAL_JOB_BACKFILL_WORKERS
+              value: {{ .Values.appServerConsumer.env.numSignalJobBackfillWorkers | quote }}
+            - name: NUM_REPORTS_WORKERS
+              value: {{ .Values.appServerConsumer.env.numReportsWorkers | quote }}
+            - name: LLM_PROVIDER
+              value: {{ .Values.appServerConsumer.env.llmProvider | quote }}
+            - name: LLM_BASE_URL
+              value: {{ .Values.appServerConsumer.env.llmBaseUrl | quote }}
+            {{- with .Values.appServerConsumer.env.llmDefaultHeaders }}
+            - name: LLM_DEFAULT_HEADERS_JSON
+              value: {{ toJson . | quote }}
+            {{- end }}
+            - name: LLM_MODEL_SMALL
+              value: {{ .Values.appServerConsumer.env.llmModelSmall | quote }}
+            - name: LLM_MODEL_MEDIUM
+              value: {{ .Values.appServerConsumer.env.llmModelMedium | quote }}
+            - name: LLM_MODEL_LARGE
+              value: {{ .Values.appServerConsumer.env.llmModelLarge | quote }}
+            - name: SIGNALS_ALWAYS_USE_REALTIME
+              value: {{ .Values.appServerConsumer.env.signalsAlwaysUseRealtime | quote }}
+            - name: SIGNALS_REALTIME_QUEUE_PREFETCH_COUNT
+              value: {{ .Values.appServerConsumer.env.signalsRealtimeQueuePrefetchCount | quote }}
+            - name: SIGNALS_BACKFILL_QUEUE_PREFETCH_COUNT
+              value: {{ .Values.appServerConsumer.env.signalsBackfillQueuePrefetchCount | quote }}
+            - name: RABBITMQ_MAX_CHANNEL_POOL_SIZE
+              value: {{ .Values.appServerConsumer.env.rabbitmqMaxChannelPoolSize | quote }}
+            - name: RABBITMQ_AUTO_RECONNECT
+              value: {{ .Values.appServerConsumer.env.rabbitmqAutoReconnect | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.appServerConsumer.env.redisUrl }}
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            - name: POSTGRES_SCHEMA
+              value: {{ .Values.global.postgresSchema | quote }}
+            - name: NEXT_PUBLIC_URL
+              value: {{ include "lmnr.nextPublicUrl" (dict "service" .Values.appServerConsumer.env "global" .Values.global) }}
+            - name: ENABLE_TRACING
+              value: {{ .Values.appServerConsumer.env.enableTracing | quote }}
+            {{- if include "lmnr.quickwit.enabled" . }}
+            - name: QUICKWIT_SEARCH_URL
+              value: {{ .Values.appServerConsumer.env.quickwitSearchUrl }}
+            - name: QUICKWIT_INGEST_URL
+              value: {{ .Values.appServerConsumer.env.quickwitIngestUrl }}
+            {{- end }}
+            {{- if .Values.piiRedactor.enabled }}
+            - name: PII_REDACTOR_URL
+              value: http://{{ include "laminar.resourceName" "pii-redactor-service" }}:{{ .Values.piiRedactor.service.port }}
+            {{- end }}
+            {{- with .Values.appServerConsumer.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.appServerConsumer.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.appServerConsumer.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.appServerConsumer "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.appServerConsumer "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.appServerConsumer "global" .Values.global) | nindent 6 }}
+{{- end }}

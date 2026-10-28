@@ -135,7 +135,7 @@
         "clickhouse": {
           "type": "object",
           "properties": {
-            "diagnostics": {
+            "systemLogs": {
               "type": "object",
               "properties": {
                 "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }

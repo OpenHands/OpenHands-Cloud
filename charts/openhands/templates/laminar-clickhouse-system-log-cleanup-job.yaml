@@ -1,0 +1,72 @@
+{{- if and .Values.laminar.enabled (dig "clickhouse" "systemLogs" "enabled" true .Values.laminar) }}
+{{- /* ClickHouse never drops a system log table it stops writing, nor the <name>_<N> copy it renames on a schema change.
+Runs after --wait, so the server already has the new config. */}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openhands.fullname" . }}-laminar-clickhouse-system-log-cleanup
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: laminar-clickhouse-diagnostics
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: 900
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: laminar-clickhouse-diagnostics
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: drop-disabled-system-logs
+          image: {{ dig "images" "clickhouse" "repository" "clickhouse/clickhouse-server" .Values.laminar }}:{{ dig "images" "clickhouse" "tag" "26.3-alpine" .Values.laminar }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: laminar-app-secrets
+          env:
+            - name: CLICKHOUSE_HOST
+              value: laminar-clickhouse-service
+            - name: CLICKHOUSE_PORT
+              value: "9000"
+          volumeMounts:
+            - name: system-logs-config
+              mountPath: /etc/laminar-clickhouse
+              readOnly: true
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              client=(clickhouse-client --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT}" --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}")
+
+              until "${client[@]}" --query "SELECT 1" >/dev/null; do
+                echo "ClickHouse is unavailable - sleeping 5s"
+                sleep 5
+              done
+
+              # Read from the server's own config so this list cannot drift from it.
+              disabled=$(sed -n 's/.*<\([a-z0-9_]*_log\) remove="1".*/\1/p' /etc/laminar-clickhouse/system_logs.xml | paste -sd'|' -)
+              if [ -z "${disabled}" ]; then
+                echo "No disabled system log tables found in system_logs.xml" >&2
+                exit 1
+              fi
+
+              # ClickHouse renames a mismatched system log table on its first flush, not at startup.
+              "${client[@]}" --query "SYSTEM FLUSH LOGS"
+              tables=$("${client[@]}" --param_disabled="^(${disabled})$" --query "SELECT name FROM system.tables WHERE database = 'system' AND (match(name, {disabled:String}) OR match(name, '_log_[0-9]+$'))")
+              for table in ${tables}; do
+                echo "Dropping system.${table}"
+                # Diagnostic tables often exceed the 50 GB max_table_size_to_drop guard.
+                "${client[@]}" --max_table_size_to_drop=0 --query "DROP TABLE IF EXISTS system.${table} SYNC"
+              done
+              echo "Dropped $(echo ${tables} | wc -w) system log table(s)"
+      volumes:
+        - name: system-logs-config
+          configMap:
+            name: laminar-clickhouse-system-logs-config
+{{- end }}

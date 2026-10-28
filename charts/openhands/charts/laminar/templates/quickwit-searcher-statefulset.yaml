@@ -1,0 +1,137 @@
+{{- if include "lmnr.quickwit.enabled" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-searcher" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  replicas: {{ .Values.quickwit.searcher.replicaCount }}
+  serviceName: {{ include "laminar.resourceName" "quickwit-headless" }}
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quickwit
+      app.kubernetes.io/instance: quickwit
+      app.kubernetes.io/component: searcher
+  {{- if .Values.quickwit.searcher.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        {{- $storageClassName := include "lmnr.storageClassName" (dict "root" . "persistence" .Values.quickwit.searcher.persistence) }}
+        {{- if $storageClassName }}
+        storageClassName: {{ $storageClassName }}
+        {{- end }}
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ .Values.quickwit.searcher.persistence.size | quote }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quickwit
+        app.kubernetes.io/instance: quickwit
+        app.kubernetes.io/component: searcher
+      annotations:
+        # See rabbitmq-statefulset.yaml for the rationale; same bug
+        # applies here because Quickwit's node.yaml is mounted via
+        # subPath, which never receives live ConfigMap updates.
+        checksum/config: {{ include (print $.Template.BasePath "/quickwit-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "laminar.resourceName" "quickwit" }}
+      securityContext:
+        fsGroup: 1005
+      containers:
+        - name: quickwit
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1005
+          image: {{ .Values.images.quickwit.repository }}:{{ .Values.images.quickwit.tag }}
+          imagePullPolicy: IfNotPresent
+          args: ["run", "--service", "searcher"]
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: QW_CONFIG
+              value: /quickwit/node.yaml
+            - name: QW_CLUSTER_ID
+              value: {{ .Values.quickwit.clusterId }}
+            - name: QW_NODE_ID
+              value: "$(POD_NAME)"
+            - name: QW_PEER_SEEDS
+              value: {{ include "laminar.resourceName" "quickwit-headless" }}
+            - name: QW_ADVERTISE_ADDRESS
+              value: "$(POD_IP)"
+            - name: QW_CLUSTER_ENDPOINT
+              value: "http://{{ include "laminar.resourceName" "quickwit-metastore" }}.{{ include "laminar.namespace" . }}.svc.cluster.local:7280"
+            - name: QW_METASTORE_URI
+              value: "$(QUICKWIT_DATABASE_URL)"
+            {{- include "lmnr.quickwit.extraEnv" (dict "root" $ "component" .Values.quickwit.searcher) | nindent 12 }}
+          ports:
+            - name: rest
+              containerPort: 7280
+              protocol: TCP
+            - name: grpc
+              containerPort: 7281
+              protocol: TCP
+            - name: discovery
+              containerPort: 7282
+              protocol: UDP
+          startupProbe:
+            httpGet:
+              path: /health/livez
+              port: rest
+            initialDelaySeconds: {{ .Values.quickwit.searcher.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.quickwit.searcher.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.quickwit.searcher.startupProbe.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /health/livez
+              port: rest
+          readinessProbe:
+            httpGet:
+              path: /health/readyz
+              port: rest
+          volumeMounts:
+            - name: config
+              mountPath: /quickwit/node.yaml
+              subPath: node.yaml
+            - name: data
+              mountPath: /quickwit/qwdata
+          resources:
+            {{- toYaml .Values.quickwit.searcher.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "laminar.resourceName" "quickwit" }}
+            items:
+              - key: node.yaml
+                path: node.yaml
+        {{- if not .Values.quickwit.searcher.persistence.enabled }}
+        - name: data
+          emptyDir:
+            {{- with .Values.quickwit.searcher.emptyDir.sizeLimit }}
+            sizeLimit: {{ . | quote }}
+            {{- end }}
+        {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.quickwit "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.quickwit "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.quickwit "global" .Values.global) | nindent 6 }}
+{{- end }}

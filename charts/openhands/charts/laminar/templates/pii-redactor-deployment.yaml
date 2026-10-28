@@ -1,0 +1,76 @@
+{{- if .Values.piiRedactor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laminar.resourceName" "pii-redactor" }}
+  labels:
+    app: {{ include "laminar.resourceName" "pii-redactor" }}
+spec:
+  replicas: {{ .Values.piiRedactor.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "pii-redactor" }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "pii-redactor" }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      containers:
+        - name: pii-redactor
+          image: {{ .Values.images.repository }}/{{ .Values.images.piiRedactor.name }}:{{ .Values.images.piiRedactor.tag }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.piiRedactor.env.port }}
+          resources:
+            {{- toYaml .Values.piiRedactor.resources | nindent 12 }}
+          env:
+            - name: PII_PORT
+              value: {{ .Values.piiRedactor.env.port | quote }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.chunkSize) }}
+            - name: PII_CHUNK_SIZE
+              value: {{ .Values.piiRedactor.env.chunkSize | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.chunkOverlap) }}
+            - name: PII_CHUNK_OVERLAP
+              value: {{ .Values.piiRedactor.env.chunkOverlap | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.maxTokensPerText) }}
+            - name: PII_MAX_TOKENS_PER_TEXT
+              value: {{ .Values.piiRedactor.env.maxTokensPerText | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.maxBatchSize) }}
+            - name: PII_MAX_BATCH_SIZE
+              value: {{ .Values.piiRedactor.env.maxBatchSize | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.maxQueueDelayMs) }}
+            - name: PII_MAX_QUEUE_DELAY_MS
+              value: {{ .Values.piiRedactor.env.maxQueueDelayMs | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.maxTextsPerRequest) }}
+            - name: PII_MAX_TEXTS_PER_REQUEST
+              value: {{ .Values.piiRedactor.env.maxTextsPerRequest | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.intraThreads) }}
+            - name: PII_INTRA_THREADS
+              value: {{ .Values.piiRedactor.env.intraThreads | quote }}
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.piiRedactor.env.interThreads) }}
+            - name: PII_INTER_THREADS
+              value: {{ .Values.piiRedactor.env.interThreads | quote }}
+            {{- end }}
+            {{- with .Values.piiRedactor.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.piiRedactor.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.piiRedactor.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.piiRedactor "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.piiRedactor "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.piiRedactor "global" .Values.global) | nindent 6 }}
+{{- end }}

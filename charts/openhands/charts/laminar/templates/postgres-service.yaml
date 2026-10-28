@@ -1,0 +1,34 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "postgres-service" }}
+  labels:
+    app: {{ include "laminar.resourceName" "postgres" }}
+spec:
+  type: {{ .Values.postgres.service.type }}
+  ports:
+    - port: {{ .Values.postgres.service.port }}
+      targetPort: {{ .Values.postgres.service.targetPort }}
+      protocol: TCP
+      name: postgresql
+  selector:
+    app: {{ include "laminar.resourceName" "postgres" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "postgres-headless" }}
+  labels:
+    app: {{ include "laminar.resourceName" "postgres" }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.postgres.service.port }}
+      targetPort: {{ .Values.postgres.service.targetPort }}
+      protocol: TCP
+      name: postgresql
+  selector:
+    app: {{ include "laminar.resourceName" "postgres" }}
+{{- end }}
