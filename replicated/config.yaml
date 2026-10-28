@@ -1418,9 +1418,11 @@ spec:
               message: Must be a positive integer (in seconds)
         - name: sandbox_dead_seconds
           title: Deletion Time (seconds)
-          help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed.
+          help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed. A paused conversation keeps its full Storage Size on disk until then, so lower this to free disk sooner, or raise it to keep conversations resumable for longer.
           type: text
-          default: "864000"
+          # `value:` not `default:`, for the reason given on hostname_mode above. Only new Embedded
+          # Cluster installs get 3 days: their hostpath PVCs are unbounded and share one node's disk.
+          value: '{{repl if and (eq Sequence 0) (eq Distribution "embedded-cluster") }}259200{{repl else }}864000{{repl end }}'
           validation:
             regex:
               pattern: ^[1-9][0-9]*$
