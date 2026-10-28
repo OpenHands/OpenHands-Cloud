@@ -445,6 +445,8 @@ smtp:
 
 tls:
   enabled: false
+  # kubernetes.io/tls Secret managed outside this release. Ingresses and preflights use it instead of app-all-hands-<env>-tls.
+  existingSecret: ""
 
 certificate:
   enabled: false
