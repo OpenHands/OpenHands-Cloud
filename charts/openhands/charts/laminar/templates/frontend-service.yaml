@@ -1,0 +1,20 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "frontend-service" }}
+spec:
+  selector:
+    app: {{ include "laminar.resourceName" "frontend" }}
+  ports:
+    - protocol: TCP
+      name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.targetPort }}
+  {{- $cloudProvider := default "aws" .Values.global.cloudProvider -}}
+  {{- if and (eq $cloudProvider "gcp") (not .Values.frontend.ingress.hostname) }}
+  type: LoadBalancer
+  {{- else }}
+  type: {{ .Values.frontend.service.type }}
+  {{- end }}
+{{- end }}

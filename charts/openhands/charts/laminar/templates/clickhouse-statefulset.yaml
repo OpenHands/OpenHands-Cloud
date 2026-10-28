@@ -1,0 +1,152 @@
+{{- if .Values.clickhouse.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "laminar.resourceName" "clickhouse" }}
+  labels:
+    app: {{ include "laminar.resourceName" "clickhouse" }}
+spec:
+  serviceName: {{ include "laminar.resourceName" "clickhouse-headless" }}
+  replicas: {{ .Values.clickhouse.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "clickhouse" }}
+  {{- if .Values.clickhouse.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: clickhouse-data
+      spec:
+        {{- $storageClassName := include "lmnr.storageClassName" (dict "root" . "persistence" .Values.clickhouse.persistence) }}
+        {{- if $storageClassName }}
+        storageClassName: {{ $storageClassName }}
+        {{- end }}
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ .Values.clickhouse.persistence.size }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "clickhouse" }}
+      {{- if .Values.clickhouse.systemLogs.enabled }}
+      annotations:
+        checksum/system-logs-config: {{ include (print $.Template.BasePath "/clickhouse-system-logs-config.yaml") . | sha256sum }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      containers:
+        - name: clickhouse
+          image: {{ .Values.images.clickhouse.repository }}:{{ .Values.images.clickhouse.tag }}
+          ports:
+            - containerPort: {{ .Values.clickhouse.service.port }}
+              name: http
+            - containerPort: {{ .Values.clickhouse.service.nativePort }}
+              name: native
+          resources:
+            {{- toYaml .Values.clickhouse.resources | nindent 12 }}
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          env:
+            - name: CLICKHOUSE_DB
+              value: {{ .Values.clickhouse.database }}
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+            {{- with .Values.clickhouse.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: clickhouse-data
+              mountPath: /var/lib/clickhouse
+            {{- if .Values.clickhouse.systemLogs.enabled }}
+            - name: clickhouse-system-logs-config
+              mountPath: /etc/clickhouse-server/config.d/system_logs.xml
+              subPath: system_logs.xml
+            {{- end }}
+            {{- with .Values.clickhouse.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if .Values.clickhouse.s3.enabled }}
+            - name: clickhouse-storage-config
+              mountPath: /etc/clickhouse-server/config.d/storage_config.xml
+              subPath: storage_config.xml
+            {{- if and .Values.clickhouse.s3.cache.enabled (not .Values.clickhouse.persistence.enabled) }}
+            - name: clickhouse-s3-cache
+              mountPath: {{ .Values.clickhouse.s3.cache.path }}
+            {{- end }}
+            {{- end }}
+            {{- if include "lmnr.secrets.awsEnabled" . }}
+            - name: secrets-store-aws
+              mountPath: "/mnt/secrets-store-aws"
+              readOnly: true
+            {{- end }}
+            {{- if include "lmnr.secrets.vaultEnabled" . }}
+            - name: secrets-store-vault
+              mountPath: "/mnt/secrets-store-vault"
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: {{ .Values.clickhouse.service.port }}
+            initialDelaySeconds: {{ .Values.clickhouse.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.clickhouse.livenessProbe.periodSeconds }}
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: {{ .Values.clickhouse.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: {{ .Values.clickhouse.service.port }}
+            initialDelaySeconds: {{ .Values.clickhouse.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.clickhouse.readinessProbe.periodSeconds }}
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: {{ .Values.clickhouse.readinessProbe.failureThreshold }}
+      volumes:
+        {{- if not .Values.clickhouse.persistence.enabled }}
+        - name: clickhouse-data
+          emptyDir: {}
+      {{- end }}
+      {{- if .Values.clickhouse.systemLogs.enabled }}
+        - name: clickhouse-system-logs-config
+          configMap:
+            name: {{ include "laminar.resourceName" "clickhouse-system-logs-config" }}
+      {{- end }}
+      {{- with .Values.clickhouse.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.clickhouse.s3.enabled }}
+        - name: clickhouse-storage-config
+          configMap:
+            name: {{ include "laminar.resourceName" "clickhouse-storage-config" }}
+            items:
+              - key: storage_config.xml
+                path: storage_config.xml
+        {{- if and .Values.clickhouse.s3.cache.enabled (not .Values.clickhouse.persistence.enabled) }}
+        - name: clickhouse-s3-cache
+          emptyDir:
+            sizeLimit: {{ .Values.clickhouse.s3.cache.maxSize }}
+        {{- end }}
+      {{- end }}
+        {{- if include "lmnr.secrets.awsEnabled" . }}
+        - name: secrets-store-aws
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-aws
+        {{- end }}
+        {{- if include "lmnr.secrets.vaultEnabled" . }}
+        - name: secrets-store-vault
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-vault
+        {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.clickhouse "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.clickhouse "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.clickhouse "global" .Values.global) | nindent 6 }}
+{{- end }}

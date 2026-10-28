@@ -1,0 +1,40 @@
+{{- if include "lmnr.quickwit.enabled" . }}
+{{- /*
+Resolve Quickwit S3 flavor/endpoint with cloud-provider-aware defaults.
+Explicit `quickwit.s3.flavor` / `quickwit.s3.endpoint` always win; when
+left empty, GCP installs are auto-configured for GCS's S3 interop API
+so operators don't have to remember the magic string. AWS installs
+emit no flavor/endpoint, letting the AWS SDK use its defaults.
+*/}}
+{{- $cloudProvider := .Values.global.cloudProvider | default "aws" -}}
+{{- $isGCP := eq $cloudProvider "gcp" -}}
+{{- $flavor := .Values.quickwit.s3.flavor | default ($isGCP | ternary "gcs" "") -}}
+{{- $endpoint := .Values.quickwit.s3.endpoint | default ($isGCP | ternary "https://storage.googleapis.com" "") -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+data:
+  node.yaml: |-
+    data_dir: /quickwit/qwdata
+    default_index_root_uri: {{ .Values.quickwit.s3.defaultIndexRootUri }}
+    gossip_listen_port: 7282
+    listen_address: 0.0.0.0
+    storage:
+      s3:
+        region: {{ .Values.quickwit.s3.region }}
+        {{- with $flavor }}
+        flavor: {{ . }}
+        {{- end }}
+        {{- with $endpoint }}
+        endpoint: {{ . | quote }}
+        {{- end }}
+    metastore_uri: ${QW_METASTORE_URI}
+    grpc:
+      max_message_size: {{ .Values.quickwit.config.grpcMaxMessageSize | quote }}
+    version: 0.8
+{{- end }}

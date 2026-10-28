@@ -1,0 +1,39 @@
+{{- if and .Values.appServer.enabled .Values.appServer.ingress.hostname }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "laminar.resourceName" "app-server-ingress" }}
+  annotations:
+    {{- if .Values.appServer.ingress.annotations }}
+    {{- range $key, $value := .Values.appServer.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.appServer.ingress.externalDns.enabled }}
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.appServer.ingress.hostname }}
+    {{- end }}
+    {{- if and .Values.appServer.ingress.tls.enabled .Values.appServer.ingress.tls.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.appServer.ingress.tls.clusterIssuer }}
+    {{- end }}
+spec:
+  {{- if .Values.appServer.ingress.className }}
+  ingressClassName: {{ .Values.appServer.ingress.className }}
+  {{- end }}
+  {{- if .Values.appServer.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.appServer.ingress.hostname }}
+      secretName: {{ .Values.appServer.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.appServer.ingress.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "laminar.resourceName" "app-server-service" }}
+                port:
+                  number: 8080
+{{- end }}

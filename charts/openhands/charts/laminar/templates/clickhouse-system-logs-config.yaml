@@ -1,0 +1,43 @@
+{{- if and .Values.clickhouse.enabled .Values.clickhouse.systemLogs.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "laminar.resourceName" "clickhouse-system-logs-config" }}
+  labels:
+    app: {{ include "laminar.resourceName" "clickhouse" }}
+data:
+  system_logs.xml: |
+    <clickhouse>
+      <!-- Every system log table ClickHouse 26.3 enables by default, except query_log and error_log. -->
+      <aggregated_zookeeper_log remove="1"/>
+      <asynchronous_insert_log remove="1"/>
+      <asynchronous_metric_log remove="1"/>
+      <background_schedule_pool_log remove="1"/>
+      <backup_log remove="1"/>
+      <blob_storage_log remove="1"/>
+      <crash_log remove="1"/>
+      <delta_lake_metadata_log remove="1"/>
+      <iceberg_metadata_log remove="1"/>
+      <instrumentation_trace_log remove="1"/>
+      <metric_log remove="1"/>
+      <opentelemetry_span_log remove="1"/>
+      <part_log remove="1"/>
+      <processors_profile_log remove="1"/>
+      <query_metric_log remove="1"/>
+      <query_thread_log remove="1"/>
+      <query_views_log remove="1"/>
+      <s3queue_log remove="1"/>
+      <session_log remove="1"/>
+      <text_log remove="1"/>
+      <trace_log remove="1"/>
+      <zookeeper_connection_log remove="1"/>
+      <zookeeper_log remove="1"/>
+
+      <query_log>
+        <ttl>event_date + INTERVAL {{ int .Values.clickhouse.systemLogs.retentionDays }} DAY DELETE</ttl>
+      </query_log>
+      <error_log>
+        <ttl>event_date + INTERVAL {{ int .Values.clickhouse.systemLogs.retentionDays }} DAY DELETE</ttl>
+      </error_log>
+    </clickhouse>
+{{- end }}

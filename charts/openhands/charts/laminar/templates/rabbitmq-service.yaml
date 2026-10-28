@@ -1,0 +1,38 @@
+{{- if .Values.rabbitmq.enabled }}
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ include "laminar.resourceName" "rabbitmq-service" }}
+  labels:
+    app: {{ include "laminar.resourceName" "rabbitmq" }}
+spec:
+  type: {{ .Values.rabbitmq.service.type }}
+  ports:
+    - name: amqp
+      protocol: TCP
+      port: {{ .Values.rabbitmq.service.amqpPort }}
+  selector:
+    app: {{ include "laminar.resourceName" "rabbitmq" }}
+---
+{{- if .Values.rabbitmq.headlessService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "rabbitmq-headless" }}
+spec:
+  clusterIP: None
+  ports:
+    - name: epmd
+      port: 4369
+      protocol: TCP
+      targetPort: 4369
+    - name: cluster-rpc
+      port: 25672
+      protocol: TCP
+      targetPort: 25672
+  selector:
+    app: {{ include "laminar.resourceName" "rabbitmq" }}
+  type: ClusterIP
+  sessionAffinity: None
+{{- end }}
+{{- end }}

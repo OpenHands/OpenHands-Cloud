@@ -1,0 +1,42 @@
+{{- if .Values.clickhouse.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "clickhouse-service" }}
+  labels:
+    app: {{ include "laminar.resourceName" "clickhouse" }}
+spec:
+  type: {{ .Values.clickhouse.service.type }}
+  ports:
+    - port: {{ .Values.clickhouse.service.port }}
+      targetPort: {{ .Values.clickhouse.service.port }}
+      protocol: TCP
+      name: http
+    - port: {{ .Values.clickhouse.service.nativePort }}
+      targetPort: {{ .Values.clickhouse.service.nativePort }}
+      protocol: TCP
+      name: native
+  selector:
+    app: {{ include "laminar.resourceName" "clickhouse" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "clickhouse-headless" }}
+  labels:
+    app: {{ include "laminar.resourceName" "clickhouse" }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.clickhouse.service.port }}
+      targetPort: {{ .Values.clickhouse.service.port }}
+      protocol: TCP
+      name: http
+    - port: {{ .Values.clickhouse.service.nativePort }}
+      targetPort: {{ .Values.clickhouse.service.nativePort }}
+      protocol: TCP
+      name: native
+  selector:
+    app: {{ include "laminar.resourceName" "clickhouse" }}
+{{- end }}

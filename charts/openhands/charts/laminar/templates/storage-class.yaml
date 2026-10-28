@@ -1,0 +1,40 @@
+{{- if ne .Values.storage.storageClass.enabled false }}
+{{- $cloudProvider := .Values.global.cloudProvider | default "aws" -}}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ include "laminar.resourceName" .Values.storage.storageClass.name }}
+provisioner: {{ .Values.storage.storageClass.provisioner | default (eq $cloudProvider "aws" | ternary "ebs.csi.aws.com" "pd.csi.storage.gke.io") }}
+parameters:
+  type: {{ .Values.storage.storageClass.type | default (eq $cloudProvider "aws" | ternary "gp3" "pd-balanced") }}
+reclaimPolicy: {{ .Values.storage.storageClass.reclaimPolicy | default "Retain" }}
+volumeBindingMode: {{ .Values.storage.storageClass.volumeBindingMode | default "WaitForFirstConsumer" }}
+# Allow `kubectl edit pvc ... resources.requests.storage` to grow volumes
+# in place during an incident, without needing cluster-admin to patch the
+# StorageClass first. Reference the value directly — Sprig's `default`
+# helper treats boolean `false` as empty, which would silently ignore an
+# explicit override.
+allowVolumeExpansion: {{ .Values.storage.storageClass.allowVolumeExpansion }}
+{{- $showTopologies := false -}}
+{{- if .Values.storage.storageClass.zones -}}
+  {{- $showTopologies = true -}}
+  {{- if and (eq $cloudProvider "gcp") (eq (len .Values.storage.storageClass.zones) 1) (eq (index .Values.storage.storageClass.zones 0) "us-east-1b") -}}
+    {{- $showTopologies = false -}}
+  {{- end -}}
+{{- end -}}
+{{- if $showTopologies }}
+allowedTopologies:
+  - matchLabelExpressions:
+      {{- if eq $cloudProvider "aws" }}
+      - key: topology.ebs.csi.aws.com/zone
+      {{- else if eq $cloudProvider "gcp" }}
+      - key: topology.gke.io/zone
+      {{- else }}
+      - key: topology.kubernetes.io/zone
+      {{- end }}
+        values:
+          {{- range .Values.storage.storageClass.zones }}
+          - {{ . }}
+          {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,14 @@
+{{- if .Values.piiRedactor.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "laminar.resourceName" "pii-redactor-service" }}
+spec:
+  selector:
+    app: {{ include "laminar.resourceName" "pii-redactor" }}
+  ports:
+    - protocol: TCP
+      port: {{ .Values.piiRedactor.service.port }}
+      targetPort: {{ .Values.piiRedactor.env.port }}
+  type: {{ .Values.piiRedactor.service.type }}
+{{- end }}

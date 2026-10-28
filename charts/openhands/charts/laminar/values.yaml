@@ -1,0 +1,1017 @@
+# Global configuration
+global:
+  # Cloud provider: "aws" or "gcp"
+  cloudProvider: "aws"
+  environment: "FULL"
+  # Postgres schema that holds all Laminar tables. Dispatched to app-server,
+  # app-server-consumer, and frontend as POSTGRES_SCHEMA so every pod resolves
+  # the same search_path. Leave as "public" unless you need Laminar to coexist
+  # with another service in the same database. The frontend creates this schema
+  # on first boot (see frontend.env.postgresCreateSchema).
+  postgresSchema: "public"
+  # Frontend URL dispatched to all three app pods as NEXT_PUBLIC_URL.
+  # Used for crafting frontend URLs in alert/signal notifications and for
+  # lmnr-cli authentication. Per-service overrides: frontend.env.nextPublicUrl,
+  # appServer.env.nextPublicUrl, appServerConsumer.env.nextPublicUrl.
+  nextPublicUrl: "https://localhost:3000"
+  # Namespace for all resources (default: default)
+  # When installing the chart, you can specify a custom namespace with --namespace flag
+  # If you want a dedicated namespace, use: helm install laminar . --namespace laminar --create-namespace
+  namespace: "default"
+  # Your node group name. Example: managed-ng-m6a-xlarge-1-80-gb-01
+  nodeGroupName: ""
+  # Default node scheduling configuration (can be overridden per service)
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# Image configuration
+images:
+  repository: "ghcr.io/lmnr-ai"
+  pullPolicy: Always
+  frontend:
+    # Root-served image. To serve under a sub-path, do NOT change this — set
+    # frontend.subPath.enabled: true below, which auto-selects the prebuilt
+    # frontend-ee-basepath image (baked with NEXT_PUBLIC_BASE_PATH=/lmnr).
+    name: "frontend-ee"
+    tag: "latest"
+  appServer:
+    name: "app-server-ee"
+    tag: "latest"
+  piiRedactor:
+    name: "pii-redactor-ee"
+    tag: "latest"
+  redis:
+    repository: "valkey/valkey"
+    tag: "latest"
+  rabbitmq:
+    repository: "rabbitmq"
+    tag: "latest"
+  nginx:
+    repository: "nginx"
+    tag: "latest"
+  postgres:
+    repository: "postgres"
+    tag: "15"
+  clickhouse:
+    repository: "clickhouse/clickhouse-server"
+    tag: "25.10"
+  curl:
+    repository: "curlimages/curl"
+    tag: "8.22.0"
+  quickwit:
+    repository: "quickwit/quickwit"
+    tag: "v0.9.1"
+
+# Secrets configuration (K8s secrets)
+secrets:
+  enabled: true
+  # Database SSL configuration
+  # Set to true if connecting to an external Postgres instance that requires SSL
+  # Set to false if using the embedded Postgres instance (no SSL)
+  enableDatabaseSSL: false
+
+  # AWS Secrets Manager configuration
+  # Secrets listed in secretKeys will be fetched from AWS Secrets Manager
+  awsSecretsManager:
+    enabled: false
+    region: "us-east-1"
+
+    # IAM role for IRSA (IAM Roles for Service Accounts)
+    serviceAccount:
+      create: true
+      name: "lmnr-secrets-reader-sa"
+      # Optional: If provided, annotates SA with eks.amazonaws.com/role-arn
+      # Leave empty if IRSA is already configured
+      roleArn: ""
+
+    # Secret source configuration (single JSON secret approach)
+    # Option 1: Use clusterName pattern - secret name will be: {clusterName}/lmnr-secrets
+    clusterName: ""
+    # Option 2: Override with explicit secret name (takes precedence over clusterName)
+    secretName: ""
+
+    # Explicit list of secret keys to fetch from AWS
+    # These keys will be fetched from AWS and NOT use secrets.data values
+    # Example: ["NEXTAUTH_SECRET", "AUTH_GITHUB_ID", "AUTH_GITHUB_SECRET"]
+    secretKeys: []
+
+  # HashiCorp Vault configuration
+  # Secrets listed in secretKeys will be fetched from Vault
+  vault:
+    enabled: false
+    address: "http://vault:8200"
+
+    # Kubernetes auth configuration
+    authPath: "auth/kubernetes"
+    role: "lmnr-app"
+
+    # Service account for Vault authentication
+    serviceAccount:
+      create: true
+      name: "lmnr-vault-sa"
+
+    # Secret path configuration
+    kvVersion: "v2" # v1 or v2
+    secretPath: "secret/data/lmnr" # Path to secrets in Vault (for KV v2)
+
+    # Explicit list of secret keys to fetch from Vault
+    # These keys will be fetched from Vault and NOT use secrets.data values
+    # Example: ["RABBITMQ_PASSWORD", "CLICKHOUSE_PASSWORD", "POSTGRES_PASSWORD"]
+    secretKeys: []
+
+  # Full schema of all required secrets
+  # Keys NOT listed in AWS or Vault secretKeys will use these values as defaults
+  # Auto-generated URLs (DATABASE_URL, CLICKHOUSE_URL, RABBITMQ_URL) are created
+  # unless the key is present in AWS or Vault secretKeys
+  # All secret values should be provided via values files or --set flags
+  data:
+    NEXTAUTH_SECRET: "abc"
+    RABBITMQ_ERLANG_COOKIE: "rabbitmq-erlang-cookie"
+    RABBITMQ_DEFAULT_USER: "admin"
+    RABBITMQ_DEFAULT_PASS: "rabbitmq123"
+    CLICKHOUSE_USER: "default"
+    CLICKHOUSE_PASSWORD: "clickhouse123"
+    POSTGRES_USER: "lmnr"
+    POSTGRES_PASSWORD: "lmnr123"
+    AEAD_SECRET_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    SHARED_SECRET_TOKEN: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
+    AWS_REGION: "us-east-1"
+    S3_EXPORTS_BUCKET: "<s3-exports-bucket-name>"
+    # LLM provider API key (for gemini and openai; bedrock uses AWS_* creds).
+    # See `llmProvider` on frontend/appServer/appServerConsumer to select the provider.
+    LLM_API_KEY: ""
+    # App Server secrets
+    CLICKHOUSE_RO_USER: "default"
+    CLICKHOUSE_RO_PASSWORD: "clickhouse123"
+    DATABASE_SSL_ROOT_CERT: "<DATABASE_SSL_ROOT_CERT--MULTILINE_PEM_ENCODED>"
+    # App Server Consumer secrets
+    SLACK_ENCRYPTION_KEY: ""
+    # Frontend secrets - Auth providers
+    ## github
+    AUTH_GITHUB_ID: ""
+    AUTH_GITHUB_SECRET: ""
+    ## google
+    AUTH_GOOGLE_ID: ""
+    AUTH_GOOGLE_SECRET: ""
+    ## azure
+    AUTH_AZURE_AD_CLIENT_ID: ""
+    AUTH_AZURE_AD_CLIENT_SECRET: ""
+    AUTH_AZURE_AD_TENANT_ID: ""
+    ## okta
+    AUTH_OKTA_CLIENT_ID: ""
+    AUTH_OKTA_CLIENT_SECRET: ""
+    AUTH_OKTA_ISSUER: ""
+    ## keycloak
+    AUTH_KEYCLOAK_ID: ""
+    AUTH_KEYCLOAK_SECRET: ""
+    AUTH_KEYCLOAK_ISSUER: ""
+    # Frontend secrets - Integrations
+    GITHUB_TOKEN: ""
+    # Frontend secrets - Worker URLs
+    DATASET_EXPORT_WORKER_URL: ""
+    DATASET_EXPORT_SECRET_KEY: ""
+    # Frontend secrets - SQL access to Postgres entities
+    # Dedicated read-only Postgres role that ClickHouse uses to read evaluation,
+    # dataset and signal names and dashboards in SQL queries and custom dashboards.
+    # The frontend creates the role on boot; it must NOT be POSTGRES_USER or a
+    # privileged role. Leave empty to turn this off (those queries then fail with
+    # "pg entities are not available on this deployment").
+    CLICKHOUSE_POSTGRES_USER: ""
+    CLICKHOUSE_POSTGRES_PASSWORD: ""
+    DATA_EXPORTER_URL: ""
+    DATA_EXPORTER_SECRET_KEY: ""
+    # Frontend secrets - Slack (brokered OAuth for self-hosters).
+    # The instance uses Laminar Cloud's official Slack app via the broker, so
+    # no Slack app of your own is required. SLACK_BROKER_URL is Laminar Cloud's
+    # broker endpoint (https://laminar.sh); LMNR_LICENSE_KEY is your enterprise
+    # license key, which the broker uses to authenticate this instance. Set both
+    # to enable Slack; leave empty to disable.
+    SLACK_BROKER_URL: "https://laminar.sh"
+    LMNR_LICENSE_KEY: ""
+    # Quickwit secrets
+    QUICKWIT_DATABASE_URL: "postgres://lmnr:lmnr123@laminar-postgres-service:5432/postgres"
+
+# Frontend configuration
+frontend:
+  enabled: true
+  replicaCount: 1
+  # Serve Laminar under a fixed "/lmnr" sub-path behind a reverse proxy, so it
+  # can share a domain with another app instead of needing its own hostname.
+  # When enabled, the chart auto-selects the prebuilt frontend-ee-basepath image
+  # (the sub-path is baked into the image at build time and can't be flipped at
+  # runtime) and scopes the ingress path to "/lmnr". The prefix is fixed to "/lmnr"
+  # because that's the only published image build; it is not configurable here.
+  subPath:
+    enabled: false
+  resources:
+    requests:
+      cpu: "0.1"
+      memory: "1Gi"
+    limits:
+      cpu: "2.0"
+      memory: "2Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # Wait for dependencies before starting
+  waitForDependencies:
+    enabled: true
+    services:
+      - name: redis
+        host: laminar-redis-service
+        port: 6379
+      - name: postgres
+        host: laminar-postgres-service
+        port: 5432
+      - name: clickhouse
+        host: laminar-clickhouse-service
+        port: 8123
+    httpChecks:
+      - name: app-server
+        url: http://laminar-app-server-service:8000/health
+      - name: app-server-consumer
+        url: http://laminar-app-server-consumer-service:8000/health
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  ingress:
+    enabled: true
+    # If left empty, will be set based on global.cloudProvider (aws -> alb, gcp -> gce)
+    className: ""
+    # Path the ingress routes to the frontend service. Defaults to "/lmnr" when
+    # frontend.subPath.enabled is true, else "/", so a sub-path deployment routes
+    # correctly without extra config. Override only if your proxy needs a different prefix.
+    path: ""
+    # Optional: Set a custom hostname for your ingress
+    # If set, this will be used in the ingress rules and can be used with external-dns
+    # Example: "app.yourdomain.com"
+    hostname: ""
+    # Optional: Enable external-dns integration
+    # Requires external-dns to be installed in your cluster
+    # When enabled with a hostname, external-dns will automatically create DNS records
+    externalDns:
+      enabled: false
+    # Optional: TLS configuration via cert-manager
+    # Requires cert-manager to be installed in your cluster
+    tls:
+      enabled: false
+      secretName: "laminar-frontend-tls"
+      clusterIssuer: "letsencrypt"
+    # Annotations for the ingress. If empty, defaults for global.cloudProvider will be used.
+    annotations: {}
+      # For AWS (ALB):
+      # alb.ingress.kubernetes.io/scheme: internet-facing
+      # alb.ingress.kubernetes.io/target-type: ip
+      # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+      # For GCP (GCE):
+      # kubernetes.io/ingress.allow-http: "true"
+  env:
+    backendUrl: "http://laminar-app-server-service:8000"
+    backendRtUrl: "http://laminar-app-server-consumer-service:8000"
+    # Set these to your actual frontend URL
+    # If ingress.hostname is set, you can use "http://<hostname>" or "https://<hostname>"
+    # Otherwise, set the ALB DNS name after initial deployment (see QUICKSTART.md)
+    nextauthUrl: "https://localhost:3000"
+    # Override global.nextPublicUrl for the frontend pod only. Leave empty to use global.nextPublicUrl.
+    nextPublicUrl: ""
+    redisUrl: "redis://laminar-redis-service:6379"
+    quickwitSearchUrl: "http://laminar-quickwit-searcher:7280"
+    # LLM provider for AI features (chat-with-trace, SQL-with-AI, signals).
+    # One of: "openai" | "gemini" | "bedrock". openai and gemini read
+    # LLM_API_KEY (and optional LLM_BASE_URL); bedrock reads AWS_ACCESS_KEY_ID /
+    # AWS_SECRET_ACCESS_KEY / AWS_REGION from secrets.
+    llmProvider: "gemini"
+    # Optional base URL override. Used by openai for OpenAI-compatible gateways
+    # (LiteLLM, OpenRouter, vLLM) and by gemini for custom endpoints.
+    llmBaseUrl: ""
+    # Optional default HTTP headers for LLM provider requests. Rendered as
+    # LLM_DEFAULT_HEADERS_JSON. For sensitive values, use frontend.extraEnv
+    # to source LLM_DEFAULT_HEADERS_JSON from a Kubernetes Secret instead.
+    llmDefaultHeaders: {}
+    # Optional model overrides per size tier. Per-provider defaults apply when empty.
+    llmModelSmall: ""
+    llmModelMedium: ""
+    llmModelLarge: ""
+    # Enables the Signals feature in the frontend. Requires llmProvider (+ creds).
+    signalsEnabled: "true"
+    # Enables the chat-with-trace feature in the frontend. Requires llmProvider (+ creds).
+    agentChatEnabled: "true"
+    # Whether the frontend should CREATE SCHEMA for global.postgresSchema on first
+    # boot. Only takes effect for a non-"public" schema. Set to "false" if the
+    # schema is pre-provisioned or the DB role lacks CREATE privileges.
+    postgresCreateSchema: "true"
+    # Postgres host and port as the ClickHouse server reaches them, for SQL access
+    # to Postgres entities (see CLICKHOUSE_POSTGRES_USER in secrets.data).
+    # Change when using an external Postgres.
+    clickhousePostgresHost: "laminar-postgres-service"
+    clickhousePostgresPort: "5432"
+  # First launch runs all migrations to prepare databases, which can take several minutes.
+  # Larger initial delays are set to account for this.
+  readinessProbe:
+    initialDelaySeconds: 150
+    periodSeconds: 10
+  livenessProbe:
+    initialDelaySeconds: 150
+    periodSeconds: 20
+  # Graceful shutdown during rollouts. On termination the pod sleeps for
+  # preStopSleepSeconds before Next.js receives SIGTERM, so the load balancer
+  # has time to stop routing new requests to it (otherwise users see 502s
+  # during `helm upgrade`). Set preStopSleepSeconds to 0 to disable.
+  # terminationGracePeriodSeconds covers the sleep plus in-flight requests and
+  # must be greater than preStopSleepSeconds.
+  preStopSleepSeconds: 20
+  terminationGracePeriodSeconds: 60
+  # Additional environment variables for the frontend container.
+  # Supports all Kubernetes env var formats including valueFrom.secretKeyRef
+  # to reference pre-existing Kubernetes secrets.
+  # These take precedence over values injected via envFrom (secrets.data).
+  # Example - read from an existing K8s secret:
+  #   extraEnv:
+  #     - name: AUTH_KEYCLOAK_ID
+  #       valueFrom:
+  #         secretKeyRef:
+  #           name: keycloak-realm
+  #           key: client-id
+  #     - name: AUTH_KEYCLOAK_ISSUER
+  #       value: "https://keycloak.example.com/realms/my-realm"
+  extraEnv: []
+  # Additional volumes and volumeMounts for the frontend container, mirroring
+  # extraEnv. Useful for mounting a Secret or ConfigMap (e.g. a custom CA bundle).
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# App Server configuration
+appServer:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "0.5"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # Wait for dependencies before starting
+  waitForDependencies:
+    enabled: true
+    services:
+      - name: redis
+        host: laminar-redis-service
+        port: 6379
+      - name: postgres
+        host: laminar-postgres-service
+        port: 5432
+      - name: clickhouse
+        host: laminar-clickhouse-service
+        port: 8123
+      - name: rabbitmq
+        host: laminar-rabbitmq-service
+        port: 5672
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+  loadBalancer:
+    enabled: true
+    # Optional: hostname for external-dns to create a DNS record pointing to this LoadBalancer.
+    # When set, external-dns will manage the DNS record automatically.
+    # Example: "api.yourdomain.com"
+    hostname: ""
+    # Annotations for the load balancer. If empty, defaults for global.cloudProvider will be used.
+    annotations: {}
+      # For AWS (NLB):
+      # service.beta.kubernetes.io/aws-load-balancer-type: external
+      # service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: instance
+      # service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+      # service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+  # Optional: Ingress for the app server (L7 HTTP routing with external-dns and cert-manager TLS)
+  # AWS users: you most likely do NOT need this — loadBalancer above already exposes
+  # the app server externally via NLB. Use this only for GCP or if you prefer ALB over NLB.
+  ingress:
+    # Optional: Set a custom hostname to enable the ingress
+    hostname: ""
+    # ingressClassName is required when hostname is set (e.g. "traefik", "gce", "alb")
+    className: ""
+    # Optional: Enable external-dns integration
+    externalDns:
+      enabled: false
+    # Optional: TLS configuration via cert-manager
+    # Requires cert-manager to be installed in your cluster
+    tls:
+      enabled: false
+      secretName: "laminar-app-server-tls"
+      clusterIssuer: "letsencrypt"
+    # Additional annotations for the ingress
+    annotations: {}
+  nginx:
+    # In-pod proxy_pass target. Override to "127.0.0.1" on dual-stack hosts
+    # hitting `connect() failed` errors, or "[::1]" for IPv6-only deploys.
+    proxyUpstreamHost: "localhost"
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "300m"
+        memory: "256Mi"
+  env:
+    port: "8000"
+    agentManagerUrl: "http://laminar-agent-manager-service:8901"
+    grpcPort: "8001"
+    databaseMaxConnections: "64"
+    rabbitmqMaxChannelPoolSize: "128"
+    rabbitmqAutoReconnect: "true"
+    dbWriteSpanBatchSize: "24"
+    maxDbSpanPayloadBytes: "262144"
+    httpPayloadLimit: "26214400"
+    grpcPayloadLimit: "26214400"
+    aggregateTraces: "true"
+    enableTracing: "true"
+    quickwitSearchUrl: "http://laminar-quickwit-searcher:7280"
+    quickwitIngestUrl: "http://laminar-quickwit-indexer:7281"
+    redisUrl: "redis://laminar-redis-service:6379"
+    # Override global.nextPublicUrl for the app-server pod only. Leave empty to use global.nextPublicUrl.
+    nextPublicUrl: ""
+    # LLM provider (one of "openai" | "gemini" | "bedrock"). Required when the
+    # signals feature is enabled. openai/gemini read LLM_API_KEY; bedrock reads
+    # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION from secrets.
+    llmProvider: "gemini"
+    # Optional base URL override (OpenAI-compatible gateways or custom Gemini endpoints).
+    llmBaseUrl: ""
+    # Optional default HTTP headers for LLM provider requests. Rendered as
+    # LLM_DEFAULT_HEADERS_JSON. For sensitive values, use appServer.extraEnv
+    # to source LLM_DEFAULT_HEADERS_JSON from a Kubernetes Secret instead.
+    llmDefaultHeaders: {}
+    # Optional model overrides per size tier. Per-provider defaults apply when empty.
+    llmModelSmall: ""
+    llmModelMedium: ""
+    llmModelLarge: ""
+  livenessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 1
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 1
+  # Additional environment variables for the app-server container.
+  # Supports all Kubernetes env var formats including valueFrom.secretKeyRef.
+  # These take precedence over values injected via envFrom (secrets.data).
+  extraEnv: []
+  # Additional volumes and volumeMounts for the app-server container, mirroring
+  # extraEnv. Useful for mounting a Secret or ConfigMap (e.g. a custom CA bundle).
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# App Server Consumer configuration
+appServerConsumer:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "0.5Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # Wait for dependencies before starting
+  waitForDependencies:
+    enabled: true
+    services:
+      - name: redis
+        host: laminar-redis-service
+        port: 6379
+      - name: postgres
+        host: laminar-postgres-service
+        port: 5432
+      - name: clickhouse
+        host: laminar-clickhouse-service
+        port: 8123
+      - name: rabbitmq
+        host: laminar-rabbitmq-service
+        port: 5672
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+  env:
+    port: "8000"
+    consumerPort: "8000"
+    databaseMaxConnections: "64"
+    numSpansWorkers: "8"
+    numSpansIndexerWorkers: "8"
+    numBrowserEventsWorkers: "8"
+    numNotificationWorkers: "4"
+    numClusteringWorkers: "8"
+    numSemanticEventWorkers: "1"
+    numSignalJobSubmissionBatchWorkers: "8"
+    numSignalJobPendingBatchWorkers: "8"
+    signalJobPendingBatchSize: "64"
+    signalJobMaxAllowedSteps: "10"
+    signalJobWaitingQueueTtlMs: "300000"
+    numSignalJobRealtimeWorkers: "4"
+    numSignalJobBackfillWorkers: "4"
+    numReportsWorkers: "2"
+    spansIndexerQueuePrefetchCount: "1"
+    eventClusteringBatchQueuePrefetchCount: "2"
+    signalsRealtimeQueuePrefetchCount: "1"
+    signalsBackfillQueuePrefetchCount: "1"
+    rabbitmqMaxChannelPoolSize: "128"
+    rabbitmqAutoReconnect: "true"
+    # LLM provider for signals (one of "openai" | "gemini" | "bedrock").
+    # openai/gemini read LLM_API_KEY; bedrock reads AWS_* creds from secrets.
+    llmProvider: "gemini"
+    # Optional base URL override (OpenAI-compatible gateways or custom Gemini endpoints).
+    llmBaseUrl: ""
+    # Optional default HTTP headers for LLM provider requests. Rendered as
+    # LLM_DEFAULT_HEADERS_JSON. For sensitive values, use appServerConsumer.extraEnv
+    # to source LLM_DEFAULT_HEADERS_JSON from a Kubernetes Secret instead.
+    llmDefaultHeaders: {}
+    # Optional model overrides per size tier. Per-provider defaults apply when empty.
+    llmModelSmall: ""
+    llmModelMedium: ""
+    llmModelLarge: ""
+    # if the provider supports batch API, we prefer that. Can be overriden
+    # globally by this control
+    signalsAlwaysUseRealtime: "false"
+    redisUrl: "redis://laminar-redis-service:6379"
+    # Override global.nextPublicUrl for the app-server-consumer pod only. Leave empty to use global.nextPublicUrl.
+    nextPublicUrl: ""
+    enableTracing: "false"
+    enableReports: "false"
+    quickwitSearchUrl: "http://laminar-quickwit-searcher:7280"
+    quickwitIngestUrl: "http://laminar-quickwit-indexer:7281"
+  livenessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 1
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 1
+  # Additional environment variables for the app-server-consumer container.
+  # Supports all Kubernetes env var formats including valueFrom.secretKeyRef.
+  # These take precedence over values injected via envFrom (secrets.data).
+  extraEnv: []
+  # Additional volumes and volumeMounts for the app-server-consumer container,
+  # mirroring extraEnv. Useful for mounting a Secret or ConfigMap (e.g. a CA bundle).
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Quickwit configuration
+quickwit:
+  enabled: true
+  clusterId: "default-quickwit"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # Extra environment variables applied to ALL Quickwit components
+  # (control-plane, indexer, janitor, metastore, searcher).
+  #
+  # Primary use case: inject S3 / S3-compatible HMAC credentials for
+  # non-AWS object stores (GCS, MinIO, R2, etc.) via secretKeyRef.
+  # Quickwit reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY directly from
+  # the pod environment, so no extra config surface is needed beyond these
+  # vars. See examples/quickwit-gcs-storage.yaml for a full GCS setup.
+  #
+  # Secondary use case: override Quickwit-specific tunables, e.g.
+  # QW_S3_MAX_CONCURRENCY, custom CA bundle paths.
+  extraEnv: []
+  # - name: AWS_ACCESS_KEY_ID
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: quickwit-gcs-credentials
+  #       key: access-key-id
+  # - name: AWS_SECRET_ACCESS_KEY
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: quickwit-gcs-credentials
+  #       key: secret-access-key
+  # S3 / object-store configuration
+  s3:
+    # Quickwit's index root URI. MUST be set to a bucket you own
+    # (e.g. "s3://my-laminar-quickwit/indexes"); leave empty to disable
+    # Quickwit entirely. Quickwit pins each index's storage URI in the
+    # metastore at creation time, so the chart treats this value as the
+    # opt-in gate for the whole Quickwit stack — an empty value skips
+    # the Quickwit workloads AND the QUICKWIT_SEARCH_URL / QUICKWIT_INGEST_URL
+    # env vars on frontend / app-server / app-server-consumer. Search
+    # degrades gracefully when Quickwit is off.
+    defaultIndexRootUri: ""
+    region: "us-east-1"
+    # Quickwit storage flavor. When left empty, the chart auto-fills
+    # based on global.cloudProvider:
+    #   aws  -> "" (AWS SDK defaults)
+    #   gcp  -> "gcs" (GCS S3-interop mode)
+    # Set explicitly to override — e.g. "minio", "do" (DigitalOcean Spaces),
+    # or "garage" for other S3-compatible stores. Explicit value always wins.
+    # See https://quickwit.io/docs/configuration/storage-config
+    flavor: ""
+    # Custom S3 endpoint. When left empty, auto-filled from global.cloudProvider:
+    #   aws  -> "" (AWS S3 default endpoint)
+    #   gcp  -> "https://storage.googleapis.com"
+    # Set explicitly for non-AWS/GCP stores, e.g.:
+    #   MinIO:  http://minio.minio.svc.cluster.local:9000
+    #   R2:     https://<account-id>.r2.cloudflarestorage.com
+    endpoint: ""
+  # Quickwit node.yaml settings
+  config:
+    # Increase from Quickwit's 4 MiB default — app-server-consumer can
+    # send large span batches to the indexer, and the searcher returns
+    # large result sets to app-server. Hitting the default cap surfaces
+    # as opaque gRPC errors.
+    grpcMaxMessageSize: "50 MiB"
+  # Component configurations
+  controlPlane:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "0.1"
+        memory: "100Mi"
+      limits:
+        cpu: "1.0"
+        memory: "1Gi"
+    # Per-component extra env vars, appended to quickwit.extraEnv above.
+    # Use only when a single component needs an override the others don't.
+    extraEnv: []
+  janitor:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "0.1"
+        memory: "100Mi"
+      limits:
+        cpu: "1.0"
+        memory: "1Gi"
+    extraEnv: []
+  metastore:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "0.1"
+        memory: "100Mi"
+      limits:
+        cpu: "1.0"
+        memory: "1Gi"
+    waitForDependencies:
+      enabled: true
+      services:
+        - name: postgres
+          host: laminar-postgres-service
+          port: 5432
+    # Startup probe budget (periodSeconds × failureThreshold = 300s). Upon
+    # migration to quickwit 0.9, the metastore runs migrations against
+    # Postgres on boot, which can take a while when there are many
+    # splits. A probe timeout midway kills the pod and leaves migrations
+    # partially applied.
+    startupProbe:
+      periodSeconds: 5
+      failureThreshold: 60
+    extraEnv: []
+  indexer:
+    replicaCount: 1
+    resources:
+      # Requests bumped from 0.1cpu/100Mi: under realistic ingest the
+      # indexer needs at least ~1Gi resident, and scheduling it onto a
+      # node that can't supply that is what surfaces as OOMKilled on
+      # startup with a backlog. Limits unchanged — operators with heavy
+      # ingest should raise `limits.memory` to 8Gi+.
+      requests:
+        cpu: "0.5"
+        memory: "1Gi"
+      limits:
+        cpu: "1.0"
+        memory: "4Gi"
+    # Startup probe budget. Quickwit can take a while to come up on a
+    # non-empty index because it enumerates splits from S3. The old
+    # hardcoded budget (12 × 5s = 60s) is tight and produced misleading
+    # "connection refused" events when the real failure was an OOM kill
+    # later in startup. ~165s gives genuine startups room to finish.
+    startupProbe:
+      initialDelaySeconds: 15
+      periodSeconds: 5
+      failureThreshold: 30
+    # Indexer working data (incoming docs being built into splits, merge
+    # scratch space, local split cache). Final splits live in S3
+    # regardless of this setting.
+    #
+    # Default (persistence.enabled=false) uses an emptyDir capped by
+    # `emptyDir.sizeLimit`. The cap means a runaway working set fails
+    # the indexer pod instead of evicting every other pod on the node
+    # via kubelet ephemeral-storage pressure.
+    #
+    # RECOMMENDED FOR PRODUCTION: set `persistence.enabled=true` to
+    # back qwdata with a PVC. This (a) keeps the indexer's working set
+    # off node ephemeral storage entirely, and (b) avoids re-fetching
+    # split state from S3 on every restart.
+    #
+    # Upgrade note: switching an existing install from emptyDir to PVC
+    # requires recreating the StatefulSet because
+    # `spec.volumeClaimTemplates` is immutable:
+    #   kubectl delete sts laminar-quickwit-indexer --cascade=orphan
+    #   helm upgrade -i laminar ./charts/laminar -f laminar.yaml
+    # The new pod re-fetches working state from S3 on startup.
+    persistence:
+      enabled: false
+      storageClass: ""
+      size: "20Gi"
+    emptyDir:
+      sizeLimit: "20Gi"
+    extraEnv: []
+  searcher:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "0.1"
+        memory: "100Mi"
+      limits:
+        cpu: "1.0"
+        memory: "2Gi"
+    startupProbe:
+      initialDelaySeconds: 15
+      periodSeconds: 5
+      failureThreshold: 30
+    # Searcher's qwdata is mostly a local hot cache of splits pulled
+    # from S3 for the active query workload. Same trade-off as the
+    # indexer: emptyDir is fine for most installs, but if you have a
+    # large index or slow S3 round-trips, a PVC keeps the cache warm
+    # across restarts.
+    persistence:
+      enabled: false
+      storageClass: ""
+      size: "10Gi"
+    emptyDir:
+      sizeLimit: "10Gi"
+    extraEnv: []
+
+# PII Redactor configuration (optional, off by default)
+# CPU-only ONNX gRPC service that strips PII from spans before persistence.
+# When enabled, PII_REDACTOR_URL is injected into the app-server and
+# app-server-consumer pods, which activates the redaction feature.
+# The model is baked into the image, so this service has no external deps.
+piiRedactor:
+  enabled: false
+  replicaCount: 1
+  # PII detection is CPU-intensive ONNX inference; size generously and
+  # consider pinning to a dedicated compute-optimized node (see scheduling below).
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  # Node scheduling configuration — set these to attach the PII redactor to a
+  # specific machine / node group (e.g. a compute-optimized instance).
+  # Example:
+  #   nodeSelector:
+  #     node.kubernetes.io/instance-type: c8i.2xlarge
+  #   tolerations:
+  #     - key: "dedicated"
+  #       operator: "Equal"
+  #       value: "pii-redactor"
+  #       effect: "NoSchedule"
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  service:
+    type: ClusterIP
+    port: 8910
+  # Runtime tuning (passed through as env vars). Defaults match the service's
+  # own built-in defaults; override only when needed.
+  env:
+    port: 8910
+    # chunkSize: 512
+    # chunkOverlap: 64
+    # maxTokensPerText: 24576
+    # maxBatchSize: 16
+    # maxQueueDelayMs: 10
+    # maxTextsPerRequest: 1024
+    # intraThreads: 0
+    # interThreads: 1
+  # Extra environment variables appended to the container (later wins on dupes).
+  extraEnv: []
+  # Additional volumes and volumeMounts for the pii-redactor container, mirroring
+  # extraEnv. Useful for mounting a Secret or ConfigMap (e.g. a custom CA bundle).
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# PostgreSQL configuration
+postgres:
+  enabled: true
+  replicaCount: 1
+  database: "lmnr"
+  resources:
+    requests:
+      cpu: "0.1"
+      memory: "128Mi"
+    limits:
+      cpu: "0.5"
+      memory: "2Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  persistence:
+    enabled: true
+    # Storage class name - if empty, uses default storage class
+    storageClass: ""
+    size: "20Gi"
+  service:
+    type: ClusterIP
+    port: 5432
+    targetPort: 5432
+
+# ClickHouse configuration
+clickhouse:
+  enabled: true
+  replicaCount: 1
+  database: "lmnr"
+  resources:
+    requests:
+      cpu: "0.1"
+      memory: "256Mi"
+    limits:
+      cpu: "0.5"
+      memory: "4Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  persistence:
+    enabled: true
+    # Storage class name - if empty, uses default storage class
+    storageClass: ""
+    size: "50Gi"
+  # S3 storage configuration for separation of storage and compute
+  # When enabled, ClickHouse will store data in S3 instead of local disks
+  s3:
+    enabled: true
+    # S3 bucket endpoint (e.g., https://my-bucket.s3.us-east-1.amazonaws.com/)
+    # For GCS, use https://storage.googleapis.com/my-bucket
+    endpoint: ""
+    # S3 bucket region. AWS only
+    region: ""
+    # S3 access credentials - set directly or via environment variables from a Kubernetes secret
+    # For GCP, these are Service account HMAC key and Service account HMAC secret respectively
+    accessKeyId: ""
+    secretAccessKey: ""
+    # Load accessKeyId/secretAccessKey from environment variable names (e.g. from extraEnv).
+    # Takes precedence over accessKeyId/secretAccessKey when set.
+    accessKeyIdFrom: ""
+    secretAccessKeyFrom: ""
+    # Use environment credentials or EC2 instance profile
+    useEnvironmentCredentials: false
+    # Local cache configuration for S3 data
+    cache:
+      enabled: true
+      # Local disk path for cache
+      path: "/var/lib/clickhouse/disks/s3_cache/"
+      # Maximum cache size (e.g., 10Gi, 50Gi)
+      maxSize: "10Gi"
+    # Metadata path for S3 disk
+    metadataPath: "/var/lib/clickhouse/disks/s3_disk/"
+  # Extra environment variables to inject into the ClickHouse container.
+  # Useful for loading S3 credentials from Kubernetes secrets via secretKeyRef.
+  extraEnv: []
+  # - name: GCS_HMAC_KEY
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: clickhouse-gcs-credentials
+  #       key: access-key-id
+  # - name: GCS_HMAC_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: clickhouse-gcs-credentials
+  #       key: secret-access-key
+  # Mounted as config.d/system_logs.xml: disables every system log table except query_log and error_log.
+  systemLogs:
+    enabled: true
+    # Days query_log and error_log are kept.
+    retentionDays: 3
+  # Additional volumes and volumeMounts for the ClickHouse container, mirroring extraEnv.
+  # Mount files under /etc/clickhouse-server/config.d/ to add server configuration.
+  extraVolumes: []
+  extraVolumeMounts: []
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+  livenessProbe:
+    initialDelaySeconds: 120
+    periodSeconds: 30
+    failureThreshold: 5
+  service:
+    type: ClusterIP
+    port: 8123
+    targetPort: 8123
+    nativePort: 9000
+
+# Redis configuration
+redis:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "0.1"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  service:
+    type: ClusterIP
+    port: 6379
+    targetPort: 6379
+
+# RabbitMQ configuration
+rabbitmq:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "0.1"
+      memory: "256Mi"
+    limits:
+      cpu: "1.0"
+      memory: "4Gi"
+  # Node scheduling configuration
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  persistence:
+    enabled: true
+    # Storage class name - if empty, uses default storage class
+    storageClass: ""
+    # Default sized for moderate trace volume. RabbitMQ persists durable
+    # messages to its WAL on disk; if a downstream consumer (e.g. the
+    # Quickwit indexer) stalls, the backlog grows here. See README for
+    # sizing guidance against your expected ingest rate.
+    size: "100Gi"
+  service:
+    type: ClusterIP
+    amqpPort: 5672
+  headlessService:
+    enabled: true
+  config:
+    maxMessageSize: 78643200
+    # Self-protection limits. Without these, RabbitMQ will crash on
+    # ENOSPC instead of blocking publishers when the disk is nearly full.
+    # `diskFreeLimit` is the absolute amount of free disk RabbitMQ tries
+    # to keep available; when free space drops below this, publishers are
+    # blocked (flow-control).
+    diskFreeLimit: "2GB"
+    # `vmMemoryHighWatermark` is the absolute memory threshold at which
+    # RabbitMQ starts paging/flow-controlling. Keep this comfortably
+    # below `rabbitmq.resources.limits.memory` so the kernel does not
+    # OOM-kill the container before RabbitMQ self-protects.
+    vmMemoryHighWatermark: "2GB"
+    # Console log level. RabbitMQ also writes to a file inside the
+    # container, but that disappears on SIGKILL — keep console logging
+    # on so `kubectl logs` shows the failure.
+    logLevel: "info"
+
+# Storage configuration
+storage:
+  storageClass:
+    # Create a cluster-wide StorageClass managed by this chart. Disable this in
+    # clusters where operators cannot create cluster-scoped resources. Persistent
+    # services with no explicit storageClass then use the cluster default class.
+    enabled: true
+    # Name of the storage class created by this chart
+    name: "laminar-sc"
+    # If left empty, will be set based on global.cloudProvider:
+    #   - aws: ebs.csi.aws.com
+    #   - gcp: pd.csi.storage.gke.io
+    provisioner: ""
+    # If left empty, will be set based on global.cloudProvider:
+    #   - aws: gp3
+    #   - gcp: pd-balanced
+    type: ""
+    reclaimPolicy: "Retain" # Retain volumes after pod deletion
+    volumeBindingMode: "WaitForFirstConsumer" # Bind volumes when pod is scheduled
+    # Allow PVCs created against this class to be resized in place.
+    # Disable only if you have a managed-StorageClass policy that
+    # forbids expansion.
+    allowVolumeExpansion: true
+    # Availability zones where volumes can be created. Required for AWS EBS.
+    # On GKE, you can often leave this empty to use default regional/zonal placement.
+    # Important: Ensure your nodes are running in these zones.
+    zones: []

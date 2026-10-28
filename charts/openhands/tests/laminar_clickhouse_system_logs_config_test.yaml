@@ -1,0 +1,89 @@
+suite: laminar clickhouse system logs config
+templates:
+  - charts/laminar/templates/clickhouse-system-logs-config.yaml
+  - charts/laminar/templates/clickhouse-statefulset.yaml
+set:
+  laminar.enabled: true
+  laminar.clickhouse.s3.enabled: false
+tests:
+  - it: disables high-volume system logs and keeps query_log and error_log for retentionDays
+    template: charts/laminar/templates/clickhouse-system-logs-config.yaml
+    set:
+      laminar.clickhouse.systemLogs.retentionDays: 2
+    asserts:
+      - equal:
+          path: metadata.name
+          value: laminar-clickhouse-system-logs-config
+      - matchRegex:
+          path: data["system_logs.xml"]
+          pattern: '<trace_log remove="1"/>'
+      - matchRegex:
+          path: data["system_logs.xml"]
+          pattern: '<text_log remove="1"/>'
+      - matchRegex:
+          path: data["system_logs.xml"]
+          pattern: '(?s)<query_log>\s*<ttl>event_date \+ INTERVAL 2 DAY DELETE</ttl>'
+      - matchRegex:
+          path: data["system_logs.xml"]
+          pattern: '(?s)<error_log>\s*<ttl>event_date \+ INTERVAL 2 DAY DELETE</ttl>'
+      # The cleanup Job only parses <[a-z0-9_]*_log remove="1"/> lines.
+      - notMatchRegex:
+          path: data["system_logs.xml"]
+          pattern: '<[^a-z0-9_/!][^>]*remove="1"|<[a-z0-9_]*[^a-z0-9_ >][^>]*remove="1"'
+
+  - it: mounts the system log config into ClickHouse without S3
+    template: charts/laminar/templates/clickhouse-statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: clickhouse-system-logs-config
+            mountPath: /etc/clickhouse-server/config.d/system_logs.xml
+            subPath: system_logs.xml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: clickhouse-system-logs-config
+            configMap:
+              name: laminar-clickhouse-system-logs-config
+      - exists:
+          path: spec.template.metadata.annotations["checksum/system-logs-config"]
+
+  - it: renders nothing extra when the system log config is turned off
+    set:
+      laminar.clickhouse.systemLogs.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: charts/laminar/templates/clickhouse-system-logs-config.yaml
+      - isNullOrEmpty:
+          path: spec.template.spec.volumes
+        template: charts/laminar/templates/clickhouse-statefulset.yaml
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/system-logs-config"]
+        template: charts/laminar/templates/clickhouse-statefulset.yaml
+
+  - it: passes extra volumes through to ClickHouse
+    template: charts/laminar/templates/clickhouse-statefulset.yaml
+    set:
+      laminar.clickhouse.extraVolumes:
+        - name: extra-config
+          configMap:
+            name: my-clickhouse-config
+      laminar.clickhouse.extraVolumeMounts:
+        - name: extra-config
+          mountPath: /etc/clickhouse-server/config.d/extra.xml
+          subPath: extra.xml
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: extra-config
+            configMap:
+              name: my-clickhouse-config
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: extra-config
+            mountPath: /etc/clickhouse-server/config.d/extra.xml
+            subPath: extra.xml

@@ -50,7 +50,7 @@ spec:
               done
 
               # Read from the server's own config so this list cannot drift from it.
-              disabled=$(sed -n 's/.*<\([a-z_]*_log\) remove="1".*/\1/p' /etc/laminar-clickhouse/system_logs.xml | paste -sd'|' -)
+              disabled=$(sed -n 's/.*<\([a-z0-9_]*_log\) remove="1".*/\1/p' /etc/laminar-clickhouse/system_logs.xml | paste -sd'|' -)
               if [ -z "${disabled}" ]; then
                 echo "No disabled system log tables found in system_logs.xml" >&2
                 exit 1

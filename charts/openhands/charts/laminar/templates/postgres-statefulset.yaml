@@ -1,0 +1,110 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "laminar.resourceName" "postgres" }}
+  labels:
+    app: {{ include "laminar.resourceName" "postgres" }}
+spec:
+  serviceName: {{ include "laminar.resourceName" "postgres-headless" }}
+  replicas: {{ .Values.postgres.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "laminar.resourceName" "postgres" }}
+  {{- if .Values.postgres.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: {{ include "laminar.resourceName" "postgres-data" }}
+      spec:
+        {{- $storageClassName := include "lmnr.storageClassName" (dict "root" . "persistence" .Values.postgres.persistence) }}
+        {{- if $storageClassName }}
+        storageClassName: {{ $storageClassName }}
+        {{- end }}
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ .Values.postgres.persistence.size }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "laminar.resourceName" "postgres" }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}
+          ports:
+            - containerPort: {{ .Values.postgres.service.port }}
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            {{- if .Values.postgres.persistence.enabled }}
+            - name: {{ include "laminar.resourceName" "postgres-data" }}
+              mountPath: /var/lib/postgresql/data
+            {{- end }}
+            {{- if include "lmnr.secrets.awsEnabled" . }}
+            - name: secrets-store-aws
+              mountPath: "/mnt/secrets-store-aws"
+              readOnly: true
+            {{- end }}
+            {{- if include "lmnr.secrets.vaultEnabled" . }}
+            - name: secrets-store-vault
+              mountPath: "/mnt/secrets-store-vault"
+              readOnly: true
+            {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "{{ .Values.postgres.database }}" -h 127.0.0.1 -p {{ .Values.postgres.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "{{ .Values.postgres.database }}" -h 127.0.0.1 -p {{ .Values.postgres.service.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 6
+      volumes:
+        {{- if not .Values.postgres.persistence.enabled }}
+        - name: {{ include "laminar.resourceName" "postgres-data" }}
+          emptyDir: {}
+        {{- end }}
+        {{- if include "lmnr.secrets.awsEnabled" . }}
+        - name: secrets-store-aws
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-aws
+        {{- end }}
+        {{- if include "lmnr.secrets.vaultEnabled" . }}
+        - name: secrets-store-vault
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-vault
+        {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.postgres "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.postgres "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.postgres "global" .Values.global) | nindent 6 }}
+{{- end }}

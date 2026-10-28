@@ -1,0 +1,7 @@
+apiVersion: v2
+appVersion: latest
+description: Helm chart for deploying the Laminar platform to kubernetes
+name: laminar
+type: application
+# lmnr-helm 0.3.1 plus clickhouse.systemLogs and clickhouse.extraVolumes (lmnr-ai/lmnr#2176).
+version: 0.3.1-openhands.1

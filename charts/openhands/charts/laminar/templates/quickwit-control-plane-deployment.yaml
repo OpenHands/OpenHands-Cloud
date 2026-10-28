@@ -1,0 +1,142 @@
+{{- if include "lmnr.quickwit.enabled" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laminar.resourceName" "quickwit-control-plane" }}
+  labels:
+    app.kubernetes.io/name: quickwit
+    app.kubernetes.io/instance: quickwit
+    app.kubernetes.io/version: {{ .Values.images.quickwit.tag | quote }}
+spec:
+  replicas: {{ .Values.quickwit.controlPlane.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quickwit
+      app.kubernetes.io/instance: quickwit
+      app.kubernetes.io/component: control-plane
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quickwit
+        app.kubernetes.io/instance: quickwit
+        app.kubernetes.io/component: control-plane
+      annotations:
+        # ConfigMap-via-subPath is not live-updated by the kubelet;
+        # checksum forces a rollout on `helm upgrade` when node.yaml
+        # changes.
+        checksum/config: {{ include (print $.Template.BasePath "/quickwit-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "lmnr.secrets.serviceAccountName" . }}
+      securityContext:
+        fsGroup: 1005
+      containers:
+        - name: quickwit
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1005
+          image: {{ .Values.images.quickwit.repository }}:{{ .Values.images.quickwit.tag }}
+          imagePullPolicy: IfNotPresent
+          args: ["run", "--service", "control_plane"]
+          envFrom:
+            {{- include "lmnr.secrets.envFrom" . | nindent 12 }}
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: QW_CONFIG
+              value: /quickwit/node.yaml
+            - name: QW_CLUSTER_ID
+              value: {{ .Values.quickwit.clusterId }}
+            - name: QW_NODE_ID
+              value: "$(POD_NAME)"
+            - name: QW_PEER_SEEDS
+              value: {{ include "laminar.resourceName" "quickwit-headless" }}
+            - name: QW_ADVERTISE_ADDRESS
+              value: "$(POD_IP)"
+            - name: QW_CLUSTER_ENDPOINT
+              value: "http://{{ include "laminar.resourceName" "quickwit-metastore" }}.{{ include "laminar.namespace" . }}.svc.cluster.local:7280"
+            - name: QW_METASTORE_URI
+              value: "$(QUICKWIT_DATABASE_URL)"
+            {{- include "lmnr.quickwit.extraEnv" (dict "root" $ "component" .Values.quickwit.controlPlane) | nindent 12 }}
+          ports:
+            - name: rest
+              containerPort: 7280
+              protocol: TCP
+            - name: grpc
+              containerPort: 7281
+              protocol: TCP
+            - name: discovery
+              containerPort: 7282
+              protocol: UDP
+          startupProbe:
+            failureThreshold: 12
+            httpGet:
+              path: /health/livez
+              port: rest
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/livez
+              port: rest
+          readinessProbe:
+            httpGet:
+              path: /health/readyz
+              port: rest
+          volumeMounts:
+            - name: config
+              mountPath: /quickwit/node.yaml
+              subPath: node.yaml
+            - name: data
+              mountPath: /quickwit/qwdata
+            {{- if include "lmnr.secrets.awsEnabled" . }}
+            - name: secrets-store-aws
+              mountPath: "/mnt/secrets-store-aws"
+              readOnly: true
+            {{- end }}
+            {{- if include "lmnr.secrets.vaultEnabled" . }}
+            - name: secrets-store-vault
+              mountPath: "/mnt/secrets-store-vault"
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.quickwit.controlPlane.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "laminar.resourceName" "quickwit" }}
+            items:
+              - key: node.yaml
+                path: node.yaml
+        - name: data
+          emptyDir: {}
+        {{- if include "lmnr.secrets.awsEnabled" . }}
+        - name: secrets-store-aws
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-aws
+        {{- end }}
+        {{- if include "lmnr.secrets.vaultEnabled" . }}
+        - name: secrets-store-vault
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lmnr-secrets-vault
+        {{- end }}
+      {{- include "laminar.nodeSelector" (dict "service" .Values.quickwit "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.affinity" (dict "service" .Values.quickwit "global" .Values.global) | nindent 6 }}
+      {{- include "laminar.tolerations" (dict "service" .Values.quickwit "global" .Values.global) | nindent 6 }}
+{{- end }}

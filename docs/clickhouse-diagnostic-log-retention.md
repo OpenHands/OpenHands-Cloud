@@ -22,6 +22,23 @@ Disabling a table in config stops writes but leaves the existing table and its d
 
 The Job reads the table list from the same ConfigMap ClickHouse mounts, so the two cannot disagree. It drops with `max_table_size_to_drop=0`, because diagnostic tables on long-running installs often exceed ClickHouse's 50 GB drop guard. Running it again is a no-op.
 
+## Additional ClickHouse configuration
+
+To add other server settings, mount your own file into `config.d/` with the Laminar values `clickhouse.extraVolumes` and `clickhouse.extraVolumeMounts`. ClickHouse merges `config.d/` files in name order, so a file named after `system_logs.xml` overrides it.
+
+```yaml
+laminar:
+  clickhouse:
+    extraVolumes:
+      - name: clickhouse-extra-config
+        configMap:
+          name: my-clickhouse-config
+    extraVolumeMounts:
+      - name: clickhouse-extra-config
+        mountPath: /etc/clickhouse-server/config.d/zz-extra.xml
+        subPath: extra.xml
+```
+
 ## Support bundles
 
 Support bundles collect the Laminar ClickHouse pod logs, plus the size and TTL of every `system` log table, including any leftover `_<N>` copies. They also include the 50 most recent rows of `system.error_log` and the 50 most recent failed queries from `system.query_log`.
