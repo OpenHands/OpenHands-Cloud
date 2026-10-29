@@ -867,8 +867,9 @@ postgresql:
     registry: ghcr.io
     repository: openhands/third-party-images/postgresql
     # PostgreSQL 16.15 in the layout of chart 15.5.38's default image (16.4.0); minor upgrade, same data format.
-    tag: 16.15.0-debian-12-oh1
-    digest: sha256:f515876e897f2d90998e74d8c1c8f6647ad3523759215b55cc754f2b079a691e
+    # PostGIS and GDAL removed: OpenHands never creates the extension.
+    tag: 16.15.0-debian-12-oh2
+    digest: sha256:8568ef28d06e8c4854150b466572e3ff50ab609737089c41acc7ba06fd4b8303
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -1450,7 +1451,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: "hotfix-1.49.5-r2-python@sha256:21acb7b93fa39fca5dd10d3d22da73dbf77bf7e84ca3d3441a6aa3b7e19d3080"
+    tag: "hotfix-1.49.5-r2-python@sha256:6860352c47867e3d13e3da896f891a79581ffbfd475404c9f8d5a2b828e6dbe8"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1679,7 +1680,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
-    tag: "hotfix-1.23.0-r2@sha256:82f27a73ab5f810d61fbdf16bc7a97853c7269828b1e2e3ac835101a66355b59"
+    tag: "hotfix-1.23.0-r2@sha256:46c2482b1fa09837b3f80f166490cabd0fca6e4a555625c4b67cd3537620f2bd"
 
   ingress:
     enabled: false
