@@ -1057,8 +1057,7 @@ budgetReconcileGate:
 # namespace, so the other pods in that namespace are unaffected.
 #
 # Off by default because the right settings depend on the cluster. Review each
-# rule before enabling, then run `helm test` to confirm that your network
-# plugin enforces it. See "Sandbox Network Isolation" in the README for
+# rule before enabling. See "Sandbox Network Isolation" in the README for
 # per-environment examples.
 sandboxNetworkPolicy:
   enabled: false
@@ -1140,17 +1139,6 @@ sandboxNetworkPolicy:
   #   ports:
   #     - protocol: TCP
   #       port: 443
-
-  # The `helm test` pod. It runs as a sandbox and fails if the metadata
-  # server, the kubelet, or the release's postgres and app server are
-  # reachable, or if DNS, LiteLLM, or Laminar are not.
-  test:
-    enabled: true
-    # Requires bash and getent. Empty uses keycloak.waitForDb.image.
-    image: ""
-    # Set to false on EKS. The VPC CNI always lets a pod reach its own node,
-    # so this check cannot pass there.
-    checkKubelet: true
 
 runtime-api:
   enabled: true

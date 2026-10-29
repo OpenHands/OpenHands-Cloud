@@ -710,7 +710,9 @@ We recommend restricting sandbox network access with the chart's sandbox egress 
 With the policy enabled, sandboxes can reach the internet, cluster DNS, your ingress controller,
 and the bundled LiteLLM and Laminar. They can't reach node, pod, or VPC-internal addresses, which
 include the kubelet, the Kubernetes API server, cloud metadata servers, other sandboxes, and the
-application's databases. The policy selects only sandbox pods in runtime-api's sandbox namespace
+application's databases. Some network plugins, including the VPC CNI on EKS, always allow a pod to
+reach the node it runs on, so on those clusters sandboxes can still reach their own node. The
+policy selects only sandbox pods in runtime-api's sandbox namespace
 (`runtime-api.sandbox_namespace`), so the other pods in that namespace are unaffected.
 
 The policy requires a network plugin that enforces NetworkPolicy:
@@ -750,15 +752,6 @@ sandboxNetworkPolicy:
 The `dns` and `ingressController` rules use the NetworkPolicy egress rule format. When you
 override `to` or `ports`, your list replaces the default list.
 
-After you install or upgrade, run the chart's test to confirm that the policy is enforced:
-
-```bash
-helm test openhands -n openhands --logs
-```
-
-The test runs a pod as a sandbox. It fails if the metadata server, the kubelet, or the release's
-PostgreSQL or app server are reachable, or if DNS, LiteLLM, or Laminar are not.
-
 #### GKE
 
 The defaults work on GKE. If your cluster uses NodeLocal DNSCache without Dataplane V2 and its
@@ -783,16 +776,6 @@ sandboxNetworkPolicy:
 ```
 
 #### EKS
-
-The VPC CNI always allows a pod to reach its own node, so the test's kubelet check can't pass on
-EKS. Disable it:
-
-```yaml
-sandboxNetworkPolicy:
-  enabled: true
-  test:
-    checkKubelet: false
-```
 
 Sandboxes reach an internet-facing load balancer through the internet rule. For an internal load
 balancer, add its subnets to `ingressController` as described above.

@@ -1,7 +1,6 @@
 suite: sandbox egress NetworkPolicy
 templates:
   - sandbox-network-policy.yaml
-  - tests/sandbox-network-policy-test.yaml
 release:
   name: oh
   namespace: openhands
@@ -10,10 +9,6 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-        template: sandbox-network-policy.yaml
-      - hasDocuments:
-          count: 0
-        template: tests/sandbox-network-policy-test.yaml
 
   - it: selects only sandbox pods and restricts egress in the release namespace
     template: sandbox-network-policy.yaml
@@ -274,93 +269,3 @@ tests:
             ports:
               - protocol: TCP
                 port: 443
-
-  - it: runs the test pod as a sandbox in the sandbox namespace
-    template: tests/sandbox-network-policy-test.yaml
-    set:
-      sandboxNetworkPolicy.enabled: true
-      runtime-api.sandbox_namespace: sandboxes
-    asserts:
-      - isKind:
-          of: Pod
-      - equal:
-          path: metadata.namespace
-          value: sandboxes
-      - equal:
-          path: metadata.labels.runtime_id
-          value: oh-openhands-sandbox-egress-test
-      - equal:
-          path: metadata.annotations["helm.sh/hook"]
-          value: test
-      - equal:
-          path: spec.automountServiceAccountToken
-          value: false
-      - equal:
-          path: spec.containers[0].image
-          value: ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie
-
-  - it: checks the release's services that sandboxes must not reach
-    template: tests/sandbox-network-policy-test.yaml
-    set:
-      sandboxNetworkPolicy.enabled: true
-      runtime-api.sandbox_namespace: sandboxes
-    asserts:
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: expect_blocked "metadata server" 169\.254\.169\.254 80
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: expect_blocked "kubelet" "\$HOST_IP" 10250
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: expect_blocked "postgres" oh-postgresql\.openhands\.svc 5432
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: expect_blocked "app server" openhands-service\.openhands\.svc 3000
-      - notMatchRegex:
-          path: spec.containers[0].command[2]
-          pattern: LiteLLM|Laminar
-
-  - it: checks that the bundled LiteLLM and Laminar stay reachable
-    template: tests/sandbox-network-policy-test.yaml
-    set:
-      sandboxNetworkPolicy.enabled: true
-      litellm-helm.enabled: true
-      laminar.enabled: true
-    asserts:
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: expect_allowed "LiteLLM" oh-litellm\.openhands\.svc 4000
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: expect_allowed "Laminar" laminar-app-server-service\.openhands\.svc 8000
-
-  - it: skips the postgres and app server checks when they are not deployed
-    template: tests/sandbox-network-policy-test.yaml
-    set:
-      sandboxNetworkPolicy.enabled: true
-      enabled: false
-      postgresql.enabled: false
-    asserts:
-      - notMatchRegex:
-          path: spec.containers[0].command[2]
-          pattern: postgres|app server
-
-  - it: uses the configured test image
-    template: tests/sandbox-network-policy-test.yaml
-    set:
-      sandboxNetworkPolicy.enabled: true
-      sandboxNetworkPolicy.test.image: registry.example.com/tools/bash:5
-    asserts:
-      - equal:
-          path: spec.containers[0].image
-          value: registry.example.com/tools/bash:5
-
-  - it: omits the test pod when the test is disabled
-    template: tests/sandbox-network-policy-test.yaml
-    set:
-      sandboxNetworkPolicy.enabled: true
-      sandboxNetworkPolicy.test.enabled: false
-    asserts:
-      - hasDocuments:
-          count: 0

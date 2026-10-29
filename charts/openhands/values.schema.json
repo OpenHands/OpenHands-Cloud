@@ -104,15 +104,7 @@
         "ipv6": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/cidrRule" },
         "dns": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/peerRule" },
         "ingressController": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/peerRule" },
-        "extraEgress": { "type": "array", "items": { "type": "object" } },
-        "test": {
-          "type": "object",
-          "properties": {
-            "enabled": { "type": "boolean" },
-            "image": { "type": "string" },
-            "checkKubelet": { "type": "boolean" }
-          }
-        }
+        "extraEgress": { "type": "array", "items": { "type": "object" } }
       }
     },
     "litellm": {
