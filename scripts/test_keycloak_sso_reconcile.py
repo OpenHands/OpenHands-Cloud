@@ -61,6 +61,7 @@ def api():
         "mappers": [],
         "writes": [],
         "import_status": 200,
+        "fail_mapper": None,
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -92,7 +93,17 @@ def api():
                 return
             state["writes"].append((self.command, self.path, body))
             if "/mappers" in self.path:
-                state["mappers"] = [dict(body, id="mapper-id")]
+                if body["name"] == state["fail_mapper"]:
+                    self.respond(500, {"error": "injected mapper failure"})
+                    return
+                if self.command == "POST":
+                    state["mappers"].append(dict(body, id=f"mapper-{len(state['mappers'])}"))
+                else:
+                    mapper_id = self.path.rsplit("/", 1)[-1]
+                    existing = next(m for m in state["mappers"] if m["id"] == mapper_id)
+                    assert body["id"] == mapper_id
+                    existing.clear()
+                    existing.update(body)
             else:
                 state["provider"] = dict(body, internalId="provider-id")
             self.respond(201 if self.command == "POST" else 204, b"")
@@ -146,8 +157,19 @@ def test_create_preserves_multiline_certificate(tmp_path, api, newline):
     assert provider["config"]["signingCertificate"] == certificate
     assert provider["config"]["validateSignature"] == "true"
     assert provider["displayName"] == 'Company "SSO" \\ test'
-    assert state["mappers"][0]["config"]["attribute.value"] == "enterprise_sso:saml"
-    assert [write[0] for write in state["writes"]] == ["POST", "POST"]
+    mappers = {m["name"]: m for m in state["mappers"]}
+    assert mappers["identity-provider"]["config"]["attribute.value"] == "enterprise_sso:saml"
+    for attribute in ("email", "firstName", "lastName"):
+        mapper = mappers[f"openhands-profile-{attribute}"]
+        assert mapper["identityProviderMapper"] == "saml-user-attribute-idp-mapper"
+        assert mapper["identityProviderAlias"] == "enterprise_sso"
+        assert mapper["config"] == {
+            "attribute.name": attribute,
+            "attribute.name.format": "ATTRIBUTE_FORMAT_UNSPECIFIED",
+            "user.attribute": attribute,
+            "syncMode": "IMPORT",
+        }
+    assert [write[0] for write in state["writes"]] == ["POST"] * 5
 
 
 def test_repeat_updates_provider_and_mapper_without_duplicates(tmp_path, api):
@@ -156,14 +178,45 @@ def test_repeat_updates_provider_and_mapper_without_duplicates(tmp_path, api):
     assert state["provider"] is not None
     # Existing API responses can also contain escaped data; do not limit the
     # fix to the import response and leave subsequent reconciliations broken.
-    state["mappers"][0]["config"]["other"] = "line\nwith\\backslash"
+    state["mappers"].append({
+        "id": "unrelated", "name": "customer-managed",
+        "config": {"other": "line\nwith\\cbackslash"},
+    })
     state["import"]["signingCertificate"] = "changed\ncertificate"
     state["writes"].clear()
     result = reconcile(tmp_path, api)
     assert "auto-configuration failed" not in result.stderr
-    assert [write[0] for write in state["writes"]] == ["PUT", "PUT"]
+    assert [write[0] for write in state["writes"]] == ["PUT"] * 5
     assert state["provider"]["config"]["signingCertificate"] == "changed\ncertificate"
-    assert len(state["mappers"]) == 1
+    assert len(state["mappers"]) == 5
+
+
+@pytest.mark.parametrize("failed_attribute", ["email", "firstName", "lastName"])
+def test_profile_failure_preserves_marker_and_retry_completes(tmp_path, api, failed_attribute):
+    _url, state = api
+    state["fail_mapper"] = f"openhands-profile-{failed_attribute}"
+    result = reconcile(tmp_path, api)
+    assert "auto-configuration failed" in result.stderr
+    assert state["provider"]["enabled"] is True
+    mappers = {m["name"]: m for m in state["mappers"]}
+    assert mappers["identity-provider"]["config"]["attribute.value"] == "enterprise_sso:saml"
+    assert state["fail_mapper"] not in mappers
+    state["fail_mapper"] = None
+    result = reconcile(tmp_path, api)
+    assert "auto-configuration failed" not in result.stderr
+    assert len(state["mappers"]) == 4
+
+
+def test_profile_reconciliation_preserves_unrelated_mapper(tmp_path, api):
+    _url, state = api
+    custom = {"id": "custom-id", "name": "customer-managed",
+              "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+              "config": {"attribute": "custom", "attribute.value": "keep"}}
+    state["mappers"] = [custom.copy()]
+    reconcile(tmp_path, api)
+    reconcile(tmp_path, api)
+    assert state["mappers"][0] == custom
+    assert len(state["mappers"]) == 5
 
 
 @pytest.mark.parametrize("managed", [True, False])

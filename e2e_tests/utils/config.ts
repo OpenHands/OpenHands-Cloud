@@ -99,7 +99,11 @@ export const ROLE_ONLY_SPECS: Record<RunUser, readonly string[]> = {
     "010-personal-budget-guards.spec.ts",
     "012-first-install.spec.ts",
   ],
-  "new-user": ["006-org-management.spec.ts", "011-automations.spec.ts"],
+  "new-user": [
+    "006-org-management.spec.ts",
+    "011-automations.spec.ts",
+    "014-login.spec.ts",
+  ],
 };
 
 /** `testIgnore` for a role's test projects: setup files and the other role's specs. */

@@ -8,6 +8,7 @@ import json
 import socket
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -70,6 +71,14 @@ def make_handler(state):
                 total = len(state["deploy_paths"])
                 if state["deploy_502_then"] and total <= state["deploy_502_then"]:
                     return self.reply(502, None)
+                if total <= state["deploy_drop_then"]:
+                    # no reply at all: curl reports HTTP 000, as on a timeout
+                    self.close_connection = True
+                    return
+                if total <= state["deploy_hang_then"]:
+                    time.sleep(3)  # outlasts GATEWAY_TIMEOUT_SECONDS: curl (28), HTTP 000
+                    self.close_connection = True
+                    return
                 if state["deploy_status"] != 200:
                     return self.reply(state["deploy_status"], state["deploy_body"])
                 state["deployed"] = CURSOR
@@ -123,7 +132,8 @@ def make_handler(state):
 def kots():
     state = {"deployed": "489", "pending": False, "past": [], "polls": 0,
              "placeholders": 0, "strict_fail": False, "deploy_status": 200,
-             "deploy_body": None, "deploy_502_then": 0, "deploy_paths": [],
+             "deploy_body": None, "deploy_502_then": 0, "deploy_drop_then": 0,
+             "deploy_hang_then": 0, "deploy_paths": [],
              "config_status": 200, "config_body": None, "config_502_then": 0,
              "config_paths": [], "config_bodies": [], "config_groups": None,
              "boot_status": 200, "boot_body": None,
@@ -257,6 +267,45 @@ def test_a_transient_502_on_the_deploy_post_is_retried(kots):
         "/api/v1/upgrade-service/app/openhands/deploy",
         "/api/v1/upgrade-service/app/openhands/deploy",
     ]
+
+
+def test_a_deploy_post_with_no_reply_is_retried(kots):
+    """A connection dropped with no reply is HTTP 000 too, and gets the same retry."""
+    kots["deploy_drop_then"] = 1
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "HTTP 000" in r.stderr
+    assert len(kots["deploy_paths"]) == 2
+
+
+def test_a_deploy_post_that_times_out_is_retried(kots):
+    """The production failure: kotsadm holds the deploy POST until curl times out (28)."""
+    kots["deploy_hang_then"] = 1
+    kots["extra_env"] = {"GATEWAY_TIMEOUT_SECONDS": "1"}
+    r = kots["run"]()
+    assert r.returncode == 0, r.stderr
+    assert "curl: (28)" in r.stderr
+    assert len(kots["deploy_paths"]) == 2
+
+
+def test_a_deploy_post_that_never_replies_gives_up_at_the_deadline(kots):
+    """A 000 must stay inside the run deadline like a 5xx, or a silent kotsadm hangs CI."""
+    kots["deploy_drop_then"] = 999
+    kots["extra_env"] = {"TIMEOUT_SECONDS": "3"}
+    r = kots["run"]()
+    assert r.returncode == 1, r.stderr
+    assert "deploy rejected" in r.stdout and "HTTP 000" in r.stdout
+    assert len(kots["deploy_paths"]) >= 2
+
+
+def test_a_500_deploy_rejection_is_not_retried(kots):
+    """Only 000/502/503/504 are transient; a 500 carries kotsadm's own error."""
+    kots["deploy_status"] = 500
+    kots["deploy_body"] = {"error": "failed to render the release"}
+    r = kots["run"]()
+    assert r.returncode == 1
+    assert "failed to render the release" in r.stdout
+    assert len(kots["deploy_paths"]) == 1
 
 
 def test_a_transient_502_on_the_config_put_is_retried(kots):
