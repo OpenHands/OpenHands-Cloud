@@ -1050,6 +1050,108 @@ budgetReconcileGate:
       memory: "1Gi"
       cpu: "500m"
 
+# Egress NetworkPolicy for sandbox pods. Sandboxes run untrusted code, and by
+# default they share a namespace with postgres, redis, keycloak, and LiteLLM.
+# When enabled, sandboxes can reach only the destinations allowed below. The
+# policy selects pods with a runtime_id label in runtime-api's sandbox
+# namespace, so the other pods in that namespace are unaffected.
+#
+# Off by default because the right settings depend on the cluster. Review each
+# rule before enabling, then run `helm test` to confirm that your network
+# plugin enforces it. See "Sandbox Network Isolation" in the README for
+# per-environment examples.
+sandboxNetworkPolicy:
+  enabled: false
+
+  # IPv4 internet: every address except blockedCIDRs. The defaults are the
+  # private, shared (CGNAT), and link-local ranges, plus Azure's platform
+  # endpoint (a public IP that AKS pods can otherwise reach). Link-local
+  # covers cloud metadata servers. Add any node, pod, or service CIDR that
+  # falls outside these ranges.
+  internet:
+    enabled: true
+    blockedCIDRs:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 100.64.0.0/10
+      - 169.254.0.0/16
+      - 168.63.129.16/32
+
+  # IPv6 internet: every address except blockedCIDRs (unique local and
+  # link-local by default). Enable on IPv6 and dual-stack clusters, or
+  # sandboxes lose all IPv6 egress. If your nodes or pods use global IPv6
+  # addresses (EKS IPv6 clusters, for example), add those ranges.
+  ipv6:
+    enabled: false
+    blockedCIDRs:
+      - fc00::/7
+      - fe80::/10
+
+  # Cluster DNS. `to` and `ports` use the NetworkPolicy egress rule format,
+  # and an override replaces the whole list. `to` must not be empty, because
+  # an empty `to` allows every destination. The default matches CoreDNS and
+  # NodeLocal DNSCache pods, which some network plugins (GKE Dataplane V2)
+  # redirect DNS queries to.
+  dns:
+    enabled: true
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values:
+                - kube-dns
+                - node-local-dns
+    ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+
+  # The in-cluster ingress controller, in the same format as dns. Sandboxes
+  # reach runtime URLs and the app's webhook endpoint at the public hostname,
+  # and most clusters route that traffic directly to the controller pods. The
+  # defaults match Traefik's container ports in any namespace.
+  ingressController:
+    enabled: true
+    to:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+    ports:
+      - protocol: TCP
+        port: 8000
+      - protocol: TCP
+        port: 8443
+
+  # The bundled LiteLLM and Laminar are allowed automatically when enabled.
+  # Add a rule here (NetworkPolicyEgressRule format) for each internal
+  # destination that sandboxes need, such as git servers, proxies, package
+  # mirrors, and private LLM endpoints.
+  extraEgress: []
+  # - to:
+  #     - ipBlock:
+  #         cidr: 10.20.0.15/32
+  #   ports:
+  #     - protocol: TCP
+  #       port: 443
+
+  # The `helm test` pod. It runs as a sandbox and fails if the metadata
+  # server, the kubelet, or the release's postgres and app server are
+  # reachable, or if DNS, LiteLLM, or Laminar are not.
+  test:
+    enabled: true
+    # Requires bash and getent. Empty uses keycloak.waitForDb.image.
+    image: ""
+    # Set to false on EKS. The VPC CNI always lets a pod reach its own node,
+    # so this check cannot pass there.
+    checkKubelet: true
+
 runtime-api:
   enabled: true
   replicaCount: 1

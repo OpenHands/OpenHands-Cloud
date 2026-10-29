@@ -1,0 +1,366 @@
+suite: sandbox egress NetworkPolicy
+templates:
+  - sandbox-network-policy.yaml
+  - tests/sandbox-network-policy-test.yaml
+release:
+  name: oh
+  namespace: openhands
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: sandbox-network-policy.yaml
+      - hasDocuments:
+          count: 0
+        template: tests/sandbox-network-policy-test.yaml
+
+  - it: selects only sandbox pods and restricts egress in the release namespace
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: metadata.name
+          value: oh-openhands-sandbox-egress
+      - equal:
+          path: metadata.namespace
+          value: openhands
+      - equal:
+          path: spec.podSelector
+          value:
+            matchExpressions:
+              - key: runtime_id
+                operator: Exists
+      - equal:
+          path: spec.policyTypes
+          value: [Egress]
+
+  - it: allows the IPv4 internet except private, shared, link-local, and Azure platform addresses
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[0]
+          value:
+            to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+                  except:
+                    - 10.0.0.0/8
+                    - 172.16.0.0/12
+                    - 192.168.0.0/16
+                    - 100.64.0.0/10
+                    - 169.254.0.0/16
+                    - 168.63.129.16/32
+
+  - it: allows CoreDNS, NodeLocal DNSCache, and the Traefik pods by default
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 3
+      - equal:
+          path: spec.egress[1]
+          value:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+                podSelector:
+                  matchExpressions:
+                    - key: k8s-app
+                      operator: In
+                      values:
+                        - kube-dns
+                        - node-local-dns
+            ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+      - equal:
+          path: spec.egress[2]
+          value:
+            to:
+              - namespaceSelector: {}
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+            ports:
+              - protocol: TCP
+                port: 8000
+              - protocol: TCP
+                port: 8443
+
+  - it: places the policy in runtime-api's sandbox_namespace
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      runtime-api.sandbox_namespace: sandboxes
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: sandboxes
+
+  - it: prefers runtime-api's env.K8S_NAMESPACE override
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      runtime-api.sandbox_namespace: sandboxes
+      runtime-api.env.K8S_NAMESPACE: runtime-pods
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: runtime-pods
+
+  - it: renders when the app itself is disabled
+    template: sandbox-network-policy.yaml
+    set:
+      enabled: false
+      runtime-api.enabled: false
+      runtime-api.sandbox_namespace: runtime-pods
+      sandboxNetworkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.namespace
+          value: runtime-pods
+
+  - it: replaces the DNS destinations and ports rather than merging them
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.dns.to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
+        - ipBlock:
+            cidr: 172.30.0.10/32
+      sandboxNetworkPolicy.dns.ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
+    asserts:
+      - equal:
+          path: spec.egress[1]
+          value:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: openshift-dns
+                podSelector:
+                  matchLabels:
+                    dns.operator.openshift.io/daemonset-dns: default
+              - ipBlock:
+                  cidr: 172.30.0.10/32
+            ports:
+              - protocol: UDP
+                port: 5353
+              - protocol: TCP
+                port: 5353
+
+  - it: fails rather than allow every destination when a rule's to is empty
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.ingressController.to: []
+    asserts:
+      - failedTemplate:
+          errorMessage: sandboxNetworkPolicy.ingressController.to is empty, which would allow every destination. List the destinations, or set sandboxNetworkPolicy.ingressController.enabled to false.
+
+  - it: drops disabled rules
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.internet.enabled: false
+      sandboxNetworkPolicy.dns.enabled: false
+      sandboxNetworkPolicy.ingressController.enabled: false
+    asserts:
+      - isNullOrEmpty:
+          path: spec.egress
+
+  - it: adds an IPv6 internet rule when enabled
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.ipv6.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[1]
+          value:
+            to:
+              - ipBlock:
+                  cidr: ::/0
+                  except:
+                    - fc00::/7
+                    - fe80::/10
+
+  - it: allows the bundled LiteLLM in the release namespace when it is enabled
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      runtime-api.sandbox_namespace: sandboxes
+      litellm-helm.enabled: true
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: openhands
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: litellm
+                    app.kubernetes.io/instance: oh
+            ports:
+              - protocol: TCP
+                port: 4000
+
+  - it: allows the bundled Laminar app server when Laminar is enabled
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      laminar.enabled: true
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: openhands
+                podSelector:
+                  matchLabels:
+                    app: laminar-app-server
+            ports:
+              - protocol: TCP
+                port: 8000
+              - protocol: TCP
+                port: 8001
+
+  - it: appends extraEgress rules verbatim
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.extraEgress:
+        - to:
+            - ipBlock:
+                cidr: 10.20.0.15/32
+          ports:
+            - protocol: TCP
+              port: 443
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 4
+      - equal:
+          path: spec.egress[3]
+          value:
+            to:
+              - ipBlock:
+                  cidr: 10.20.0.15/32
+            ports:
+              - protocol: TCP
+                port: 443
+
+  - it: runs the test pod as a sandbox in the sandbox namespace
+    template: tests/sandbox-network-policy-test.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      runtime-api.sandbox_namespace: sandboxes
+    asserts:
+      - isKind:
+          of: Pod
+      - equal:
+          path: metadata.namespace
+          value: sandboxes
+      - equal:
+          path: metadata.labels.runtime_id
+          value: oh-openhands-sandbox-egress-test
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - equal:
+          path: spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.containers[0].image
+          value: ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie
+
+  - it: checks the release's services that sandboxes must not reach
+    template: tests/sandbox-network-policy-test.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      runtime-api.sandbox_namespace: sandboxes
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: expect_blocked "metadata server" 169\.254\.169\.254 80
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: expect_blocked "kubelet" "\$HOST_IP" 10250
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: expect_blocked "postgres" oh-postgresql\.openhands\.svc 5432
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: expect_blocked "app server" openhands-service\.openhands\.svc 3000
+      - notMatchRegex:
+          path: spec.containers[0].command[2]
+          pattern: LiteLLM|Laminar
+
+  - it: checks that the bundled LiteLLM and Laminar stay reachable
+    template: tests/sandbox-network-policy-test.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      litellm-helm.enabled: true
+      laminar.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: expect_allowed "LiteLLM" oh-litellm\.openhands\.svc 4000
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: expect_allowed "Laminar" laminar-app-server-service\.openhands\.svc 8000
+
+  - it: skips the postgres and app server checks when they are not deployed
+    template: tests/sandbox-network-policy-test.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      enabled: false
+      postgresql.enabled: false
+    asserts:
+      - notMatchRegex:
+          path: spec.containers[0].command[2]
+          pattern: postgres|app server
+
+  - it: uses the configured test image
+    template: tests/sandbox-network-policy-test.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.test.image: registry.example.com/tools/bash:5
+    asserts:
+      - equal:
+          path: spec.containers[0].image
+          value: registry.example.com/tools/bash:5
+
+  - it: omits the test pod when the test is disabled
+    template: tests/sandbox-network-policy-test.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.test.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -1,0 +1,88 @@
+{{- /*
+Egress allowlist for sandbox pods. runtime-api creates sandboxes in the
+sandbox namespace with a runtime_id label. Only those pods are selected, so
+the control plane that shares the namespace by default is unaffected. Any
+traffic that no rule allows is dropped. This keeps sandboxes away from node,
+pod, and VPC-internal addresses: the kubelet, the Kubernetes API server, cloud
+metadata servers, other sandboxes, and the release's own services.
+
+Not gated on .Values.enabled, so a release that disables the app (one that
+only targets a separate runtime cluster) can still render the policy.
+*/}}
+{{- $np := .Values.sandboxNetworkPolicy }}
+{{- if $np.enabled }}
+{{- $litellm := index .Values "litellm-helm" | default dict }}
+{{- $laminar := .Values.laminar | default dict }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-sandbox-egress" (include "openhands.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ include "openhands.sandboxNamespace" . }}
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: runtime_id
+        operator: Exists
+  policyTypes:
+    - Egress
+  egress:
+    {{- if $np.internet.enabled }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            {{- with $np.internet.blockedCIDRs }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+    {{- end }}
+    {{- if $np.ipv6.enabled }}
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            {{- with $np.ipv6.blockedCIDRs }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+    {{- end }}
+    {{- if $np.dns.enabled }}
+    {{- include "openhands.sandboxNetworkPolicy.rule" (dict "name" "dns" "rule" $np.dns) | nindent 4 }}
+    {{- end }}
+    {{- if $np.ingressController.enabled }}
+    {{- include "openhands.sandboxNetworkPolicy.rule" (dict "name" "ingressController" "rule" $np.ingressController) | nindent 4 }}
+    {{- end }}
+    {{- /* Sandboxes call the bundled LiteLLM at LITE_LLM_API_URL (see _env.yaml). */}}
+    {{- if $litellm.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $litellm.nameOverride | default "litellm" }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ dig "service" "port" 4000 $litellm }}
+    {{- end }}
+    {{- /* Sandboxes send traces to the bundled Laminar app server at
+           LMNR_BASE_URL: 8000 is HTTP and 8001 is gRPC. */}}
+    {{- if and $laminar.enabled (dig "appServer" "enabled" true $laminar) }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app: laminar-app-server
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    {{- end }}
+    {{- with $np.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

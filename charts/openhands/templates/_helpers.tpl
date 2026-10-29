@@ -63,3 +63,35 @@ entirely. A chart-level `affinity` value wins over the umbrella-wide
 {{- toYaml . -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Namespace runtime-api creates sandbox pods in. Mirrors the K8S_NAMESPACE
+resolution in the runtime-api subchart: its env.K8S_NAMESPACE override, then
+sandbox_namespace, then the release namespace.
+*/}}
+{{- define "openhands.sandboxNamespace" -}}
+{{- $runtimeApi := index .Values "runtime-api" | default dict -}}
+{{- $env := $runtimeApi.env | default dict -}}
+{{- if hasKey $env "K8S_NAMESPACE" -}}
+{{- $env.K8S_NAMESPACE -}}
+{{- else -}}
+{{- $runtimeApi.sandbox_namespace | default .Release.Namespace -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+One sandboxNetworkPolicy egress rule (dns or ingressController). Takes a dict
+with `name` (for error messages) and `rule`. An empty `to` would allow every
+destination on the rule's ports, so it fails the render instead.
+*/}}
+{{- define "openhands.sandboxNetworkPolicy.rule" -}}
+{{- if not .rule.to -}}
+{{- fail (printf "sandboxNetworkPolicy.%s.to is empty, which would allow every destination. List the destinations, or set sandboxNetworkPolicy.%s.enabled to false." .name .name) -}}
+{{- end -}}
+- to:
+    {{- toYaml .rule.to | nindent 4 }}
+  {{- with .rule.ports }}
+  ports:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}

@@ -704,6 +704,194 @@ runtime-api:
 
 > **Note:** The VolumeSnapshot CRDs must be installed in your cluster. Most managed Kubernetes services (GKE, EKS) include these by default. If not, see the [Kubernetes VolumeSnapshot documentation](https://kubernetes.io/docs/concepts/storage/volume-snapshots/).
 
+### Sandbox Network Isolation
+
+We recommend restricting sandbox network access with the chart's sandbox egress NetworkPolicy.
+With the policy enabled, sandboxes can reach the internet, cluster DNS, your ingress controller,
+and the bundled LiteLLM and Laminar. They can't reach node, pod, or VPC-internal addresses, which
+include the kubelet, the Kubernetes API server, cloud metadata servers, other sandboxes, and the
+application's databases. The policy selects only sandbox pods in runtime-api's sandbox namespace
+(`runtime-api.sandbox_namespace`), so the other pods in that namespace are unaffected.
+
+The policy requires a network plugin that enforces NetworkPolicy:
+
+- **GKE**: Dataplane V2, or network policy enforcement (`--enable-network-policy`).
+- **EKS**: The VPC CNI with `enableNetworkPolicy` set to `"true"`.
+- **AKS**: Azure CNI Powered by Cilium, Calico, or Azure Network Policy Manager.
+- **OpenShift**: OVN-Kubernetes, the default plugin.
+
+Flannel alone doesn't enforce NetworkPolicy.
+
+To enable the policy, review these settings under `sandboxNetworkPolicy` in `values.yaml` against
+your cluster:
+
+- `internet.blockedCIDRs`: Add your node, pod, and Service CIDRs if any fall outside the defaults.
+- `ingressController`: Match your ingress controller's pods and container ports. Sandboxes reach
+  runtime URLs and the app at their public hostnames. If those hostnames resolve to an internal
+  load balancer or to node IPs (a NodePort or hostPort ingress controller), add those addresses as
+  `ipBlock` entries and add the ports that clients connect to, usually 80 and 443.
+- `extraEgress`: Add the internal destinations that sandboxes need, such as git servers, proxies,
+  package mirrors, and private LLM endpoints.
+- `ipv6.enabled`: Set to `true` on IPv6 and dual-stack clusters. If your nodes or pods use global
+  IPv6 addresses, add those ranges to `ipv6.blockedCIDRs`.
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.15/32  # Internal git server
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+The `dns` and `ingressController` rules use the NetworkPolicy egress rule format. When you
+override `to` or `ports`, your list replaces the default list.
+
+After you install or upgrade, run the chart's test to confirm that the policy is enforced:
+
+```bash
+helm test openhands -n openhands --logs
+```
+
+The test runs a pod as a sandbox. It fails if the metadata server, the kubelet, or the release's
+PostgreSQL or app server are reachable, or if DNS, LiteLLM, or Laminar are not.
+
+#### GKE
+
+The defaults work on GKE. If your cluster uses NodeLocal DNSCache without Dataplane V2 and its
+Service range is private, add the kube-dns Service IP
+(`kubectl -n kube-system get svc kube-dns`) to the DNS rule:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values: [kube-dns, node-local-dns]
+      - ipBlock:
+          cidr: 10.3.0.10/32  # Your kube-dns Service IP
+```
+
+#### EKS
+
+The VPC CNI always allows a pod to reach its own node, so the test's kubelet check can't pass on
+EKS. Disable it:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  test:
+    checkKubelet: false
+```
+
+Sandboxes reach an internet-facing load balancer through the internet rule. For an internal load
+balancer, add its subnets to `ingressController` as described above.
+
+In its default `standard` mode, the VPC CNI allows all traffic from a new pod until it applies the
+pod's policies, which takes a few seconds. To block traffic until then, set
+`NETWORK_POLICY_ENFORCING_MODE` to `strict`. Strict mode requires a network policy for every pod
+in the cluster.
+
+#### AKS
+
+The defaults block `168.63.129.16`, the Azure platform endpoint. If your node pools use LocalDNS,
+add its addresses to the DNS rule:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values: [kube-dns, node-local-dns]
+      - ipBlock:
+          cidr: 169.254.10.10/32
+      - ipBlock:
+          cidr: 169.254.10.11/32
+```
+
+With Azure CNI Powered by Cilium, LocalDNS also needs the policy described in
+[Microsoft's LocalDNS guidance](https://learn.microsoft.com/en-us/azure/aks/azure-cni-powered-by-cilium#is-aks-local-dns-supported-with-azure-cni-powered-by-cilium).
+
+#### OpenShift
+
+OpenShift serves cluster DNS from the `openshift-dns` namespace on port 5353. This example also
+allows the default OpenShift router:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+    ports:
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 5353
+  ingressController:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-ingress
+        podSelector:
+          matchLabels:
+            ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+    ports:
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 443
+```
+
+If the router uses the `HostNetwork` endpoint publishing strategy, allow your node CIDR instead,
+as described in the next section.
+
+#### On-Premises and Other Clusters
+
+If your ingress controller listens on node IPs through a NodePort or hostPort, add your node CIDR
+and the ports that clients connect to:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  ingressController:
+    to:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+      - ipBlock:
+          cidr: 10.0.1.0/24  # Your node CIDR
+    ports:
+      - protocol: TCP
+        port: 8000
+      - protocol: TCP
+        port: 8443
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 443
+```
+
 ## Upgrading
 
 To upgrade the chart:
