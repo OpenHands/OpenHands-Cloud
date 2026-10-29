@@ -19,7 +19,6 @@
     "setup:auth": "playwright test --project=setup:returning --project=setup:new-user",
     "setup:auth:returning": "playwright test --project=setup:returning",
     "setup:auth:new-user": "playwright test --project=setup:new-user",
-    "keycloak:cleanup": "playwright test --project=keycloak-cleanup",
     "report": "playwright show-report",
     "codegen": "playwright codegen",
     "typecheck": "tsc --noEmit",
