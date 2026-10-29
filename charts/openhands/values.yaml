@@ -1451,7 +1451,7 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: "hotfix-1.49.5-r2-python@sha256:6860352c47867e3d13e3da896f891a79581ffbfd475404c9f8d5a2b828e6dbe8"
+    tag: "1.49.5-r2-python@sha256:3d4d9f65569eb505976b6f366b690c20a8c737c45d2b5676108fae9e72b5688c"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1680,7 +1680,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
-    tag: "hotfix-1.23.0-r2@sha256:46c2482b1fa09837b3f80f166490cabd0fca6e4a555625c4b67cd3537620f2bd"
+    tag: "1.23.0-r2@sha256:efea26daeaa844158fe1a1e36d88b870d0abd30d07eba051b19f83c12633c428"
 
   ingress:
     enabled: false

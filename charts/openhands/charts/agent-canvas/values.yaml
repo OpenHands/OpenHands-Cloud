@@ -13,7 +13,7 @@ image:
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "hotfix-1.23.0-r2@sha256:46c2482b1fa09837b3f80f166490cabd0fca6e4a555625c4b67cd3537620f2bd"
+  tag: "1.23.0-r2@sha256:efea26daeaa844158fe1a1e36d88b870d0abd30d07eba051b19f83c12633c428"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
