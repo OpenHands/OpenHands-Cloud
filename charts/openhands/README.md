@@ -706,13 +706,13 @@ runtime-api:
 
 ### Sandbox Network Isolation
 
-We recommend restricting sandbox network access with the chart's sandbox egress NetworkPolicy.
-With the policy enabled, sandboxes can reach the internet, cluster DNS, your ingress controller,
-and the bundled LiteLLM and Laminar. They can't reach node, pod, or VPC-internal addresses, which
-include the kubelet, cloud metadata servers, other sandboxes, the application's databases, and the
-Kubernetes API server when its endpoint is private. Some network plugins, including the VPC CNI on EKS, always allow a pod to
-reach the node it runs on, so on those clusters sandboxes can still reach their own node. The
-policy selects only sandbox pods in runtime-api's sandbox namespace
+We recommend restricting sandbox network access with the chart's sandbox egress NetworkPolicy. With
+the policy enabled, sandboxes can reach the internet, cluster DNS, your ingress controller, and the
+bundled LiteLLM and Laminar. They can't reach node, pod, or VPC-internal addresses, which include
+the kubelet, cloud metadata servers, other sandboxes, the application's databases, and the
+Kubernetes API server when its endpoint is private. Some network plugins, including the VPC CNI on
+EKS, always allow a pod to reach the node it runs on, so on those clusters sandboxes can still reach
+their own node. The policy selects only sandbox pods in runtime-api's sandbox namespace
 (`runtime-api.sandbox_namespace`), so the other pods in that namespace are unaffected.
 
 The policy requires a network plugin that enforces NetworkPolicy:
