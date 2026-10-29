@@ -10,16 +10,17 @@ import path from "path";
  *    Federated through Keycloak's GitHub identity provider; exercises the
  *    full app ↔ Keycloak ↔ GitHub round-trip on every run.
  *  - "new-user"  — a *synthetic*, Keycloak-native user (no GitHub link) that
- *    is deleted and recreated at the start of the run by the Keycloak admin,
- *    so they get a fresh account and land on the app's first-login onboarding
- *    path deterministically. GitHub is deliberately not involved: the value
- *    of this role is exercising the app's own new-user flow (TOS, onboarding
- *    form, org bootstrap), not GitHub's OAuth screens.
+ *    the Keycloak admin creates on the first run against an instance and
+ *    whose password it resets on every run, so the account keeps one Keycloak
+ *    identity (the app's OAuth v2 login links accounts by it). GitHub is
+ *    deliberately not involved: the value of this role is exercising the
+ *    app's own sign-in and, on an instance's first run, its new-user flow
+ *    (TOS, onboarding form, org bootstrap), not GitHub's OAuth screens.
  *
  * Credential sets required:
  *
- *  1. Keycloak admin (username + password) — used to delete + recreate the
- *     New User in the realm before login.
+ *  1. Keycloak admin (username + password) — used to create the New User in
+ *     the realm, or reset its password, before login.
  *  2. Returning User (GitHub username + password + optional TOTP secret).
  *  3. New User (Keycloak username + password) — a synthetic account managed
  *     entirely by the harness against a reserved e2e-only email domain.
@@ -29,7 +30,7 @@ import path from "path";
  * Deployment:
  *  - BASE_URL                      (required) release environment under test.
  *
- * Keycloak admin (cleanup + synthetic user provisioning):
+ * Keycloak admin (synthetic user provisioning):
  *  - KEYCLOAK_REALM                realm to administer (default: "allhands").
  *  - KEYCLOAK_ADMIN_USERNAME       admin username.
  *  - KEYCLOAK_ADMIN_PASSWORD       admin password.
@@ -65,8 +66,8 @@ import path from "path";
  *
  * New User (synthetic Keycloak-native account):
  *  - KEYCLOAK_NEW_USER_USERNAME    **required to enable this role**; leave
- *                                  unset to skip the New User (and Keycloak
- *                                  cleanup + creation) entirely.
+ *                                  unset to skip the New User (and its
+ *                                  Keycloak provisioning) entirely.
  *  - KEYCLOAK_NEW_USER_PASSWORD    password to set on the synthetic user and
  *                                  submit through Keycloak's local login form.
  *
@@ -196,9 +197,9 @@ export function returningGithubCredentials(): GitHubCredentials {
  *
  * The username and password are what the harness sets on the user via the
  * Keycloak Admin API and then submits through Keycloak's local login form.
- * The email is what the Admin API delete-and-recreate step keys on, and is
- * also what the app's ``provision-user`` endpoint uses to add the account to
- * an org (see ``006-org-management.spec.ts``).
+ * The email is what the Admin API lookup keys on, and is also what the app's
+ * ``provision-user`` endpoint uses to add the account to an org (see
+ * ``006-org-management.spec.ts``).
  */
 export interface NewUserCredentials {
   username: string;
@@ -318,9 +319,9 @@ export function skipAuth(): boolean {
  * under an RFC 2606 reserved domain, so it can never be a real mailbox.
  * ``.e2e.test`` is accepted only until saas-deploy switches domains.
  *
- * The synthetic New User's email must match this pattern; both the delete-
- * by-email and create-user paths in ``keycloak-admin.ts`` assert on it before
- * hitting the Keycloak Admin API. This is defense-in-depth against a
+ * The synthetic New User's email must match this pattern; the provisioning
+ * path in ``keycloak-admin.ts`` asserts on it before hitting the Keycloak
+ * Admin API. This is defense-in-depth against a
  * ``KEYCLOAK_NEW_USER_EMAIL`` typo pointing the harness at a real account.
  */
 export const E2E_EMAIL_PATTERN =
@@ -330,14 +331,14 @@ export const E2E_EMAIL_PATTERN =
  * Throw if the given email is not under an e2e-only domain.
  *
  * This guard runs before any destructive Keycloak Admin API call keyed on
- * email (delete-by-email, create-user).
+ * email (create-user, reset-password).
  */
 export function assertE2eOnlyEmail(email: string): void {
   if (!E2E_EMAIL_PATTERN.test(email)) {
     throw new Error(
       `Refusing to use "${email}" as an e2e user address: expected an ` +
         `address under the reserved e2e.example.com namespace (see E2E_EMAIL_PATTERN). ` +
-        `The synthetic new-user cleanup and creation deliberately reject any ` +
+        `The synthetic new-user provisioning deliberately rejects any ` +
         `namespace that could overlap with real users.`,
     );
   }
@@ -346,8 +347,8 @@ export function assertE2eOnlyEmail(email: string): void {
 /**
  * Throw if the run is targeting the production environment.
  *
- * The New User setup deletes and recreates a user in the target Keycloak
- * realm. That is only safe against non-production targets; production
+ * The New User setup creates a user in the target Keycloak realm, or resets
+ * its password. That is only safe against non-production targets; production
  * customer data must never be touched. Call from every setup project that
  * performs realm-level writes.
  */
@@ -355,8 +356,9 @@ export function assertNotProduction(): void {
   if (isEnvironment("production")) {
     throw new Error(
       "Refusing to run destructive Keycloak setup against production " +
-        `(BASE_URL=${process.env.BASE_URL}). This setup deletes and recreates ` +
-        "realm users and is intended for staging / disposable clusters only.",
+        `(BASE_URL=${process.env.BASE_URL}). This setup creates realm users ` +
+        "and resets their passwords, and is intended for staging / " +
+        "disposable clusters only.",
     );
   }
 }
