@@ -1056,9 +1056,9 @@ budgetReconcileGate:
 # policy selects pods with a runtime_id label in runtime-api's sandbox
 # namespace, so the other pods in that namespace are unaffected.
 #
-# Off by default because the right settings depend on the cluster. Review each
-# rule before enabling. See "Sandbox Network Isolation" in the README for
-# per-environment examples.
+# Off by default because the right settings depend on the cluster.
+# Review each rule before enabling.
+# See "Sandbox Network Isolation" in the README for per-environment examples.
 sandboxNetworkPolicy:
   enabled: false
   # Empty uses "<release fullname>-sandbox-egress".

@@ -3,8 +3,9 @@ Egress allowlist for sandbox pods. runtime-api creates sandboxes in the
 sandbox namespace with a runtime_id label. Only those pods are selected, so
 the control plane that shares the namespace by default is unaffected. Any
 traffic that no rule allows is dropped. This keeps sandboxes away from node,
-pod, and VPC-internal addresses: the kubelet, the Kubernetes API server, cloud
-metadata servers, other sandboxes, and the release's own services.
+pod, and VPC-internal addresses: the kubelet, cloud metadata servers, other
+sandboxes, the release's own services, and the Kubernetes API server when its
+endpoint is private.
 
 Not gated on .Values.enabled, so a release that disables the app (one that
 only targets a separate runtime cluster) can still render the policy.
