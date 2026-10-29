@@ -1061,6 +1061,11 @@ budgetReconcileGate:
 # per-environment examples.
 sandboxNetworkPolicy:
   enabled: false
+  # Empty uses "<release fullname>-sandbox-egress".
+  name: ""
+  # Added to the chart's labels; a key set here overrides the chart's value.
+  labels: {}
+  annotations: {}
 
   # IPv4 internet: every address except blockedCIDRs. The defaults are the
   # private, shared (CGNAT), and link-local ranges, plus Azure's platform

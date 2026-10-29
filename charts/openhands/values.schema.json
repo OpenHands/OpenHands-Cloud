@@ -100,6 +100,9 @@
       },
       "properties": {
         "enabled": { "type": "boolean" },
+        "name": { "type": "string" },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
         "internet": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/cidrRule" },
         "ipv6": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/cidrRule" },
         "dns": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/peerRule" },

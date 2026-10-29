@@ -16,10 +16,14 @@ only targets a separate runtime cluster) can still render the policy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ printf "%s-sandbox-egress" (include "openhands.fullname" .) | trunc 63 | trimSuffix "-" }}
+  name: {{ $np.name | default (printf "%s-sandbox-egress" (include "openhands.fullname" .) | trunc 63 | trimSuffix "-") }}
   namespace: {{ include "openhands.sandboxNamespace" . }}
   labels:
-    {{- include "openhands.labels" . | nindent 4 }}
+    {{- mustMergeOverwrite (include "openhands.labels" . | fromYaml) ($np.labels | default dict) | toYaml | nindent 4 }}
+  {{- with $np.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   podSelector:
     matchExpressions:

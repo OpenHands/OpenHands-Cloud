@@ -33,6 +33,42 @@ tests:
           path: spec.policyTypes
           value: [Egress]
 
+  - it: adds no annotations by default
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  - it: applies a custom name, labels, and annotations
+    template: sandbox-network-policy.yaml
+    set:
+      sandboxNetworkPolicy.enabled: true
+      sandboxNetworkPolicy.name: runtime-egress-no-internal
+      sandboxNetworkPolicy.labels:
+        team: platform
+        app.kubernetes.io/part-of: sandboxes
+      sandboxNetworkPolicy.annotations:
+        argocd.argoproj.io/sync-wave: "-1"
+    asserts:
+      - equal:
+          path: metadata.name
+          value: runtime-egress-no-internal
+      - equal:
+          path: metadata.labels.team
+          value: platform
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: sandboxes
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: oh
+      - equal:
+          path: metadata.annotations
+          value:
+            argocd.argoproj.io/sync-wave: "-1"
+
   - it: allows the IPv4 internet except private, shared, link-local, and Azure platform addresses
     template: sandbox-network-policy.yaml
     set:
