@@ -681,6 +681,13 @@ the app UI and webhook users are matched by email. */}}
 {{- end }}
 {{- end }}
 
+{{- /* Agent Canvas owns MCP server management where it is deployed; the
+classic settings page then defers to it. */}}
+{{- if (index .Values "agent-canvas").enabled }}
+- name: ENABLE_AGENT_CANVAS_MCP
+  value: "true"
+{{- end }}
+
 {{- if .Values.linear.enabled }}
 - name: ENABLE_LINEAR
   value: "true"

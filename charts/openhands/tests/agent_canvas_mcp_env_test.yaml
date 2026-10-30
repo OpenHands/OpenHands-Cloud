@@ -1,0 +1,35 @@
+suite: Agent Canvas MCP settings flag
+templates:
+  - deployment.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: tells the app that Agent Canvas manages MCP servers when Canvas is deployed
+    set:
+      enabled: true
+      databaseMigrations.waitForDatabase: false
+      databaseMigrations.createDatabases: false
+      databaseMigrations.migrate: false
+      agent-canvas.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_AGENT_CANVAS_MCP
+            value: "true"
+  - it: leaves the flag unset without Agent Canvas
+    set:
+      enabled: true
+      databaseMigrations.waitForDatabase: false
+      databaseMigrations.createDatabases: false
+      databaseMigrations.migrate: false
+      agent-canvas.enabled: false
+    asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENABLE_AGENT_CANVAS_MCP
+            value: "true"
