@@ -644,10 +644,12 @@ laminar:
 
   clickhouse:
     diagnostics:
-      # Retention, in days, for high-volume ClickHouse system diagnostic tables
-      # used by Laminar. The chart applies this with a Helm install/upgrade hook
-      # so it survives Replicated/KOTS reconciliation and upgrades.
+      # Days of system.query_log and system.error_log the cleanup CronJob keeps.
       retentionDays: 3
+      cleanup:
+        # Truncates ClickHouse's other system.*_log tables on this schedule.
+        enabled: true
+        schedule: "7 * * * *"
 
   frontend:
     ingress:

@@ -1,82 +1,38 @@
 # ClickHouse diagnostic log retention
 
-OpenHands Enterprise can deploy Laminar with an embedded ClickHouse instance.
-ClickHouse writes internal diagnostics to `system.*_log` MergeTree tables. These
-tables are useful for recent support investigations, but they are not Laminar
-application data and can grow quickly on busy installations.
+When Analytics is enabled, OpenHands deploys Laminar with its own ClickHouse. ClickHouse writes internal diagnostics to `system.*_log` tables. They help with support investigations but are not Laminar data, and with stock settings they grow without limit: `trace_log` alone can reach tens of gigabytes on a single node.
 
-The OpenHands chart applies a bounded retention policy to high-volume ClickHouse
-diagnostic tables when Laminar analytics is enabled.
+Laminar's Helm chart only mounts its system log configuration when S3 storage is enabled, which Embedded Cluster installs don't use (lmnr-ai/lmnr#2176). Until that changes, OpenHands bounds these tables with a CronJob instead of ClickHouse configuration.
 
-## Default retention
+## What the CronJob does
 
-Replicated/KOTS installs expose **Analytics Configuration → ClickHouse
-Diagnostic Log Retention** with these supported values:
+`<release>-laminar-clickhouse-system-log-cleanup` runs every hour at minute 7 and:
 
-- `1 day`
-- `2 days`
-- `3 days`
+1. Drops every `system.<name>_log_<N>` table. ClickHouse leaves these copies, with all their data, when a system log table no longer matches its configuration, for example after a ClickHouse upgrade or the `MODIFY TTL` hook earlier releases ran.
+2. Truncates every other `system.*_log` table except `query_log` and `error_log`.
+3. Deletes `query_log` and `error_log` rows older than the retention setting.
 
-The default is `3 days`.
+ClickHouse keeps writing diagnostics between runs, so these tables hold at most about an hour of data. Laminar's own databases are never touched.
 
-The setting is rendered into Helm values and enforced by a Helm
-post-install/post-upgrade Job. Because KOTS owns the setting and the Job is part
-of the chart, the retention policy is reapplied after KOTS reconciliation and
-upgrades.
+## Settings
 
-The Job applies TTLs to these ClickHouse system tables when they exist:
+Replicated/KOTS installs set the retention under **Analytics Configuration → ClickHouse Diagnostic Log Retention** (1 to 3 days, default 3).
 
-- `system.asynchronous_metric_log`
-- `system.metric_log`
-- `system.query_log`
-- `system.query_thread_log`
-- `system.query_views_log`
-- `system.part_log`
-- `system.session_log`
-- `system.text_log`
-- `system.trace_log`
-- `system.crash_log`
-- `system.opentelemetry_span_log`
-- `system.zookeeper_log`
-- `system.blob_storage_log`
-- `system.processors_profile_log`
+Helm installs use these values:
 
-## Cleaning up an already oversized table
+| Value | Default | Meaning |
+| -- | -- | -- |
+| `laminar.clickhouse.diagnostics.retentionDays` | `3` | Days of `query_log` and `error_log` kept |
+| `laminar.clickhouse.diagnostics.cleanup.enabled` | `true` | Set `false` to remove the CronJob |
+| `laminar.clickhouse.diagnostics.cleanup.schedule` | `7 * * * *` | Cron schedule |
 
-TTL changes do not immediately reclaim all disk from an already oversized
-ClickHouse system log. ClickHouse removes expired rows during background merges.
-If a node is already under disk pressure, an administrator can safely truncate
-diagnostic-only system log tables.
+## Running the cleanup now
 
-This removes ClickHouse diagnostics, not Laminar application data:
+To reclaim disk immediately, for example on a node that is already full:
 
 ```bash
-kubectl -n openhands exec statefulset/laminar-clickhouse -c clickhouse -- \
-  bash -ec 'clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --query "SYSTEM FLUSH LOGS"'
-
-kubectl -n openhands exec statefulset/laminar-clickhouse -c clickhouse -- \
-  bash -ec 'clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --query "TRUNCATE TABLE system.trace_log"'
+kubectl -n openhands create job --from=cronjob/openhands-laminar-clickhouse-system-log-cleanup clickhouse-log-cleanup-now
+kubectl -n openhands logs -f job/clickhouse-log-cleanup-now
 ```
 
-To clear all managed diagnostic logs, run:
-
-```bash
-for table in \
-  asynchronous_metric_log metric_log query_log query_thread_log query_views_log \
-  part_log session_log text_log trace_log crash_log opentelemetry_span_log \
-  zookeeper_log blob_storage_log processors_profile_log
-do
-  kubectl -n openhands exec statefulset/laminar-clickhouse -c clickhouse -- \
-    bash -ec 'clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --query "$1"' -- \
-    "TRUNCATE TABLE IF EXISTS system.${table}"
-done
-```
-
-Use the namespace where OpenHands is installed if it is not `openhands`.
-
-## Support bundles
-
-Support bundles collect recent Laminar ClickHouse pod logs, diagnostic table
-sizes, TTL metadata, and a small sample of recent `trace_log` and `text_log`
-rows. This preserves enough recent ClickHouse diagnostics for support while the
-database retention policy prevents unbounded local disk growth.
+Use the namespace and release name OpenHands is installed with if they differ.
