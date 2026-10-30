@@ -17,6 +17,14 @@ jobs:
           version: 'v3.18.4'
       - name: Install helm-unittest
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.1.1
+      - name: Build dependencies used by the guarded configuration tests
+        run: |
+          helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm
+          helm repo add minio https://charts.min.io/
+          helm repo add rustfs https://charts.rustfs.com/
+          helm repo add valkey https://valkey.io/valkey-helm/
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build charts/openhands
       # Subchart suites are only picked up by the parent run when the subchart is
       # enabled by default, so every chart with tests is listed explicitly.
       - name: Run chart unit tests
