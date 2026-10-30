@@ -19,6 +19,8 @@ def render_openhands_deployment(resolver_label: str | None) -> str:
         "template",
         "openhands",
         str(OPENHANDS_CHART),
+        "--set",
+        "automation.enabled=false",
         "--show-only",
         "templates/deployment.yaml",
     ]

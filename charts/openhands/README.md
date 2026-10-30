@@ -11,13 +11,14 @@ Explicit operator overrides remain supported. Read the
 credential limitations and the Cloud override example.
 
 Automations visibility follows a configured local or external service.
-Enabling Automations and changing database/object-store defaults are a separate
-rollout: this PR retains the existing service, storage and persistence defaults.
+The product-policy guide above describes the earlier policy-only change.
+The Automations service default in this follow-up is described below; storage
+and persistence defaults remain unchanged.
 
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3.2.0+
+- Helm 3.18.4 (CI baseline; older versions are not qualified here), or compatible Helm 4
 - Ingress controller (recommended: Traefik)
 - A TLS solution for certificates (recommended: cert-manager)
 
@@ -772,3 +773,44 @@ a removed limit from cached authorization data, even after a successful save.
 This increases authorization database reads; production throughput has not been
 load-tested. It does not enable or disable LLM response caching. If you use an
 external LiteLLM proxy, configure and validate the same behavior there.
+
+
+## Automations chart configuration
+
+Local Automations defaults on. It requires configuration before the chart can
+render; incomplete prerequisites fail before a rollout. These inputs apply to
+the app and secrets charts, which are separate releases:
+
+- Set `automation.filestore.type` explicitly (`s3` or `gcs`), and configure its
+  package bucket, endpoint and credentials/identity. App conversation storage is
+  separate and is not changed by this feature.
+- Use durable `automation.database` storage. For a fresh shared PostgreSQL, set
+  `postgresql.primary.persistence.enabled: true`; `existingClaim` alone does not
+  enable persistence. For a pre-provisioned external DB, configure its connection
+  and password Secret and set `createDatabaseUser: false`.
+- Provision the existing automation service, webhook, Git-sync, KV and DB password
+  Secrets first. The companion chart defaults on and requires the corresponding
+  nonempty `config.automation_service_key`, `config.automation_webhook_secret`,
+  `config.automation_git_sync_secret`, `config.automation_kv_secret` and
+  `config.automations_db_password` values (the DB password may fall back to
+  `config.postgres_password`). Retain existing key
+  values; the chart does not generate or rotate encryption keys.
+- An enabled upgrade requires `automation.upgradeAcknowledged: true` after backup
+  and review. Pin `automation.database.createDatabaseUser` to its deployed mode.
+  Online guards reject DB/package-store repointing, adding superuser bootstrap,
+  and an in-place emptyDir-to-PVC conversion. The acknowledgment migrates nothing.
+- Set `automation.enabled: false` to retain the former default-off behavior.
+  Keep existing Secrets for a previously active service, even while disabled.
+  For an installation that never used Automations, its secrets release may also
+  explicitly set `automation.enabled: false`.
+
+Explicit app auth/forwarding overrides remain supported. For a separately
+managed service, disable the local dependency and configure `automationService.*`
+and its existing auth Secrets. See the [configured values example](examples/enterprise-automations.yaml)
+and [external-service values example](examples/external-automations.yaml).
+
+Secret/data-path lookup guards require an online render in an existing namespace
+and read access to its default ServiceAccount and exact referenced Secrets.
+Client-only/GitOps rendering cannot prove these prerequisites exist. Live
+upgrade/execution qualification remains open. Provider installation docs and
+skills will be a separate PR after platform review of this Helm change.

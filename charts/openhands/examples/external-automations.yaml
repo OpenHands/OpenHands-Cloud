@@ -1,0 +1,14 @@
+# Separately managed service; replace URL/Secret references with existing values.
+automation:
+  enabled: false
+automationService:
+  url: https://automation.example.com/api/automation
+  eventForwardingEnabled: true
+automationServiceKey:
+  enabled: true
+  existingSecret: automation-service-key
+  secretKey: automation-service-key
+automationWebhookSecret:
+  enabled: true
+  existingSecret: automation-webhook-secret
+  secretKey: webhook-secret

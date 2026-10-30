@@ -41,6 +41,9 @@ spec:
 
     automation:
       enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+      # KOTS passes the saved choice and explicit DB/store configuration.
+      # Prerequisite and online data-path guards still apply.
+      upgradeAcknowledged: true
     automationServiceKey:
       enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
     automationWebhookSecret:
@@ -1461,12 +1464,18 @@ spec:
         tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
     postgresql:
       enabled: true
+      primary:
+        persistence:
+          enabled: true
     redis:
       enabled: true
     runtime-api:
       enabled: true
     automation:
       enabled: true
+      # Render-only image collection; no cloud storage is contacted.
+      filestore:
+        type: gcs
     agent-canvas:
       enabled: true
     device-plugin:

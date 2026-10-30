@@ -38,6 +38,7 @@ tests:
       replicated.enabled: true
       runtime-api.enabled: true
       automation.enabled: true
+      postgresql.primary.persistence.enabled: true
     asserts:
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
@@ -70,6 +71,7 @@ tests:
       replicated.enabled: true
       runtime-api.enabled: true
       automation.enabled: true
+      postgresql.primary.persistence.enabled: true
     asserts:
       - template: troubleshoot/secrets.yaml
         documentIndex: 1

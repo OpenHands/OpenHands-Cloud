@@ -25,6 +25,7 @@ tests:
   - it: shows automation UI when the local service is explicitly enabled
     set:
       automation.enabled: true
+      postgresql.primary.persistence.enabled: true
     asserts:
       - template: deployment.yaml
         contains:

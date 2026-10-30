@@ -6,5 +6,5 @@ metadata:
   namespace: {{ .Release.Namespace }}
 type: Opaque
 data:
-  automation-service-key: {{ .Values.config.automation_service_key | b64enc | quote }}
+  automation-service-key: {{ .Values.config.automation_service_key | required "config.automation_service_key must be supplied when automation.enabled=true; retain the existing value on upgrade" | b64enc | quote }}
 {{- end }}

@@ -1,0 +1,7 @@
+# Test-only compatibility profile for pre-existing isolated chart suites.
+# New fresh-default behavior is covered separately by automation_defaults_test
+# and the full-render checks. Not a production install values file.
+automation:
+  enabled: false
+  filestore:
+    type: gcs
