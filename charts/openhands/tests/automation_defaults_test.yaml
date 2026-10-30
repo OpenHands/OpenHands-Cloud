@@ -1,0 +1,376 @@
+suite: guarded Enterprise Automations rollout
+release:
+  name: review
+  namespace: enterprise
+kubernetesProvider:
+  scheme:
+    v1/ServiceAccount:
+      gvr:
+        version: v1
+        resource: serviceaccounts
+      namespaced: true
+    v1/Secret:
+      gvr:
+        version: v1
+        resource: secrets
+      namespaced: true
+    apps/v1/Deployment:
+      gvr:
+        group: apps
+        version: v1
+        resource: deployments
+      namespaced: true
+    apps/v1/StatefulSet:
+      gvr:
+        group: apps
+        version: v1
+        resource: statefulsets
+      namespaced: true
+  objects:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: unrelated
+      namespace: enterprise
+templates:
+- deployment.yaml
+- validations.yaml
+- litellm-config-script.yaml
+tests:
+- it: wires local auth URL forwarding and UI together
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+    postgresql.primary.persistence.enabled: true
+  asserts:
+  - template: deployment.yaml
+    contains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: ENABLE_AUTOMATIONS
+        value: 'true'
+  - template: deployment.yaml
+    contains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: AUTOMATION_SERVICE_URL
+        value: http://automation/api/automation
+  - template: deployment.yaml
+    contains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: AUTOMATION_EVENT_FORWARDING_ENABLED
+        value: 'true'
+  - template: deployment.yaml
+    contains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: AUTOMATIONS_SERVICE_KEY
+        valueFrom:
+          secretKeyRef:
+            name: automation-service-key
+            key: automation-service-key
+  - template: deployment.yaml
+    contains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: AUTOMATION_WEBHOOK_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: automation-webhook-secret
+            key: webhook-secret
+- it: honors explicit auth and forwarding opt outs
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+    postgresql.primary.persistence.enabled: true
+    automationServiceKey.enabled: false
+    automationWebhookSecret.enabled: false
+    automationService.eventForwardingEnabled: false
+  asserts:
+  - template: deployment.yaml
+    notContains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: AUTOMATIONS_SERVICE_KEY
+      any: true
+  - template: deployment.yaml
+    notContains:
+      path: spec.template.spec.containers[0].env
+      content:
+        name: AUTOMATION_EVENT_FORWARDING_ENABLED
+      any: true
+- it: rejects shared ephemeral PostgreSQL before rollout
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires durable PostgreSQL
+- it: rejects a disabled bundled database
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+    postgresql.enabled: false
+    externalDatabase.host: external.example.com
+    externalDatabase.username: app
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: automation.database.host points to the disabled bundled PostgreSQL
+- it: accepts separately provisioned PostgreSQL and GCS
+  set:
+    automation.enabled: true
+    automation.database.host: automation-db.example.com
+    automation.database.createDatabaseUser: false
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: rejects a disabled bundled object store
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-minio:9000
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled MinIO but it is disabled or ephemeral
+- it: rejects an ephemeral bundled object store
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-minio:9000
+    minio.enabled: true
+    minio.persistence.enabled: false
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled MinIO but it is disabled or ephemeral
+- it: requires explicit upgrade acknowledgment even with prerequisites configured
+  release:
+    upgrade: true
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations is now enabled by default
+- it: leaves a default-off upgrade available without acknowledgment
+  release:
+    upgrade: true
+  set:
+    automation.enabled: false
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: catches a missing prerequisite secret in an online render before any pod update
+  kubernetesProvider:
+    objects:
+    - apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: enterprise
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.createDatabaseUser: false
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Required Automations Secret automation-db-secret/db-password is
+        missing or empty
+- it: rejects repointing an existing package store even after acknowledgment
+  release:
+    upgrade: true
+  kubernetesProvider:
+    objects:
+    - apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: automation
+        namespace: enterprise
+      spec:
+        template:
+          spec:
+            containers:
+            - name: automation
+              env:
+              - name: FILE_STORE
+                value: gcs
+              - name: GCS_BUCKET_NAME
+                value: original-packages
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: gcs
+    automation.filestore.bucket: empty-new-packages
+    automation.upgradeAcknowledged: true
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Refusing to repoint the existing Automations database or package
+        store
+- it: catches an immutable ephemeral-to-PVC conversion before applying it
+  release:
+    upgrade: true
+  kubernetesProvider:
+    objects:
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: review-postgresql
+        namespace: enterprise
+      spec:
+        template:
+          spec:
+            volumes:
+            - name: data
+              emptyDir: {}
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+    automation.upgradeAcknowledged: true
+    postgresql.primary.persistence.enabled: true
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Bundled PostgreSQL is currently ephemeral
+- it: accepts an online render with all exact automation secrets provisioned
+  kubernetesProvider:
+    objects:
+    - apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: enterprise
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: automation-db-secret
+        namespace: enterprise
+      data:
+        db-password: U1lOVEhFVElDLVVOSVQtVEVTVC1PTkxZ
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: automation-service-key
+        namespace: enterprise
+      data:
+        automation-service-key: U1lOVEhFVElDLVVOSVQtVEVTVC1PTkxZ
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: automation-webhook-secret
+        namespace: enterprise
+      data:
+        webhook-secret: U1lOVEhFVElDLVVOSVQtVEVTVC1PTkxZ
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: automation-git-sync-secret
+        namespace: enterprise
+      data:
+        git-sync-secret: U1lOVEhFVElDLVVOSVQtVEVTVC1PTkxZ
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: automation-kv-secret
+        namespace: enterprise
+      data:
+        kv-secret: U1lOVEhFVElDLVVOSVQtVEVTVC1PTkxZ
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.createDatabaseUser: false
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: preserves an existing database and GCS package store after acknowledgment
+  release:
+    upgrade: true
+  kubernetesProvider:
+    objects:
+    - apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: automation
+        namespace: enterprise
+      spec:
+        template:
+          spec:
+            containers:
+            - name: automation
+              env:
+              - name: FILE_STORE
+                value: gcs
+              - name: GCS_BUCKET_NAME
+                value: automation-data
+              - name: AUTOMATION_DB_HOST
+                value: db.example.com
+              - name: AUTOMATION_DB_PORT
+                value: '5432'
+              - name: AUTOMATION_DB_NAME
+                value: automations
+              - name: AUTOMATION_DB_USER
+                value: automation_user
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.createDatabaseUser: false
+    automation.filestore.type: gcs
+    automation.upgradeAcknowledged: true
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: checks the shared database FQDN for durability
+  set:
+    automation.enabled: true
+    automation.database.host: review-postgresql.enterprise.svc.cluster.local
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires durable PostgreSQL
+- it: rejects conflicting raw database targets before bootstrap
+  set:
+    automation.enabled: true
+    automation.database.host: external-db.example.com
+    automation.filestore.type: gcs
+    automation.env.AUTOMATION_DB_HOST: different-db.example.com
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: automation.env.AUTOMATION_DB_HOST conflicts
+- it: rejects an invalid S3 endpoint
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: object-store-without-scheme
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: automation.filestore.endpoint must be empty
+- it: checks the bundled MinIO namespace-qualified hostname
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-minio.enterprise.svc.cluster.local:9000
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled MinIO but it is disabled or ephemeral

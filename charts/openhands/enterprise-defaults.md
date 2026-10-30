@@ -58,19 +58,17 @@ service configured, the chart now hides the UI. Replicated passes its persisted
 Automations choice into both its plain and structured flags, so saved OFF stays
 OFF and saved ON retains its existing complete wiring.
 
-## Separate Automations and storage rollout
+## Automations is a separate guarded rollout
 
-Automations remains default-off in this Helm chart. Its existing install-time
-configuration and companion secret provisioning are still required when enabled.
-The planned Enterprise-first Automations default needs a separate change with
-matching secrets, callback/storage/database wiring and upgrade safeguards.
+The follow-up chart now enables local Automations by default, with matching
+authentication, URL and forwarding settings. Explicit durable database and
+package-store configuration and secret provisioning are required before it can
+render. Upgrades that enable the service require explicit review, and online
+guards prevent silent DB/store repointing or an in-place ephemeral database
+conversion. See the [Automations rollout guide](automations-rollout.md).
 
-This PR does not change session/package store types, MinIO enablement, volume
-sizes, persistence, database bootstrap or the companion secrets chart defaults.
-This avoids redirecting existing GCS users to an empty store, changing immutable
-StatefulSet volume templates, or adding required secrets to existing app pods.
-It does not improve the pre-existing storage defaults; installations must still
-configure production durability and credentials appropriately.
+Conversation/session store types, MinIO enablement, volume sizes and persistence
+defaults remain unchanged. No data is migrated by changing the feature default.
 
 ## Documentation and release qualification
 

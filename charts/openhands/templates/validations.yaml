@@ -51,3 +51,99 @@ script in its usage-error path, so refuse it at render time instead.
 {{- if and .Values.enabled .Values.budgetReconcileGate.enabled (not (has (toString .Values.budgetReconcileGate.mode) (list "strict" "acknowledge"))) -}}
 {{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
 {{- end -}}
+
+{{/* Local Automations is a service, not just a UI toggle. Refuse incomplete
+configuration rather than replacing healthy app pods with missing dependencies.
+No conversation-store or volume defaults change as part of this rollout. */}}
+{{- if .Values.automation.enabled -}}
+{{- $a := .Values.automation -}}
+{{- if not (has $a.filestore.type (list "s3" "gcs" "google_cloud")) -}}
+{{- fail "Local Automations requires an explicit automation.filestore.type (s3 or gcs). Configure its durable package store before enabling the service; existing GCS users must pin gcs. Set automation.enabled=false to retain the previous default-off behavior." -}}
+{{- end -}}
+{{- $dbHost := tpl $a.database.host . -}}
+{{- $bundledDb := .Values.postgresql.fullnameOverride | default (printf "%s-postgresql" .Release.Name) -}}
+{{- if .Values.postgresql.enabled -}}
+{{- $bundledDb = include "postgresql.v1.primary.fullname" (index .Subcharts "postgresql") -}}
+{{- if and (eq $dbHost (printf "%s-postgresql" .Release.Name)) (ne $dbHost $bundledDb) -}}
+{{- fail "The bundled PostgreSQL has a customized service name. Set automation.database.host to that service explicitly." -}}
+{{- end -}}
+{{- end -}}
+{{- $dbAliases := list $bundledDb (printf "%s.%s" $bundledDb .Release.Namespace) (printf "%s.%s.svc" $bundledDb .Release.Namespace) (printf "%s.%s.svc.cluster.local" $bundledDb .Release.Namespace) -}}
+{{- if not $dbHost -}}
+{{- fail "Local Automations requires automation.database.host." -}}
+{{- end -}}
+{{- if has (trimSuffix "." $dbHost) $dbAliases -}}
+{{- if not .Values.postgresql.enabled -}}
+{{- fail "automation.database.host points to the disabled bundled PostgreSQL. Configure automation.database for your external database (and createDatabaseUser=false when it is pre-provisioned), or enable bundled PostgreSQL." -}}
+{{- end -}}
+{{- if not (or .Values.postgresql.primary.persistence.enabled .Values.postgresql.primary.persistence.existingClaim) -}}
+{{- fail "Local Automations requires durable PostgreSQL. For a fresh bundled install set postgresql.primary.persistence.enabled=true; for an existing ephemeral database, back up and migrate it before enabling Automations. External automation.database.host values use operator-managed durability." -}}
+{{- end -}}
+{{- end -}}
+{{/* Critical connection env overrides must agree with the typed values used
+by bootstrap and prerequisite checks. Other env overrides remain supported. */}}
+{{- $expected := dict "FILE_STORE" ($a.filestore.type | replace "google_cloud" "gcs") "AUTOMATION_DB_HOST" $dbHost "AUTOMATION_DB_PORT" (toString $a.database.port) "AUTOMATION_DB_NAME" $a.database.name "AUTOMATION_DB_USER" $a.database.user -}}
+{{- if eq $a.filestore.type "s3" -}}
+{{- $_ := set $expected "AWS_S3_BUCKET" $a.filestore.bucket -}}
+{{- $_ := set $expected "AWS_S3_ENDPOINT" (tpl $a.filestore.endpoint .) -}}
+{{- else -}}{{- $_ := set $expected "GCS_BUCKET_NAME" $a.filestore.bucket -}}{{- end -}}
+{{- range $key, $value := $expected -}}
+{{- if and (hasKey $a.env $key) (ne (toString (get $a.env $key)) $value) -}}
+{{- fail (printf "automation.env.%s conflicts with typed automation.database/filestore values. Set the typed connection values to the same effective target so bootstrap and upgrade guards can validate them." $key) -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $a.filestore.type "s3" -}}
+{{- $endpoint := tpl $a.filestore.endpoint . -}}
+{{- if and $endpoint (not (or (hasPrefix "http://" $endpoint) (hasPrefix "https://" $endpoint))) -}}
+{{- fail "automation.filestore.endpoint must be empty for AWS S3 or an http:// or https:// URL." -}}
+{{- end -}}
+{{- $storeHost := (urlParse $endpoint).host | default "" | splitList ":" | first -}}
+{{- $minioName := .Values.minio.fullnameOverride | default (printf "%s-minio" .Release.Name) -}}
+{{- $minioAliases := list $minioName (printf "%s.%s" $minioName .Release.Namespace) (printf "%s.%s.svc" $minioName .Release.Namespace) (printf "%s.%s.svc.cluster.local" $minioName .Release.Namespace) -}}
+{{- if has (trimSuffix "." $storeHost) $minioAliases -}}
+{{- if not (and .Values.minio.enabled (or .Values.minio.persistence.enabled .Values.minio.persistence.existingClaim)) -}}
+{{- fail "Automations targets bundled MinIO but it is disabled or ephemeral. Enable minio.enabled and durable minio.persistence, or configure an external automation.filestore." -}}
+{{- end -}}
+{{- end -}}
+{{- if and (eq $endpoint (printf "http://%s-rustfs-svc:9000" .Release.Name)) (not .Values.rustfs.enabled) -}}
+{{- fail "Automations targets bundled RustFS but rustfs.enabled is false. Enable it with operator-provisioned credentials or configure an external automation.filestore." -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Release.IsUpgrade (not $a.upgradeAcknowledged) -}}
+{{- fail "Automations is now enabled by default. Before upgrading, configure durable automation.database and automation.filestore, provision its secrets, and set automation.upgradeAcknowledged=true after backup/review. Set automation.enabled=false to retain the previous behavior. This acknowledgment does not migrate data or bypass prerequisite checks." -}}
+{{- end -}}
+{{- include "openhands.automationUpgradeGuard" . -}}
+{{- end -}}
+
+{{/* A namespaced, non-secret API probe distinguishes an online render in an
+existing namespace from helm template. Only the exact automation secret refs
+are read, never namespace-wide secret listings. Offline/GitOps rendering cannot
+establish secret existence; use a server dry run after provisioning secrets. */}}
+{{- $appAuth := and .Values.enabled (or (eq .Values.automationServiceKey.enabled true) (eq .Values.automationWebhookSecret.enabled true)) -}}
+{{- if and (or .Values.automation.enabled $appAuth) (lookup "v1" "ServiceAccount" .Release.Namespace "default") -}}
+{{- $refs := list -}}
+{{- $a := .Values.automation -}}
+{{- if .Values.automation.enabled -}}
+{{- range (include "automation.env" (index .Subcharts "automation") | fromYamlArray) -}}
+{{- $ref := (.valueFrom | default dict).secretKeyRef | default dict -}}
+{{- if and $ref (or (not $ref.optional) (has .name (list "AUTOMATION_GIT_SYNC_SECRET" "AUTOMATION_KV_SECRET"))) -}}
+{{- $refs = append $refs $ref -}}
+{{- end -}}
+{{- end -}}
+{{- if $a.database.createDatabaseUser -}}
+{{- $refs = append $refs (dict "name" $a.database.superuserSecretName "key" $a.database.superuserSecretKey) -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.enabled (or (eq .Values.automationServiceKey.enabled true) (and (eq .Values.automationServiceKey.enabled nil) .Values.automation.enabled)) (not (hasKey .Values.env "AUTOMATIONS_SERVICE_KEY")) -}}
+{{- $refs = append $refs (dict "name" .Values.automationServiceKey.existingSecret "key" .Values.automationServiceKey.secretKey) -}}
+{{- end -}}
+{{- if and .Values.enabled (or (eq .Values.automationWebhookSecret.enabled true) (and (eq .Values.automationWebhookSecret.enabled nil) .Values.automation.enabled)) (not (hasKey .Values.env "AUTOMATION_WEBHOOK_SECRET")) -}}
+{{- $refs = append $refs (dict "name" .Values.automationWebhookSecret.existingSecret "key" .Values.automationWebhookSecret.secretKey) -}}
+{{- end -}}
+{{- range $refs -}}
+{{- $secret := lookup "v1" "Secret" $.Release.Namespace .name -}}
+{{- if not (get ($secret.data | default dict) .key) -}}
+{{- fail (printf "Required Automations Secret %s/%s is missing or empty. Provision the secrets chart (or your existing secret manager) before upgrading the app; no secret values are shown." .name .key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

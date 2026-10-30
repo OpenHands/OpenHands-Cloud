@@ -1,0 +1,27 @@
+# Fresh Enterprise installation: Automations uses a durable shared PostgreSQL
+# and an operator-provisioned S3-compatible package store. Provision the bucket
+# and this Secret before installing; never use these placeholder names blindly.
+# Conversation storage remains a separate, explicit install configuration.
+postgresql:
+  primary:
+    persistence:
+      enabled: true
+      # Keep the subchart's existing size default. Choose a size before install;
+      # do not change an existing StatefulSet's claim template on upgrade.
+automation:
+  enabled: true
+  # For upgrades only, after backup/review of the existing data paths:
+  # upgradeAcknowledged: true
+  # Use your public origin for callbacks/webhooks when sandboxes or senders
+  # cannot reach the cluster's internal DNS; same convention as Replicated.
+  openhandsApiUrl: https://app.example.com
+  automationBaseUrl: https://app.example.com
+  filestore:
+    type: s3
+    bucket: enterprise-automation-packages
+    endpoint: https://object-store.example.com
+    region: us-east-1
+    createBucket: false
+    existingSecret: automation-package-store
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY

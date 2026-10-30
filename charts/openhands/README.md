@@ -772,3 +772,8 @@ a removed limit from cached authorization data, even after a successful save.
 This increases authorization database reads; production throughput has not been
 load-tested. It does not enable or disable LLM response caching. If you use an
 external LiteLLM proxy, configure and validate the same behavior there.
+
+
+## Guarded Automations rollout
+
+Local Automations now defaults on and requires explicit durable database/package-storage and secret provisioning before rollout. Existing operators can keep it off explicitly; upgrades that enable it require a backup/review acknowledgment. This does not change conversation storage or volume defaults. Read the [Automations rollout and migration boundaries](automations-rollout.md) before upgrading; it covers all three cloud-provider configurations, separate secrets releases and the live qualification still required.

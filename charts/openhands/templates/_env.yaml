@@ -709,7 +709,7 @@ the app UI and webhook users are matched by email. */}}
   value: "true"
 {{- end }}
 
-{{- if .Values.automationServiceKey.enabled }}
+{{- if or (eq .Values.automationServiceKey.enabled true) (and (eq .Values.automationServiceKey.enabled nil) .Values.automation.enabled) }}
 - name: AUTOMATIONS_SERVICE_KEY
   valueFrom:
     secretKeyRef:
@@ -717,16 +717,16 @@ the app UI and webhook users are matched by email. */}}
       key: {{ .Values.automationServiceKey.secretKey }}
 {{- end }}
 
-{{- if .Values.automationService.url }}
+{{- if or .Values.automationService.url .Values.automation.enabled }}
 - name: AUTOMATION_SERVICE_URL
-  value: {{ .Values.automationService.url | quote }}
+  value: {{ .Values.automationService.url | default "http://automation/api/automation" | quote }}
 {{- end }}
-{{- if .Values.automationService.eventForwardingEnabled }}
+{{- if or (eq .Values.automationService.eventForwardingEnabled true) (and (eq .Values.automationService.eventForwardingEnabled nil) .Values.automation.enabled) }}
 - name: AUTOMATION_EVENT_FORWARDING_ENABLED
   value: "true"
 {{- end }}
 
-{{- if .Values.automationWebhookSecret.enabled }}
+{{- if or (eq .Values.automationWebhookSecret.enabled true) (and (eq .Values.automationWebhookSecret.enabled nil) .Values.automation.enabled) }}
 - name: AUTOMATION_WEBHOOK_SECRET
   valueFrom:
     secretKeyRef:

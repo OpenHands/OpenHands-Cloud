@@ -21,11 +21,11 @@ jobs:
       # enabled by default, so every chart with tests is listed explicitly.
       - name: Run chart unit tests
         run: |
-          helm unittest charts/openhands
+          helm unittest -v "$GITHUB_WORKSPACE/charts/openhands/tests/fixtures/legacy-policy.yaml" charts/openhands
           helm unittest charts/openhands/charts/automation
           helm unittest charts/openhands/charts/device-plugin
           helm unittest charts/openhands/charts/integrations-hub
           helm unittest charts/openhands/charts/runtime-api
-          helm unittest charts/openhands-secrets
+          helm unittest -v "$GITHUB_WORKSPACE/charts/openhands-secrets/tests/fixtures/legacy-policy.yaml" charts/openhands-secrets
           helm unittest charts/image-loader
           helm unittest charts/infra
