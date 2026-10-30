@@ -39,6 +39,16 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    automation:
+      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+    automationServiceKey:
+      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+    automationWebhookSecret:
+      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+    automationService:
+      url: '{{repl if ConfigOptionEquals "automations_enabled" "1" }}http://automation/api/automation{{repl end}}'
+      eventForwardingEnabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
     budgetPreflight:
@@ -47,6 +57,8 @@ spec:
       mode: 'repl{{ ConfigOption "budget_reconcile_gate_mode" }}'
 
     env:
+      ENABLE_AUTOMATIONS: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
       KEYCLOAK_ADMIN_CLIENT_ID: openhands-provisioner
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
@@ -781,6 +793,7 @@ spec:
           # above) instead of the pod filesystem.
           filestore:
             type: s3
+            bundledMinio: false
             endpoint: http://openhands-minio:9000
             # The bundled MinIO's bucket job only creates the parent chart's
             # buckets, so the service provisions its own on startup.

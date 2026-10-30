@@ -1,0 +1,93 @@
+suite: Enterprise product defaults
+templates:
+  - deployment.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: hides personal key editing and billing and disables email changes
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: OH_ALLOW_USER_LLM_CONFIGURATION, value: "false"}
+          count: 1
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: HIDE_BILLING_PAGE, value: "true"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: EMAIL_CHANGE_ENABLED, value: "false"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "false"}
+  - it: enables and connects the bundled automation service
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "true"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: "http://automation/api/automation"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_EVENT_FORWARDING_ENABLED, value: "true"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTOMATIONS_SERVICE_KEY
+            valueFrom:
+              secretKeyRef: {name: automation-service-key, key: automation-service-key}
+  - it: disables automation UI and wiring together when the dependency is disabled
+    set:
+      automation.enabled: false
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATIONS_SERVICE_KEY}
+          any: true
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_EVENT_FORWARDING_ENABLED}
+          any: true
+  - it: preserves explicit Cloud policy overrides without duplicate env names
+    set:
+      env.OH_ALLOW_USER_LLM_CONFIGURATION: "true"
+      env.HIDE_BILLING_PAGE: "false"
+      env.EMAIL_CHANGE_ENABLED: "true"
+      env.OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "true"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: OH_ALLOW_USER_LLM_CONFIGURATION, value: "true"}
+          count: 1
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: HIDE_BILLING_PAGE, value: "false"}
+          count: 1
+  - it: permits a separately managed automation service
+    set:
+      automation.enabled: false
+      automationServiceKey.enabled: true
+      automationWebhookSecret.enabled: true
+      automationService.url: https://automation.example.invalid/api/automation
+      automationService.eventForwardingEnabled: true
+      env.ENABLE_AUTOMATIONS: "true"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: "https://automation.example.invalid/api/automation"}

@@ -1,6 +1,20 @@
-# OpenHands Cloud Helm Chart
+# OpenHands Enterprise Helm Chart
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
+
+## Enterprise defaults and upgrades
+
+The shared chart targets self-hosted Enterprise installs. Personal LLM-key
+editing is hidden, the billing page is hidden, and email changes are disabled.
+Automations is enabled with its service/webhook authentication and event
+forwarding. Bundled PostgreSQL and MinIO use persistent volumes; both session
+files and automation packages use S3-compatible storage rather than assuming a
+Google Cloud identity.
+
+**This is a breaking defaults change.** Read the
+[Enterprise defaults migration guide](enterprise-defaults.md) before upgrading,
+including its explicit Cloud override example. Saved Helm overrides win, but an
+omitted value can change on upgrade. This chart does not migrate existing data.
 
 ## Prerequisites
 

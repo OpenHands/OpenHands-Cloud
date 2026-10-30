@@ -76,6 +76,9 @@ tests:
 
   - it: renders no credential env for ambient identity (IRSA) and no endpoint vars for real AWS
     set:
+      filestore.bundledMinio: false
+      filestore.endpoint: ""
+      filestore.createBucket: false
       filestore.type: s3
       filestore.bucket: acme-automation
       filestore.region: us-east-1
@@ -101,7 +104,9 @@ tests:
             name: AWS_S3_SECURE
           any: true
 
-  - it: wires GCS from the shared bucket value by default
+  - it: wires GCS from the shared bucket value when selected
+    set:
+      filestore.type: gcs
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env

@@ -1,0 +1,30 @@
+# Example ONLY: Cloud must reconcile this with its actual environment overlay.
+# No credentials, real project names, or deployed values are included here.
+env:
+  OH_ALLOW_USER_LLM_CONFIGURATION: "true"
+  HIDE_BILLING_PAGE: "false"
+  EMAIL_CHANGE_ENABLED: "true"
+  OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "true"
+minio:
+  enabled: false
+filestore:
+  type: gcs
+  endpoint: ""
+postgresql:
+  enabled: false
+externalDatabase:
+  host: postgres.example.invalid
+  username: openhands
+  database: openhands
+# Keep Automations, but use explicitly provisioned Cloud services.
+automation:
+  openhandsApiUrl: https://app.example.invalid
+  automationBaseUrl: https://app.example.invalid
+  database:
+    host: postgres.example.invalid
+    createDatabaseUser: false
+  filestore:
+    type: gcs
+    bundledMinio: false
+    endpoint: ""
+    createBucket: false

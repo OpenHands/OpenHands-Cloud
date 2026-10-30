@@ -1,0 +1,35 @@
+suite: Enterprise umbrella automation wiring
+templates:
+  - deployment.yaml
+tests:
+  - it: expands release and namespace in connection values
+    release:
+      name: enterprise
+      namespace: customer
+    set:
+      openhandsApiUrl: http://openhands-service.{{ .Release.Namespace }}.svc.cluster.local:3000
+      automationBaseUrl: http://automation.{{ .Release.Namespace }}.svc.cluster.local
+      database.host: '{{ .Release.Name }}-postgresql'
+      database.createDatabaseUser: true
+      filestore.type: s3
+      filestore.bundledMinio: true
+      filestore.endpoint: http://{{ .Release.Name }}-minio:9000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_DB_HOST, value: enterprise-postgresql}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_BASE_URL, value: 'http://automation.customer.svc.cluster.local'}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AWS_S3_ENDPOINT, value: 'http://enterprise-minio:9000'}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef: {name: enterprise-minio, key: rootPassword}
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content: {name: DB_HOST, value: enterprise-postgresql}

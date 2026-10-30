@@ -110,7 +110,13 @@ securityContext:
   fsGroupChangePolicy: Always
   runAsNonRoot: true
 
+# Enterprise UI policy. These remain individually overridable through env.
+# BYOK is an editing control, not runtime enforcement of saved credentials.
 env:
+  OH_ALLOW_USER_LLM_CONFIGURATION: "false"
+  HIDE_BILLING_PAGE: "true"
+  EMAIL_CHANGE_ENABLED: "false"
+  OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "false"
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   # How the app addresses a sandbox. Must agree with the runtime-api's
@@ -145,7 +151,7 @@ integrations:
 filestore:
   # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
   # template renders whichever spelling the app natively reads.
-  type: gcs
+  type: s3
 
   # Bucket to store conversation/session files in (both backends).
   bucket: openhands-sessions
@@ -801,12 +807,11 @@ litellm-helm:
 
 minio:
   # Deploy the bundled in-cluster MinIO (a conditional dependency) — handy for
-  # POC/feature envs and self-contained installs. Durability follows
-  # persistence.enabled below: false here by default, but Replicated installs
-  # override it to true (replicated/openhands.yaml) and hold durable customer
-  # data in a PVC. When enabled and filestore.type is s3 with no endpoint or
+  # self-contained Enterprise installs. Conversation and automation data live
+  # on a PVC by default. External object stores should disable this dependency.
+  # When enabled and filestore.type is s3 with no endpoint or
   # credentials configured, the app targets this instance automatically.
-  enabled: false
+  enabled: true
   replicas: 1
   mode: standalone
   # OpenHands-hosted copies of the MinIO server and client releases this chart
@@ -821,7 +826,8 @@ minio:
     tag: RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701
   imagePullSecrets: []
   persistence:
-    enabled: false
+    enabled: true
+    size: 100Gi
   buckets:
     - name: openhands-sessions
       policy: none
@@ -894,7 +900,8 @@ postgresql:
     initdb:
       scriptsConfigMap: ""
     persistence:
-      enabled: false
+      enabled: true
+      size: 50Gi
     service:
       ports:
         postgresql: 5432
@@ -1253,20 +1260,23 @@ plugin-directory:
   env: {}
 
 automationServiceKey:
-  enabled: false
+  # null follows automation.enabled; true/false is an explicit override.
+  enabled: null
   existingSecret: automation-service-key
   secretKey: automation-service-key
 
 # Automation service configuration for event forwarding
 automationService:
-  # URL of the automation service (e.g., https://staging.all-hands.dev/api/automation)
+  # In-cluster service; override for a separately deployed automation service.
   url: ""
   # Enable forwarding events to the automation service
-  eventForwardingEnabled: false
+  # null follows automation.enabled. Set explicitly for an external service.
+  eventForwardingEnabled: null
 
 # Automation webhook secret for verifying webhook signatures
 automationWebhookSecret:
-  enabled: false
+  # null follows automation.enabled; true/false is an explicit override.
+  enabled: null
   existingSecret: automation-webhook-secret
   secretKey: webhook-secret
 
@@ -1275,7 +1285,7 @@ automationWebhookSecret:
 # The automation service handles scheduled and event-driven automation execution
 # Routing is handled by parent chart via /api/automation subpath
 automation:
-  enabled: false
+  enabled: true
   
   image:
     repository: ghcr.io/openhands/automation
@@ -1352,9 +1362,9 @@ automation:
   
   # URL configuration
   # OpenHands API URL for dispatching sandbox runs (e.g., https://staging.all-hands.dev)
-  openhandsApiUrl: ""
+  openhandsApiUrl: "http://openhands-service.{{ .Release.Namespace }}.svc.cluster.local:3000"
   # Automation service base URL for completion callbacks (e.g., https://staging.all-hands.dev/api/automation)
-  automationBaseUrl: ""
+  automationBaseUrl: "http://automation.{{ .Release.Namespace }}.svc.cluster.local"
   
   # PostgreSQL database configuration
   database:
@@ -1363,7 +1373,7 @@ automation:
     #   - Cloud SQL: "my-project:us-central1:my-instance"
     #   - In-cluster: "openhands-main-postgresql"
     #   - Feature env: "openhands-feature-branch-postgresql"
-    host: ""
+    host: "{{ .Release.Name }}-postgresql"
     port: "5432"
     sslMode: "prefer"
     user: "automation_user"
@@ -1374,7 +1384,7 @@ automation:
     # Create database and user in an existing PostgreSQL instance
     # When true, runs an init container to create the database and user
     # Useful when sharing a PostgreSQL instance with other services
-    createDatabaseUser: false
+    createDatabaseUser: true
     # Superuser used to create the automation database and user.
     # Defaults to "postgres" but must be overridden when the external PostgreSQL
     # admin account uses a different name.
@@ -1398,15 +1408,18 @@ automation:
   # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
     # "s3" or "gcs"
-    type: gcs
+    type: s3
+    # Read the bundled MinIO root credentials from its generated Secret.
+    # Disable when choosing external storage. Explicit credentials still win.
+    bundledMinio: true
     # Bucket to store packages in (both backends).
     bucket: automation-data
     # s3 only. Leave empty for AWS; set for other S3-compatible stores. TLS is
     # inferred from the URL scheme.
-    endpoint: ""
+    endpoint: "http://{{ .Release.Name }}-minio:9000"
     region: ""
     # s3 only. Create the bucket at startup if nothing else provisions it.
-    createBucket: false
+    createBucket: true
     # s3 credentials: existingSecret wins, then inline accessKey/secretKey,
     # then ambient AWS identity (IRSA, instance profile). gcs always uses
     # ambient identity (Workload Identity / ADC).
