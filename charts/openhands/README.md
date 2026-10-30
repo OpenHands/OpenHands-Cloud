@@ -1,6 +1,18 @@
-# OpenHands Cloud Helm Chart
+# OpenHands Enterprise Helm Chart
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
+
+## Enterprise policy defaults
+
+Helm now follows the fresh Replicated Enterprise policy for personal LLM-key
+editing (hidden), Billing page visibility (hidden), and email changes (disabled).
+Explicit operator overrides remain supported. Read the
+[policy and upgrade guide](enterprise-defaults.md), including the organization
+credential limitations and the Cloud override example.
+
+Automations visibility follows a configured local or external service.
+Enabling Automations and changing database/object-store defaults are a separate
+rollout: this PR retains the existing service, storage and persistence defaults.
 
 ## Prerequisites
 

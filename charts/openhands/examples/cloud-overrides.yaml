@@ -1,0 +1,8 @@
+# Policy example only; reconcile with Cloud's actual environment values.
+# Existing database, file store, identities, secrets and billing enablement
+# remain owned by that overlay and are not changed by this example.
+env:
+  OH_ALLOW_USER_LLM_CONFIGURATION: "true"
+  HIDE_BILLING_PAGE: "false"
+  EMAIL_CHANGE_ENABLED: "true"
+  OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "true"
