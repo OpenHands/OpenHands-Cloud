@@ -363,7 +363,7 @@ global:
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: "1.49.5-r2-python@sha256:3d4d9f65569eb505976b6f366b690c20a8c737c45d2b5676108fae9e72b5688c"
+    tag: "1.49.5-r3-python@sha256:df622f3cc587a9ac589affb30699594b2238b4907a82ad75a98546a22bbdb5ac"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
