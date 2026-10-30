@@ -68,10 +68,3 @@ The sandbox subdomain routing path (wildcard cert via Route53 DNS-01,
 `RUNTIME_CERT_SECRET`) has not been confirmed working end to end on EKS. The
 app/auth/runtime-api hosts and GitHub login use ordinary HTTP-01 per-host certs
 and are the validated surface.
-
-
-## Upcoming Enterprise Automations defaults
-
-The separate Enterprise Automations chart follow-up requires explicit durable database/package-store and secret configuration; it does not migrate an existing install. Before adopting that chart version, use the [guarded rollout guide](../charts/openhands/automations-rollout.md), including the provider-specific storage/identity row. Keep the existing tested chart pin until the provider docs and linked install skill are updated and a real upgrade is qualified.
-
-Use the matching [EKS install skill](../.agents/skills/eks-install.md) for the version-bound workflow; its Automations transition notes must stay in sync with this guide.

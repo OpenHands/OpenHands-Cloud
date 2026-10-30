@@ -1,5 +1,3 @@
-# This only overrides product policy; configure local Automations using the
-# rollout guide, or merge external-automations.yaml for a separately managed service.
 # Policy example only; reconcile with Cloud's actual environment values.
 # Existing database, file store, identities, secrets and billing enablement
 # remain owned by that overlay and are not changed by this example.
