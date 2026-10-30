@@ -1,6 +1,6 @@
 {{- $diagnostics := .Values.laminar.clickhouse.diagnostics | default dict }}
 {{- $cleanup := $diagnostics.cleanup | default dict }}
-{{- if and .Values.laminar.enabled (ne $cleanup.enabled false) }}
+{{- if and .Values.laminar.enabled $cleanup.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:

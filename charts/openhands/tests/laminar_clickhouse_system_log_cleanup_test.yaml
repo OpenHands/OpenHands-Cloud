@@ -9,17 +9,17 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders nothing when cleanup is turned off
+  - it: renders nothing by default
     set:
       laminar.enabled: true
-      laminar.clickhouse.diagnostics.cleanup.enabled: false
     asserts:
       - hasDocuments:
           count: 0
 
-  - it: renders an hourly cleanup CronJob by default
+  - it: renders an hourly cleanup CronJob when enabled
     set:
       laminar.enabled: true
+      laminar.clickhouse.diagnostics.cleanup.enabled: true
     asserts:
       - isKind:
           of: CronJob
@@ -38,6 +38,7 @@ tests:
   - it: passes the schedule, retention and ClickHouse image through
     set:
       laminar.enabled: true
+      laminar.clickhouse.diagnostics.cleanup.enabled: true
       laminar.clickhouse.diagnostics.retentionDays: 2
       laminar.clickhouse.diagnostics.cleanup.schedule: "0 */6 * * *"
       laminar.images.clickhouse.repository: clickhouse/clickhouse-server
@@ -56,6 +57,7 @@ tests:
   - it: drops leftover copies, truncates diagnostic logs and ages out query and error logs
     set:
       laminar.enabled: true
+      laminar.clickhouse.diagnostics.cleanup.enabled: true
     asserts:
       - matchRegex:
           path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
