@@ -128,6 +128,22 @@ spec:
       # meant to recover admin access even when other auth config is broken.
       # Empty by default: unset, this is a no-op.
       SUPER_ADMIN_EMAILS: 'repl{{ ConfigOption "super_admin_emails" }}'
+      # Fleet test only (shared-5, 2026-10-30): no KOTS item exists for these.
+      # Seed the integrated password IdP (migration 179) so "Login with
+      # Password" is offered on the login page; needs OAuth V2 login above.
+      ENABLE_INTEGRATED_IDP: true
+      # Onboarding flow: the web client reads feature_flags.enable_onboarding,
+      # built from the OH_WEB_CLIENT_FEATURE_FLAGS_* envs; bare name kept for parity.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ONBOARDING: true
+      OH_ENABLE_ONBOARDING: true
+      # Agent Context / Agent Profiles pages and org Agent Profile management.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: true
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: true
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: true
+      # Org Model Router: the server reads the prefixed form first (API routes
+      # and launch); the web client reads it for the settings page.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: true
+      ENABLE_MODEL_ROUTER: true
 
     integrations:
       resolverLabel: 'repl{{ ConfigOption "openhands_resolver_label" }}'
