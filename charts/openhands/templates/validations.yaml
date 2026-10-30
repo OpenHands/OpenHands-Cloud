@@ -76,7 +76,7 @@ No conversation-store or volume defaults change as part of this rollout. */}}
 {{- if not .Values.postgresql.enabled -}}
 {{- fail "automation.database.host points to the disabled bundled PostgreSQL. Configure automation.database for your external database (and createDatabaseUser=false when it is pre-provisioned), or enable bundled PostgreSQL." -}}
 {{- end -}}
-{{- if not (or .Values.postgresql.primary.persistence.enabled .Values.postgresql.primary.persistence.existingClaim) -}}
+{{- if not .Values.postgresql.primary.persistence.enabled -}}
 {{- fail "Local Automations requires durable PostgreSQL. For a fresh bundled install set postgresql.primary.persistence.enabled=true; for an existing ephemeral database, back up and migrate it before enabling Automations. External automation.database.host values use operator-managed durability." -}}
 {{- end -}}
 {{- end -}}
@@ -88,7 +88,7 @@ by bootstrap and prerequisite checks. Other env overrides remain supported. */}}
 {{- $_ := set $expected "AWS_S3_ENDPOINT" (tpl $a.filestore.endpoint .) -}}
 {{- else -}}{{- $_ := set $expected "GCS_BUCKET_NAME" $a.filestore.bucket -}}{{- end -}}
 {{- range $key, $value := $expected -}}
-{{- if and (hasKey $a.env $key) (ne (toString (get $a.env $key)) $value) -}}
+{{- if and (hasKey ($a.env | default dict) $key) (ne (toString (get ($a.env | default dict) $key)) $value) -}}
 {{- fail (printf "automation.env.%s conflicts with typed automation.database/filestore values. Set the typed connection values to the same effective target so bootstrap and upgrade guards can validate them." $key) -}}
 {{- end -}}
 {{- end -}}
@@ -101,7 +101,7 @@ by bootstrap and prerequisite checks. Other env overrides remain supported. */}}
 {{- $minioName := .Values.minio.fullnameOverride | default (printf "%s-minio" .Release.Name) -}}
 {{- $minioAliases := list $minioName (printf "%s.%s" $minioName .Release.Namespace) (printf "%s.%s.svc" $minioName .Release.Namespace) (printf "%s.%s.svc.cluster.local" $minioName .Release.Namespace) -}}
 {{- if has (trimSuffix "." $storeHost) $minioAliases -}}
-{{- if not (and .Values.minio.enabled (or .Values.minio.persistence.enabled .Values.minio.persistence.existingClaim)) -}}
+{{- if not (and .Values.minio.enabled .Values.minio.persistence.enabled) -}}
 {{- fail "Automations targets bundled MinIO but it is disabled or ephemeral. Enable minio.enabled and durable minio.persistence, or configure an external automation.filestore." -}}
 {{- end -}}
 {{- end -}}

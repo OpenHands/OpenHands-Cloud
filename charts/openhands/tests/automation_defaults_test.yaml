@@ -374,3 +374,142 @@ tests:
   - template: validations.yaml
     failedTemplate:
       errorPattern: Automations targets bundled MinIO but it is disabled or ephemeral
+- it: accepts an existing durable PostgreSQL mounted from a pre-provisioned claim
+  release:
+    upgrade: true
+  kubernetesProvider:
+    objects:
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: review-postgresql
+        namespace: enterprise
+      spec:
+        template:
+          spec:
+            volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: pg-data
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+    automation.upgradeAcknowledged: true
+    postgresql.primary.persistence.enabled: true
+    postgresql.primary.persistence.existingClaim: pg-data
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: rejects PostgreSQL existingClaim when persistence is off
+  set:
+    automation.enabled: true
+    automation.filestore.type: gcs
+    postgresql.primary.persistence.enabled: false
+    postgresql.primary.persistence.existingClaim: pg-data
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires durable PostgreSQL
+- it: rejects MinIO existingClaim when persistence is off
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-minio:9000
+    minio.enabled: true
+    minio.persistence.enabled: false
+    minio.persistence.existingClaim: minio-data
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled MinIO but it is disabled or ephemeral
+- it: rejects adding superuser bootstrap to an existing service
+  release:
+    upgrade: true
+  kubernetesProvider:
+    objects:
+    - apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: automation
+        namespace: enterprise
+      spec:
+        template:
+          spec:
+            containers:
+            - name: automation
+              env:
+              - name: FILE_STORE
+                value: gcs
+              - name: GCS_BUCKET_NAME
+                value: automation-data
+              - name: AUTOMATION_DB_HOST
+                value: db.example.com
+              - name: AUTOMATION_DB_PORT
+                value: '5432'
+              - name: AUTOMATION_DB_NAME
+                value: automations
+              - name: AUTOMATION_DB_USER
+                value: automation_user
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.createDatabaseUser: true
+    automation.filestore.type: gcs
+    automation.upgradeAcknowledged: true
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Refusing to add the Automations superuser bootstrap
+- it: ignores unused S3 variables for an existing GCS store
+  release:
+    upgrade: true
+  kubernetesProvider:
+    objects:
+    - apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: automation
+        namespace: enterprise
+      spec:
+        template:
+          spec:
+            containers:
+            - name: automation
+              env:
+              - name: FILE_STORE
+                value: gcs
+              - name: GCS_BUCKET_NAME
+                value: automation-data
+              - name: AUTOMATION_DB_HOST
+                value: db.example.com
+              - name: AUTOMATION_DB_PORT
+                value: '5432'
+              - name: AUTOMATION_DB_NAME
+                value: automations
+              - name: AUTOMATION_DB_USER
+                value: automation_user
+              - name: AWS_S3_ENDPOINT
+                value: https://unused.example.com
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.createDatabaseUser: false
+    automation.filestore.type: gcs
+    automation.upgradeAcknowledged: true
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: accepts null automation env as an empty override map
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.createDatabaseUser: false
+    automation.filestore.type: gcs
+    automation.env: null
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0

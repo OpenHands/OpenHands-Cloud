@@ -11,6 +11,9 @@ storage, bundled object-store enablement, PostgreSQL/MinIO persistence and volum
 sizes retain their previous defaults. The chart does not silently move sessions
 or automation packages into a new empty bucket.
 
+Use Helm 3.18.4 (the repository CI baseline) or a compatible Helm 4 release.
+Older Helm 3 versions are not qualified here; the guards use the `.Subcharts` context.
+
 ## New installations
 
 An enabled service needs real prerequisites. The unconfigured chart now fails
@@ -20,6 +23,7 @@ with a configuration error instead of installing half-wired pods:
    `<release>-postgresql`, and its bootstrap init container creates the
    `automations` database and `automation_user`. For a **fresh** bundled install,
    set `postgresql.primary.persistence.enabled: true` before installation.
+   `existingClaim` only mounts a PVC when `persistence.enabled` is also true.
    Existing ephemeral databases need a separate backup/migration, not a flag flip.
    Set `automation.database.host` explicitly for a customized PostgreSQL service
    name. For an external pre-created database, set its host/port/name/user,
@@ -81,7 +85,10 @@ provider end-to-end qualification from a chart render.
 First save the deployed values and manifests and take recoverable backups of
 the database, package bucket and encryption keys. Preserve exact storage sizes,
 backends, endpoints and bucket names. Pin any formerly implicit GCS choice to
-`automation.filestore.type: gcs`. Configure both the app and secrets releases;
+`automation.filestore.type: gcs`. Pin `automation.database.createDatabaseUser`
+to its deployed behavior; use `false` for a pre-provisioned external database.
+An online upgrade refuses to add privileged bootstrap to an existing service
+that did not already run it. Configure both the app and secrets releases;
 they are separate Helm releases and are not automatically upgraded together.
 
 Choose either:
@@ -99,6 +106,8 @@ On an online upgrade, the chart refuses changes to the deployed Automations
 DB host/port/name/user or effective package backend/bucket/endpoint. A deliberate
 repointing needs a separately planned data migration. It also refuses converting
 an existing shared ephemeral PostgreSQL StatefulSet to PVC storage in place.
+An existing PVC mounted through `existingClaim` is durable when persistence is
+enabled; lack of a StatefulSet claim template does not make it ephemeral.
 No volume-size defaults change in this PR. Back up, migrate and independently
 qualify any needed storage change before the feature rollout.
 
@@ -121,6 +130,18 @@ Replicated continues to pass its saved on/off choice and explicit DB/store
 settings. Its adapter acknowledges that existing managed configuration; the
 online secret/data-path checks still apply. This does not turn a saved OFF
 installation ON, and is not an official KOTS upgrade qualification.
+
+### Deliberate data migration
+
+The guard has no force/bypass flag. For a separately planned migration, quiesce
+new/running automations, take recoverable DB/bucket/key backups, disable the
+local service while retaining the secrets release and all data, and carry out
+the reviewed migration separately. Re-enable with explicit target values and
+acknowledgment only after verification. Qualify a real run and retained packages
+and encrypted Git/KV data before resuming schedules. A deployment so old that it
+does not advertise an explicit backend cannot be proven safe by this guard;
+reconcile its historical defaults and data before following a migration plan.
+This document does not perform or qualify that migration.
 
 ## Qualification still needed
 

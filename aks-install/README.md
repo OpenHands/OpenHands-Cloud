@@ -68,3 +68,5 @@ cleanup; do not bypass disruption budgets to force node removal.
 ## Upcoming Enterprise Automations defaults
 
 The separate Enterprise Automations chart follow-up requires explicit durable database/package-store and secret configuration; it does not migrate an existing install. Before adopting that chart version, use the [guarded rollout guide](../charts/openhands/automations-rollout.md), including the provider-specific storage/identity row. Keep the existing tested chart pin until the provider docs and linked install skill are updated and a real upgrade is qualified.
+
+Use the matching [AKS install skill](../.agents/skills/aks-install.md) for the version-bound workflow; its Automations transition notes must stay in sync with this guide.

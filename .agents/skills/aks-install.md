@@ -5,6 +5,27 @@ description: Stand up an OpenHands Enterprise Helm install on a dedicated Azure 
 
 # AKS test Helm install
 
+## Automations rollout in the follow-up chart
+
+For the proposed chart 0.95.0 follow-up (not the older pin in this skill), read
+[the guarded Automations rollout](../../charts/openhands/automations-rollout.md)
+before running the install sequence. Local Automations defaults on, so configure
+its durable database and explicit S3/GCS package store and provision its existing
+auth/encryption/password Secrets first. App conversation storage is separate.
+For a temporary baseline checkpoint without the service, explicitly set
+`automation.enabled: false`; that checkpoint is not a completed Automations
+installation. Enable the service only after its provider prerequisites are ready.
+An enabled upgrade also needs `automation.upgradeAcknowledged: true` after backup
+and review; that flag does not migrate an ephemeral DB, repoint stored packages,
+or bypass online Secret/data-path checks.
+
+Keep the tested older chart pin and its matching workflow until this new release
+and this provider's full upgrade/run qualification are ready. Update the provider
+README, linked customer docs and this skill together. Offline renders do not
+qualify IAM, scheduling, callbacks, encrypted data continuity or a real run. Do
+not enable storage or resize existing volumes merely to satisfy a new guard.
+
+
 Use this over `local-kind-install` when the reproduction needs real Azure Disk
 provisioning, reattachment or expansion, a real load balancer, or publicly trusted
 TLS. KinD remains faster and adequate for ordinary chart work.
