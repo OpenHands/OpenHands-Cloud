@@ -138,7 +138,14 @@
             "diagnostics": {
               "type": "object",
               "properties": {
-                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 }
+                "retentionDays": { "type": "integer", "minimum": 1, "maximum": 3 },
+                "cleanup": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "schedule": { "type": "string", "minLength": 1 }
+                  }
+                }
               }
             }
           }
