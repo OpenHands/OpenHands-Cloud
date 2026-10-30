@@ -1,5 +1,9 @@
 {{- define "openhands.env.defaults" }}
 {{- $integrations := .Values.integrations | default dict }}
+{{- $automationServiceUrl := .Values.automationService.url | default "" }}
+{{- if hasKey (.Values.env | default dict) "AUTOMATION_SERVICE_URL" }}
+{{- $automationServiceUrl = get .Values.env "AUTOMATION_SERVICE_URL" | toString }}
+{{- end }}
 {{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
   value: remote
@@ -56,7 +60,7 @@
 # Show Automations when either its local subchart or an external service is
 # configured. The explicit env.ENABLE_AUTOMATIONS override still wins.
 - name: ENABLE_AUTOMATIONS
-  value: {{ or .Values.automation.enabled (not (empty .Values.automationService.url)) | quote }}
+  value: {{ or .Values.automation.enabled (not (empty $automationServiceUrl)) | quote }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL

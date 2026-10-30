@@ -48,7 +48,9 @@ mode. `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` is a top-level web-client field, not
 one of those feature flags.
 
 A separately deployed Automations service keeps its UI when
-`automationService.url` is configured with the local subchart disabled. Preserve
+`automationService.url` is configured with the local subchart disabled. The
+effective `env.AUTOMATION_SERVICE_URL` override is also respected, including an
+explicit empty override that clears the typed URL. Preserve
 its existing authentication, webhook, event-forwarding and callback settings.
 If an overlay intentionally exposes the UI before a service URL is configured,
 retain `env.ENABLE_AUTOMATIONS: "true"` explicitly. With no local or external

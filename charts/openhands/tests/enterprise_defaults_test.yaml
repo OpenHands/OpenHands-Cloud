@@ -90,3 +90,20 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_AUTOMATIONS, value: "true"}
           count: 1
+  - it: preserves a legacy external service configured through env
+    set:
+      env.AUTOMATION_SERVICE_URL: https://automation.example.invalid/api/automation
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "true"}
+  - it: respects an env override that clears the typed external service URL
+    set:
+      automationService.url: https://automation.example.invalid/api/automation
+      env.AUTOMATION_SERVICE_URL: ""
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
