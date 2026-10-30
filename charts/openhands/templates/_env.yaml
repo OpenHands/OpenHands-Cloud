@@ -682,9 +682,11 @@ the app UI and webhook users are matched by email. */}}
 {{- end }}
 
 {{- /* Agent Canvas owns MCP server management where it is deployed; the
-classic settings page then defers to it. */}}
+classic settings page then defers to it. Uses the structured web-client flag
+name: the plain ENABLE_* name is ignored once OH_WEB_CLIENT_FEATURE_FLAGS_*
+values are set. */}}
 {{- if (index .Values "agent-canvas").enabled }}
-- name: ENABLE_AGENT_CANVAS_MCP
+- name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CANVAS_MCP
   value: "true"
 {{- end }}
 

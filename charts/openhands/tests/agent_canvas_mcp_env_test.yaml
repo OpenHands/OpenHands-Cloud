@@ -17,7 +17,7 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: ENABLE_AGENT_CANVAS_MCP
+            name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CANVAS_MCP
             value: "true"
   - it: leaves the flag unset without Agent Canvas
     set:
@@ -31,5 +31,5 @@ tests:
         notContains:
           path: spec.template.spec.containers[0].env
           content:
-            name: ENABLE_AGENT_CANVAS_MCP
+            name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CANVAS_MCP
             value: "true"
