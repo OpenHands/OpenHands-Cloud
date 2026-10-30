@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: "0.10.0-r1@sha256:0fc88a8b366b507b90e688e8d19c22fe5bfc15b8580b5f6b6cd5403f5117042c"
+  tag: "0.10.0-r2@sha256:b8f846de34a6784bf5adff8fae096dd7612d8d7701219eb11eb039b997e68fb9"
   pullPolicy: Always
 
 nameOverride: ""
@@ -357,13 +357,13 @@ global:
   # umbrella's global wins; this default only applies when rendering the subchart alone.
   postgresClientImage:
     repository: docker.io/alpine/psql
-    tag: 18.6@sha256:08f354a83552fcefa508116268463b371717577fe49d3fcb7b82cf8d2be464b8
+    tag: 18.6@sha256:53a4692f945419b0c69d00441d134934c3e5edf5a2120f518b8b99ee837c95d0
   # Canonical agent-server image. Defaults any warm-runtime configsByName entry
   # that omits its own `image`. In the openhands umbrella the parent chart's
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: "1.49.5-r1-python@sha256:48d2fed84bdfeda95e800aa4768309df781a162e65a76d30d77ae22e493cc78e"
+    tag: "1.49.5-r3-python@sha256:df622f3cc587a9ac589affb30699594b2238b4907a82ad75a98546a22bbdb5ac"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

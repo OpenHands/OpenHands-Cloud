@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: "1.64.0-r1@sha256:6c137216f1c6afe1d560300e92990a52050064a1358472c314285ae8e0bf8307"
+  tag: "1.64.0-r3@sha256:7bd0225bbd667e53a6b45cf92a0198678b7303be83a3a80bad16e8dbd0c40e89"
 
 autoscaling:
   enabled: false
@@ -473,8 +473,8 @@ keycloak:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/keycloak
-    tag: 26.8.0-debian-12-oh1
-    digest: sha256:e90909595d28f297d7708ef6a6051ef9d93b73f994ae283d426041ed7003eb8e
+    tag: 26.8.0-debian-12-oh2
+    digest: sha256:8bf86e3ddf89f2a9c794c2013186e50bc1ede80f4f94830f02606ecd5d151e2d
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.
@@ -618,18 +618,31 @@ laminar:
   # Upstream laminar defaults ClickHouse to 25.10, which is out of support and
   # no longer rebuilt with OS security fixes. 26.3 is the oldest supported LTS.
   images:
+    # Also prefixes piiRedactor (disabled), which third-party-images does not mirror.
+    repository: ghcr.io/openhands/third-party-images
     redis:
-      tag: "9.1.2-alpine"
+      repository: ghcr.io/openhands/third-party-images/valkey
+      tag: "9.1.2-alpine-oh1@sha256:01c58c6a4259fe68aaed3712289b0510b974ccbdcd853f00283de874711e1d77"
     clickhouse:
-      tag: "26.3-alpine"
-    # Digest is frontend-ee's; frontend.subPath.enabled swaps in frontend-ee-basepath and needs its own pin.
+      tag: "26.3-alpine@sha256:1d45e52080e6ed136a6377863046a0e53d69fb0418d799f12e23184ed6460c55"
+    nginx:
+      repository: ghcr.io/openhands/third-party-images/nginx
+      tag: "1.31.8-oh1@sha256:55e26975943ee62ccdf297d9bfbc074a932b411770c612c01257ddcd29a69e97"
+    rabbitmq:
+      repository: ghcr.io/openhands/third-party-images/rabbitmq
+      tag: "4.4.0-oh2@sha256:e87f1b840ba6fa5e5b2ba1d5f9fbb8619457fa07952a007628947fcb2a51f30c"
+    curl:
+      repository: ghcr.io/openhands/third-party-images/curl
+      tag: "8.23.0-oh1@sha256:3d230084cca1496b0e49d84d213a299133c78da6ccbe0b22a219db57f41849dd"
+    # frontend-ee's digest. With frontend.subPath.enabled, override with frontend-ee-basepath's
+    # (0.1.825-oh2@sha256:d80656ede9e4f2ba14ca7574f3af50b35c6b0d5f0bd3b27e65e14d1ed7234abb).
     frontend:
-      tag: "0.1.825@sha256:6724e5f7a633b3932671f8a255a42139f4c0731d1f860196beeffe3e5a4ab534"
+      tag: "0.1.825-oh2@sha256:e9bb74af1a8a389b3b3fa8c6329617bae47cbdba0fb45722fb090fa2e49ebe33"
     appServer:
-      tag: "0.1.825@sha256:b9944f9a544d0bc8ddb4183df79a10340f99a01d905870fee459de0e201f0631"
+      tag: "0.1.825-oh1@sha256:104ee652d2cc43ba68c7e3fc35d47a8934b0f423bd250ac413c2d39e58884a35"
     postgres:
       repository: ghcr.io/openhands/third-party-images/postgres
-      tag: "15.19-oh1@sha256:5bcf9f7969fd50bd10dc754b83586f7d3e3e4f156d8057a4ce2b4aec329d86a5"
+      tag: "15.19-oh2@sha256:bb2626119bcf11f69b429deb6f9c9d97fd1152f976763c883e1bbbd5da1d5a86"
 
   clickhouse:
     diagnostics:
@@ -853,9 +866,10 @@ postgresql:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/postgresql
-    # Same app version as chart 15.5.38's default (16.4.0), later OS-package rebuild.
-    tag: 16.4.0-debian-12-r28-oh1
-    digest: sha256:d71da928acd66f0c40d65e086e7314942de59a1b9e4ab6557376b21303c03ff3
+    # PostgreSQL 16.15 in the layout of chart 15.5.38's default image (16.4.0); minor upgrade, same data format.
+    # PostGIS and GDAL removed: OpenHands never creates the extension.
+    tag: 16.15.0-debian-12-oh2
+    digest: sha256:8568ef28d06e8c4854150b466572e3ff50ab609737089c41acc7ba06fd4b8303
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -894,9 +908,9 @@ redis:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/redis
-    # Patch bump over chart 20.3.0's default (7.4.1); 7.4.3 fixes CVE-2025-21605.
-    tag: 7.4.3-debian-12-r0-oh1
-    digest: sha256:a4d2e84b8669166117f6a145c24f870e548fadf06b85a1e99c11abbb1dd629a7
+    # Patch bump over chart 20.3.0's default (7.4.1), built in its Bitnami layout.
+    tag: 7.4.12-debian-12-oh1
+    digest: sha256:92a3ed1e60836c352128a21608bb132a717a71b9a7ee774b9cd1374b264da6ba
   architecture: standalone
   auth:
     enabled: true
@@ -1431,13 +1445,13 @@ global:
   # psql/pg_isready image for the database init containers and jobs.
   postgresClientImage:
     repository: docker.io/alpine/psql
-    tag: 18.6@sha256:08f354a83552fcefa508116268463b371717577fe49d3fcb7b82cf8d2be464b8
+    tag: 18.6@sha256:53a4692f945419b0c69d00441d134934c3e5edf5a2120f518b8b99ee837c95d0
   # Canonical agent-server image. Defaults the runtime image (runtime.image) and
   # any warm-runtime configsByName entry that omits its own `image`. Override
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: "1.49.5-r1-python@sha256:48d2fed84bdfeda95e800aa4768309df781a162e65a76d30d77ae22e493cc78e"
+    tag: "1.49.5-r3-python@sha256:df622f3cc587a9ac589affb30699594b2238b4907a82ad75a98546a22bbdb5ac"
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
@@ -1666,7 +1680,7 @@ agent-canvas:
 
   image:
     repository: ghcr.io/openhands/agent-canvas
-    tag: "1.23.0-r1@sha256:48cd4a0420b3878e41baedecd3e1a15ff9d1d8bf7df7a99310930d8cc5639785"
+    tag: "1.23.0-r3@sha256:0dee8b180bb7b3c7083f494afbead22df695c0fb5c9ad60442fdd864fc9d5ae9"
 
   ingress:
     enabled: false
