@@ -53,8 +53,10 @@
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
   value: {{ $orgCondenser.overwriteExisting | default false | quote }}
 {{- end }}
+# Show Automations when either its local subchart or an external service is
+# configured. The explicit env.ENABLE_AUTOMATIONS override still wins.
 - name: ENABLE_AUTOMATIONS
-  value: {{ .Values.automation.enabled | quote }}
+  value: {{ or .Values.automation.enabled (not (empty .Values.automationService.url)) | quote }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
@@ -703,7 +705,7 @@ the app UI and webhook users are matched by email. */}}
   value: "true"
 {{- end }}
 
-{{- if or .Values.automationServiceKey.enabled (and (eq .Values.automationServiceKey.enabled nil) .Values.automation.enabled) }}
+{{- if .Values.automationServiceKey.enabled }}
 - name: AUTOMATIONS_SERVICE_KEY
   valueFrom:
     secretKeyRef:
@@ -711,16 +713,16 @@ the app UI and webhook users are matched by email. */}}
       key: {{ .Values.automationServiceKey.secretKey }}
 {{- end }}
 
-{{- if or .Values.automationService.url .Values.automation.enabled }}
+{{- if .Values.automationService.url }}
 - name: AUTOMATION_SERVICE_URL
-  value: {{ .Values.automationService.url | default "http://automation/api/automation" | quote }}
+  value: {{ .Values.automationService.url | quote }}
 {{- end }}
-{{- if or .Values.automationService.eventForwardingEnabled (and (eq .Values.automationService.eventForwardingEnabled nil) .Values.automation.enabled) }}
+{{- if .Values.automationService.eventForwardingEnabled }}
 - name: AUTOMATION_EVENT_FORWARDING_ENABLED
   value: "true"
 {{- end }}
 
-{{- if or .Values.automationWebhookSecret.enabled (and (eq .Values.automationWebhookSecret.enabled nil) .Values.automation.enabled) }}
+{{- if .Values.automationWebhookSecret.enabled }}
 - name: AUTOMATION_WEBHOOK_SECRET
   valueFrom:
     secretKeyRef:

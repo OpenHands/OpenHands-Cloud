@@ -22,27 +22,14 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "false"}
-  - it: enables and connects the bundled automation service
+  - it: shows automation UI when the local service is explicitly enabled
+    set:
+      automation.enabled: true
     asserts:
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_AUTOMATIONS, value: "true"}
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: AUTOMATION_SERVICE_URL, value: "http://automation/api/automation"}
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: AUTOMATION_EVENT_FORWARDING_ENABLED, value: "true"}
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: AUTOMATIONS_SERVICE_KEY
-            valueFrom:
-              secretKeyRef: {name: automation-service-key, key: automation-service-key}
   - it: disables automation UI and wiring together when the dependency is disabled
     set:
       automation.enabled: false
@@ -85,9 +72,21 @@ tests:
       automationWebhookSecret.enabled: true
       automationService.url: https://automation.example.invalid/api/automation
       automationService.eventForwardingEnabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "true"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: "https://automation.example.invalid/api/automation"}
+  - it: honors an explicit UI override even without a service configured
+    set:
       env.ENABLE_AUTOMATIONS: "true"
     asserts:
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
-          content: {name: AUTOMATION_SERVICE_URL, value: "https://automation.example.invalid/api/automation"}
+          content: {name: ENABLE_AUTOMATIONS, value: "true"}
+          count: 1

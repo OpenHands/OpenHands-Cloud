@@ -55,7 +55,7 @@ spec:
                 name: {{ .Values.database.superuserSecretName }}
                 key: {{ .Values.database.superuserSecretKey }}
           - name: DB_HOST
-            value: {{ tpl .Values.database.host . | quote }}
+            value: {{ .Values.database.host | quote }}
           - name: DB_PORT
             value: {{ .Values.database.port | quote }}
           - name: PGSSLMODE
@@ -128,7 +128,7 @@ spec:
         command: ['sh', '-c']
         args:
           - |
-            DB_HOST="{{ tpl .Values.database.host . }}"
+            DB_HOST="{{ .Values.database.host }}"
             echo "Waiting for PostgreSQL at $DB_HOST to be ready..."
             until PGPASSWORD=$AUTOMATION_DB_PASS psql -h $DB_HOST -p {{ .Values.database.port }} -U {{ .Values.database.user }} -c '\q' > /dev/null 2>&1; do
               echo "PostgreSQL is unavailable - sleeping for 2 seconds"

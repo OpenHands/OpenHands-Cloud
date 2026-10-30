@@ -147,8 +147,6 @@ gcp:
 # pod, so this is always a durable object store: any S3-compatible store
 # (AWS S3, MinIO, ...) or GCS.
 filestore:
-  # Umbrella-only convenience; standalone charts use explicit/ambient identity.
-  bundledMinio: false
   # "s3" or "gcs". "google_cloud" is accepted as an alias of "gcs"; the
   # template renders whichever spelling the service natively reads.
   type: gcs

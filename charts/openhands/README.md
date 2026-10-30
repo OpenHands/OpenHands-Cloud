@@ -2,19 +2,17 @@
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
 
-## Enterprise defaults and upgrades
+## Enterprise policy defaults
 
-The shared chart targets self-hosted Enterprise installs. Personal LLM-key
-editing is hidden, the billing page is hidden, and email changes are disabled.
-Automations is enabled with its service/webhook authentication and event
-forwarding. Bundled PostgreSQL and MinIO use persistent volumes; both session
-files and automation packages use S3-compatible storage rather than assuming a
-Google Cloud identity.
+Helm now follows the fresh Replicated Enterprise policy for personal LLM-key
+editing (hidden), Billing page visibility (hidden), and email changes (disabled).
+Explicit operator overrides remain supported. Read the
+[policy and upgrade guide](enterprise-defaults.md), including the organization
+credential limitations and the Cloud override example.
 
-**This is a breaking defaults change.** Read the
-[Enterprise defaults migration guide](enterprise-defaults.md) before upgrading,
-including its explicit Cloud override example. Saved Helm overrides win, but an
-omitted value can change on upgrade. This chart does not migrate existing data.
+Automations visibility follows a configured local or external service.
+Enabling Automations and changing database/object-store defaults are a separate
+rollout: this PR retains the existing service, storage and persistence defaults.
 
 ## Prerequisites
 

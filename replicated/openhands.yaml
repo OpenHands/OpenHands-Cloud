@@ -793,7 +793,6 @@ spec:
           # above) instead of the pod filesystem.
           filestore:
             type: s3
-            bundledMinio: false
             endpoint: http://openhands-minio:9000
             # The bundled MinIO's bucket job only creates the parent chart's
             # buckets, so the service provisions its own on startup.

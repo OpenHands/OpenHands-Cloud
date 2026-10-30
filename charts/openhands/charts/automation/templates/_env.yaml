@@ -2,12 +2,12 @@
 # OpenHands API base URL (for dispatching sandbox runs)
 {{- if .Values.openhandsApiUrl }}
 - name: AUTOMATION_OPENHANDS_API_BASE_URL
-  value: {{ tpl .Values.openhandsApiUrl . | quote }}
+  value: {{ .Values.openhandsApiUrl | quote }}
 {{- end }}
 # Automation service base URL (for completion callbacks from sandboxes)
 {{- if .Values.automationBaseUrl }}
 - name: AUTOMATION_BASE_URL
-  value: {{ tpl .Values.automationBaseUrl . | quote }}
+  value: {{ .Values.automationBaseUrl | quote }}
 {{- end }}
 # Scratch directory for git sync checkouts; the same value mounts the
 # workspace emptyDir, so the write path and the mount cannot drift apart.
@@ -15,7 +15,7 @@
   value: {{ .Values.workspace.mountPath | quote }}
 # PostgreSQL database configuration
 - name: AUTOMATION_DB_HOST
-  value: {{ tpl .Values.database.host . | quote }}
+  value: {{ .Values.database.host | quote }}
 - name: AUTOMATION_DB_PORT
   value: {{ .Values.database.port | quote }}
 - name: AUTOMATION_DB_SSL_MODE
@@ -50,11 +50,11 @@
   value: {{ .Values.filestore.bucket | quote }}
 {{- with .Values.filestore.endpoint }}
 - name: AWS_S3_ENDPOINT
-  value: {{ tpl . $ | quote }}
+  value: {{ . | quote }}
 # The service refuses an AWS_S3_SECURE value that contradicts the endpoint
 # scheme, so it is derived rather than configurable.
 - name: AWS_S3_SECURE
-  value: {{ hasPrefix "https://" (tpl . $) | quote }}
+  value: {{ hasPrefix "https://" . | quote }}
 {{- end }}
 {{- with .Values.filestore.region }}
 - name: AWS_REGION
@@ -80,17 +80,6 @@
   value: {{ .Values.filestore.accessKey | quote }}
 - name: AWS_SECRET_ACCESS_KEY
   value: {{ .Values.filestore.secretKey | quote }}
-{{- else if .Values.filestore.bundledMinio }}
-- name: AWS_ACCESS_KEY_ID
-  valueFrom:
-    secretKeyRef:
-      name: {{ printf "%s-minio" .Release.Name }}
-      key: rootUser
-- name: AWS_SECRET_ACCESS_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ printf "%s-minio" .Release.Name }}
-      key: rootPassword
 {{- end }}
 {{- else if eq $store "gcs" }}
 - name: GCS_BUCKET_NAME

@@ -7,7 +7,6 @@ templates:
 tests:
   - it: wires external S3 credentials from an existing secret (real AWS)
     set:
-      minio.enabled: false
       enabled: true
       filestore.type: s3
       filestore.bucket: prod-sessions
@@ -92,7 +91,6 @@ tests:
 
   - it: derives TLS from the endpoint scheme and uses ambient identity when no creds are set
     set:
-      minio.enabled: false
       enabled: true
       filestore.type: s3
       filestore.bucket: bk
