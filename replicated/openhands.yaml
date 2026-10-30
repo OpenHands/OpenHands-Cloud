@@ -1238,6 +1238,8 @@ spec:
           clickhouse:
             diagnostics:
               retentionDays: repl{{ ConfigOption "clickhouse_diagnostic_log_retention_days" }}
+              cleanup:
+                enabled: repl{{ ConfigOptionEquals "clickhouse_diagnostic_log_cleanup_enabled" "1" }}
             persistence:
               storageClass: "openebs-hostpath" # default storage class for the k0s embededed cluster
             s3:

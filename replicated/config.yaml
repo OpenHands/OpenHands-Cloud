@@ -1672,7 +1672,7 @@ spec:
           required: false
         - name: clickhouse_diagnostic_log_retention_days
           title: ClickHouse Diagnostic Log Retention
-          help_text: How long Laminar's ClickHouse keeps its query and error logs (`system.query_log`, `system.error_log`) for support investigations. Its other diagnostic tables, such as `trace_log` and `text_log`, are emptied every hour.
+          help_text: Retain Laminar ClickHouse system diagnostic tables such as trace_log, query_log, text_log, metric_log, and part_log for this many days. These logs are useful for recent support investigations but can grow quickly on busy installations.
           type: select_one
           default: "3"
           when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
@@ -1683,6 +1683,12 @@ spec:
               title: "2 days"
             - name: "3"
               title: "3 days (default)"
+        - name: clickhouse_diagnostic_log_cleanup_enabled
+          title: Hourly ClickHouse Diagnostic Log Cleanup
+          help_text: Empty Laminar's ClickHouse diagnostic tables, such as `trace_log` and `text_log`, every hour, and remove leftover `system.*_log_N` copies. `query_log` and `error_log` keep the retention above. Turn this on if ClickHouse diagnostic logs are filling the node's disk.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
 
     - name: automations_configuration
       title: Automations
