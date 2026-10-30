@@ -635,9 +635,9 @@ laminar:
       repository: ghcr.io/openhands/third-party-images/curl
       tag: "8.23.0-oh1@sha256:3d230084cca1496b0e49d84d213a299133c78da6ccbe0b22a219db57f41849dd"
     # frontend-ee's digest. With frontend.subPath.enabled, override with frontend-ee-basepath's
-    # (0.1.825-oh1@sha256:38abb0d1eed27b22647a62872dd1e3dea796d183ec07e262235b90926bcac5a4).
+    # (0.1.825-oh2@sha256:d80656ede9e4f2ba14ca7574f3af50b35c6b0d5f0bd3b27e65e14d1ed7234abb).
     frontend:
-      tag: "0.1.825-oh1@sha256:3e52a024f548366ed7c9ecc53cb8d339e40507eab4d9f2f61496fa51e41592e1"
+      tag: "0.1.825-oh2@sha256:e9bb74af1a8a389b3b3fa8c6329617bae47cbdba0fb45722fb090fa2e49ebe33"
     appServer:
       tag: "0.1.825-oh1@sha256:104ee652d2cc43ba68c7e3fc35d47a8934b0f423bd250ac413c2d39e58884a35"
     postgres:
