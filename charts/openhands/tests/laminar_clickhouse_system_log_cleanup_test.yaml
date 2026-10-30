@@ -1,0 +1,79 @@
+suite: laminar clickhouse system log cleanup
+templates:
+  - laminar-clickhouse-system-log-cleanup-cronjob.yaml
+tests:
+  - it: renders nothing when Laminar is disabled
+    set:
+      laminar.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing by default
+    set:
+      laminar.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders an hourly cleanup CronJob when enabled
+    set:
+      laminar.enabled: true
+      laminar.clickhouse.diagnostics.cleanup.enabled: true
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: spec.schedule
+          value: "7 * * * *"
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env[2]
+          value:
+            name: RETENTION_DAYS
+            value: "3"
+
+  - it: passes the schedule, retention and ClickHouse image through
+    set:
+      laminar.enabled: true
+      laminar.clickhouse.diagnostics.cleanup.enabled: true
+      laminar.clickhouse.diagnostics.retentionDays: 2
+      laminar.clickhouse.diagnostics.cleanup.schedule: "0 */6 * * *"
+      laminar.images.clickhouse.repository: clickhouse/clickhouse-server
+      laminar.images.clickhouse.tag: "25.1"
+    asserts:
+      - equal:
+          path: spec.schedule
+          value: "0 */6 * * *"
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env[2].value
+          value: "2"
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].image
+          value: clickhouse/clickhouse-server:25.1
+
+  - it: drops leftover copies, truncates diagnostic logs and ages out query and error logs
+    set:
+      laminar.enabled: true
+      laminar.clickhouse.diagnostics.cleanup.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "--max_table_size_to_drop=0"
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "match\\(name, '_log_\\[0-9\\]\\+\\$'\\)"
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "TRUNCATE TABLE system\\.\\$\\{table\\}"
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "NOT IN \\('query_log', 'error_log'\\)"
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "DELETE WHERE event_date < today\\(\\) - \\$\\{RETENTION_DAYS\\}"
+      - notMatchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: "MODIFY TTL"

@@ -1,0 +1,63 @@
+{{- $diagnostics := .Values.laminar.clickhouse.diagnostics | default dict }}
+{{- $cleanup := $diagnostics.cleanup | default dict }}
+{{- if and .Values.laminar.enabled $cleanup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "openhands.fullname" . }}-laminar-clickhouse-system-log-cleanup
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: laminar-clickhouse-diagnostics
+spec:
+  schedule: {{ $cleanup.schedule | default "7 * * * *" | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "openhands.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: laminar-clickhouse-diagnostics
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: {{ dig "images" "clickhouse" "repository" "clickhouse/clickhouse-server" .Values.laminar }}:{{ dig "images" "clickhouse" "tag" "26.3-alpine" .Values.laminar }}
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - secretRef:
+                    name: laminar-app-secrets
+              env:
+                - name: CLICKHOUSE_HOST
+                  value: laminar-clickhouse-service
+                - name: CLICKHOUSE_PORT
+                  value: "9000"
+                - name: RETENTION_DAYS
+                  value: {{ int ($diagnostics.retentionDays | default 3) | quote }}
+              command: ["/bin/bash", "-ec"]
+              args:
+                - |
+                  # max_table_size_to_drop=0: TRUNCATE and DROP otherwise refuse tables over 50 GB.
+                  client=(clickhouse-client --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT}" --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --max_table_size_to_drop=0)
+                  "${client[@]}" --query "SELECT 1" >/dev/null
+
+                  # <name>_log_<N> are copies ClickHouse leaves when a system log table no longer matches its config.
+                  for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND match(name, '_log_[0-9]+$')"); do
+                    echo "Dropping system.${table}"
+                    "${client[@]}" --query "DROP TABLE system.${table} SYNC"
+                  done
+
+                  for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND endsWith(name, '_log') AND name NOT IN ('query_log', 'error_log')"); do
+                    echo "Truncating system.${table}"
+                    "${client[@]}" --query "TRUNCATE TABLE system.${table}"
+                  done
+
+                  for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND name IN ('query_log', 'error_log')"); do
+                    echo "Deleting system.${table} rows older than ${RETENTION_DAYS} days"
+                    "${client[@]}" --query "ALTER TABLE system.${table} DELETE WHERE event_date < today() - ${RETENTION_DAYS}"
+                  done
+{{- end }}

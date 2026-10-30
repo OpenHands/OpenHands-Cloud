@@ -1683,6 +1683,12 @@ spec:
               title: "2 days"
             - name: "3"
               title: "3 days (default)"
+        - name: clickhouse_diagnostic_log_cleanup_enabled
+          title: Hourly ClickHouse Diagnostic Log Cleanup
+          help_text: Empty Laminar's ClickHouse diagnostic tables, such as `trace_log` and `text_log`, every hour, and remove leftover `system.*_log_N` copies. `query_log` and `error_log` keep the retention above. Turn this on if ClickHouse diagnostic logs are filling the node's disk.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
 
     - name: automations_configuration
       title: Automations
