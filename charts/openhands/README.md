@@ -760,3 +760,48 @@ a removed limit from cached authorization data, even after a successful save.
 This increases authorization database reads; production throughput has not been
 load-tested. It does not enable or disable LLM response caching. If you use an
 external LiteLLM proxy, configure and validate the same behavior there.
+
+### Custom sandbox images and rotating registry credentials
+
+For Replicated installs, enable **Use a Custom Sandbox Image** and set the
+repository and tag. **Existing Sandbox Image Pull Secret** accepts the name of a
+customer-managed `kubernetes.io/dockerconfigjson` Secret. It takes precedence over
+the static registry username/password fields. Create the Secret before deploying,
+in the namespace where sandbox pods run (`openhands` by default; the runtime-api
+`sandbox_namespace` / `K8S_NAMESPACE` setting can change it).
+
+Use a distinct name such as `sandbox-ecr-credentials`. The name
+`sandbox-image-pull-secret` is reserved for the chart-managed static credentials.
+When switching from static credentials, create the new Secret first; the old
+chart-managed Secret is removed on upgrade. OpenHands references the external
+Secret but does not create, update, or refresh its contents. Keep its name stable
+so a credential controller can rotate its data without another OHE deployment.
+Existing running sandboxes do not need a restart for a new image pull credential.
+
+For plain Helm installs, the equivalent runtime-api value is:
+
+```yaml
+runtime-api:
+  env:
+    RUNTIME_IMAGE_PULL_SECRETS: sandbox-ecr-credentials
+```
+
+Amazon ECR authorization tokens expire after 12 hours. Configure your credential
+controller or scheduled job to obtain and update the Secret well before expiration
+(for example every 6 hours), using an IAM identity allowed to request ECR tokens
+and an RBAC identity scoped to update that Secret. Monitor failed refreshes. A
+static ECR token pasted into the Admin Console does not rotate automatically.
+Validate rotation by starting a sandbox on a node that must pull the image; a
+cached image does not establish that the registry credentials work. After a
+refresh, Kubernetes may still back off before retrying a previously failed pull.
+
+On EKS, prefer the cluster's existing ECR image-pull authentication when available:
+the worker node IAM role, or the Fargate pod execution role. A workload's IRSA role
+alone is not the default image-pull identity. On other Kubernetes installations,
+a kubelet image credential provider is another administrator-managed option.
+These node mechanisms are separate from OpenHands' static credential fields.
+
+References: [ECR authentication](https://docs.aws.amazon.com/AmazonECR/latest/userguide/registry_auth.html),
+[ECR on EKS](https://docs.aws.amazon.com/AmazonECR/latest/userguide/ECR_on_EKS.html),
+[Kubernetes image pull secrets](https://kubernetes.io/docs/concepts/containers/images/),
+and [kubelet credential providers](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-credential-provider/).
