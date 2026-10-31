@@ -96,6 +96,7 @@ config:
   slack_signing_secret: ""
 
   # Custom sandbox image registry credentials
+  custom_sandbox_image_pull_secret_name: ""
   custom_sandbox_image_registry_server: ""
   custom_sandbox_image_registry_username: ""
   custom_sandbox_image_registry_password: ""
