@@ -57,7 +57,10 @@ def test_openhands_release_dispatches_staging_bump_after_publish() -> None:
     assert "source-sha: ${{ steps.source.outputs.sha }}" in text
 
     assert "needs: publish" in text
-    assert "if: ${{ needs.publish.outputs.component == 'openhands' }}" in text
+    assert (
+        "if: ${{ needs.publish.outputs.component == 'openhands' && "
+        "needs.publish.outputs.prerelease == 'true' }}"
+    ) in text
     assert "environment: staging-chart-bump-dispatcher" in text
     assert "staging-chart-dispatch" not in text
     assert "STAGING_CHART_BUMP_DISPATCHER_APP_ID" in text
@@ -80,6 +83,32 @@ def test_openhands_release_dispatches_staging_bump_after_publish() -> None:
     assert "client_payload[source-sha]=${SOURCE_SHA}" in text
 
 
+def test_parse_marks_only_semver_prereleases_as_prerelease(tmp_path: Path) -> None:
+    parse = step_by_id(load_workflow()["jobs"]["publish"], "parse")
+    cases = {
+        "openhands/0.94.0-rc.3": ("openhands", "0.94.0-rc.3", "true"),
+        "openhands/0.94.0": ("openhands", "0.94.0", "false"),
+        "openhands-secrets/0.1.25": ("openhands-secrets", "0.1.25", "false"),
+    }
+    for tag, (component, version, prerelease) in cases.items():
+        output = tmp_path / "output"
+        output.write_text("", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", parse["run"]],
+            check=False,
+            capture_output=True,
+            env=os.environ | {"TAG": tag, "GITHUB_OUTPUT": str(output)},
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        outputs = dict(
+            line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines()
+        )
+        assert outputs["component"] == component
+        assert outputs["version"] == version
+        assert outputs["prerelease"] == prerelease
+
+
 def test_staging_chart_bump_docs_use_environment_secret_names() -> None:
     text = docs_text()
 
@@ -97,6 +126,7 @@ def test_development_dispatch_runs_only_after_openhands_publish() -> None:
     assert condition == (
         "${{ needs.publish.result == 'success' && "
         "needs.publish.outputs.component == 'openhands' && "
+        "needs.publish.outputs.prerelease == 'true' && "
         "github.actor_id == '290150379' }}"
     )
     assert job["environment"] == "dev-chart-bump-dispatcher"

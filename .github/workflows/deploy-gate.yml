@@ -116,19 +116,20 @@ jobs:
             echo "| unstable | no commit under ${PATHS//$'\n'/ } | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # Beta fires on the openhands/* tag release-please creates. Tag refs sort
-          # alphabetically (0.9.0 > 0.49.0), so anchor on the newest *release*
+          # Beta fires on the openhands/*-rc.* tag release-please creates. Tag refs
+          # sort alphabetically (0.9.0 > 0.49.0), so anchor on the newest *release*
           # instead, and match runs by branch -- tag runs carry the tag as
-          # head_branch.
+          # head_branch. Stable openhands/X.Y.Z releases never run the Beta
+          # workflow, so they are skipped here.
           # per_page=100: three sibling release lines (crd-check, image-loader,
           # openhands-secrets) interleave here. `openhands/` includes the slash,
           # so it cannot match openhands-secrets/.
           B_TAG=$(gh api "repos/${REPO}/releases?per_page=100" \
-            --jq 'map(select(.tag_name | startswith("openhands/"))) | .[0].tag_name // empty')
+            --jq 'map(select((.tag_name | startswith("openhands/")) and (.tag_name | contains("-rc.")))) | .[0].tag_name // empty')
           if [ -n "$B_TAG" ]; then
             check beta release-replicated-beta.yml "branch=${B_TAG}" "tag \`${B_TAG}\`"
           else
-            echo "| beta | no openhands/* release | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| beta | no openhands/*-rc.* release | skipped | — |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "$FAILED" = 1 ]; then
