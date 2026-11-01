@@ -1,0 +1,35 @@
+suite: MCP editor follows Canvas availability
+templates:
+  - deployment.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  - litellm-config-script.yaml
+tests:
+  - it: retires the settings editor when Canvas is served on this host
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: true
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_AVAILABLE
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OH_WEB_CLIENT_FEATURE_FLAGS_AGENT_CANVAS_AVAILABLE
+            value: "true"
+  - it: keeps an editor when Canvas has no ingress
+    set:
+      agent-canvas.enabled: true
+      agent-canvas.ingress.enabled: false
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_AVAILABLE
+            value: "false"
