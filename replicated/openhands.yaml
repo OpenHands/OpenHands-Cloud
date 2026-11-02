@@ -579,7 +579,6 @@ spec:
     azureDevOps:
       enabled: repl{{ ConfigOptionEquals "azure_devops_auth_enabled" "1" }}
       tenantId: 'repl{{ ConfigOption "azure_devops_tenant_id" }}'
-      organization: 'repl{{ ConfigOption "azure_devops_organization" }}'
     jiraDc:
       enabled: repl{{ ConfigOptionEquals "jira_data_center_enabled" "1" }}
       linkMethod: 'repl{{ ConfigOption "jira_data_center_link_method" }}'

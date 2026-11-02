@@ -108,7 +108,7 @@ export default defineConfig({
   // "new-user". Each role has a setup project that produces a storage-state
   // file; each browser has a paired test project per role that consumes it.
   //
-  //   keycloak-cleanup ──▶ setup:new-user
+  //   setup:new-user
   //   setup:returning
   //
   //   chromium:returning ──▶ setup:returning
@@ -116,15 +116,6 @@ export default defineConfig({
   //   (and firefox / webkit variants)
   projects: [
     // --- Setup projects -------------------------------------------------
-
-    // Delete the synthetic New User from Keycloak so setup:new-user can
-    // recreate it fresh with a known password. Node-only (no browser).
-    // Skipped entirely (no matched tests) when KEYCLOAK_NEW_USER_USERNAME is
-    // unset.
-    {
-      name: "keycloak-cleanup",
-      testMatch: matchFor(hasNewUser, /setup\/keycloak-cleanup\.ts/),
-    },
 
     // Authenticate the Returning User via GitHub (federated through
     // Keycloak's GitHub identity provider). Matches no tests (so it doesn't
@@ -134,14 +125,12 @@ export default defineConfig({
       testMatch: matchFor(hasReturningUser, /setup\/setup-returning\.ts/),
     },
 
-    // Create the synthetic New User in Keycloak and authenticate via
-    // Keycloak-native login (no GitHub). Depends on keycloak-cleanup so any
-    // prior user is deleted before this recreates and logs in. Matches no
-    // tests when KEYCLOAK_NEW_USER_USERNAME is unset.
+    // Create the synthetic New User in Keycloak (or reset its password) and
+    // authenticate via Keycloak-native login (no GitHub). Matches no tests
+    // when KEYCLOAK_NEW_USER_USERNAME is unset.
     {
       name: "setup:new-user",
       testMatch: matchFor(hasNewUser, /setup\/setup-new-user\.ts/),
-      dependencies: ["keycloak-cleanup"],
     },
 
     // --- Test projects --------------------------------------------------

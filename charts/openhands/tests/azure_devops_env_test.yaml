@@ -1,0 +1,25 @@
+suite: azure devops env wiring
+templates:
+  - deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: sets the tenant and no install-wide organization when enabled
+    set:
+      enabled: true
+      azureDevOps.enabled: true
+      azureDevOps.tenantId: 00000000-0000-0000-0000-000000000000
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AZURE_DEVOPS_TENANT_ID
+            value: 00000000-0000-0000-0000-000000000000
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AZURE_DEVOPS_ORGANIZATION
+          any: true

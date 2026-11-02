@@ -329,8 +329,6 @@
 {{- if .Values.azureDevOps.enabled }}
 - name: AZURE_DEVOPS_TENANT_ID
   value: {{ .Values.azureDevOps.tenantId | quote }}
-- name: AZURE_DEVOPS_ORGANIZATION
-  value: {{ .Values.azureDevOps.organization | quote }}
 - name: AZURE_DEVOPS_CLIENT_ID
   valueFrom:
     secretKeyRef:

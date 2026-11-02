@@ -9,7 +9,7 @@ This directory contains the Playwright harness and release-level end-to-end test
 - An explicit non-production or intentionally selected release target
 - Three credential sets: Keycloak admin, Returning User (GitHub), and New User (synthetic Keycloak-native) — or pre-generated Playwright storage states for the two user roles
 
-> **Opt-in roles:** Each user role is enabled by setting its own username env var (`RETURNING_GITHUB_USERNAME` for the federated GitHub user, `KEYCLOAK_NEW_USER_USERNAME` for the synthetic Keycloak-native user). Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
+> **Opt-in roles:** Each user role is enabled by setting its own username env var (`RETURNING_GITHUB_USERNAME` for the federated GitHub user, `KEYCLOAK_NEW_USER_USERNAME` for the synthetic Keycloak-native user). Leave either unset (or empty) to skip that role entirely — its setup project and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
 
 ## Install
 
@@ -203,12 +203,12 @@ Three credential sets are required before any test run:
 
 | Role           | Provider          | Credentials                                | Purpose                                                                                                                           |
 | -------------- | ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Keycloak admin | Keycloak          | username + password                        | Administers Keycloak; deletes and recreates the synthetic New User before each run                                                |
+| Keycloak admin | Keycloak          | username + password                        | Administers Keycloak; creates the synthetic New User or resets its password before each run                                       |
 | Super admin    | API key           | unbound superadmin API key                 | Creates orgs and provisions users via the REST API (org-management specs)                                                         |
 | Returning User | GitHub (via Keycloak IdP) | username + password + optional TOTP secret | An existing federated user; exercises the full app ↔ Keycloak ↔ GitHub round-trip on every run                             |
-| New User       | Keycloak (native) | Keycloak username + password + reserved e2e-only email | A synthetic account the harness deletes and recreates each run; exercises the app's first-login onboarding path deterministically |
+| New User       | Keycloak (native) | Keycloak username + password + reserved e2e-only email | A synthetic account the harness creates once per instance and reuses; exercises the app's first-login onboarding path on that first run |
 
-The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
+The New User is not federated to GitHub. At the start of a run the Keycloak admin looks up the user matching `KEYCLOAK_NEW_USER_EMAIL` and resets its password, creating the Keycloak-native user with the configured username on the first run against an instance. The user keeps one Keycloak `sub` per instance because the app's OAuth V2 login links accounts by it: a recreated user would be matched by email instead, which the app refuses once more than one account shares the email. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow when the app shows it, producing a browser session for the test projects to reuse. To exercise the first-login path again, delete the e2e account through the Super Admin API (`DELETE /api/admin/users/{user_id}`); the next run recreates it.
 
 ### Login flows
 
@@ -219,7 +219,7 @@ The app has two login pages, chosen by `feature_flags.enable_oauth_v2_login` in 
 
 Both reach Keycloak with `kc_idp_hint=github`, which skips Keycloak's own form. `setup:new-user` reads the flag and removes the hint where that flow carries it: from the Keycloak request (legacy) or from the app's `/oauth/{id}/login` redirect (OAuth V2, because Playwright cannot intercept redirect hops). `tests/014-login.spec.ts` checks each flow's login page and sign-in round trip as the New User; the describe for the flow the instance does not use is skipped and says why. Run one flow with `--grep @oauth-v1` or `--grep @oauth-v2`.
 
-`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
+`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. The Keycloak provisioning path refuses any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — writes to the production realm are only ever destructive.
 
 ### Environment variables
 
@@ -227,7 +227,7 @@ Deployment:
 
 - `BASE_URL` (required) — release environment under test.
 
-Keycloak admin (cleanup):
+Keycloak admin (New User provisioning):
 
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
@@ -250,7 +250,7 @@ Returning User (GitHub):
 
 New User (synthetic Keycloak-native account):
 
-- `KEYCLOAK_NEW_USER_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup + creation) entirely.
+- `KEYCLOAK_NEW_USER_USERNAME` — **required to enable this role**; leave unset to skip the New User (and its Keycloak provisioning) entirely.
 - `KEYCLOAK_NEW_USER_PASSWORD` — required when the role is enabled. Set on the user by the Admin API and submitted through Keycloak's local login form.
 - `KEYCLOAK_NEW_USER_EMAIL` — required when the role is enabled (see above). Also used by `006-org-management.spec.ts` to provision the user into a test org via the REST API.
 
@@ -273,7 +273,7 @@ Each role has its own setup project that logs in via GitHub and writes a Playwri
 ### Project topology
 
 ```text
-keycloak-cleanup ──▶ setup:new-user
+setup:new-user
 setup:returning
 
 chromium:returning ──▶ setup:returning
@@ -304,9 +304,6 @@ BASE_URL=https://release-under-test.example.test npm run test:new-user
 
 # Just the auth setup (both users)
 BASE_URL=https://release-under-test.example.test npm run setup:auth
-
-# Just the Keycloak cleanup
-BASE_URL=https://release-under-test.example.test npm run keycloak:cleanup
 ```
 
 ## Argo execution contract
@@ -329,7 +326,7 @@ e2e_tests/
 ├── fixtures/          # Generated or mounted authentication state
 ├── pages/             # Shared page objects
 ├── tests/
-│   ├── setup/         # Per-role setup projects (keycloak-cleanup, setup-returning, setup-new-user)
+│   ├── setup/         # Per-role setup projects (setup-returning, setup-new-user)
 │   └── *.spec.ts      # Specs run under both user roles
 ├── utils/             # Shared config, auth helpers, keycloak admin, test helpers
 ├── package-lock.json  # Locked Node dependencies

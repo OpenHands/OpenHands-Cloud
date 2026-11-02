@@ -79,6 +79,37 @@
         "apiHostname": { "type": "string" }
       }
     },
+    "sandboxNetworkPolicy": {
+      "type": "object",
+      "definitions": {
+        "cidrRule": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "blockedCIDRs": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "peerRule": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "to": { "type": "array", "items": { "type": "object" } },
+            "ports": { "type": "array", "items": { "type": "object" } }
+          }
+        }
+      },
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "name": { "type": "string" },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "internet": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/cidrRule" },
+        "ipv6": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/cidrRule" },
+        "dns": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/peerRule" },
+        "ingressController": { "$ref": "#/properties/sandboxNetworkPolicy/definitions/peerRule" },
+        "extraEgress": { "type": "array", "items": { "type": "object" } }
+      }
+    },
     "litellm": {
       "type": "object",
       "properties": {

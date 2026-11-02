@@ -60,6 +60,28 @@ export function githubLoginOption(page: Page): Locator {
 }
 
 /**
+ * Click "Log in with GitHub". When the option never appears, fail with the
+ * login options the page does list, so a missing GitHub provider on the
+ * instance is distinguishable from a slow or broken page.
+ */
+export async function clickGitHubLoginOption(page: Page): Promise<void> {
+  try {
+    await githubLoginOption(page).click();
+  } catch (error) {
+    const listed = await page
+      .getByRole("link", { name: /^Log in with/ })
+      .or(page.getByRole("button", { name: /^Log in with/ }))
+      .allInnerTexts()
+      .catch(() => []);
+    throw new Error(
+      `"Log in with GitHub" did not appear on ${page.url()}; ` +
+        `the page lists: ${listed.map((t) => t.trim()).join(", ") || "no login options"}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
  * Drive the full GitHub OAuth login flow for a set of credentials.
  *
  * Handles: the "Log in with GitHub" button, GitHub login page, 2FA (when a
@@ -79,7 +101,7 @@ export async function authenticateWithGitHub(
       "Already on GitHub page (Keycloak valid, GitHub session expired)",
     );
   } else {
-    await githubLoginOption(page).click();
+    await clickGitHubLoginOption(page);
 
     // Wait for redirect - could be GitHub.com, home page, or accept-tos
     // If user is already logged into Keycloak, they may be redirected back to the app
@@ -244,7 +266,7 @@ export async function loginWithKeycloakPassword(
       ? await stripIdpHintFromKeycloakRequest(page)
       : await stripIdpHintFromAppRedirect(page);
 
-  await githubLoginOption(page).click();
+  await clickGitHubLoginOption(page);
 
   // With the hint stripped Keycloak renders its own Sign-In form. The input
   // ids are stable across Keycloak versions (they come from the built-in
