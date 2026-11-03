@@ -1,0 +1,92 @@
+{{- if .Values.sysbox.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-sysbox-preflight
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+    troubleshoot.sh/kind: preflight
+stringData:
+  preflight.yaml: |
+    apiVersion: troubleshoot.sh/v1beta2
+    kind: Preflight
+    metadata:
+      name: {{ .Release.Name }}-sysbox-preflight
+    spec:
+      collectors:
+        - runDaemonSet:
+            name: sysbox-host-prerequisites
+            namespace: kube-system
+            timeout: 120s
+            {{- with .Values.sysbox.preflightPullSecretData }}
+            imagePullSecret:
+              type: kubernetes.io/dockerconfigjson
+              data:
+                .dockerconfigjson: {{ . | quote }}
+            {{- end }}
+            podSpec:
+              hostPID: true
+              automountServiceAccountToken: false
+              {{- with .Values.sysbox.imagePullSecrets }}
+              imagePullSecrets:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.sysbox.nodeSelector }}
+              nodeSelector:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.sysbox.tolerations }}
+              tolerations:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              containers:
+                - name: check
+                  image: "{{ .Values.sysbox.runnerImage.repository }}:{{ .Values.sysbox.runnerImage.tag }}"
+                  imagePullPolicy: {{ .Values.sysbox.runnerImage.pullPolicy }}
+                  securityContext:
+                    privileged: true
+                  env:
+                    - name: HOST_CHECK_SCRIPT
+                      value: |
+{{ .Files.Get "files/check-sysbox-host.sh" | indent 24 }}
+                  command: ["/bin/bash", "-c"]
+                  args:
+                    - exec nsenter --target 1 --mount -- /bin/bash -c "$HOST_CHECK_SCRIPT"
+      analyzers:
+        - textAnalyze:
+            checkName: "Sysbox: host prerequisite check completed"
+            fileName: sysbox-host-prerequisites/*.log
+            regex: '(?m)^SYSBOX_CHECK_COMPLETE=OK$'
+            strict: true
+            outcomes:
+              - pass:
+                  when: "true"
+                  message: "Host prerequisite check completed."
+              - fail:
+                  when: "false"
+                  message: "Could not check this node. Inspect the sysbox-host-prerequisites collector logs and verify its image can be pulled and privileged pods can run in kube-system."
+        - textAnalyze:
+            checkName: "Sysbox: required host commands"
+            fileName: sysbox-host-prerequisites/*.log
+            regex: '(?m)^SYSBOX_TOOLS=OK$'
+            strict: true
+            outcomes:
+              - pass:
+                  when: "true"
+                  message: "rsync, modprobe, iptables and fusermount3 are available on the host."
+              - fail:
+                  when: "false"
+                  message: "Install rsync, kmod, iptables and fuse3 on this node (or the equivalent packages for your distribution), then rerun preflights. Collector logs list missing commands."
+        - textAnalyze:
+            checkName: "Sysbox: host FUSE device"
+            fileName: sysbox-host-prerequisites/*.log
+            regex: '(?m)^SYSBOX_FUSE=OK$'
+            strict: true
+            outcomes:
+              - pass:
+                  when: "true"
+                  message: "The host FUSE device can be opened."
+              - fail:
+                  when: "false"
+                  message: "Enable FUSE on this node with sudo modprobe fuse and make /dev/fuse accessible. If the module is unavailable, install a kernel with CONFIG_FUSE_FS support, then rerun preflights."
+{{- end }}

@@ -102,6 +102,9 @@ spec:
             - name: INSTALL_SCRIPT
               value: |
 {{ .Files.Get "files/install-sysbox.sh" | indent 16 }}
+            - name: HOST_CHECK_SCRIPT
+              value: |
+{{ .Files.Get "files/check-sysbox-host.sh" | indent 16 }}
           # `nsenter --mount` enters the host mount namespace (where the staged
           # artifacts live at $SYSBOX_ARTIFACTS_DIR) and the host's bash runs the
           # installer. The container bash expands $INSTALL_SCRIPT and hands the

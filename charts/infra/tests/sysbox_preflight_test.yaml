@@ -1,0 +1,67 @@
+suite: sysbox host prerequisites
+templates:
+  - templates/sysbox-preflight.yaml
+tests:
+  - it: omits privileged host checks when Sysbox is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: checks each Linux node before deployment
+    set:
+      sysbox.enabled: true
+    asserts:
+      - isKind:
+          of: Secret
+      - equal:
+          path: metadata.labels["troubleshoot.sh/kind"]
+          value: preflight
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'runDaemonSet:'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'namespace: kube-system'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'fileName: sysbox-host-prerequisites/\*\.log'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'strict: true'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'exec nsenter --target 1 --mount -- /bin/bash'
+
+  - it: follows the installer image and node selection for air-gapped installs
+    set:
+      sysbox.enabled: true
+      sysbox.runnerImage.repository: registry.internal/openhands/debian
+      sysbox.runnerImage.tag: pinned
+      sysbox.runnerImage.pullPolicy: Never
+      sysbox.preflightPullSecretData: eyJhdXRocyI6e319
+      sysbox.nodeSelector:
+        pool: sandboxes
+      sysbox.tolerations:
+        - key: dedicated
+          operator: Equal
+          value: sandbox
+          effect: NoSchedule
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'image: "registry.internal/openhands/debian:pinned"'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'imagePullPolicy: Never'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'pool: sandboxes'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'effect: NoSchedule'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'type: kubernetes.io/dockerconfigjson'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: '\.dockerconfigjson: "eyJhdXRocyI6e319"'
