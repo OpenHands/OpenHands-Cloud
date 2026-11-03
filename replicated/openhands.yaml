@@ -121,6 +121,26 @@ spec:
       # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      # Fleet test only (shared-5, 2026-11-03): no KOTS item exists for these.
+      # Seed the integrated password IdP (migration 179) so "Login with
+      # Password" is offered on the login page; needs OAuth V2 login above.
+      ENABLE_INTEGRATED_IDP: true
+      # Onboarding flow: the web client reads feature_flags.enable_onboarding,
+      # built from the OH_WEB_CLIENT_FEATURE_FLAGS_* envs; bare name kept for parity.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ONBOARDING: true
+      OH_ENABLE_ONBOARDING: true
+      # Agent Context / Agent Profiles pages and org Agent Profile management.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: true
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: true
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: true
+      # Org Model Router: the server reads the prefixed form first (API routes
+      # and launch); the web client reads it for the settings page.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: true
+      ENABLE_MODEL_ROUTER: true
+      # Organization MCP servers (OHE-3091) and the personal-workspace fix
+      # (OHE-3864): the Settings > MCP section and the Agent Profile editor
+      # entries. UI only.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_MCP_SERVERS: true
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
       # role, granted on every successful OAuth V2 login regardless of the
