@@ -121,6 +121,17 @@ spec:
       # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      # Agent Profiles: the Agent Profiles and Agent Context settings pages and
+      # organization agent profile management. Only the web client reads these
+      # flags, so the FEATURE_FLAGS-prefixed form is the one that applies.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      # Model Routing. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # The server reads it to serve the router API and apply the active
+      # router at launch; the web client reads it for the Model Router page.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
+      ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
       # role, granted on every successful OAuth V2 login regardless of the

@@ -1778,6 +1778,21 @@ spec:
           type: bool
           default: "1"
 
+    - name: agent_features
+      title: Agent Features
+      description: Turn agent features on or off for everyone on this instance.
+      items:
+        - name: agent_profiles_enabled
+          title: Enable Agent Profiles
+          help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles.
+          type: bool
+          default: "1"
+        - name: model_routing_enabled
+          title: Enable Model Routing
+          help_text: Show the Model Router page in organization settings. Once an organization admin creates and activates a router, it chooses the model for each conversation in that organization.
+          type: bool
+          default: "1"
+
     - name: advanced_options
       title: Advanced Options
       description: Optional components and advanced configuration settings
