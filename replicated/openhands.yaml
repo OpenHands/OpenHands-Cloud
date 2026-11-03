@@ -137,9 +137,10 @@ spec:
       # and launch); the web client reads it for the settings page.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: true
       ENABLE_MODEL_ROUTER: true
-      # Organization MCP servers (OHE-3091) and the personal-workspace fix
-      # (OHE-3864): the Settings > MCP section and the Agent Profile editor
-      # entries. UI only.
+      # Organization MCP servers (OHE-3091) and the bug bash fixes (OHE-3864,
+      # OHE-3868, OHE-3869, OHE-3870, OHE-3871): the Settings > MCP section,
+      # its MCP Library, the Agent Profile editor entries and Canvas's link to
+      # Settings > MCP. UI only.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_MCP_SERVERS: true
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
