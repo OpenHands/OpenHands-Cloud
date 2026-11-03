@@ -7,6 +7,7 @@ import {
 } from "@playwright/test";
 
 import { fetchWebClientConfig } from "../utils/billing";
+import { runUser, superAdminApiKey } from "../utils/config";
 
 /**
  * Super Admin dashboard.
@@ -22,9 +23,13 @@ import { fetchWebClientConfig } from "../utils/billing";
  *
  * The throwaway user and the organization it starts in are created over REST
  * with the signed-in session. It runs under whichever role is a Super Admin and
- * skips when the dashboard is disabled (`feature_flags.enable_super_admin`),
- * when user provisioning is off, or when the signed-in user is not a Super
- * Admin. Everything it creates is deleted afterwards, also when a step fails.
+ * skips when the dashboard is disabled (`feature_flags.enable_super_admin`) or
+ * when user provisioning is off. The Returning User is a long-lived account
+ * that is not an instance's first Super Admin, so when it lacks the role and
+ * `SUPER_ADMIN_API_KEY` is set, the spec grants it Super Admin through that
+ * key for the run and revokes exactly that grant afterwards. Without the key,
+ * a signed-in user who is not a Super Admin skips. Everything it creates is
+ * deleted afterwards, also when a step fails.
  *
  * Emails use `example.com`: the server rejects the reserved `.test` domain.
  */
@@ -35,6 +40,10 @@ interface Organization {
 
 interface ProvisionedUser {
   user_id: string;
+}
+
+interface CurrentUser {
+  id: string;
 }
 
 interface AdminUsers {
@@ -52,6 +61,8 @@ const CONTACT_EMAIL = "sa-e2e@example.com";
 // owner of one.
 let createdOrgIds: string[] = [];
 let createdUserId: string | undefined;
+// The user this run granted Super Admin to, so afterEach revokes only that.
+let grantedSuperAdminUserId: string | undefined;
 
 async function json<T>(response: APIResponse, operation: string): Promise<T> {
   if (!response.ok()) {
@@ -60,6 +71,31 @@ async function json<T>(response: APIResponse, operation: string): Promise<T> {
     );
   }
   return (await response.json()) as T;
+}
+
+/**
+ * Call a Super Admin endpoint with `SUPER_ADMIN_API_KEY` instead of the
+ * browser session (the `request` fixture carries the session cookie too).
+ */
+async function superAdminCall(
+  baseUrl: string,
+  method: "POST" | "DELETE",
+  path: string,
+  body?: Record<string, unknown>,
+): Promise<void> {
+  const response = await fetch(new URL(path, baseUrl), {
+    method,
+    headers: {
+      Authorization: `Bearer ${superAdminApiKey()}`,
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `${method} ${path} failed (${response.status} ${response.statusText}): ${await response.text()}`,
+    );
+  }
 }
 
 /** Open a dashboard page from the desktop sidebar and wait for it. */
@@ -94,7 +130,7 @@ async function openManageUser(
 test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 test.describe("Super Admin dashboard @super-admin", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ baseURL, page }, testInfo) => {
     const config = await fetchWebClientConfig(page.request);
     test.skip(
       !config.feature_flags?.enable_super_admin,
@@ -105,14 +141,29 @@ test.describe("Super Admin dashboard @super-admin", () => {
       "user provisioning is disabled (user_provisioning_enabled is falsy)",
     );
 
-    const response = await page.request.get("/api/admin/users");
+    let response = await page.request.get("/api/admin/users");
+    if (
+      !response.ok() &&
+      runUser(testInfo) === "returning" &&
+      process.env.SUPER_ADMIN_API_KEY
+    ) {
+      const me = await json<CurrentUser>(
+        await page.request.get("/api/v1/users/me"),
+        "load current user",
+      );
+      await superAdminCall(baseURL || "", "POST", "api/admin/super-admins", {
+        user_id: me.id,
+      });
+      grantedSuperAdminUserId = me.id;
+      response = await page.request.get("/api/admin/users");
+    }
     test.skip(
       !response.ok(),
       `the signed-in user is not a Super Admin (GET /api/admin/users returned ${response.status()})`,
     );
   });
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ baseURL, page }) => {
     for (const orgId of createdOrgIds) {
       await page.request
         .delete(`/api/admin/organizations/${orgId}`)
@@ -125,6 +176,15 @@ test.describe("Super Admin dashboard @super-admin", () => {
     }
     createdOrgIds = [];
     createdUserId = undefined;
+    // Last: the deletions above need the session to still be a Super Admin.
+    if (grantedSuperAdminUserId) {
+      await superAdminCall(
+        baseURL || "",
+        "DELETE",
+        `api/admin/super-admins/${grantedSuperAdminUserId}`,
+      );
+      grantedSuperAdminUserId = undefined;
+    }
   });
 
   test("manages organizations, Super Admins and users", async ({ page }) => {
