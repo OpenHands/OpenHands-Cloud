@@ -37,7 +37,7 @@ Helm installs use these values:
 
 ## Running the cleanup now
 
-With cleanup enabled, reclaim disk immediately, for example on a node that is already full:
+With cleanup enabled, reclaim disk immediately:
 
 ```bash
 kubectl -n openhands create job --from=cronjob/openhands-laminar-clickhouse-system-log-cleanup clickhouse-log-cleanup-now
@@ -45,6 +45,26 @@ kubectl -n openhands logs -f job/clickhouse-log-cleanup-now
 ```
 
 Use the namespace and release name OpenHands is installed with if they differ.
+
+## Emergency cleanup without a deploy
+
+On a node that is already full, the cleanup Job may not schedule, and enabling cleanup needs a deploy. Run the cleanup inside the running ClickHouse pod instead. It drops the `_log_<N>` copies and empties every `system.*_log` table, including `query_log` and `error_log`. Laminar's own databases are not touched.
+
+```bash
+kubectl -n openhands exec -i statefulset/laminar-clickhouse -c clickhouse -- bash -s <<'EOF'
+client=(clickhouse-client --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --max_table_size_to_drop=0)
+for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND match(name, '_log_[0-9]+$')"); do
+  echo "Dropping system.${table}"
+  "${client[@]}" --query "DROP TABLE system.${table} SYNC"
+done
+for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND endsWith(name, '_log')"); do
+  echo "Truncating system.${table}"
+  "${client[@]}" --query "TRUNCATE TABLE system.${table}"
+done
+EOF
+```
+
+`--max_table_size_to_drop=0` is required: without it, `TRUNCATE` and `DROP` fail with code 359 on tables over 50 GB. Use the namespace where OpenHands is installed if it is not `openhands`. The tables refill until the TTL hook or the cleanup CronJob bounds them, so enable cleanup afterwards.
 
 ## Support bundles
 

@@ -38,26 +38,34 @@ spec:
                   value: "9000"
                 - name: RETENTION_DAYS
                   value: {{ int ($diagnostics.retentionDays | default 3) | quote }}
-              command: ["/bin/bash", "-ec"]
+              command: ["/bin/bash", "-uc"]
               args:
                 - |
                   # max_table_size_to_drop=0: TRUNCATE and DROP otherwise refuse tables over 50 GB.
                   client=(clickhouse-client --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT}" --user "${CLICKHOUSE_USER:-default}" --password="${CLICKHOUSE_PASSWORD:-}" --max_table_size_to_drop=0)
-                  "${client[@]}" --query "SELECT 1" >/dev/null
+                  "${client[@]}" --query "SELECT 1" >/dev/null || exit 1
+
+                  # Every step runs even if an earlier one fails; the Job still fails at the end.
+                  failed=0
 
                   # <name>_log_<N> are copies ClickHouse leaves when a system log table no longer matches its config.
-                  for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND match(name, '_log_[0-9]+$')"); do
+                  tables=$("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND match(name, '_log_[0-9]+$')") || failed=1
+                  for table in ${tables}; do
                     echo "Dropping system.${table}"
-                    "${client[@]}" --query "DROP TABLE system.${table} SYNC"
+                    "${client[@]}" --query "DROP TABLE system.${table} SYNC" || failed=1
                   done
 
-                  for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND endsWith(name, '_log') AND name NOT IN ('query_log', 'error_log')"); do
+                  tables=$("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND endsWith(name, '_log') AND name NOT IN ('query_log', 'error_log')") || failed=1
+                  for table in ${tables}; do
                     echo "Truncating system.${table}"
-                    "${client[@]}" --query "TRUNCATE TABLE system.${table}"
+                    "${client[@]}" --query "TRUNCATE TABLE system.${table}" || failed=1
                   done
 
-                  for table in $("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND name IN ('query_log', 'error_log')"); do
+                  tables=$("${client[@]}" --query "SELECT name FROM system.tables WHERE database = 'system' AND name IN ('query_log', 'error_log')") || failed=1
+                  for table in ${tables}; do
                     echo "Deleting system.${table} rows older than ${RETENTION_DAYS} days"
-                    "${client[@]}" --query "ALTER TABLE system.${table} DELETE WHERE event_date < today() - ${RETENTION_DAYS}"
+                    "${client[@]}" --query "ALTER TABLE system.${table} DELETE WHERE event_date < today() - ${RETENTION_DAYS}" || failed=1
                   done
+
+                  exit "${failed}"
 {{- end }}
