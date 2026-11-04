@@ -609,6 +609,15 @@ spec:
                  "conversation_settings->>'max_iterations' AS max_iterations, "
                  "(_llm_api_key IS NOT NULL) AS org_llm_api_key_set, "
                  "(llm_profiles IS NOT NULL) AS has_llm_profiles FROM org ORDER BY name"),
+                # Which org a Git organization's webhook events are routed to.
+                ("org_git_claim rows",
+                 "SELECT id, org_id, provider, git_organization, claimed_by, claimed_at "
+                 "FROM org_git_claim ORDER BY provider, git_organization"),
+                # Recorded Azure DevOps Service Hook installs, per organization.
+                ("azure_devops_webhook rows",
+                 "SELECT id, organization, installed_by_user_id, installed_at, last_verified_at, "
+                 "pr_subscription_id, work_item_subscription_id "
+                 "FROM azure_devops_webhook ORDER BY organization, id"),
                 # The per-user sandbox cap counts by owner. Sorted by peak-hour burst
                 # (the useful signal for sizing the cap), not by total volume.
                 ("sandboxes started per user, top 50 by peak-hour burst (14d)",
@@ -655,6 +664,8 @@ spec:
                 "OH_APP_MODE", "OH_DEPLOYMENT_MODE", "OH_WEB_CLIENT_PROVIDERS_CONFIGURED",
                 "RUNTIME", "CONVERSATION_MANAGER_CLASS", "RUN_AS_OPENHANDS", "NO_SETUP",
                 "REQUIRE_PAYMENT", "ADD_DEBUGGING_ROUTES",
+                "OPENHANDS_DEFAULT_ORG_ENABLED", "OPENHANDS_DEFAULT_ORG_AUTO_ADD_USERS",
+                "HIDE_PERSONAL_WORKSPACES",
                 "AUTOMATION_EVENT_FORWARDING_ENABLED", "AUTOMATION_SERVICE_URL",
                 "ENABLE_JIRA", "ENABLE_JIRA_DC", "ENABLE_LINEAR",
                 "JIRA_DC_WEBHOOKS_ENABLED", "JIRA_DC_ENABLE_OAUTH", "JIRA_DC_BASE_URL",
