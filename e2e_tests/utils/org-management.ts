@@ -1,3 +1,5 @@
+import { e2eRunId } from "./config";
+
 /**
  * REST API client for the org-management e2e specs.
  *
@@ -184,21 +186,70 @@ export function e2eTimestamp(now: Date = new Date()): string {
   return now.toISOString().replace(/[:.]/g, "-");
 }
 
-/** Name for an org a spec creates. Housekeeping deletes stale orgs by this shape. */
-export function e2eOrgName(label: string, timestamp = e2eTimestamp()): string {
-  return `e2e ${label} ${timestamp}`;
+/** Name for an org a spec creates. The global setup and teardown find leftover orgs by this shape. */
+export function e2eOrgName(
+  label: string,
+  timestamp = e2eTimestamp(),
+  runId = e2eRunId(),
+): string {
+  return `e2e ${label} ${timestamp} run-${runId}`;
 }
 
+// The run suffix is optional: orgs created before it existed are still swept.
 const E2E_ORG_NAME =
-  /^e2e .+ (\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/;
+  /^e2e .+ (\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z(?: run-([a-z0-9]{1,32}))?$/;
 
-/** When an ``e2eOrgName`` org was created, or null for any other name. */
-export function e2eOrgCreatedAt(name: string): Date | null {
+export interface E2eOrgName {
+  createdAt: Date;
+  runId: string | null;
+}
+
+/** Parse an ``e2eOrgName``, or null for any other name. */
+export function parseE2eOrgName(name: string): E2eOrgName | null {
   const match = E2E_ORG_NAME.exec(name);
   if (!match) {
     return null;
   }
-  const [, date, hours, minutes, seconds, millis] = match;
-  const created = new Date(`${date}T${hours}:${minutes}:${seconds}.${millis}Z`);
-  return Number.isNaN(created.getTime()) ? null : created;
+  const [, date, hours, minutes, seconds, millis, runId] = match;
+  const createdAt = new Date(
+    `${date}T${hours}:${minutes}:${seconds}.${millis}Z`,
+  );
+  if (Number.isNaN(createdAt.getTime())) {
+    return null;
+  }
+  return { createdAt, runId: runId ?? null };
+}
+
+/**
+ * Delete every ``e2eOrgName`` org that ``select`` picks. Never throws: a sweep
+ * that fails must not fail or skip the run, so problems are logged.
+ */
+export async function sweepE2eOrgs(
+  baseUrl: string,
+  apiKey: string,
+  select: (org: E2eOrgName) => boolean,
+  logPrefix: string,
+): Promise<void> {
+  let orgs: Array<{ id: string; name: string }>;
+  try {
+    orgs = await listAllOrgs(baseUrl, apiKey);
+  } catch (err) {
+    console.warn(`${logPrefix}: could not list orgs, skipping: ${err}`);
+    return;
+  }
+
+  const targets = orgs.filter((org) => {
+    const parsed = parseE2eOrgName(org.name);
+    return parsed !== null && select(parsed);
+  });
+  let deleted = 0;
+  for (const org of targets) {
+    try {
+      await deleteOrg(baseUrl, apiKey, org.id);
+      deleted += 1;
+    } catch (err) {
+      console.warn(`${logPrefix}: could not delete "${org.name}": ${err}`);
+    }
+  }
+  console.log(`${logPrefix}: deleted ${deleted} of ${targets.length} e2e orgs`);
 }
