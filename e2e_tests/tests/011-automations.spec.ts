@@ -9,8 +9,12 @@ import {
   waitForRunTerminal,
   type AutomationResponse,
 } from "../utils/automations";
+import { Cleanup } from "../utils/cleanup";
 import {
   createOrg,
+  deleteOrg,
+  e2eOrgName,
+  e2eTimestamp,
   provisionUser,
   type OrgResponse,
   type ProvisionUserResponse,
@@ -51,11 +55,9 @@ import {
  *    skips rather than failing every case with a 404.
  *
  * Cleanup:
- *  - Every created automation is deleted in ``afterAll`` regardless of test
- *    outcome. Orgs and users are intentionally left in place: no delete-org
- *    endpoint is exposed to superadmin today, and org names are timestamped
- *    to prevent collisions across runs. The same new-user email is safe to
- *    re-provision indefinitely (the endpoint is idempotent).
+ *  - ``afterAll`` deletes every created automation, then its org (superadmin
+ *    ``DELETE /api/admin/organizations``), regardless of test outcome. The
+ *    New User is left in place: re-provisioning the same email is idempotent.
  */
 
 interface RoleFixture {
@@ -100,24 +102,10 @@ test.describe.serial("automations", () => {
     }
   });
 
+  const cleanup = new Cleanup();
+
   test.afterAll(async () => {
-    const targets = Object.values(fixtures).filter(
-      (f): f is RoleFixture & { automation: AutomationResponse } =>
-        Boolean(f?.automation),
-    );
-    for (const fixture of targets) {
-      try {
-        await deleteAutomation(
-          baseUrl,
-          fixture.provisioned.api_key,
-          fixture.automation.id,
-        );
-      } catch (err) {
-        console.warn(
-          `Cleanup: failed to delete automation ${fixture.automation.id}: ${err}`,
-        );
-      }
-    }
+    await cleanup.run();
   });
 
   // Test 1a + 1b: the regression guard, split so the report shows two
@@ -135,12 +123,15 @@ test.describe.serial("automations", () => {
         "Automation service not reachable on this cluster",
       );
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const timestamp = e2eTimestamp();
       const org = await createOrg(base, adminKey, {
-        name: `e2e automations ${role} ${timestamp}`,
+        name: e2eOrgName(`automations ${role}`, timestamp),
         contact_name: "Testy Tester",
         contact_email: "e2e_test@openhands.org",
       });
+      cleanup.defer(`delete org ${org.id}`, () =>
+        deleteOrg(base, adminKey, org.id),
+      );
       console.log(`Created org "${org.name}" (id=${org.id}) for role=${role}`);
 
       const provisioned = await provisionUser(base, adminKey, org.id, {
@@ -174,6 +165,9 @@ test.describe.serial("automations", () => {
         },
       );
 
+      cleanup.defer(`delete automation ${automation.id}`, () =>
+        deleteAutomation(base, provisioned.api_key, automation.id),
+      );
       expect(automation.id).toBeTruthy();
       expect(automation.enabled).toBe(true);
       expect(automation.trigger.type).toBe("cron");

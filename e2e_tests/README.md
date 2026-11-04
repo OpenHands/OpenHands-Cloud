@@ -273,7 +273,7 @@ Each role has its own setup project that logs in via GitHub and writes a Playwri
 ### Project topology
 
 ```text
-setup:new-user
+setup:new-user ──▶ setup:housekeeping
 setup:returning
 
 chromium:returning ──▶ setup:returning
@@ -284,6 +284,14 @@ chromium:new-user  ──▶ setup:new-user
 Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. A spec that tests only one role is listed in `ROLE_ONLY_SPECS` (`utils/config.ts`), and the other role's projects do not schedule it, so it never shows up as a skipped test. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
 
 Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
+
+### Setup and teardown
+
+The suite runs against shared, long-lived instances, so a spec must delete what it creates.
+
+- **Per spec:** create a `Cleanup` (`utils/cleanup.ts`), call `cleanup.defer(label, fn)` right after each create, and `await cleanup.run()` in `afterAll` (or `afterEach`). Steps run newest-first, so delete children before their parents. A failing step is logged and never fails the test.
+- **Org names:** name orgs with `e2eOrgName(label)` (`utils/org-management.ts`). The timestamp in the name is how housekeeping recognizes them.
+- **Housekeeping:** `setup:housekeeping` (`tests/setup/housekeeping.ts`) runs before the New User setup. It deletes `e2eOrgName` orgs older than 2 hours that a crashed or older run left behind, using `SUPER_ADMIN_API_KEY` and the Super Admin directory API. It skips without the key, never runs against production, and never fails the run. Add sweeps for other leaked data here.
 
 ### Auth behavior: `AUTH_METHOD`
 

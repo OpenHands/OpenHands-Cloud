@@ -125,12 +125,19 @@ export default defineConfig({
       testMatch: matchFor(hasReturningUser, /setup\/setup-returning\.ts/),
     },
 
+    // Delete stale data earlier runs left on the instance (tests/setup/housekeeping.ts).
+    {
+      name: "setup:housekeeping",
+      testMatch: matchFor(hasNewUser, /setup\/housekeeping\.ts/),
+    },
+
     // Create the synthetic New User in Keycloak (or reset its password) and
     // authenticate via Keycloak-native login (no GitHub). Matches no tests
     // when KEYCLOAK_NEW_USER_USERNAME is unset.
     {
       name: "setup:new-user",
       testMatch: matchFor(hasNewUser, /setup\/setup-new-user\.ts/),
+      dependencies: ["setup:housekeeping"],
     },
 
     // --- Test projects --------------------------------------------------
