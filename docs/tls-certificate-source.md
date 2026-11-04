@@ -9,9 +9,10 @@ Replicated/KOTS installs choose where the serving certificate comes from under *
 
 ## Using an existing secret
 
-1. Create a `kubernetes.io/tls` secret in the `openhands` namespace. `tls.crt` holds the full chain and `tls.key` holds the private key. The certificate needs the same SANs listed in the Admin Console under the certificate fields.
+1. Create a `kubernetes.io/tls` secret in the `openhands` namespace. `tls.crt` holds the full chain and `tls.key` holds the private key. The certificate needs the same SANs listed in the Admin Console under the certificate fields. On a fresh install the namespace may not exist yet, so the first command creates it if needed.
 
    ```bash
+   kubectl create namespace openhands --dry-run=client -o yaml | kubectl apply -f -
    kubectl -n openhands create secret tls openhands-customer-tls --cert=fullchain.pem --key=privkey.pem
    ```
 

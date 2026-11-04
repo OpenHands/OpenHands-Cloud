@@ -59,7 +59,17 @@ def test_each_source_shows_only_its_own_fields(config_items: dict) -> None:
 
 @pytest.mark.parametrize(
     "name, valid",
-    [("customer-tls", True), ("tls.example.com", True), ("Bad_Name", False), ("-tls", False)],
+    [
+        ("customer-tls", True),
+        ("tls.example.com", True),
+        ("a" * 63, True),
+        ("Bad_Name", False),
+        ("-tls", False),
+        ("a..b", False),
+        ("a.-b", False),
+        ("a-.b", False),
+        ("a" * 64, False),
+    ],
 )
 def test_secret_name_validation(config_items: dict, name: str, valid: bool) -> None:
     pattern = config_items["tls_existing_certificate_name"]["validation"]["regex"]["pattern"]

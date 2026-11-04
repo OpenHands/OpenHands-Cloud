@@ -306,8 +306,9 @@ spec:
           when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "secret" }}'
           validation:
             regex:
-              pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
-              message: 'Must be a Kubernetes secret name: lowercase letters, digits, "-" and ".".'
+              # DNS-1123 subdomain, labels up to 63 characters. RE2 can't also cap the 253-character total.
+              pattern: '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$'
+              message: 'Must be a Kubernetes secret name: lowercase letters, digits and "-", in parts separated by single "." characters, each starting and ending with a letter or digit.'
         # Every consumer of the serving certificate reads this name.
         - name: computed_tls_certificate_name
           title: Computed TLS Secret Name
