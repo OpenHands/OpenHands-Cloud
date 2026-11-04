@@ -3,10 +3,11 @@
 # runs in CI from scripts/test_support_bundle_config.py).
 #
 # Saves the non-secret Admin Console settings to kots/admin-console/config.yaml in each
-# support bundle. KOTS renders the values when the bundle is collected and
-# merges this spec with the chart's. Password and file items are left out, as
-# are the items the generator names in EXCLUDED. A value is recorded whether or
-# not its item is currently shown (its `when` condition is not evaluated here).
+# support bundle. KOTS renders the values when the release is deployed (and
+# merges this spec with the chart's), re-rendering on every config change.
+# Password and file items are left out, as are the items the generator names
+# in EXCLUDED. A value is recorded whether or not its item is currently shown
+# (its `when` condition is not evaluated here).
 apiVersion: troubleshoot.sh/v1beta2
 kind: SupportBundle
 metadata:

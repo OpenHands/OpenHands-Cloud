@@ -7,10 +7,11 @@ an environment variable. This writes replicated/support-bundle.yaml: a KOTS
 SupportBundle spec whose one data collector saves every non-secret config item
 as `name: value` under kots/admin-console/config.yaml, grouped as on the page.
 
-KOTS renders the ConfigOption template functions when the bundle is collected
-(and merges this spec with the chart's own), so the file reflects the install's
-current ConfigValues, including defaults. Each value is JSON-quoted with
-mustToJson so multi-line textareas stay on one line.
+KOTS renders the ConfigOption template functions when the release is deployed
+(and merges this spec with the chart's own) — re-rendering on every config
+change, so the file reflects the install's ConfigValues as of the last apply,
+including defaults. Each value is JSON-quoted with mustToJson so multi-line
+textareas stay on one line.
 
 Items are skipped when their type is password or file, when they are labels
 with no value, or when they are named in EXCLUDED because the value pairs with
@@ -52,10 +53,11 @@ HEADER = f"""\
 # runs in CI from scripts/test_support_bundle_config.py).
 #
 # Saves the non-secret Admin Console settings to {BUNDLE_PATH} in each
-# support bundle. KOTS renders the values when the bundle is collected and
-# merges this spec with the chart's. Password and file items are left out, as
-# are the items the generator names in EXCLUDED. A value is recorded whether or
-# not its item is currently shown (its `when` condition is not evaluated here).
+# support bundle. KOTS renders the values when the release is deployed (and
+# merges this spec with the chart's), re-rendering on every config change.
+# Password and file items are left out, as are the items the generator names
+# in EXCLUDED. A value is recorded whether or not its item is currently shown
+# (its `when` condition is not evaluated here).
 apiVersion: troubleshoot.sh/v1beta2
 kind: SupportBundle
 metadata:
