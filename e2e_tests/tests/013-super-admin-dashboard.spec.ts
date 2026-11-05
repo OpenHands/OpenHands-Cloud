@@ -287,18 +287,25 @@ test.describe("Super Admin dashboard @super-admin", () => {
       });
 
     await test.step("grant and revoke Super Admin", async () => {
+      await openDashboardPage(page, "/super-admin/users", "super-admin-users");
+      await page.getByTestId("super-admin-user-search").fill(email);
+      await page.getByTestId(`super-admin-user-actions-${userId}`).click();
+      await page.getByTestId(`super-admin-user-grant-admin-${userId}`).click();
+      const granted = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/admin/super-admins",
+      );
+      await page
+        .getByTestId("super-admin-user-grant-admin-confirm-submit")
+        .click();
+      expect((await granted).ok(), "grant Super Admin").toBe(true);
+
       await openDashboardPage(
         page,
         "/super-admin/admins",
         "super-admin-admins",
       );
-      await page.getByRole("button", { name: "Grant Super Admin" }).click();
-      const form = page.getByTestId("super-admin-grant-form");
-      await form.getByRole("textbox").fill(email);
-      // The page header has a button with the same name.
-      await form.getByRole("button", { name: "Grant Super Admin" }).click();
-      await expect(form).toBeHidden();
-
       const actions = page.getByTestId(`super-admin-admin-actions-${userId}`);
       await actions.click();
       await page.getByTestId(`super-admin-admin-revoke-${userId}`).click();
