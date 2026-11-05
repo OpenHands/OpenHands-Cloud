@@ -52,41 +52,45 @@ stringData:
                   command: ["/bin/bash", "-c"]
                   args:
                     - exec nsenter --target 1 --mount -- /bin/bash -c "$HOST_CHECK_SCRIPT"
+      # Troubleshoot labels every runDaemonSet pod the same way, so a preflight
+      # running at the same time (another pending version) adds logs from its
+      # pods here. Only an explicit FAIL from the host script blocks; a log
+      # without the completion line is a warning.
       analyzers:
         - textAnalyze:
             checkName: "Sysbox: host prerequisite check completed"
             fileName: sysbox-host-prerequisites/*.log
             regex: '(?m)^SYSBOX_CHECK_COMPLETE=OK$'
-            strict: true
+            strict: false
             outcomes:
               - pass:
                   when: "true"
                   message: "Host prerequisite check completed."
-              - fail:
+              - warn:
                   when: "false"
-                  message: "Could not check this node. Inspect the sysbox-host-prerequisites collector logs and verify its image can be pulled and privileged pods can run in kube-system."
+                  message: "Could not check this node. If another version's preflights ran at the same time, rerun preflights for this version. Otherwise inspect the sysbox-host-prerequisites collector logs and verify its image can be pulled and privileged pods can run in kube-system."
         - textAnalyze:
             checkName: "Sysbox: required host commands"
             fileName: sysbox-host-prerequisites/*.log
-            regex: '(?m)^SYSBOX_TOOLS=OK$'
+            regex: '(?m)^SYSBOX_TOOLS=FAIL$'
             strict: true
             outcomes:
-              - pass:
-                  when: "true"
-                  message: "rsync, modprobe, iptables and fusermount3 are available on the host."
               - fail:
-                  when: "false"
+                  when: "true"
                   message: "Install rsync, kmod, iptables and fuse3 on this node (or the equivalent packages for your distribution), then rerun preflights. Collector logs list missing commands."
+              - pass:
+                  when: "false"
+                  message: "No missing host commands were reported (rsync, modprobe, iptables, fusermount3)."
         - textAnalyze:
             checkName: "Sysbox: host FUSE device"
             fileName: sysbox-host-prerequisites/*.log
-            regex: '(?m)^SYSBOX_FUSE=OK$'
+            regex: '(?m)^SYSBOX_FUSE=FAIL$'
             strict: true
             outcomes:
-              - pass:
-                  when: "true"
-                  message: "The host FUSE device can be opened."
               - fail:
-                  when: "false"
+                  when: "true"
                   message: "Enable FUSE on this node with sudo modprobe fuse and make /dev/fuse accessible. If the module is unavailable, install a kernel with CONFIG_FUSE_FS support, then rerun preflights."
+              - pass:
+                  when: "false"
+                  message: "No host FUSE problem was reported."
 {{- end }}
