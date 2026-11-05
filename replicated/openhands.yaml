@@ -132,6 +132,10 @@ spec:
       # router at launch; the web client reads it for the Model Router page.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
       ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
+      # Organization MCP servers (OHE-3091). Only the web client reads this flag
+      # (enterprise Settings > MCP and Agent Profiles, and Agent Canvas), so the
+      # FEATURE_FLAGS-prefixed form is the one that applies.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_MCP_SERVERS: 'repl{{ ConfigOptionEquals "org_mcp_servers_enabled" "1" }}'
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
       # role, granted on every successful OAuth V2 login regardless of the
