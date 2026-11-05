@@ -32,6 +32,26 @@ tests:
           path: stringData["preflight.yaml"]
           pattern: 'exec nsenter --target 1 --mount -- /bin/bash'
 
+  - it: blocks only on an explicit host failure, so concurrent preflights cannot fail it
+    set:
+      sysbox.enabled: true
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'regex: ''\(\?m\)\^SYSBOX_TOOLS=FAIL\$'''
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'regex: ''\(\?m\)\^SYSBOX_FUSE=FAIL\$'''
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'checkName: "Sysbox: host prerequisite check completed"\n\s+fileName: \S+\n\s+regex: \S+\n\s+strict: false'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: '- warn:\n\s+when: "false"\n\s+message: "Could not check this node\. If another version''s preflights ran at the same time'
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'regex: ''\(\?m\)\^SYSBOX_(TOOLS|FUSE)=OK\$'''
+
   - it: follows the installer image and node selection for air-gapped installs
     set:
       sysbox.enabled: true
