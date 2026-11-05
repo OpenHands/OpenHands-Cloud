@@ -122,7 +122,10 @@ variables). They skip when it is off.
 then works through organization, Super Admin, membership and account actions
 on a throwaway user and organizations. It deletes them afterwards. It runs for
 whichever role is a Super Admin, and skips unless user provisioning is enabled.
-Its emails use `example.com`, because the server rejects `.test` addresses.
+When the Returning User is not a Super Admin and `SUPER_ADMIN_API_KEY` is set,
+the spec grants it Super Admin through that key for the run and revokes the
+grant afterwards. Its emails use `example.com`, because the server rejects
+`.test` addresses.
 
 `tests/012-first-install.spec.ts` walks the `/install` wizard. That wizard only
 exists for the first user to sign in after a fresh install with the option
