@@ -40,10 +40,9 @@ test.describe("logout @logout", () => {
 
     // The server must clear the session itself, not leave it to the client.
     const logout = await logoutResponse;
-    expect(
-      logout.ok(),
-      `POST /api/logout returned ${logout.status()}`,
-    ).toBe(true);
+    expect(logout.ok(), `POST /api/logout returned ${logout.status()}`).toBe(
+      true,
+    );
 
     // Verify the login screen is visible — the GitHub login option renders
     // once the redirect back from Keycloak completes.
