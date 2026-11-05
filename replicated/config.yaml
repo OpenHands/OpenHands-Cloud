@@ -1842,6 +1842,11 @@ spec:
           help_text: Show the Model Router page in organization settings. Once an organization admin creates and activates a router, it chooses the model for each conversation in that organization.
           type: bool
           default: "1"
+        - name: org_mcp_servers_enabled
+          title: Enable Organization MCP Servers
+          help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP.
+          type: bool
+          default: "0"
 
     - name: advanced_options
       title: Advanced Options
