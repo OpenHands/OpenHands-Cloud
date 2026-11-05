@@ -276,7 +276,7 @@ test.describe("Super Admin dashboard @super-admin", () => {
         await expect(form).toBeHidden();
 
         const { users } = await json<AdminUsers>(
-          await page.request.get("/api/admin/users"),
+          await page.request.get("/api/admin/directory/users"),
           "load users",
         );
         const membership = users
