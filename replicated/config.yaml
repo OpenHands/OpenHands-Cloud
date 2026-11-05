@@ -1836,7 +1836,7 @@ spec:
           title: Enable Agent Profiles
           help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles.
           type: bool
-          default: "1"
+          default: "0"
         - name: model_routing_enabled
           title: Enable Model Routing
           help_text: Show the Model Router page in organization settings. Once an organization admin creates and activates a router, it chooses the model for each conversation in that organization.
