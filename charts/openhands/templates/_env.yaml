@@ -1,6 +1,10 @@
 {{- define "openhands.env.defaults" }}
 {{- $integrations := .Values.integrations | default dict }}
 {{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
+- name: AGENT_CANVAS_AVAILABLE
+  value: {{ and (index .Values "agent-canvas" "enabled") (index .Values "agent-canvas" "ingress" "enabled") | quote }}
+- name: OH_WEB_CLIENT_FEATURE_FLAGS_AGENT_CANVAS_AVAILABLE
+  value: {{ and (index .Values "agent-canvas" "enabled") (index .Values "agent-canvas" "ingress" "enabled") | quote }}
 - name: RUNTIME
   value: remote
 - name: OH_SANDBOX_SPEC_KIND
