@@ -55,7 +55,8 @@ jobs:
 
   login:
     needs: validate
-    runs-on: ubuntu-latest
+    # Pinned to match the Argo runner image (playwright:v1.58.2-noble); 1.58.2 cannot install browsers on Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     environment: preview-browser-tests
     defaults:
       run:

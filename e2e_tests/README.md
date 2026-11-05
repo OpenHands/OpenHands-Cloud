@@ -273,8 +273,10 @@ Each role has its own setup project that logs in via GitHub and writes a Playwri
 ### Project topology
 
 ```text
-setup:new-user
-setup:returning
+setup:global ··▶ teardown:global (runs after everything below, also on failure)
+
+setup:returning ──▶ setup:global
+setup:new-user  ──▶ setup:global
 
 chromium:returning ──▶ setup:returning
 chromium:new-user  ──▶ setup:new-user
@@ -284,6 +286,23 @@ chromium:new-user  ──▶ setup:new-user
 Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. A spec that tests only one role is listed in `ROLE_ONLY_SPECS` (`utils/config.ts`), and the other role's projects do not schedule it, so it never shows up as a skipped test. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
 
 Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
+
+### Setup and teardown
+
+The suite runs against shared, long-lived instances, so every run must leave them as it found them. Cleanup has three layers, following Playwright's [global setup and teardown](https://playwright.dev/docs/test-global-setup-teardown) projects:
+
+| Layer | Where | Deletes | Catches |
+| -- | -- | -- | -- |
+| Per spec (primary) | `afterAll` / `afterEach` with a `Cleanup` (`utils/cleanup.ts`) | Exactly the IDs the spec created | Normal runs, including failed tests and retries |
+| Global teardown | `teardown:global` (`tests/setup/global.teardown.ts`) | Every `e2eOrgName` org tagged with this run's ID | A spec whose own cleanup failed |
+| Global setup | `setup:global` (`tests/setup/global.setup.ts`) | `e2eOrgName` orgs from other runs older than 2 hours | Runs that crashed before teardown |
+
+Rules for specs that create data:
+
+- Call `cleanup.defer(label, fn)` right after each create and `await cleanup.run()` in `afterAll` (or `afterEach` for per-test data). Steps run newest-first, so children are deleted before their parents. A failing step is logged and never fails the test.
+- Name orgs with `e2eOrgName(label)` (`utils/org-management.ts`). It adds a timestamp and `run-<E2E_RUN_ID>`, which is how the global setup and teardown recognize leftovers. `playwright.config.ts` sets `E2E_RUN_ID` once per run, and every worker inherits it.
+- The global sweeps need `SUPER_ADMIN_API_KEY` and the Super Admin directory API. They skip without the key, never run against production, and never fail the run. Add sweeps for other kinds of leaked data to the same two files.
+- `--no-deps` skips the global setup and teardown, so a run with it cleans up only through the specs' own hooks.
 
 ### Auth behavior: `AUTH_METHOD`
 
