@@ -111,6 +111,12 @@ securityContext:
   runAsNonRoot: true
 
 env:
+  # Optional organization-wide Canvas sandbox selector (off by default).
+  # Requires the matching Enterprise API and Agent Canvas frontend versions.
+  # Define each named image/size in runtime-api.warmRuntimes.configsByName first.
+  # ENABLE_SANDBOX_SELECTOR: "true"
+  # SANDBOX_TEMPLATE_ORG_CONFIG: >-
+  #   {"<org-uuid>": {"template_ids": ["v1_current", "monorepo_large"], "default_template_id": "v1_current"}}
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   # How the app addresses a sandbox. Must agree with the runtime-api's
