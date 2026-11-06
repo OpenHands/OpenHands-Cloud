@@ -1831,6 +1831,8 @@ spec:
     - name: agent_features
       title: Agent Features
       description: Turn agent features on or off for everyone on this instance.
+      # Keep saved feature settings, but hide the controls until these features are ready.
+      when: false
       items:
         - name: agent_profiles_enabled
           title: Enable Agent Profiles
@@ -1841,7 +1843,7 @@ spec:
           title: Enable Model Routing
           help_text: Show the Model Router page in organization settings. Once an organization admin creates and activates a router, it chooses the model for each conversation in that organization.
           type: bool
-          default: "1"
+          default: "0"
         - name: org_mcp_servers_enabled
           title: Enable Organization MCP Servers
           help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP.
