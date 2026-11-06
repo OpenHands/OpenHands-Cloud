@@ -1,0 +1,37 @@
+suite: org routing support bundle diagnostics
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+  - troubleshoot/_shared.tpl
+  - troubleshoot/_sysbox.tpl
+  - troubleshoot/_tls-hostname.tpl
+  - troubleshoot/_sandbox-nodes.tpl
+  - troubleshoot/_sandbox-capacity.tpl
+release:
+  name: openhands
+tests:
+  - it: records the default org settings in the config snapshot
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "\"OPENHANDS_DEFAULT_ORG_ENABLED\", \"OPENHANDS_DEFAULT_ORG_AUTO_ADD_USERS\",\\n\\s+\"HIDE_PERSONAL_WORKSPACES\","
+
+  - it: collects Git organization claims and Azure DevOps webhook installs
+    set:
+      replicated.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "SELECT id, org_id, provider, git_organization, claimed_by, claimed_at \"\\n\\s+\"FROM org_git_claim"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "pr_subscription_id, work_item_subscription_id \"\\n\\s+\"FROM azure_devops_webhook"
