@@ -15,7 +15,7 @@ databaseMigrations:
 client:
   image:
     repository: ghcr.io/openhands/plugin-directory-client
-    tag: "1.2.0"
+    tag: "1.2.1"
   resources:
     requests:
       memory: 256Mi
