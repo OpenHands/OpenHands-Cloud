@@ -1836,6 +1836,7 @@ spec:
           title: Enable Agent Profiles
           help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles.
           type: bool
+          hidden: true
           default: "0"
         - name: model_routing_enabled
           title: Enable Model Routing
