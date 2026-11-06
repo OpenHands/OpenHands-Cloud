@@ -1846,6 +1846,7 @@ spec:
           title: Enable Organization MCP Servers
           help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP.
           type: bool
+          hidden: true
           default: "0"
 
     - name: advanced_options
