@@ -684,7 +684,9 @@ spec:
                 ),
                 "operation_diagnostics": (
                     "SELECT organization, updated_at, last_install_attempt, last_observation, "
-                    "(to_jsonb(d)->'last_delivery_test') - 'configuration_fingerprint' AS last_delivery_test "
+                    "CASE WHEN jsonb_typeof(to_jsonb(d)->'last_delivery_test') = 'object' "
+                    "THEN (to_jsonb(d)->'last_delivery_test') - 'configuration_fingerprint' "
+                    "ELSE NULL END AS last_delivery_test "
                     "FROM azure_devops_webhook_diagnostics d ORDER BY organization LIMIT 501"
                 ),
                 "organization_claims": (

@@ -351,7 +351,11 @@ def test_delivery_test_evidence_includes_receipts_and_failure_without_internal_f
             "INSERT INTO azure_devops_webhook_diagnostics VALUES ('contoso', now(), NULL, NULL, %s)",
             [json.dumps(evidence)],
         )
+        cur.execute(
+            "INSERT INTO azure_devops_webhook_diagnostics VALUES ('untested', now(), NULL, NULL, 'null'::jsonb)"
+        )
     data, raw = collect(collector, env)
+    assert data["operation_diagnostics"]["rows"][1]["last_delivery_test"] is None
     evidence.pop("configuration_fingerprint")
     assert data["operation_diagnostics"]["rows"][0]["last_delivery_test"] == evidence
     assert "internal-fingerprint" not in raw
