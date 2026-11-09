@@ -25,5 +25,5 @@ never the license itself.
           message: "An OpenHands Enterprise license is set."
       - warn:
           when: "false"
-          message: "No OpenHands Enterprise license is set. An upcoming release will enforce the license through Customer Center. Before you upgrade to it, set your license key from Customer Center, or an offline license file if this install can't reach Customer Center."
+          message: "No OpenHands Enterprise license is set. An upcoming release will enforce the license through Customer Center. If you're an existing customer, OpenHands support will provide your license key. Before you upgrade to that release, set your license key, or an offline license file if this install can't reach Customer Center."
 {{- end -}}

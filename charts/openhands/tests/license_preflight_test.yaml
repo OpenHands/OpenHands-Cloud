@@ -23,6 +23,9 @@ tests:
       - matchRegex:
           path: stringData["preflight.yaml"]
           pattern: 'warn:\n\s+when: "false"\n\s+message: "No OpenHands Enterprise license is set'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "OpenHands support will provide your license key"
       - notMatchRegex:
           path: stringData["preflight.yaml"]
           pattern: 'fail:\n\s+when: "false"\n\s+message: "No OpenHands Enterprise license'

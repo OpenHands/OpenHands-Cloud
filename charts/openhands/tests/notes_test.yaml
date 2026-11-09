@@ -88,6 +88,8 @@ tests:
       - matchRegexRaw:
           pattern: "no OpenHands Enterprise license is set"
       - matchRegexRaw:
+          pattern: "OpenHands support will provide your license key"
+      - matchRegexRaw:
           pattern: "--set license.key=<license-key>"
   - it: stays quiet about the license when a key is set
     set:
