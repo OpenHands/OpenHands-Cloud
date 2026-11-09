@@ -624,6 +624,104 @@ spec:
             for label, sql in queries:
                 run(label, sql)
         timeout: 30s
+    # Local evidence only: collecting a bundle must not use a user's Azure token
+    # or mistake a saved installation for a verified Service Hook delivery.
+    - exec:
+        name: app/azure-devops-webhook-diagnostics
+        collectorName: azure-devops-webhook-diagnostics
+        namespace: {{ .Release.Namespace }}
+        selector:
+          - app=openhands
+        containerName: openhands
+        command: ["python3", "-c"]
+        args:
+          - |
+            import datetime, json, os
+            from urllib.parse import urlsplit, urlunsplit
+            import psycopg2
+
+            def safe_url(value):
+                try:
+                    parsed = urlsplit(value)
+                    host = parsed.hostname
+                    if not host or parsed.scheme not in ("http", "https"):
+                        return None
+                    if ":" in host:
+                        host = "[" + host + "]"
+                    authority = host + (":" + str(parsed.port) if parsed.port else "")
+                    return urlunsplit((parsed.scheme, authority, parsed.path, "", ""))
+                except ValueError:
+                    return None
+
+            host = os.environ.get("WEB_HOST", "app.all-hands.dev").strip()
+            forwarding = os.environ.get("AUTOMATION_EVENT_FORWARDING_ENABLED", "false")
+            output = {
+                "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "evidence_source": "local_configuration_and_database",
+                "azure_subscription_verification": "not_performed",
+                "azure_to_openhands_delivery_verification": "not_performed",
+                "notes": [
+                    "A saved installation record does not prove hooks still exist or deliver events.",
+                    "The saved record contains only the two resolver hook IDs, not automation hook IDs.",
+                    "Installation results and Azure API errors may be in app/openhands/logs and app/openhands-integrations/logs; rotated logs are unavailable.",
+                    "Automation delivery and matching logs are in app/automation/logs and app/automation-events/logs when enabled.",
+                ],
+                "config": {
+                    "webhook_url": safe_url(("http://" if "localhost" in host else "https://") + host + "/integration/azure-devops/events"),
+                    "automation_event_forwarding_enabled_raw": forwarding,
+                    "automation_event_forwarding_enabled": forwarding in ("1", "true"),
+                    "automation_service_url": safe_url(os.environ.get("AUTOMATION_SERVICE_URL", "")),
+                    "default_org_enabled_raw": os.environ.get("OPENHANDS_DEFAULT_ORG_ENABLED", os.environ.get("OH_DEFAULT_ORG_ENABLED", "false")),
+                    "webhook_secret_set": bool(os.environ.get("AZURE_DEVOPS_WEBHOOK_SECRET")),
+                    "automation_webhook_secret_set": bool(os.environ.get("AUTOMATION_WEBHOOK_SECRET")),
+                },
+            }
+            queries = {
+                "installation_records": (
+                    "SELECT organization, installed_by_user_id, installed_at, last_verified_at, "
+                    "pr_subscription_id, work_item_subscription_id "
+                    "FROM azure_devops_webhook ORDER BY organization LIMIT 501"
+                ),
+                "organization_claims": (
+                    "SELECT c.git_organization, c.org_id, o.name AS org_name, c.claimed_at "
+                    "FROM org_git_claim c LEFT JOIN org o ON o.id = c.org_id "
+                    "WHERE c.provider = 'azure_devops' ORDER BY c.git_organization LIMIT 501"
+                ),
+                "team_organizations": (
+                    "SELECT o.id, o.name, o.is_default FROM org o "
+                    "WHERE NOT EXISTS (SELECT 1 FROM \"user\" u WHERE u.id = o.id) "
+                    "ORDER BY o.id LIMIT 501"
+                ),
+            }
+            conn = None
+            try:
+                conn = psycopg2.connect(
+                    host=os.environ["DB_HOST"], port=os.environ.get("DB_PORT", "5432"),
+                    dbname=os.environ["DB_NAME"], user=os.environ["DB_USER"],
+                    password=os.environ.get("DB_PASS", ""),
+                    sslmode=os.environ.get("DB_SSL_MODE", "prefer"), connect_timeout=5,
+                    options="-c statement_timeout=3000 -c default_transaction_read_only=on",
+                )
+                conn.set_session(readonly=True, autocommit=True)
+                with conn.cursor() as cur:
+                    for name, query in queries.items():
+                        try:
+                            cur.execute(query)
+                            columns = [column[0] for column in cur.description]
+                            rows = cur.fetchall()
+                            output[name] = {
+                                "status": "collected", "truncated": len(rows) > 500,
+                                "rows": [dict(zip(columns, row)) for row in rows[:500]],
+                            }
+                        except Exception as exc:
+                            output[name] = {"status": "unavailable", "error_type": type(exc).__name__}
+            except Exception as exc:
+                output["database"] = {"status": "unavailable", "error_type": type(exc).__name__}
+            finally:
+                if conn is not None:
+                    conn.close()
+            print(json.dumps(output, indent=2, default=str))
+        timeout: 20s
     # Live budget state: the same read-only report as the budget-preflight
     # upgrade hook, comparing each org's policy with LiteLLM's applied caps.
     # The pre phase never reconciles, and acknowledge mode always exits 0.
@@ -767,6 +865,12 @@ spec:
                      "SELECT id, org_id, user_id, name, model, enabled, last_triggered_at, "
                      "last_polled_at, created_at, updated_at, deleted_at FROM automations "
                      "ORDER BY created_at"),
+                    ("automation event triggers (no prompts, code, or filter values)",
+                     "SELECT id, org_id, enabled, trigger->>'source' AS event_source, "
+                     "trigger->'on' AS event_patterns, "
+                     "NULLIF(trigger->>'filter', '') IS NOT NULL AS filter_set "
+                     "FROM automations WHERE trigger->>'type' = 'event' "
+                     "AND deleted_at IS NULL ORDER BY id LIMIT 500"),
                     ("automation_runs status counts",
                      "SELECT status, COUNT(*) AS n FROM automation_runs "
                      "GROUP BY status ORDER BY n DESC"),

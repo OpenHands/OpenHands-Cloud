@@ -58,6 +58,7 @@ jobs:
         env:
           KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.3.3
           KEYCLOAK_BACKUP_TEST_POSTGRES_IMAGE: postgres:16
+          WEBHOOK_TEST_POSTGRES_IMAGE: postgres:16
         run: >-
           uv run
           --with pytest
@@ -68,4 +69,5 @@ jobs:
           --with httpx
           --with ruamel.yaml
           --with PyYAML
+          --with psycopg2-binary
           python -m pytest scripts -q
