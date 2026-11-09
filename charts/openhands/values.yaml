@@ -14,6 +14,23 @@ image:
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
   tag: 1.87.1
 
+# OpenHands Enterprise license from Customer Center. Set a license key, or an
+# offline license file if this install can't reach Customer Center. An upcoming
+# release will enforce the license through Customer Center. Until then, an
+# install without a license keeps working.
+license:
+  # License key from Customer Center. The chart stores it in the
+  # openhands-license Secret.
+  key: ""
+  # Contents of the offline license file downloaded from Customer Center. Pass
+  # the file with `--set-file license.offlineLicense=<path>`. When set,
+  # OpenHands reads the license from it and ignores the license key.
+  offlineLicense: ""
+  # Secret you manage instead, with a `license-key` or `offline-license` entry.
+  # When set, the chart ignores key and offlineLicense and creates no Secret.
+  # Restart the openhands pods after you change it.
+  existingSecret: ""
+
 autoscaling:
   enabled: false
   minReplicas: 1

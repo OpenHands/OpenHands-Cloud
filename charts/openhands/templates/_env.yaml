@@ -436,6 +436,22 @@
       name: {{ .Values.tavily.auth.existingSecret }}
       key: tavily-api-key
 {{- end }}
+{{- /* Both entries are optional: an existingSecret may hold either one. With an
+       offline license, the app ignores the license key. */}}
+{{- with include "openhands.license.secretName" . }}
+- name: OPENHANDS_LICENSE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: license-key
+      optional: true
+- name: OPENHANDS_OFFLINE_LICENSE
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: offline-license
+      optional: true
+{{- end }}
 {{- /* Keycloak's public hostname. An explicitly configured keycloak ingress
        hostname wins: that is the host the keycloak Ingress serves, and the
        realm's frontendUrl and redirect URIs are templated from this value, so

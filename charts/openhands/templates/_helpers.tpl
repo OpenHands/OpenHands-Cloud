@@ -115,3 +115,37 @@ secret the installer renders, or switching to it would get it deleted.
 {{- $rendered -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+"true" when the chart renders the openhands-license Secret from license.key or
+license.offlineLicense, and empty otherwise. license.existingSecret wins over
+both.
+*/}}
+{{- define "openhands.license.managed" -}}
+{{- $license := .Values.license | default dict -}}
+{{- if and (not $license.existingSecret) (or (trim (toString ($license.key | default ""))) (trim (toString ($license.offlineLicense | default "")))) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Secret the license env vars read, or empty when no license is set.
+*/}}
+{{- define "openhands.license.secretName" -}}
+{{- $license := .Values.license | default dict -}}
+{{- if $license.existingSecret -}}
+{{- $license.existingSecret -}}
+{{- else if include "openhands.license.managed" . -}}
+openhands-license
+{{- end -}}
+{{- end -}}
+
+{{/*
+Pod-template annotation for the chart-rendered license. Pods read env vars from
+a Secret only when they start, so a changed license has to roll them.
+*/}}
+{{- define "openhands.license.checksumAnnotation" -}}
+{{- if include "openhands.license.managed" . -}}
+checksum/license: {{ printf "%s|%s" (toString (.Values.license.key | default "")) (toString (.Values.license.offlineLicense | default "")) | sha256sum }}
+{{- end -}}
+{{- end -}}

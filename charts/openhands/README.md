@@ -18,6 +18,37 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### License
+
+An upcoming release will enforce the OpenHands Enterprise license through
+Customer Center. Set your license now so the upgrade to that release doesn't
+change anything for your users. Until then, an install without a license keeps
+working, and `helm install` and `helm upgrade` print a warning.
+
+Set the license key from Customer Center:
+
+```yaml
+license:
+  key: <license-key>
+```
+
+If the install can't reach Customer Center, download an offline license file
+from Customer Center and pass it instead:
+
+```bash
+helm upgrade openhands ... --set-file license.offlineLicense=<path-to-offline-license>
+```
+
+The chart stores either one in the `openhands-license` Secret. To manage the
+Secret yourself, create it with a `license-key` or `offline-license` entry, set
+`license.existingSecret` to its name, and restart the openhands pods after you
+change it:
+
+```bash
+kubectl create secret generic my-license -n openhands \
+  --from-literal=license-key=<license-key>
+```
+
 ### Organization condenser defaults
 
 Set `orgDefaults.condenser.maxTokens` to add a token-based condensation threshold for applicable OpenHands organization settings. Any positive integer is accepted. Condensation triggers on the smaller of this value and the agent LLM's effective input limit, so a value above that limit has no effect; it does not change the model context window, and event-count condensation may still occur first.
