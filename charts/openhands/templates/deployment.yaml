@@ -31,6 +31,7 @@ spec:
         checksum/config-secrets: {{ .Values.secretsChecksum | quote }}
         {{- end }}
         {{- include "openhands.caBundle.checksumAnnotation" . | nindent 8 }}
+        {{- include "openhands.license.checksumAnnotation" . | nindent 8 }}
     spec:
       terminationGracePeriodSeconds: 60
       serviceAccountName: {{ .Values.serviceAccount.name }}

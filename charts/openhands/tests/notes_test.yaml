@@ -81,3 +81,29 @@ tests:
           pattern: "moves Keycloak from docker.io/bitnamilegacy/keycloak:26.3.0"
       - notMatchRegexRaw:
           pattern: "_backup_"
+  - it: warns when no license is set
+    set:
+      enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "no OpenHands Enterprise license is set"
+      - matchRegexRaw:
+          pattern: "--set license.key=<license-key>"
+  - it: stays quiet about the license when a key is set
+    set:
+      license.key: my-license-key
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "OpenHands Enterprise license"
+  - it: stays quiet about the license when an existing Secret holds it
+    set:
+      license.existingSecret: my-license
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "OpenHands Enterprise license"
+  - it: skips the license warning when the app is not deployed
+    set:
+      enabled: false
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "OpenHands Enterprise license"

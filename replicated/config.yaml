@@ -4,6 +4,43 @@ metadata:
   name: openhands-config
 spec:
   groups:
+    - name: license
+      title: License
+      description: Your OpenHands Enterprise license from Customer Center. An upcoming release will enforce the license through Customer Center, so set it before you upgrade to that release.
+      items:
+        - name: license_source
+          title: License Type
+          # One source line per bullet, as on hostname_mode below.
+          help_text: |
+            • **License key** — for an install that can reach Customer Center.
+            • **Offline license file** — for an install that can't reach Customer Center.
+          type: select_one
+          default: '{{repl if IsAirgap }}offline{{repl else }}key{{repl end }}'
+          items:
+            - name: key
+              title: License key
+            - name: offline
+              title: Offline license file
+        - name: license_key
+          title: License Key
+          help_text: The license key from Customer Center.
+          type: password
+          recommended: true
+          when: 'repl{{ ConfigOptionEquals "license_source" "key" }}'
+        - name: offline_license
+          title: Offline License File
+          help_text: The offline license file you downloaded from Customer Center.
+          type: file
+          recommended: true
+          when: 'repl{{ ConfigOptionEquals "license_source" "offline" }}'
+          # Validation runs against the decoded file contents. Every offline
+          # license is a JSON envelope with a signature, so this catches another
+          # file uploaded by mistake, such as the Replicated license.
+          validation:
+            regex:
+              pattern: '"signature"'
+              message: 'This file does not look like an OpenHands offline license file.'
+
     - name: domain_configuration
       title: Domain Configuration
       description: Configure hostnames and domains for OpenHands services

@@ -29,6 +29,14 @@
         "tag": { "type": "string", "minLength": 1 }
       }
     },
+    "license": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "offlineLicense": { "type": "string" },
+        "existingSecret": { "type": "string" }
+      }
+    },
     "autoscaling": {
       "type": "object",
       "properties": {
