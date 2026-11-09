@@ -1577,8 +1577,16 @@ automation:
 
 replicated:
   # Deploys the Replicated SDK subchart (license enforcement) and the
-  # troubleshoot preflight/support-bundle Secrets. The SDK's license is
-  # injected by the Replicated registry at chart-pull time, not set here.
+  # troubleshoot preflight Secret. The SDK's license is injected by the
+  # Replicated registry at chart-pull time, so it only works on a chart pulled
+  # from registry.replicated.com; a ghcr install has no license and the SDK pod
+  # crashloops. The Replicated installer turns it on in replicated/openhands.yaml.
+  enabled: false
+
+supportBundle:
+  # Renders the troubleshoot support-bundle spec into a Secret labelled
+  # troubleshoot.sh/kind=support-bundle, which `kubectl support-bundle
+  # --load-cluster-specs` and Replicated installs both discover.
   enabled: true
   # Database credentials below are rendered only into the support-bundle Secret;
   # each collector also requires its password to be set. The troubleshoot

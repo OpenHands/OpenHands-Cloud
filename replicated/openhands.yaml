@@ -621,13 +621,15 @@ spec:
       enabled: true
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
+      image:
+        registry: images.r9.all-hands.dev
+        repository: library/replicated-sdk-image
+
+    supportBundle:
       redisPassword: 'repl{{ ConfigOption "redis_password" }}'
       postgresUsername: 'repl{{ ConfigOption "postgres_username" }}'
       postgresPassword: 'repl{{ ConfigOption "postgres_password" }}'
       postgresDatabase: 'repl{{ ConfigOption "postgres_database" }}'
-      image:
-        registry: images.r9.all-hands.dev
-        repository: library/replicated-sdk-image
 
     crdCheck:
       enabled: true
@@ -1481,6 +1483,8 @@ spec:
     postgresql:
       enabled: true
     redis:
+      enabled: true
+    replicated:
       enabled: true
     runtime-api:
       enabled: true

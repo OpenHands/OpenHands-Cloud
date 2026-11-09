@@ -7,6 +7,9 @@ templates:
   - troubleshoot/secrets.yaml
   - troubleshoot/preflights.yaml
   - troubleshoot/support-bundle.yaml
+# The preflight Secret only renders with the Replicated SDK.
+set:
+  replicated.enabled: true
 tests:
   - it: adds the sandbox-node analyzer when sandboxes are confined to sandbox-role nodes
     template: troubleshoot/secrets.yaml
