@@ -28,30 +28,31 @@ def render_troubleshoot_secrets(*set_args: str, check: bool = True) -> subproces
     return render(*set_args, show_only="templates/troubleshoot/secrets.yaml", check=check)
 
 
-def test_only_support_bundle_renders_by_default() -> None:
+def test_troubleshoot_secrets_render_by_default() -> None:
     manifest = render_troubleshoot_secrets().stdout
 
+    assert "troubleshoot.sh/kind: preflight" in manifest
     assert "troubleshoot.sh/kind: support-bundle" in manifest
-    assert "name: openhands-support-bundle" in manifest
-    assert "troubleshoot.sh/kind: preflight" not in manifest
-
-
-def test_preflight_renders_when_replicated_enabled() -> None:
-    manifest = render_troubleshoot_secrets("replicated.enabled=true").stdout
-
     assert "name: openhands-preflight" in manifest
     assert "name: openhands-support-bundle" in manifest
 
 
-def test_preflight_kept_when_support_bundle_disabled() -> None:
-    manifest = render_troubleshoot_secrets("replicated.enabled=true", "supportBundle.enabled=false").stdout
+def test_preflight_disabled_independently() -> None:
+    manifest = render_troubleshoot_secrets("preflight.enabled=false").stdout
+
+    assert "troubleshoot.sh/kind: preflight" not in manifest
+    assert "name: openhands-support-bundle" in manifest
+
+
+def test_support_bundle_disabled_independently() -> None:
+    manifest = render_troubleshoot_secrets("supportBundle.enabled=false").stdout
 
     assert "name: openhands-preflight" in manifest
     assert "troubleshoot.sh/kind: support-bundle" not in manifest
 
 
 def test_troubleshoot_secrets_absent_when_both_disabled() -> None:
-    result = render_troubleshoot_secrets("supportBundle.enabled=false", check=False)
+    result = render_troubleshoot_secrets("preflight.enabled=false", "supportBundle.enabled=false", check=False)
 
     # helm errors when --show-only matches no rendered manifests
     assert result.returncode != 0

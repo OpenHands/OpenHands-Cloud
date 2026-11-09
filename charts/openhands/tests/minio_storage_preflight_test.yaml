@@ -7,9 +7,6 @@ templates:
   - troubleshoot/_sysbox.tpl
   - troubleshoot/_tls-hostname.tpl
   - troubleshoot/_sandbox-nodes.tpl
-# The preflight Secret only renders with the Replicated SDK.
-set:
-  replicated.enabled: true
 tests:
   - it: checks node storage for OpenEBS-backed bundled MinIO
     set:

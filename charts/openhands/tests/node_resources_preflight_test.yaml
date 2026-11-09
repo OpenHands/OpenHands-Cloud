@@ -7,9 +7,6 @@ templates:
   - troubleshoot/secrets.yaml
   - troubleshoot/preflights.yaml
   - troubleshoot/support-bundle.yaml
-# The preflight Secret only renders with the Replicated SDK.
-set:
-  replicated.enabled: true
 tests:
   # memoryCapacity is post-kernel-reservation, so the threshold sits below the
   # 32GiB recommendation it states. Asserting the outcomes contiguously binds
