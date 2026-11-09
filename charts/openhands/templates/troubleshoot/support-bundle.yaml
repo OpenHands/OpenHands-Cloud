@@ -662,7 +662,7 @@ spec:
                 "azure_to_openhands_delivery_verification": "not_performed",
                 "notes": [
                     "A saved installation record does not prove hooks still exist or deliver events.",
-                    "The saved record contains only the two resolver hook IDs, not automation hook IDs.",
+                    "The installation record contains two resolver hook IDs. Recent app versions also retain all created IDs and sanitized Azure observations in operation_diagnostics.",
                     "Installation results and Azure API errors may be in app/openhands/logs and app/openhands-integrations/logs; rotated logs are unavailable.",
                     "Automation delivery and matching logs are in app/automation/logs and app/automation-events/logs when enabled.",
                 ],
@@ -681,6 +681,10 @@ spec:
                     "SELECT organization, installed_by_user_id, installed_at, last_verified_at, "
                     "pr_subscription_id, work_item_subscription_id "
                     "FROM azure_devops_webhook ORDER BY organization LIMIT 501"
+                ),
+                "operation_diagnostics": (
+                    "SELECT organization, updated_at, last_install_attempt, last_observation "
+                    "FROM azure_devops_webhook_diagnostics ORDER BY organization LIMIT 501"
                 ),
                 "organization_claims": (
                     "SELECT c.git_organization, c.org_id, o.name AS org_name, c.claimed_at "

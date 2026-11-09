@@ -268,3 +268,56 @@ def test_event_patterns_are_collected_without_filter_values(collectors, db):
         rows = cur.fetchall()
     assert rows == [("event", "team", True, "azure_devops", "pr.*", True)]
     assert "private-filter" not in json.dumps(rows)
+
+
+def test_recent_schema_exports_retained_install_and_listing_evidence(collector, db):
+    conn, env = db
+    with conn.cursor() as cur:
+        cur.execute(
+            "CREATE TABLE azure_devops_webhook_diagnostics (organization text, updated_at timestamptz, last_install_attempt jsonb, last_observation jsonb, private_token text)"
+        )
+        attempt = {
+            "outcome": "failed",
+            "stage": "create_work_item_comment",
+            "created_subscription_ids": ["pr-new"],
+            "azure_http_status": 400,
+            "azure_message": "Permission denied",
+        }
+        observation = {
+            "observed_at": "2026-11-09T12:00:00Z",
+            "delivery_verified": False,
+            "subscriptions": [
+                {
+                    "id": "pr-old",
+                    "event_type": "ms.vss-code.git-pullrequest-comment-event",
+                    "matches_callback": True,
+                }
+            ],
+        }
+        cur.execute(
+            "INSERT INTO azure_devops_webhook_diagnostics VALUES (%s, now(), %s, %s, %s)",
+            (
+                "test-ado",
+                json.dumps(attempt),
+                json.dumps(observation),
+                "must-not-export-token",
+            ),
+        )
+    data, raw = collect(collector, env)
+    row = data["operation_diagnostics"]["rows"][0]
+    assert row["last_install_attempt"] == attempt
+    assert row["last_observation"] == observation
+    assert data["azure_subscription_verification"] == "not_performed"
+    assert "must-not-export-token" not in raw
+
+
+def test_older_app_without_operation_diagnostics_still_collects_other_evidence(
+    collector, db
+):
+    _, env = db
+    data, _ = collect(collector, env)
+    assert data["operation_diagnostics"] == {
+        "status": "unavailable",
+        "error_type": "UndefinedTable",
+    }
+    assert data["installation_records"]["status"] == "collected"
