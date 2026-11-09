@@ -307,6 +307,7 @@ def test_recent_schema_exports_retained_install_and_listing_evidence(collector, 
     row = data["operation_diagnostics"]["rows"][0]
     assert row["last_install_attempt"] == attempt
     assert row["last_observation"] == observation
+    assert row["last_delivery_test"] is None
     assert data["azure_subscription_verification"] == "not_performed"
     assert "must-not-export-token" not in raw
 
@@ -321,3 +322,36 @@ def test_older_app_without_operation_diagnostics_still_collects_other_evidence(
         "error_type": "UndefinedTable",
     }
     assert data["installation_records"]["status"] == "collected"
+
+
+def test_delivery_test_evidence_includes_receipts_and_failure_without_internal_fingerprint(
+    collector, db
+):
+    conn, env = db
+    with conn.cursor() as cur:
+        cur.execute(
+            "CREATE TABLE azure_devops_webhook_diagnostics (organization text, updated_at timestamptz, last_install_attempt jsonb, last_observation jsonb, last_delivery_test jsonb)"
+        )
+        evidence = {
+            "test_id": "test",
+            "outcome": "failed",
+            "finished_at": "2026-11-09T12:00:00Z",
+            "configuration_fingerprint": "internal-fingerprint",
+            "checks": [
+                {
+                    "subscription_id": "pr-hook",
+                    "notification_id": 2,
+                    "received_at": None,
+                    "error_code": "azure_api_rejected",
+                    "azure_http_status": 403,
+                }
+            ],
+        }
+        cur.execute(
+            "INSERT INTO azure_devops_webhook_diagnostics VALUES ('contoso', now(), NULL, NULL, %s)",
+            [json.dumps(evidence)],
+        )
+    data, raw = collect(collector, env)
+    evidence.pop("configuration_fingerprint")
+    assert data["operation_diagnostics"]["rows"][0]["last_delivery_test"] == evidence
+    assert "internal-fingerprint" not in raw
