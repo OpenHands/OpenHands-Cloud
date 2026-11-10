@@ -1,0 +1,37 @@
+suite: fuse warm pool through the umbrella
+# The agent-server image tag lives in the umbrella's global, and the fusey tag
+# is derived from it inside the runtime-api subchart. These tests guard that the
+# umbrella's globals reach the subchart, so a bump of the agent-server tag moves
+# the fuse pool with it.
+templates:
+  - deployment.yaml
+  - litellm-config-script.yaml
+  - charts/runtime-api/templates/warm-runtimes-configmap.yaml
+tests:
+  - it: derives the fusey image from the umbrella's agent-server tag
+    set:
+      enabled: true
+      global.agentServerImage.tag: 1.70.0-python
+      global.fuseyImage.version: 0.0.15
+      runtime-api.fuseMount.enabled: true
+      runtime-api.fuseMount.bucket: workspaces
+      runtime-api.fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      runtime-api.warmRuntimes.fuse.enabled: true
+    asserts:
+      - template: charts/runtime-api/templates/warm-runtimes-configmap.yaml
+        matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "ghcr.io/openhands/agent-server-fusey:1.70.0-python-fusey0.0.15"'
+      - template: charts/runtime-api/templates/warm-runtimes-configmap.yaml
+        matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "ghcr.io/openhands/agent-server:1.70.0-python"'
+
+  - it: keeps the fuse pool off by default
+    set:
+      enabled: true
+    asserts:
+      - template: charts/runtime-api/templates/warm-runtimes-configmap.yaml
+        notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: fusey

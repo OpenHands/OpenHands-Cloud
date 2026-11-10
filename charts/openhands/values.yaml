@@ -1628,6 +1628,13 @@ global:
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.60.1-python
+  # Fusey-enabled variant of the agent-server image, used by the derived fuse
+  # warm pool (runtime-api warmRuntimes.fuse). Its tag is not pinned separately:
+  # it is <agentServerImage.tag>-fusey<version>, so it cannot drift from the
+  # agent-server tag above. Built by .github/workflows/build-fusey-image.yml.
+  fuseyImage:
+    repository: ghcr.io/openhands/agent-server-fusey
+    version: 0.0.14
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
