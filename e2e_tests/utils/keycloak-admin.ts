@@ -185,11 +185,13 @@ async function resetUserPassword(
  *
  * The email is required to be under an e2e-only domain, so this helper cannot
  * be pointed at a namespace that overlaps with real users.
+ *
+ * Returns the user's Keycloak id, which is its ``sub``.
  */
 export async function ensureRealmUser(
   config: KeycloakAdminConfig,
   user: NewRealmUser,
-): Promise<void> {
+): Promise<string> {
   assertE2eOnlyEmail(user.email);
   const token = await getAdminToken(config);
 
@@ -201,7 +203,7 @@ export async function ensureRealmUser(
     console.log(
       `[keycloak-setup] Reusing realm user ${found.username} (${found.email}) in realm "${config.realm}"; password reset for this run.`,
     );
-    return;
+    return found.id;
   }
 
   const res = await postRealmUser(config, token, user);
@@ -215,4 +217,6 @@ export async function ensureRealmUser(
   console.log(
     `[keycloak-setup] Created realm user ${user.username} (${user.email}) in realm "${config.realm}".`,
   );
+  const [created] = await findUsersByEmail(config, token);
+  return created.id;
 }

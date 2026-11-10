@@ -1,0 +1,160 @@
+suite: license wiring
+templates:
+  - license-secret.yaml
+  - deployment.yaml
+  - integration-events-deployment.yaml
+  - mcp-events-deployment.yaml
+  # deployment.yaml unconditionally checksums this ConfigMap into its pod
+  # annotations, so it must be compiled alongside it for the render to succeed.
+  - litellm-config-script.yaml
+tests:
+  - it: renders no Secret, env or annotation without a license
+    asserts:
+      - template: license-secret.yaml
+        hasDocuments:
+          count: 0
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LICENSE_KEY
+          any: true
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.metadata.annotations["checksum/license"]
+
+  - it: stores a license key in the openhands-license Secret
+    set:
+      license.key: " my-license-key "
+    asserts:
+      - template: license-secret.yaml
+        equal:
+          path: metadata.name
+          value: openhands-license
+      - template: license-secret.yaml
+        equal:
+          path: data["license-key"]
+          # base64 of the trimmed key, "my-license-key"
+          value: bXktbGljZW5zZS1rZXk=
+      - template: license-secret.yaml
+        notExists:
+          path: data["offline-license"]
+
+  - it: stores an offline license in the openhands-license Secret
+    set:
+      license.offlineLicense: |
+
+        {"key_id": "k1", "payload": "{}", "signature": "c2ln"}
+    asserts:
+      - template: license-secret.yaml
+        equal:
+          path: data["offline-license"]
+          # base64 of the trimmed file, with no leading or trailing newline
+          value: eyJrZXlfaWQiOiAiazEiLCAicGF5bG9hZCI6ICJ7fSIsICJzaWduYXR1cmUiOiAiYzJsbiJ9
+      - template: license-secret.yaml
+        notExists:
+          path: data["license-key"]
+
+  - it: reads both license env vars from the chart Secret, each optional
+    set:
+      license.key: my-license-key
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LICENSE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: openhands-license
+                key: license-key
+                optional: true
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_OFFLINE_LICENSE
+            valueFrom:
+              secretKeyRef:
+                name: openhands-license
+                key: offline-license
+                optional: true
+
+  - it: rolls every server Deployment when the chart-rendered license changes
+    set:
+      license.key: my-license-key
+    asserts:
+      - template: deployment.yaml
+        isNotNullOrEmpty:
+          path: spec.template.metadata.annotations["checksum/license"]
+      - template: integration-events-deployment.yaml
+        isNotNullOrEmpty:
+          path: spec.template.metadata.annotations["checksum/license"]
+      - template: mcp-events-deployment.yaml
+        isNotNullOrEmpty:
+          path: spec.template.metadata.annotations["checksum/license"]
+      - template: integration-events-deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LICENSE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: openhands-license
+                key: license-key
+                optional: true
+
+  - it: reads an existing Secret instead of rendering one
+    set:
+      license.key: ignored-key
+      license.existingSecret: my-license
+    asserts:
+      - template: license-secret.yaml
+        hasDocuments:
+          count: 0
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LICENSE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-license
+                key: license-key
+                optional: true
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_OFFLINE_LICENSE
+            valueFrom:
+              secretKeyRef:
+                name: my-license
+                key: offline-license
+                optional: true
+      - template: deployment.yaml
+        notExists:
+          path: spec.template.metadata.annotations["checksum/license"]
+
+  - it: treats a whitespace-only key as no license
+    set:
+      license.key: "   "
+    asserts:
+      - template: license-secret.yaml
+        hasDocuments:
+          count: 0
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OPENHANDS_LICENSE_KEY
+          any: true
+
+  - it: renders no Secret when the app is not deployed
+    set:
+      enabled: false
+      license.key: my-license-key
+    asserts:
+      - template: license-secret.yaml
+        hasDocuments:
+          count: 0

@@ -133,6 +133,21 @@ spec:
       # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      # Agent Profiles: the Agent Profiles and Agent Context settings pages and
+      # organization agent profile management. Only the web client reads these
+      # flags, so the FEATURE_FLAGS-prefixed form is the one that applies.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      # Model Routing. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # The server reads it to serve the router API and apply the active
+      # router at launch; the web client reads it for the Model Router page.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
+      ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
+      # Organization MCP servers (OHE-3091). Only the web client reads this flag
+      # (enterprise Settings > MCP and Agent Profiles, and Agent Canvas), so the
+      # FEATURE_FLAGS-prefixed form is the one that applies.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_MCP_SERVERS: 'repl{{ ConfigOptionEquals "org_mcp_servers_enabled" "1" }}'
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
       # role, granted on every successful OAuth V2 login regardless of the
@@ -166,7 +181,7 @@ spec:
     tlsStore:
       enabled: true
       name: default
-      secretName: openhands-tls
+      secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
 
     tls:
       enabled: true
@@ -306,7 +321,7 @@ spec:
       ingress:
         enabled: true
         className: traefik
-        # Replicated uses the customer-uploaded openhands-tls Secret.
+        # Replicated serves the secret named by computed_tls_certificate_name.
         annotations: null
         hosts:
           - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
@@ -314,7 +329,7 @@ spec:
               - path: /
                 pathType: Prefix
         tls:
-          - secretName: openhands-tls
+          - secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
             hosts:
               - '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
       proxy_config:
@@ -372,7 +387,7 @@ spec:
         className: traefik
         host: '{{repl ConfigOption "computed_runtime_api_hostname" }}'
         tls: true
-        tlsSecretName: openhands-tls
+        tlsSecretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
         # Suppress the chart's default letsencrypt annotation: Replicated
         # installs use a manually-uploaded TLS cert (openhands-tls), and the
         # cluster-issuer annotation triggers cert-manager to take SSA
@@ -582,8 +597,9 @@ spec:
     # config.yaml; CI (check-secret-checksum) fails if a password field is missing here.
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
-    # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_ai_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automation_kv_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar);
+    # then the license.
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_ai_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automation_kv_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key") (ConfigOption "license_key") (ConfigOption "offline_license")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -618,13 +634,15 @@ spec:
       enabled: true
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
+      image:
+        registry: images.r9.all-hands.dev
+        repository: library/replicated-sdk-image
+
+    supportBundle:
       redisPassword: 'repl{{ ConfigOption "redis_password" }}'
       postgresUsername: 'repl{{ ConfigOption "postgres_username" }}'
       postgresPassword: 'repl{{ ConfigOption "postgres_password" }}'
       postgresDatabase: 'repl{{ ConfigOption "postgres_database" }}'
-      image:
-        registry: images.r9.all-hands.dev
-        repository: library/replicated-sdk-image
 
     crdCheck:
       enabled: true
@@ -647,6 +665,33 @@ spec:
         {{repl ConfigOptionData "tls_ca_certificate" | nindent 8 }}
 
   optionalValues:
+    # Pass only the license type the operator chose, so a value left in the
+    # other field never reaches the app.
+    - when: '{{repl ConfigOptionEquals "license_source" "key" }}'
+      recursiveMerge: true
+      values:
+        license:
+          key: '{{repl ConfigOption "license_key" | trim }}'
+    - when: '{{repl ConfigOptionEquals "license_source" "offline" }}'
+      recursiveMerge: true
+      values:
+        license:
+          offlineLicense: |
+            {{repl ConfigOptionData "offline_license" | nindent 12 }}
+    # The operator owns the certificate, so nothing here may render a TLS secret.
+    - when: '{{repl ConfigOptionEquals "tls_certificate_source" "secret" }}'
+      recursiveMerge: true
+      values:
+        tls:
+          existingSecret: '{{repl ConfigOption "tls_existing_certificate_name" }}'
+        keycloak:
+          ingress:
+            tls: false
+            secrets: []
+            extraTls:
+              - hosts:
+                  - '{{repl ConfigOption "computed_auth_hostname" }}'
+                secretName: '{{repl ConfigOption "tls_existing_certificate_name" }}'
     - when: '{{repl ne (ConfigOption "additional_cors_origins" | trim) "" }}'
       recursiveMerge: true
       values:
@@ -1194,13 +1239,13 @@ spec:
             RUNTIME_URL_SEPARATOR: "/"
             USE_GATEWAY_API: "true"
             GATEWAY_NAME: "sandbox-gateway"
-            RUNTIME_CERT_SECRET: "openhands-tls"
+            RUNTIME_CERT_SECRET: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           ingressBase:
             enabled: false
           sandboxGateway:
             enabled: true
             hostname: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
-            tlsSecretName: openhands-tls
+            tlsSecretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
     - when: '{{repl ConfigOptionEquals "analytics_enabled" "1" }}'
       recursiveMerge: true
       values:
@@ -1250,6 +1295,8 @@ spec:
           clickhouse:
             diagnostics:
               retentionDays: repl{{ ConfigOption "clickhouse_diagnostic_log_retention_days" }}
+              cleanup:
+                enabled: repl{{ ConfigOptionEquals "clickhouse_diagnostic_log_cleanup_enabled" "1" }}
             persistence:
               storageClass: "openebs-hostpath" # default storage class for the k0s embededed cluster
             s3:
@@ -1290,7 +1337,7 @@ spec:
               className: "traefik"
               tls:
                 enabled: true
-                secretName: "openhands-tls"
+                secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
                 clusterIssuer: "" # leave empty — cert-manager not needed
             env:
               nextauthUrl: 'https://{{repl ConfigOption "computed_analytics_hostname" }}'
@@ -1301,7 +1348,7 @@ spec:
             className: "traefik"
             tls:
               enabled: true
-              secretName: "openhands-tls"
+              secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           postgres:
             persistence:
               storageClass: "openebs-hostpath"
@@ -1374,7 +1421,7 @@ spec:
             path: /canvas
             tls:
               enabled: true
-              secretName: openhands-tls
+              secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           staticServer:
             basePath: /canvas
             authRequired: false
@@ -1462,6 +1509,8 @@ spec:
     postgresql:
       enabled: true
     redis:
+      enabled: true
+    replicated:
       enabled: true
     runtime-api:
       enabled: true

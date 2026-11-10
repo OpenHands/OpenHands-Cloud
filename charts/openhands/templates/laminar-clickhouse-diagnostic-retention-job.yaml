@@ -1,4 +1,4 @@
-{{- if .Values.laminar.enabled }}
+{{- if and .Values.laminar.enabled (not (dig "diagnostics" "cleanup" "enabled" false .Values.laminar.clickhouse)) }}
 {{- $retentionDays := int (default 3 .Values.laminar.clickhouse.diagnostics.retentionDays) }}
 apiVersion: batch/v1
 kind: Job
