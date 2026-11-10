@@ -1,4 +1,4 @@
-import { e2eRunId } from "./config";
+import { assertE2eOnlyEmail, e2eRunId } from "./config";
 
 /**
  * REST API client for the org-management e2e specs.
@@ -23,6 +23,9 @@ import { e2eRunId } from "./config";
  *  - ``GET`` and ``DELETE /api/admin/organizations`` (enterprise
  *    server/routes/instance_admin.py), for teardown. Mounted only when the
  *    Super Admin dashboard is enabled.
+ *
+ *  - ``GET`` and ``DELETE /api/admin/directory/users`` (same module), to
+ *    delete the New User's orphaned app accounts.
  *
  * Authentication: the super-admin API key is sent as ``Authorization: Bearer
  * <key>``. The key must be *unbound* (no org binding) so the server resolves
@@ -252,4 +255,62 @@ export async function sweepE2eOrgs(
     }
   }
   console.log(`${logPrefix}: deleted ${deleted} of ${targets.length} e2e orgs`);
+}
+
+/**
+ * Delete every app account with ``email`` except ``keepUserId``. Never throws:
+ * problems are logged, and the login that follows fails on its own if they
+ * matter.
+ *
+ * The New User setup once recreated the realm user on every run, and the
+ * legacy login made a new app account for each new Keycloak ``sub``. Those
+ * accounts can no longer sign in, and OAuth v2 login refuses an email that
+ * more than one account shares (409 "Multiple users share this email").
+ */
+export async function deleteOrphanedAccounts(
+  baseUrl: string,
+  apiKey: string,
+  email: string,
+  keepUserId: string,
+  logPrefix: string,
+): Promise<void> {
+  assertE2eOnlyEmail(email);
+  const url = new URL("api/admin/directory/users", baseUrl).toString();
+  let users: Array<{ user_id: string | null; email: string | null }>;
+  try {
+    const response = await fetch(url, { headers: superAdminHeaders(apiKey) });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${await response.text()}`);
+    }
+    ({ users } = await response.json());
+  } catch (err) {
+    console.warn(`${logPrefix}: could not list users, skipping: ${err}`);
+    return;
+  }
+
+  const orphans = users.filter(
+    (user) =>
+      user.user_id !== null &&
+      user.user_id !== keepUserId &&
+      user.email?.toLowerCase() === email.toLowerCase(),
+  );
+  let deleted = 0;
+  for (const { user_id: userId } of orphans) {
+    const response = await fetch(
+      new URL(`api/admin/directory/users/${userId}`, baseUrl).toString(),
+      { method: "DELETE", headers: superAdminHeaders(apiKey) },
+    ).catch((err: unknown) => err);
+    if (response instanceof Response && response.ok) {
+      deleted += 1;
+    } else {
+      const detail =
+        response instanceof Response
+          ? `${response.status} ${await response.text()}`
+          : response;
+      console.warn(`${logPrefix}: could not delete ${userId}: ${detail}`);
+    }
+  }
+  console.log(
+    `${logPrefix}: deleted ${deleted} of ${orphans.length} orphaned accounts for ${email}`,
+  );
 }
