@@ -5,6 +5,7 @@ import type { AddressInfo } from "net";
 import { Cleanup } from "../utils/cleanup";
 import { e2eRunId } from "../utils/config";
 import {
+  deleteOrphanedAccounts,
   e2eOrgName,
   e2eTimestamp,
   parseE2eOrgName,
@@ -133,6 +134,72 @@ test.describe("sweepE2eOrgs against a stand-in admin API", () => {
   test("an unreachable API is logged, not thrown", async () => {
     await expect(
       sweepE2eOrgs("http://127.0.0.1:9/", "key", () => true, "test"),
+    ).resolves.toBeUndefined();
+  });
+});
+
+test.describe("deleteOrphanedAccounts against a stand-in admin API", () => {
+  const email = "e2e-new-user@e2e.example.com";
+  const users = [
+    { user_id: "current-sub", email },
+    { user_id: "old-sub", email: "E2E-New-User@e2e.example.com" },
+    { user_id: "last-owner", email },
+    { user_id: null, email },
+    { user_id: "real-user", email: "someone@acme.com" },
+  ];
+  let server: Server;
+  let baseUrl = "";
+  let deleted: string[] = [];
+
+  test.beforeAll(async () => {
+    server = createServer((req, res) => {
+      const id = /^\/api\/admin\/directory\/users\/(.+)$/.exec(
+        req.url ?? "",
+      )?.[1];
+      if (req.headers.authorization !== "Bearer key") {
+        res.writeHead(401).end();
+      } else if (
+        req.method === "GET" &&
+        req.url === "/api/admin/directory/users"
+      ) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ users }));
+      } else if (req.method === "DELETE" && id === "last-owner") {
+        res.writeHead(409).end("last owner");
+      } else if (req.method === "DELETE" && id) {
+        deleted.push(id);
+        res.writeHead(200).end("{}");
+      } else {
+        res.writeHead(404).end();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+  });
+
+  test.afterAll(async () => {
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  test.beforeEach(() => {
+    deleted = [];
+  });
+
+  test("deletes only the other accounts with the email and survives a refused delete", async () => {
+    await deleteOrphanedAccounts(baseUrl, "key", email, "current-sub", "test");
+    expect(deleted).toEqual(["old-sub"]);
+  });
+
+  test("refuses an email outside the e2e-only domains", async () => {
+    await expect(
+      deleteOrphanedAccounts(baseUrl, "key", "someone@acme.com", "x", "test"),
+    ).rejects.toThrow();
+    expect(deleted).toEqual([]);
+  });
+
+  test("an unreachable API is logged, not thrown", async () => {
+    await expect(
+      deleteOrphanedAccounts("http://127.0.0.1:9/", "key", email, "x", "test"),
     ).resolves.toBeUndefined();
   });
 });
