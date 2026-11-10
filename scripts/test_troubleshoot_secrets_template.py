@@ -37,8 +37,22 @@ def test_troubleshoot_secrets_render_by_default() -> None:
     assert "name: openhands-support-bundle" in manifest
 
 
-def test_troubleshoot_secrets_absent_when_replicated_disabled() -> None:
-    result = render_troubleshoot_secrets("replicated.enabled=false", check=False)
+def test_preflight_disabled_independently() -> None:
+    manifest = render_troubleshoot_secrets("preflight.enabled=false").stdout
+
+    assert "troubleshoot.sh/kind: preflight" not in manifest
+    assert "name: openhands-support-bundle" in manifest
+
+
+def test_support_bundle_disabled_independently() -> None:
+    manifest = render_troubleshoot_secrets("supportBundle.enabled=false").stdout
+
+    assert "name: openhands-preflight" in manifest
+    assert "troubleshoot.sh/kind: support-bundle" not in manifest
+
+
+def test_troubleshoot_secrets_absent_when_both_disabled() -> None:
+    result = render_troubleshoot_secrets("preflight.enabled=false", "supportBundle.enabled=false", check=False)
 
     # helm errors when --show-only matches no rendered manifests
     assert result.returncode != 0
@@ -54,10 +68,10 @@ def test_db_collectors_absent_without_credentials() -> None:
 
 def test_db_collectors_render_with_credentials() -> None:
     manifest = render_troubleshoot_secrets(
-        "replicated.postgresUsername=oh",
-        "replicated.postgresPassword=pg-secret",
-        "replicated.postgresDatabase=openhands",
-        "replicated.redisPassword=redis-secret",
+        "supportBundle.postgresUsername=oh",
+        "supportBundle.postgresPassword=pg-secret",
+        "supportBundle.postgresDatabase=openhands",
+        "supportBundle.redisPassword=redis-secret",
     ).stdout
 
     assert "- postgresql:" in manifest
@@ -66,13 +80,13 @@ def test_db_collectors_render_with_credentials() -> None:
     assert "uri: redis://default:redis-secret@openhands-redis-master" in manifest
 
 
-def test_replicated_sdk_renders_by_default() -> None:
+def test_replicated_sdk_absent_by_default() -> None:
     manifest = render().stdout
 
-    assert "# Source: openhands/charts/replicated/" in manifest
-
-
-def test_replicated_sdk_absent_when_disabled() -> None:
-    manifest = render("replicated.enabled=false").stdout
-
     assert "# Source: openhands/charts/replicated/" not in manifest
+
+
+def test_replicated_sdk_renders_when_enabled() -> None:
+    manifest = render("replicated.enabled=true").stdout
+
+    assert "# Source: openhands/charts/replicated/" in manifest
