@@ -9,10 +9,10 @@ import { runUser } from "../utils/config";
  * On an install where the Super Admin dashboard is enabled before anyone signs
  * in, the first user becomes the instance Super Admin and the server sends
  * them to `/install` after sign-in. The login helper leaves the wizard pending
- * (see `runOnboardingSteps`), and this spec walks it: welcome, company, first
- * organization, then the starter modal on the org LLM settings. It checks that
- * the server records the finished wizard, that `/install` no longer opens, and
- * that the setup guide takes over.
+ * (see `runOnboardingSteps`), and this spec walks it: welcome, license,
+ * company, first organization, then the starter modal on the org LLM settings.
+ * It checks that the server records the finished wizard, that `/install` no
+ * longer opens, and that the setup guide takes over.
  *
  * It runs only where the returning user is that first Super Admin and the
  * wizard is still pending, i.e. a freshly installed instance. Everywhere else,
@@ -80,6 +80,15 @@ test.describe("first install @super-admin", () => {
         { timeout: 30_000 },
       );
       await page.getByTestId("sa-nux-welcome-next").click();
+    });
+
+    await test.step("license", async () => {
+      // Installs older than the license step go straight to the company step.
+      await expect(page).toHaveURL(/\/install\/(license|company)$/);
+      if (page.url().endsWith("/install/license")) {
+        // Skips the step, or continues past a license the install already has.
+        await page.getByTestId("sa-nux-license-continue").click();
+      }
     });
 
     await test.step("company", async () => {
