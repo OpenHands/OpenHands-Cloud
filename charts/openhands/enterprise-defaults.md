@@ -10,6 +10,8 @@ in your overlay replaces each default without creating a duplicate entry.
 | Email changes | disabled: `EMAIL_CHANGE_ENABLED` and `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` are `"false"` | set both to `"true"` |
 | Automations page | shown only when the app has a service URL (`automationService.url` or `env.AUTOMATION_SERVICE_URL`) | `env.ENABLE_AUTOMATIONS: "true"` |
 
+Enabling the bundled `automation` subchart (`automation.enabled: true`) does not by itself show the Automations page, because the chart does not derive the service URL. Set `automationService.url` as well.
+
 ## What the flags do
 
 - `OH_ALLOW_USER_LLM_CONFIGURATION` hides the key and custom model inputs in

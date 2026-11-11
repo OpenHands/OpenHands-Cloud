@@ -43,16 +43,6 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
-    automation:
-      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-    automationServiceKey:
-      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-    automationWebhookSecret:
-      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-    automationService:
-      url: '{{repl if ConfigOptionEquals "automations_enabled" "1" }}http://automation/api/automation{{repl end}}'
-      eventForwardingEnabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
     budgetPreflight:
