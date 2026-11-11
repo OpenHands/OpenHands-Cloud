@@ -1,5 +1,3 @@
-"""Tests for how Replicated wires the Automations page visibility."""
-
 from pathlib import Path
 
 import yaml

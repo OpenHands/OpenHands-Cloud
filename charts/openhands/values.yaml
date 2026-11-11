@@ -127,9 +127,8 @@ securityContext:
   fsGroupChangePolicy: Always
   runAsNonRoot: true
 
-# Enterprise editing/visibility defaults; explicit env overrides still win.
-# This UI setting does not prohibit runtime use of saved personal credentials.
 env:
+  # Hides editing only; saved personal credentials remain usable.
   OH_ALLOW_USER_LLM_CONFIGURATION: "false"
   HIDE_BILLING_PAGE: "true"
   EMAIL_CHANGE_ENABLED: "false"
