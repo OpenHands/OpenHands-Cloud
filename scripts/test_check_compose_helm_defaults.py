@@ -8,6 +8,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 from check_compose_helm_defaults import check, differences, recorded_names, resolve_compose_value
@@ -70,3 +72,33 @@ def test_fails_on_unrecorded_and_stale_rows_and_passes_when_exact():
     assert len(problems) == 1 and "`GONE`" in problems[0]
     assert len(check(found, set())) == 1
     assert check(found, {"RATE_LIMITING_ENABLED"}) == []
+
+
+@pytest.mark.parametrize(
+    ("compose_environment", "helm_environment"),
+    [
+        ({"EMPTY": ""}, []),
+        ({"EMPTY": "${UNSET:-}"}, []),
+        ({"EMPTY": "${UNSET}"}, []),
+        ({}, [{"name": "EMPTY", "value": ""}]),
+    ],
+)
+def test_empty_and_unset_values_are_equivalent(compose_environment, helm_environment):
+    compose = {"services": {"app": {"environment": compose_environment}}}
+    assert differences(compose, manifests(helm_environment, workloads=())) == {}
+
+
+def test_reports_service_bundled_only_by_helm():
+    compose = {"services": {"app": {"environment": {}}}}
+    found = differences(compose, manifests([], workloads=("oh-postgresql",)))
+    assert found == {"service:db": ("not bundled", "bundled")}
+
+
+def test_compose_list_environment_preserves_equals_in_values():
+    compose = {
+        "services": {
+            "app": {"environment": ["WEB_HOST=https://example.test/?a=b"]}
+        }
+    }
+    env = [{"name": "WEB_HOST", "value": "https://example.test/?a=b"}]
+    assert differences(compose, manifests(env, workloads=())) == {}
