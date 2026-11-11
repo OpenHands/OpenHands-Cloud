@@ -241,9 +241,11 @@ The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain wi
 
 Super admin (org management):
 
-- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by `006-org-management.spec.ts` and `011-automations.spec.ts` to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
+- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by `006-org-management.spec.ts`, `011-automations.spec.ts` and `015-automation-completed-journey.spec.ts` to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
 
 The `011-automations` suite also probes `/api/automation/v1?limit=1` for reachability and skips the whole suite when the automation subchart is not deployed on the target cluster; no additional env var is required.
+
+`tests/015-automation-completed-journey.spec.ts` is the strict success-path journey: it uploads a deterministic script (`utils/automation-fixtures/completed_run.py`, no LLM or real credential), dispatches it with the automation page's **Run now** button, and passes only when the run ends `COMPLETED`. It then checks the run page, the run's task outcome and the conversation the run links to. Any other terminal status, or a run that never reports back within four minutes, fails the step with the lifecycle observed. It needs the same provisioning and reachability as `011-automations`.
 
 Returning User (GitHub):
 
