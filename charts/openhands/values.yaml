@@ -856,6 +856,13 @@ minio:
       # true) would wipe every conversation and session file. A render-time
       # guard in templates/validations.yaml rejects true for bundled installs.
       purge: false
+    # Fuse-mounted sandbox workspaces (runtime-api.fuseMount). Always created so
+    # turning fuse on, off and on again never touches a bucket that holds
+    # workspaces: the minio chart never deletes a bucket that leaves this list,
+    # and purge: false keeps the post-upgrade job from emptying it.
+    - name: runtime-api-workspaces
+      policy: none
+      purge: false
   svcaccts:
     # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
     # (separate subchart), so it carries its own matching default in

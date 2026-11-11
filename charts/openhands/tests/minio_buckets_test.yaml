@@ -1,0 +1,24 @@
+suite: bundled MinIO buckets
+templates:
+  - charts/minio/templates/configmap.yaml
+tests:
+  - it: creates the sessions and fuse workspaces buckets without purging either
+    set:
+      minio.enabled: true
+    asserts:
+      - matchRegex:
+          path: data.initialize
+          pattern: 'createBucket openhands-sessions "none" false false false'
+      - matchRegex:
+          path: data.initialize
+          pattern: 'createBucket runtime-api-workspaces "none" false false false'
+
+  - it: creates the fuse workspaces bucket whether or not fuse is enabled
+    set:
+      minio.enabled: true
+      runtime-api.fuseMount.enabled: false
+      runtime-api.warmRuntimes.fuse.enabled: false
+    asserts:
+      - matchRegex:
+          path: data.initialize
+          pattern: 'createBucket runtime-api-workspaces '
