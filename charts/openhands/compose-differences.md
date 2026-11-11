@@ -17,7 +17,6 @@ These change what a user sees or can do. Each one is either fixed or given a rea
 | `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Pending |
 | `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Pending |
 | `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` | Same as `EMAIL_CHANGE_ENABLED`, for the UI. | Pending |
-| `ENABLE_AUTOMATIONS` | Helm renders `false` while the local Automations service runs. Fix pending. After the fix, both show Automations; move this row to the next section. | Pending |
 | `HIDE_PERSONAL_WORKSPACES` | Compose hides personal workspaces once a user belongs to an organization. Helm shows them. | Pending |
 | `ENABLE_SUPER_ADMIN` | Compose turns on the SuperAdmin dashboard. Helm leaves it off. Tracked in OHE-3694. | Pending |
 | `ENABLE_INTEGRATED_IDP` | Compose uses the app's built-in password login. Helm uses Keycloak. | Pending |
@@ -34,6 +33,7 @@ The values differ, but the app behaves the same.
 
 | Name | Why the behaviour is the same |
 |---|---|
+| `ENABLE_AUTOMATIONS` | Both show Automations. Helm sets `true` because the bundled service has a URL. Compose leaves it unset, and the app default is `true`. |
 | `CONVERSATION_MANAGER_CLASS` | Helm sets it; no reader found in app 1.89.0. |
 | `DISABLE_WAITLIST` | Helm sets it; no reader found in app 1.89.0. |
 | `DUPLICATE_EMAIL_CHECK` | Helm sets `true`, which is the app default. |
