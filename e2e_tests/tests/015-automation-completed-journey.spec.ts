@@ -63,6 +63,21 @@ async function attachScreenshot(
   });
 }
 
+/**
+ * Make the sidebar's organization switcher show ``orgName``. The actor owns the
+ * automation through the new org, so the page can only show it from there; a
+ * session that already is in that org is left alone.
+ */
+async function selectOrganization(page: Page, orgName: string): Promise<void> {
+  const switcher = page.getByRole("combobox").first();
+  await expect(switcher).toBeVisible();
+  if ((await switcher.getAttribute("title")) !== orgName) {
+    await switcher.click();
+    await page.getByRole("option", { name: orgName }).click();
+  }
+  await expect(switcher).toHaveAttribute("title", orgName);
+}
+
 test.describe("automation journey: COMPLETED terminal status", () => {
   const cleanup = new Cleanup();
 
@@ -87,11 +102,13 @@ test.describe("automation journey: COMPLETED terminal status", () => {
     const timestamp = e2eTimestamp();
     const suffix = `qa-${timestamp}`;
     const expectedOutput = `automation-output-${suffix}`;
+    const orgName = e2eOrgName("automation completed", timestamp);
+    const automationName = `qa-completed-${suffix}`;
 
     const { actorKey, automationId } =
       await test.step("Create the isolated org, actor and automation", async () => {
         const org = await createOrg(base, adminKey, {
-          name: e2eOrgName("automation completed", timestamp),
+          name: orgName,
           contact_name: "Testy Tester",
           contact_email: "e2e_test@openhands.org",
         });
@@ -113,7 +130,7 @@ test.describe("automation journey: COMPLETED terminal status", () => {
           deleteUpload(base, actor.api_key, tarballPath),
         );
         const automation = await createScriptAutomation(base, actor.api_key, {
-          name: `qa-completed-${suffix}`,
+          name: automationName,
           // 3 AM on 29 February: the schedule never ticks before cleanup.
           trigger: { type: "cron", schedule: "0 3 29 2 *", timezone: "UTC" },
           tarball_path: tarballPath,
@@ -128,7 +145,13 @@ test.describe("automation journey: COMPLETED terminal status", () => {
       });
 
     await test.step("Dispatch the automation with Run now", async () => {
-      await page.goto(`canvas/automations/${automationId}`);
+      await page.goto("canvas/automations");
+      await selectOrganization(page, orgName);
+      await page.getByRole("link", { name: automationName }).first().click();
+      await expect(page).toHaveURL(new RegExp(`/automations/${automationId}`));
+      await expect(page.getByTestId("automation-detail-header")).toContainText(
+        automationName,
+      );
       await expect(page.getByRole("button", { name: "Run now" })).toBeVisible();
       await attachScreenshot(page, testInfo, "automation-before-dispatch");
       await page.getByRole("button", { name: "Run now" }).click();

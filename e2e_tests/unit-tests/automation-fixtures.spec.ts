@@ -7,7 +7,9 @@ import { expect, test } from "@playwright/test";
 import {
   completedRunScript,
   failedRunScript,
+  missingCallbackRunScript,
   singleFileTarGz,
+  stalledRunScript,
 } from "../utils/automation-fixtures";
 
 /**
@@ -104,4 +106,70 @@ test("the failed-run script reports FAILED with exactly the expected error and e
       server.close(() => resolve());
     });
   }
+});
+
+interface ScriptOutcome {
+  exitCode: number | null;
+  stderr: string;
+  callbacks: number;
+}
+
+/** Run a fixture script against a callback listener that counts every request. */
+async function runWithCallbackListener(script: string): Promise<ScriptOutcome> {
+  let callbacks = 0;
+  const server = createServer((_req, res) => {
+    callbacks += 1;
+    res.writeHead(200).end("{}");
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const { port } = server.address() as AddressInfo;
+    const child = spawn("python3", ["-c", script], {
+      env: {
+        ...process.env,
+        AUTOMATION_RUN_ID: `run-${runSuffix}`,
+        AUTOMATION_CALLBACK_URL: `http://127.0.0.1:${port}/callback`,
+        AUTOMATION_CALLBACK_API_KEY: "qa-callback-key",
+      },
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    const exitCode = await new Promise<number | null>((resolve) => {
+      child.on("close", resolve);
+    });
+    return { exitCode, stderr, callbacks };
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
+  }
+}
+
+test("the stalled-run script embeds its stall bound as a number", () => {
+  const script = stalledRunScript(120);
+
+  expect(script).toContain("MAX_STALL_SECONDS = 120");
+  expect(script).not.toContain("__MAX_STALL_SECONDS__");
+});
+
+test("the stalled-run script stops at its bound, exits non-zero and never calls back", async () => {
+  const startedAt = Date.now();
+
+  const outcome = await runWithCallbackListener(stalledRunScript(2));
+
+  expect(outcome.exitCode).toBe(1);
+  expect(outcome.callbacks).toBe(0);
+  expect(outcome.stderr).toContain("fixture stall bound reached");
+  expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
+});
+
+test("the missing-callback script exits non-zero without calling back", async () => {
+  const outcome = await runWithCallbackListener(missingCallbackRunScript());
+
+  expect(outcome.exitCode).toBe(1);
+  expect(outcome.callbacks).toBe(0);
 });

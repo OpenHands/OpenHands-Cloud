@@ -64,3 +64,26 @@ export function failedRunScript(expectedError: string): string {
   const source = readFileSync(path.join(fixturesDir, "failed_run.py"), "utf8");
   return source.replace("__EXPECTED_ERROR__", JSON.stringify(expectedError));
 }
+
+/**
+ * Script that prints a heartbeat and then stalls without ever calling the
+ * completion callback, so its run stays ``RUNNING`` until something cancels
+ * it. It exits on its own after ``maxStallSeconds``, which bounds a run the
+ * suite abandons.
+ */
+export function stalledRunScript(maxStallSeconds: number): string {
+  const source = readFileSync(path.join(fixturesDir, "stalled_run.py"), "utf8");
+  return source.replace("__MAX_STALL_SECONDS__", String(maxStallSeconds));
+}
+
+/**
+ * Script that exits non-zero without calling the completion callback, as a
+ * script that crashes before it can report would. The service gets no
+ * outcome from it, so the run can only end by the service's own deadline.
+ */
+export function missingCallbackRunScript(): string {
+  return readFileSync(
+    path.join(fixturesDir, "missing_callback_run.py"),
+    "utf8",
+  );
+}
