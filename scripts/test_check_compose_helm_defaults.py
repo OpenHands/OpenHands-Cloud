@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from check_compose_helm_defaults import check, differences, recorded_names, resolve_compose_value
+from check_compose_helm_defaults import check, differences, recorded_names, resolve_compose_value, summary
 
 COMPOSE = {
     "services": {
@@ -102,3 +102,14 @@ def test_compose_list_environment_preserves_equals_in_values():
     }
     env = [{"name": "WEB_HOST", "value": "https://example.test/?a=b"}]
     assert differences(compose, manifests(env, workloads=())) == {}
+
+
+def test_summary_lists_each_difference_with_its_section_and_reason():
+    found = {"RATE_LIMITING_ENABLED": ("false", "<unset>"), "NEW_FLAG": ("true", "<unset>")}
+    table = "## Product defaults\n\n| Name | What | Reason |\n|---|---|---|\n| `RATE_LIMITING_ENABLED` | x | Production protection. |\n"
+
+    report = summary(found, table, check(found, recorded_names(table)), "1.91.0")
+
+    assert "Compose at `1.91.0`. 2 differences; 1 problem(s)." in report
+    assert "| `RATE_LIMITING_ENABLED` | `false` | `<unset>` | Product defaults | Production protection. |" in report
+    assert "| `NEW_FLAG` | `true` | `<unset>` | **not recorded** |  |" in report
