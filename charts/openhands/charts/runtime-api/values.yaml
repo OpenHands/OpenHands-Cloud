@@ -428,7 +428,10 @@ global:
   # Fusey-enabled variant of the agent-server image, used by the derived fuse
   # warm pool (runtime-api warmRuntimes.fuse). Its tag is not pinned separately:
   # it is <agentServerImage.tag>-fusey<version>, so it cannot drift from the
-  # agent-server tag above. Built by the "Build Fusey Image" workflow in OpenHands/runtime-api.
+  # agent-server tag above. runtime-api owns the pin and builds the image on
+  # release: the agent-server tag above and this version must equal
+  # AGENT_SERVER_TAG and FUSEY_VERSION in fusey-image.env at the runtime-api
+  # release this chart pins.
   fuseyImage:
     repository: ghcr.io/openhands/agent-server-fusey
     version: 0.0.14
