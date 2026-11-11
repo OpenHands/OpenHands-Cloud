@@ -4,15 +4,10 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 
 ## Enterprise policy defaults
 
-Helm now follows the fresh Replicated Enterprise policy for personal LLM-key
-editing (hidden), Billing page visibility (hidden), and email changes (disabled).
-Explicit operator overrides remain supported. Read the
-[policy and upgrade guide](enterprise-defaults.md), including the organization
-credential limitations and the Cloud override example.
-
-Automations visibility follows a configured local or external service.
-Enabling Automations and changing database/object-store defaults are a separate
-rollout: this PR retains the existing service, storage and persistence defaults.
+By default the chart hides personal LLM key editing and the Billing page, and
+disables email changes. It shows the Automations page only when the app has a
+service URL. Explicit `env` overrides win. See
+[enterprise-defaults.md](enterprise-defaults.md) before you upgrade.
 
 ## Prerequisites
 

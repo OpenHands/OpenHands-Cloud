@@ -1,8 +1,10 @@
-# Policy example only; reconcile with Cloud's actual environment values.
-# Existing database, file store, identities, secrets and billing enablement
-# remain owned by that overlay and are not changed by this example.
+# Restores the policy behaviour from before the Enterprise defaults.
+# Structured OH_WEB_CLIENT_FEATURE_FLAGS_* keys apply only to installs that
+# already set structured flags; see enterprise-defaults.md.
 env:
   OH_ALLOW_USER_LLM_CONFIGURATION: "true"
   HIDE_BILLING_PAGE: "false"
   EMAIL_CHANGE_ENABLED: "true"
   OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "true"
+  # OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION: "true"
+  # OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE: "false"

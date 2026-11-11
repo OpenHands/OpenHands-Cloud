@@ -57,10 +57,10 @@
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
   value: {{ $orgCondenser.overwriteExisting | default false | quote }}
 {{- end }}
-# Show Automations when either its local subchart or an external service is
-# configured. The explicit env.ENABLE_AUTOMATIONS override still wins.
+# Show Automations only when the app has a service URL to call; the app strips
+# whitespace, so a blank URL counts as unset. env.ENABLE_AUTOMATIONS still wins.
 - name: ENABLE_AUTOMATIONS
-  value: {{ or .Values.automation.enabled (not (empty $automationServiceUrl)) | quote }}
+  value: {{ not (empty (trim $automationServiceUrl)) | quote }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
