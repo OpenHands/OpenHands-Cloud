@@ -125,3 +125,40 @@ def test_summary_shortens_long_values():
 
     assert "`server.verified_models.litellm_proxy_mo…`" in report
     assert long_value not in report
+
+
+NOT_COMPARED_TABLE = """## Defaults that differ
+
+| Name | What differs | Reason |
+|---|---|---|
+| `RATE_LIMITING_ENABLED` | x | Production protection. |
+
+## Not compared
+
+### Same behaviour, different value
+
+- Helm sets `true`, which is the app default: `DUPLICATE_EMAIL_CHECK`
+
+### Platform wiring
+
+- Database connection: `DB_HOST`, `DB_USER`
+"""
+
+
+def test_list_items_record_only_the_names_after_the_label():
+    assert recorded_names(NOT_COMPARED_TABLE) == {"RATE_LIMITING_ENABLED", "DUPLICATE_EMAIL_CHECK", "DB_HOST", "DB_USER"}
+
+
+def test_summary_hides_not_compared_names_and_counts_them():
+    found = {
+        "RATE_LIMITING_ENABLED": ("false", "<unset>"),
+        "DUPLICATE_EMAIL_CHECK": ("<unset>", "true"),
+        "DB_HOST": ("db", "oh-postgresql"),
+        "DB_USER": ("openhands", "postgres"),
+    }
+
+    report = summary(found, NOT_COMPARED_TABLE, [], "1.91.0")
+
+    assert "3 platform wiring and same-behaviour names are listed under Not compared" in report
+    assert "| `RATE_LIMITING_ENABLED` |" in report
+    assert "DB_HOST" not in report and "DUPLICATE_EMAIL_CHECK" not in report
