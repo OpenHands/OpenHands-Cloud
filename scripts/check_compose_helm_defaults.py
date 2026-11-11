@@ -155,6 +155,40 @@ def check(found: dict[str, tuple[str, str]], recorded: set[str]) -> list[str]:
     return problems
 
 
+def recorded_rows(table: str) -> dict[str, tuple[str, str]]:
+    """Map each recorded name to its (section heading, last cell)."""
+    rows, section = {}, ""
+    for line in table.splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+        match = re.match(r"^\|\s*`([^`]+)`.*\|\s*([^|]*?)\s*\|\s*$", line)
+        if match:
+            rows[match.group(1)] = (section, match.group(2))
+    return rows
+
+
+def summary(found: dict[str, tuple[str, str]], table: str, problems: list[str], ref: str) -> str:
+    """A Markdown report of every current difference, for the job summary."""
+    rows = recorded_rows(table)
+    status = f"{len(problems)} problem(s)" if problems else "every difference is recorded"
+    lines = [
+        "## Docker Compose vs Helm defaults",
+        "",
+        f"Compose at `{ref}`. {len(found)} differences; {status}.",
+        "",
+        "| Name | Compose | Helm | Section | Reason |",
+        "|---|---|---|---|---|",
+    ]
+    for name, (left, right) in found.items():
+        section, reason = rows.get(name, ("**not recorded**", ""))
+        cells = [f"`{name}`", f"`{left}`", f"`{right}`", section, reason]
+        lines.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
+    for line in problems:
+        if "no longer different" in line:
+            lines.append(f"\n- {line}")
+    return "\n".join(lines) + "\n"
+
+
 def app_version(chart: Path) -> str:
     return str(yaml.safe_load((chart / "Chart.yaml").read_text())["appVersion"])
 
@@ -176,15 +210,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--compose", type=Path, help="local docker-compose.yml instead of the tag")
     args = parser.parse_args(argv)
 
+    ref = str(args.compose) if args.compose else app_version(CHART)
     if args.compose:
         compose_text = args.compose.read_text()
     else:
         token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-        compose_text = fetch_compose(app_version(CHART), token)
+        compose_text = fetch_compose(ref, token)
 
     found = differences(yaml.safe_load(compose_text), render_chart(CHART, VALUES))
-    recorded = recorded_names(TABLE.read_text()) if TABLE.exists() else set()
-    problems = check(found, recorded)
+    table = TABLE.read_text() if TABLE.exists() else ""
+    problems = check(found, recorded_names(table))
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a", encoding="utf-8") as handle:
+            handle.write(summary(found, table, problems, ref))
     for line in problems:
         print(line)
     if problems:
