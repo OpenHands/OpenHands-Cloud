@@ -1,5 +1,3 @@
-"""Tests for how Replicated wires the Automations page visibility."""
-
 from pathlib import Path
 
 import yaml
@@ -31,7 +29,7 @@ def test_both_ui_flags_follow_the_saved_automations_choice() -> None:
 def test_saved_on_choice_supplies_the_service_url_the_chart_default_needs() -> None:
     values = automations_optional_values()
 
-    assert values["automationService"]["url"]
+    assert values["automationService"]["url"].strip()
     assert values["automation"]["enabled"] is True
 
 
