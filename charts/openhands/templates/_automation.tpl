@@ -1,5 +1,4 @@
-{{/* Prevent an online upgrade from silently repointing existing automation
-records or uploaded packages. A deliberate migration is a separate operation. */}}
+{{/* Repointing a live service would strand existing records or uploaded packages. */}}
 {{- define "openhands.automationUpgradeGuard" -}}
 {{- if .Release.IsUpgrade -}}
 {{- $existing := lookup "apps/v1" "Deployment" .Release.Namespace "automation" -}}
@@ -13,8 +12,8 @@ records or uploaded packages. A deliberate migration is a separate operation. */
 {{- range (include "automation.env" (index .Subcharts "automation") | fromYamlArray) -}}
 {{- if has .name $keys -}}{{- $_ := set $new .name (.value | default "") -}}{{- end -}}
 {{- end -}}
-{{/* Ignore the inactive backend's variables. An absent/empty S3 endpoint both
-mean AWS's regional endpoint; neither is a store migration. */}}
+{{/* Unused storage settings must not trigger a migration error.
+Missing and empty S3 endpoints both select AWS's regional endpoint. */}}
 {{- range (list $old $new) -}}
 {{- if eq (get . "FILE_STORE") "gcs" -}}
 {{- $_ := unset . "AWS_S3_BUCKET" -}}{{- $_ := unset . "AWS_S3_ENDPOINT" -}}
@@ -34,8 +33,7 @@ mean AWS's regional endpoint; neither is a store migration. */}}
 {{- fail "Refusing to add the Automations superuser bootstrap to an existing service. Pin automation.database.createDatabaseUser=false for a pre-provisioned database; any deliberate privileged bootstrap needs a separate reviewed operation." -}}
 {{- end -}}
 {{- end -}}
-{{/* Enabling persistence on the shared ephemeral PostgreSQL changes immutable
-StatefulSet storage and does not migrate its data. Catch it before Helm patches. */}}
+{{/* Enabling persistence does not migrate an existing ephemeral database. */}}
 {{- if .Values.postgresql.enabled -}}
 {{- $pg := lookup "apps/v1" "StatefulSet" .Release.Namespace (include "postgresql.v1.primary.fullname" (index .Subcharts "postgresql")) -}}
 {{- $ephemeral := false -}}

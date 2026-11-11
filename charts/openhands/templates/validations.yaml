@@ -56,9 +56,7 @@ script in its usage-error path, so refuse it at render time instead.
 {{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
 {{- end -}}
 
-{{/* Local Automations is a service, not just a UI toggle. Refuse incomplete
-configuration rather than replacing healthy app pods with missing dependencies.
-No conversation-store or volume defaults change as part of this rollout. */}}
+{{/* Missing dependencies must fail before replacing healthy app pods. */}}
 {{- if .Values.automation.enabled -}}
 {{- $a := .Values.automation -}}
 {{- if not (has $a.filestore.type (list "s3" "gcs" "google_cloud")) -}}
@@ -96,8 +94,7 @@ No conversation-store or volume defaults change as part of this rollout. */}}
 {{- fail "Local Automations requires durable PostgreSQL. For a fresh bundled install set postgresql.primary.persistence.enabled=true; for an existing ephemeral database, back up and migrate it before enabling Automations. External automation.database.host values use operator-managed durability." -}}
 {{- end -}}
 {{- end -}}
-{{/* Critical connection env overrides must agree with the typed values used
-by bootstrap and prerequisite checks. Other env overrides remain supported. */}}
+{{/* Bootstrap and upgrade guards must validate the same target the service uses. */}}
 {{- $expected := dict "FILE_STORE" ($a.filestore.type | replace "google_cloud" "gcs") "AUTOMATION_DB_HOST" $dbHost "AUTOMATION_DB_PORT" (toString $a.database.port) "AUTOMATION_DB_NAME" $a.database.name "AUTOMATION_DB_USER" $a.database.user -}}
 {{- if eq $a.filestore.type "s3" -}}
 {{- $_ := set $expected "AWS_S3_BUCKET" $a.filestore.bucket -}}
@@ -133,10 +130,8 @@ by bootstrap and prerequisite checks. Other env overrides remain supported. */}}
 {{- include "openhands.automationUpgradeGuard" . -}}
 {{- end -}}
 
-{{/* A namespaced, non-secret API probe distinguishes an online render in an
-existing namespace from helm template. Only the exact automation secret refs
-are read, never namespace-wide secret listings. Offline/GitOps rendering cannot
-establish secret existence; use a server dry run after provisioning secrets. */}}
+{{/* Probe a ServiceAccount to avoid requiring namespace-wide Secret access.
+Offline renders cannot verify Secrets; provision them before a server dry run. */}}
 {{- $appAuth := and .Values.enabled (or (eq .Values.automationServiceKey.enabled true) (eq .Values.automationWebhookSecret.enabled true)) -}}
 {{- if and (or .Values.automation.enabled $appAuth) (lookup "v1" "ServiceAccount" .Release.Namespace "default") -}}
 {{- $refs := list -}}

@@ -1,4 +1,3 @@
-# Separately managed service; replace URL/Secret references with existing values.
 automation:
   enabled: false
 automationService:

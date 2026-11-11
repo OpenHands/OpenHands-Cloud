@@ -45,8 +45,7 @@ spec:
 
     automation:
       enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-      # KOTS passes the saved choice and explicit DB/store configuration.
-      # Prerequisite and online data-path guards still apply.
+      # Saved configuration supplies the data paths; upgrade guards still apply.
       upgradeAcknowledged: true
 
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
@@ -1549,7 +1548,7 @@ spec:
           enabled: true
     automation:
       enabled: true
-      # Render-only image collection; no cloud storage is contacted.
+      # Image collection needs no live package store.
       filestore:
         type: gcs
     agent-canvas:

@@ -150,8 +150,7 @@ checksum/license: {{ printf "%s|%s" (toString (.Values.license.key | default "")
 {{- end -}}
 {{- end -}}
 
-{{/* Effective Automations URL, shared by app wiring and UI visibility.
-Explicit env keys win, including values that clear the URL. */}}
+{{/* An explicitly empty URL hides the Automations UI by default. */}}
 {{- define "openhands.automation.serviceUrl" -}}
 {{- if hasKey (.Values.env | default dict) "AUTOMATION_SERVICE_URL" -}}
 {{- get .Values.env "AUTOMATION_SERVICE_URL" | default "" | toString -}}

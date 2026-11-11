@@ -1409,7 +1409,7 @@ automationWebhookSecret:
 # Routing is handled by parent chart via /api/automation subpath
 automation:
   enabled: true
-  # Explicit review/backup checkpoint for existing releases; never migrates data.
+  # Acknowledge only after backup and review; this does not migrate data.
   upgradeAcknowledged: false
   
   image:
@@ -1532,9 +1532,7 @@ automation:
   # the full key reference. To use the bundled MinIO, set type: s3 and
   # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
-    # "s3" or "gcs"
-    # Required for local Automations: select s3 or gcs explicitly.
-    # Existing GCS installs must pin gcs; no implicit data-store migration.
+    # Choose s3 or gcs explicitly to avoid switching an existing package store.
     type: ""
     # Bucket to store packages in (both backends).
     bucket: automation-data

@@ -1,19 +1,12 @@
-# Fresh Enterprise installation: Automations uses a durable shared PostgreSQL
-# and an operator-provisioned S3-compatible package store. Provision the bucket
-# and this Secret before installing; never use these placeholder names blindly.
-# Conversation storage remains a separate, explicit install configuration.
+# Provision the package bucket and its credentials Secret before installing.
 postgresql:
   primary:
     persistence:
       enabled: true
-      # Keep the subchart's existing size default. Choose a size before install;
-      # do not change an existing StatefulSet's claim template on upgrade.
+      # Choose the volume size before installation; claim templates are immutable.
 automation:
   enabled: true
-  # For upgrades only, after backup/review of the existing data paths:
-  # upgradeAcknowledged: true
-  # Use your public origin for callbacks/webhooks when sandboxes or senders
-  # cannot reach the cluster's internal DNS; same convention as Replicated.
+  # Public URLs keep callbacks reachable from outside the cluster.
   openhandsApiUrl: https://app.example.com
   automationBaseUrl: https://app.example.com
   filestore:

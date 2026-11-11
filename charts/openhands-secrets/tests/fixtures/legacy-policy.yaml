@@ -1,3 +1,2 @@
-# Test-only compatibility profile; not an install values file.
 automation:
   enabled: false

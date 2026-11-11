@@ -50,8 +50,6 @@ REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 APP_HOSTNAME_TEMPLATE = '{{repl ConfigOption "computed_app_hostname" }}'
 APP_HOSTNAME = "app.example.com"
 WARM_CONFIGMAP = "charts/runtime-api/templates/warm-runtimes-configmap.yaml"
-# Automations is on by default and the chart refuses to render it without a
-# package store and durable PostgreSQL, so render the enabled path.
 AUTOMATION_ENABLED_SETS = (
     "automation.enabled=true,automation.filestore.type=gcs,"
     "postgresql.primary.persistence.enabled=true"
