@@ -22,14 +22,31 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "false"}
-  - it: shows automation UI when the local service is explicitly enabled
+  - it: hides automation UI when the local service is enabled without a service URL
     set:
       automation.enabled: true
     asserts:
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
+  - it: shows automation UI when the local service is enabled with its service URL
+    set:
+      automation.enabled: true
+      automationService.url: http://automation/api/automation
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
           content: {name: ENABLE_AUTOMATIONS, value: "true"}
+  - it: hides automation UI when the service URL is only whitespace
+    set:
+      env.AUTOMATION_SERVICE_URL: " "
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
   - it: disables automation UI and wiring together when the dependency is disabled
     set:
       automation.enabled: false
@@ -64,6 +81,16 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: HIDE_BILLING_PAGE, value: "false"}
+          count: 1
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: EMAIL_CHANGE_ENABLED, value: "true"}
+          count: 1
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "true"}
           count: 1
   - it: permits a separately managed automation service
     set:
