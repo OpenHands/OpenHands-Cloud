@@ -1734,7 +1734,7 @@ spec:
           title: Enable Super Admin Dashboard
           help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname. On a new install, the first user to sign in also sees the first-install setup. Existing users will not see it.
           type: bool
-          default: "0"
+          default: "1"
         - name: super_admin_emails
           title: Super Admin Emails
           help_text: >-
