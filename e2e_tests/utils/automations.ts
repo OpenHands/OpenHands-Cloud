@@ -325,6 +325,35 @@ export async function waitForRunTerminal(
   );
 }
 
+async function waitForRunEndingIn(
+  expected: "COMPLETED" | "FAILED",
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs: number,
+): Promise<AutomationRun> {
+  const history: RunStatus[] = [];
+  const run = await pollRunToTerminal(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+    history,
+  );
+  if (run.status !== expected) {
+    throw new Error(
+      `waitForRun${expected === "COMPLETED" ? "Completed" : "Failed"}: ` +
+        `run ${run.id} of automation ${automationId} ` +
+        `ended ${run.status}, expected ${expected} ` +
+        `(error_detail: ${run.error_detail ?? "none"}; ` +
+        `lifecycle: ${formatLifecycle(history)})`,
+    );
+  }
+  return run;
+}
+
 /**
  * Wait for the run to finish and require ``COMPLETED``. ``FAILED``,
  * ``CANCELLED``, ``SKIPPED`` and a run that never reaches a terminal status
@@ -338,24 +367,38 @@ export async function waitForRunCompleted(
   timeoutMs: number,
   pollIntervalMs = RUN_POLL_INTERVAL_MS,
 ): Promise<AutomationRun> {
-  const history: RunStatus[] = [];
-  const run = await pollRunToTerminal(
+  return waitForRunEndingIn(
+    "COMPLETED",
     baseUrl,
     apiKey,
     automationId,
     timeoutMs,
     pollIntervalMs,
-    history,
   );
-  if (run.status !== "COMPLETED") {
-    throw new Error(
-      `waitForRunCompleted: run ${run.id} of automation ${automationId} ` +
-        `ended ${run.status}, expected COMPLETED ` +
-        `(error_detail: ${run.error_detail ?? "none"}; ` +
-        `lifecycle: ${formatLifecycle(history)})`,
-    );
-  }
-  return run;
+}
+
+/**
+ * Wait for the run to finish and require ``FAILED``, for a journey that
+ * fails on purpose. ``COMPLETED``, ``CANCELLED``, ``SKIPPED`` and a run that
+ * never reaches a terminal status all throw, so only the expected failure
+ * passes. The error names the final status, the run's ``error_detail`` and
+ * the lifecycle observed while polling.
+ */
+export async function waitForRunFailed(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<AutomationRun> {
+  return waitForRunEndingIn(
+    "FAILED",
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+  );
 }
 
 /**
