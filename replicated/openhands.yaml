@@ -21,6 +21,10 @@ spec:
       # global.agentServerImage.
       agentServerImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+      # Fusey-enabled variant of the image above, for the fuse warm pool. The
+      # tag is derived from agentServerImage.tag and the chart's pinned version.
+      fuseyImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server-fusey'
       # Runtime (agent-server sandbox) env vars. The chart serialises this map
       # into OH_AGENT_SERVER_ENV and mirrors it into every warm-runtime entry's
       # env (runtime-api claims warm pods by exact env match, so a key here
@@ -451,9 +455,15 @@ spec:
         # Must match the device-plugin subchart's domain + device name (the
         # legacy smarter-devices domain; see the device-plugin block below).
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
+        # Same domain for /dev/fuse, so the fuse pool requests what the
+        # device-plugin block below advertises.
+        FUSE_DEVICE_RESOURCE: "smarter-devices/fuse"
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
+        # Second pool cloned from the default entry with the fusey image.
+        fuse:
+          enabled: repl{{ ConfigOptionEquals "computed_sandbox_fuse_enabled" "true" }}
         configsByName:
           # Keep this key aligned with the chart values for Helm merging.
           default:
@@ -501,6 +511,19 @@ spec:
             run_as_user: 10001
             run_as_group: 10001
             fs_group: 10001
+      # Workspaces for the fuse pool live in the bundled MinIO. The bucket is
+      # created by the parent chart's minio.buckets; RUNTIME_API_BASE_URL above
+      # is the broker URL the sandboxes call. The credentials are the bundled
+      # MinIO's svcaccts pair, as for the automation filestore below.
+      fuseMount:
+        enabled: repl{{ ConfigOptionEquals "computed_sandbox_fuse_enabled" "true" }}
+        storageProvider: s3
+        bucket: runtime-api-workspaces
+        s3:
+          endpoint: http://openhands-minio:9000
+          region: us-east-1
+          accessKeyId: default
+          secretAccessKey: notasecret
       ingressBase:
         enabled: true
         apiVersion: networking.k8s.io/v1
@@ -516,18 +539,19 @@ spec:
     # squat/generic-device-plugin DaemonSet. Replaces the smarter-device-manager
     # plugin that used to live in the runtime-api subchart.
     device-plugin:
-      enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+      enabled: repl{{ or (ConfigOptionEquals "sandbox_kvm_enabled" "1") (ConfigOptionEquals "computed_sandbox_fuse_enabled" "true") }}
       # Keep the resource domain smarter-device-manager used, even though the
       # plugin behind it changed: pause/resume reuses a runtime's Deployment
       # as-is (resume just scales replicas 0->1), so pre-upgrade pod templates
       # keep requesting smarter-devices/kvm forever. Renaming the resource
       # would leave every pre-upgrade sandbox unschedulable on its next
-      # resume. Must match KVM_DEVICE_RESOURCE above (and FUSE_DEVICE_RESOURCE
-      # if fuse mounts ever ship here).
+      # resume. Must match KVM_DEVICE_RESOURCE and FUSE_DEVICE_RESOURCE above.
       domain: smarter-devices
       devices:
         kvm:
-          enabled: true
+          enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+        fuse:
+          enabled: repl{{ ConfigOptionEquals "computed_sandbox_fuse_enabled" "true" }}
       # The embedded cluster is k0s, which doesn't quota-restrict the system
       # priority classes the way GKE does, so the DaemonSet can take the
       # conventional device-plugin priority.
@@ -872,6 +896,8 @@ spec:
           # warmRuntimes default entry both inherit this. Tag pinned in the chart.
           agentServerImage:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
+          fuseyImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server-fusey'
         image:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
         keycloak:
@@ -1502,6 +1528,14 @@ spec:
       enabled: true
     runtime-api:
       enabled: true
+      # The fuse pool's image must land in the airgap bundle too.
+      fuseMount:
+        enabled: true
+        bucket: runtime-api-workspaces
+        runtimeApiBaseUrl: https://runtime-api.example.com
+      warmRuntimes:
+        fuse:
+          enabled: true
     automation:
       enabled: true
     agent-canvas:

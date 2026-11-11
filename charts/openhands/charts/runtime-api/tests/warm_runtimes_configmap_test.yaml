@@ -39,3 +39,158 @@ tests:
       - notMatchRegex:
           path: data["warm-runtimes.json"]
           pattern: '"name": "default"'
+
+  - it: renders no fuse pool by default
+    set:
+      warmRuntimes.enabled: true
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: v1_fuse
+
+  - it: derives a fuse pool from the base entry with the fusey image
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "v1_fuse"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "ghcr.io/openhands/agent-server-fusey:1.60.1-python-fusey0.0.14"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"fuse_s3_mount": true'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "v1_current"'
+
+  - it: derives the fusey tag from the agent-server tag and the fusey version
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      global.agentServerImage.tag: 1.99.0-python
+      global.fuseyImage.version: 0.1.2
+      global.fuseyImage.repository: registry.example.com/agent-server-fusey
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "registry.example.com/agent-server-fusey:1.99.0-python-fusey0.1.2"'
+
+  - it: lets an explicit image override the derived fusey image
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      warmRuntimes.fuse.image: registry.example.com/custom-fusey:1
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "registry.example.com/custom-fusey:1"'
+
+  - it: gives the fuse pool the same env as the base entry, including the global agent-server env
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      global.agentServerEnv.LLM_BASE_URL: https://llm.example.com
+    asserts:
+      # One match per entry: the base and the clone must both carry it, or the
+      # fuse pool is never claimable.
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '(?s)"name": "v1_current".*"LLM_BASE_URL":"https://llm.example.com".*"name": "v1_fuse".*"LLM_BASE_URL":"https://llm.example.com"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '(?s)"name": "v1_fuse".*"run_as_user": 10001'
+
+  - it: gives the fuse pool its own count when set
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.count: 3
+      warmRuntimes.fuse.enabled: true
+      warmRuntimes.fuse.count: 2
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '(?s)"name": "v1_fuse",\s+"image": "[^"]+",\s+"working_dir": "[^"]+",\s+"count": 2,'
+
+  - it: clones the base entry by name, not by configsByName key
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      warmRuntimes.fuse.baseName: other
+      warmRuntimes.configsByName.extra.name: other
+      warmRuntimes.configsByName.extra.working_dir: /workspace/other
+      warmRuntimes.configsByName.extra.command:
+        - /bin/other
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '(?s)"name": "v1_fuse".*"working_dir": "/workspace/other"'
+
+  - it: clones the base entry from the legacy configs list too
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      warmRuntimes.configs:
+        - name: v1_current
+          working_dir: /workspace/legacy
+          command:
+            - /bin/legacy
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '(?s)"name": "v1_fuse".*"working_dir": "/workspace/legacy"'
+
+  - it: refuses a fuse pool without fuseMount
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: requires fuseMount.enabled
+
+  - it: refuses a fuse pool whose base entry does not exist
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      warmRuntimes.fuse.baseName: missing
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: matches no warm config name
+
+  - it: refuses a fuse pool name that collides with an existing entry
+    set:
+      warmRuntimes.enabled: true
+      warmRuntimes.fuse.enabled: true
+      warmRuntimes.fuse.name: v1_current
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: already a warm config name

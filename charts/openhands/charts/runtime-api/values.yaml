@@ -324,6 +324,55 @@ warmRuntimes:
       run_as_user: 10001
       run_as_group: 10001
       fs_group: 10001
+  # Derived fuse pool: a second warm entry cloned from `baseName` with the fusey
+  # image and fuse_s3_mount: true, so it inherits every env var and security
+  # field of the base entry. Warm pods are claimed only on an exact env match, so
+  # a hand-copied entry would drift and silently become unclaimable. Requires
+  # fuseMount.enabled. Users opt in by selecting the fuse image as their sandbox
+  # spec; the base entry stays the default.
+  fuse:
+    enabled: false
+    # Name of the derived warm config.
+    name: v1_fuse
+    # `name` of the entry to clone (not its configsByName key).
+    baseName: v1_current
+    # Warm pods to keep. Empty inherits the base entry's count, else the
+    # top-level count.
+    count: null
+    # Empty derives <global.fuseyImage.repository>:<agentServerImage.tag>-fusey<version>.
+    image: ""
+
+# Fuse-mounted sandbox workspaces: /workspace is backed by object storage
+# through the fusey daemon instead of a PVC. runtime-api doubles as the broker
+# that mints presigned URLs for the sandbox pods, so it needs the bucket and its
+# credentials. Sandbox nodes also need /dev/fuse (the device-plugin subchart);
+# set env.FUSE_DEVICE_RESOURCE if its domain is not the default squat.ai.
+fuseMount:
+  enabled: false
+  # s3 | gcs
+  storageProvider: s3
+  # Existing bucket; the chart does not create it.
+  bucket: ""
+  # Key prefix inside the bucket.
+  pathPrefix: runtimes
+  # URL sandbox pods use to reach this runtime-api (e.g. https://runtime-api.example.com).
+  # Not needed when env.RUNTIME_API_BASE_URL is set.
+  runtimeApiBaseUrl: ""
+  # Connection settings, only used when storageProvider=s3. Shapes match
+  # runtimeFileArchive.s3. gcs uses the pod's Workload Identity.
+  s3:
+    # Leave empty for AWS; set for any S3-compatible store, e.g. the parent
+    # chart's bundled MinIO.
+    endpoint: ""
+    region: ""
+    # Credentials: existingSecret wins, then the inline pair, else the pod's
+    # ambient AWS identity. If runtimeFileArchive.s3 also sets credentials they
+    # must be identical: both feed the same AWS_* variables.
+    existingSecret: ""
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    accessKeyId: ""
+    secretAccessKey: ""
 
 # Database cleanup CronJob configuration
 dbCleanup:
@@ -376,6 +425,16 @@ global:
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.60.1-python
+  # Fusey-enabled variant of the agent-server image, used by the derived fuse
+  # warm pool (runtime-api warmRuntimes.fuse). Its tag is not pinned separately:
+  # it is <agentServerImage.tag>-fusey<version>, so it cannot drift from the
+  # agent-server tag above. runtime-api owns the pin and builds the image on
+  # release: the agent-server tag above and this version must equal
+  # AGENT_SERVER_TAG and FUSEY_VERSION in fusey-image.env at the runtime-api
+  # release this chart pins.
+  fuseyImage:
+    repository: ghcr.io/openhands/agent-server-fusey
+    version: 0.0.14
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

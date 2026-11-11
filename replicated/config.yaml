@@ -1608,6 +1608,25 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_fuse_enabled
+          title: Store sandbox workspaces in the bundled object storage (FUSE)
+          help_text: >-
+            Adds a second warm pool whose sandboxes keep /workspace in the bundled MinIO
+            through a FUSE mount instead of a persistent volume. The default pool and
+            existing sandboxes are unchanged. The cluster node(s) MUST expose /dev/fuse.
+            Verify with `ls -l /dev/fuse` on the node. Not available with a custom
+            sandbox image.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "0" }}'
+        # A saved "1" survives the option being hidden, so the values read this
+        # instead: the fuse image tag derives from the agent-server tag, which a
+        # custom sandbox image replaces.
+        - name: computed_sandbox_fuse_enabled
+          title: Computed Sandbox FUSE Workspaces
+          type: text
+          hidden: true
+          default: '{{repl and (ConfigOptionEquals "sandbox_fuse_enabled" "1") (ConfigOptionEquals "custom_sandbox_image_enabled" "0") }}'
         - name: sandbox_dedicated_nodes
           title: Run sandboxes on dedicated nodes
           help_text: >-
