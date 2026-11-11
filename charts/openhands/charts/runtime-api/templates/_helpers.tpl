@@ -125,3 +125,25 @@ entirely. A chart-level `affinity` value wins over the umbrella-wide
 {{- toYaml . -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Identity of an S3 credential source, for comparing two of them: empty when it
+sets none (ambient identity). Takes an s3 values block.
+*/}}
+{{- define "runtime-api.s3CredentialsKey" -}}
+{{- if .existingSecret -}}
+secret/{{ .existingSecret }}/{{ .accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}/{{ .secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else if .accessKeyId -}}
+inline/{{ .accessKeyId }}/{{ .secretAccessKey }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Credential identity the runtimeFileArchive block puts in AWS_ACCESS_KEY_ID /
+AWS_SECRET_ACCESS_KEY: empty unless the archive is enabled for s3.
+*/}}
+{{- define "runtime-api.archiveS3CredentialsKey" -}}
+{{- if and .Values.runtimeFileArchive.enabled (eq (.Values.runtimeFileArchive.storeType | default "google_cloud") "s3") -}}
+{{- include "runtime-api.s3CredentialsKey" .Values.runtimeFileArchive.s3 -}}
+{{- end -}}
+{{- end }}

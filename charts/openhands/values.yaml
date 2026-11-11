@@ -497,7 +497,7 @@ keycloak:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/keycloak
-    tag: 26.8.0-debian-12-oh1
+    tag: 26.8.0-debian-12-oh2
   # Parent-chart pre-upgrade hook (not consumed by the Keycloak subchart): when
   # the upgrade changes the Keycloak version, copy the database to
   # <database>_backup_<old version> on the same server before Keycloak migrates
@@ -861,6 +861,13 @@ minio:
       # upgrade of a persistent install (Replicated sets persistence.enabled:
       # true) would wipe every conversation and session file. A render-time
       # guard in templates/validations.yaml rejects true for bundled installs.
+      purge: false
+    # Fuse-mounted sandbox workspaces (runtime-api.fuseMount). Always created so
+    # turning fuse on, off and on again never touches a bucket that holds
+    # workspaces: the minio chart never deletes a bucket that leaves this list,
+    # and purge: false keeps the post-upgrade job from emptying it.
+    - name: runtime-api-workspaces
+      policy: none
       purge: false
   svcaccts:
     # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
@@ -1634,6 +1641,16 @@ global:
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
     tag: 1.60.1-python
+  # Fusey-enabled variant of the agent-server image, used by the derived fuse
+  # warm pool (runtime-api warmRuntimes.fuse). Its tag is not pinned separately:
+  # it is <agentServerImage.tag>-fusey<version>, so it cannot drift from the
+  # agent-server tag above. runtime-api owns the pin and builds the image on
+  # release: the agent-server tag above and this version must equal
+  # AGENT_SERVER_TAG and FUSEY_VERSION in fusey-image.env at the runtime-api
+  # release this chart pins.
+  fuseyImage:
+    repository: ghcr.io/openhands/agent-server-fusey
+    version: 0.0.14
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

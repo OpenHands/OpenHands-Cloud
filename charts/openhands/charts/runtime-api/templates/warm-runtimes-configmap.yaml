@@ -20,6 +20,42 @@
 {{- /* Default image for any entry that omits one: the global agent-server image. */ -}}
 {{- $agentServerImage := printf "%s:%s" .Values.global.agentServerImage.repository .Values.global.agentServerImage.tag }}
 {{- /*
+  Derived fuse pool: clone the base entry so its env, command and security
+  fields cannot drift from what the app sends (warm pods are claimed only on
+  an exact env match), then swap in the fusey image. The clone is appended
+  before the loop below, so it also picks up global.agentServerEnv.
+*/ -}}
+{{- $fuse := .Values.warmRuntimes.fuse | default dict }}
+{{- if $fuse.enabled }}
+{{- if not .Values.fuseMount.enabled }}
+{{- fail "warmRuntimes.fuse.enabled requires fuseMount.enabled: fuse warm pods cannot mount a workspace without the FUSEY_* configuration" }}
+{{- end }}
+{{- $fuseName := $fuse.name | default "v1_fuse" }}
+{{- $baseName := $fuse.baseName | default "v1_current" }}
+{{- $base := dict }}
+{{- range $configs }}
+{{- if eq .name $fuseName }}
+{{- fail (printf "warmRuntimes.fuse.name %q is already a warm config name; pick another" $fuseName) }}
+{{- end }}
+{{- if eq .name $baseName }}
+{{- $base = . }}
+{{- end }}
+{{- end }}
+{{- if not $base }}
+{{- fail (printf "warmRuntimes.fuse.baseName %q matches no warm config name" $baseName) }}
+{{- end }}
+{{- $fuseyVersion := .Values.global.fuseyImage.version | toString }}
+{{- $fuseImage := $fuse.image | default (printf "%s:%s-fusey%s" .Values.global.fuseyImage.repository .Values.global.agentServerImage.tag $fuseyVersion) }}
+{{- $entry := deepCopy $base }}
+{{- $_ := set $entry "name" $fuseName }}
+{{- $_ = set $entry "image" $fuseImage }}
+{{- $_ = set $entry "fuse_s3_mount" true }}
+{{- if $fuse.count }}
+{{- $_ = set $entry "count" $fuse.count }}
+{{- end }}
+{{- $configs = append $configs $entry }}
+{{- end }}
+{{- /*
   The app injects global.agentServerEnv (LLM provider creds, proxy vars, CA
   paths) into every per-session runtime request, and runtime-api claims warm
   pods only on an exact env match — so those keys must be in the warm env too,
