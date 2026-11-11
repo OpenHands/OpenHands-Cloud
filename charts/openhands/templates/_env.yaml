@@ -2,7 +2,7 @@
 {{- $integrations := .Values.integrations | default dict }}
 {{- $automationServiceUrl := .Values.automationService.url | default "" }}
 {{- if hasKey (.Values.env | default dict) "AUTOMATION_SERVICE_URL" }}
-{{- $automationServiceUrl = get .Values.env "AUTOMATION_SERVICE_URL" | toString }}
+{{- $automationServiceUrl = get .Values.env "AUTOMATION_SERVICE_URL" | default "" | toString }}
 {{- end }}
 {{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
