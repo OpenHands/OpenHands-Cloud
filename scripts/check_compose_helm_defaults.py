@@ -167,22 +167,29 @@ def recorded_rows(table: str) -> dict[str, tuple[str, str]]:
     return rows
 
 
+def shorten(value: str, limit: int = 40) -> str:
+    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
 def summary(found: dict[str, tuple[str, str]], table: str, problems: list[str], ref: str) -> str:
     """A Markdown report of every current difference, for the job summary."""
     rows = recorded_rows(table)
     status = f"{len(problems)} problem(s)" if problems else "every difference is recorded"
+    sections: dict[str, list[str]] = {"Not recorded": []}
+    sections.update({section: [] for section, _ in rows.values()})
+    for name, (left, right) in found.items():
+        section, reason = rows.get(name, ("Not recorded", ""))
+        cells = [f"`{name}`", f"`{shorten(left)}`", f"`{shorten(right)}`", reason]
+        row = "| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |"
+        sections.setdefault(section, []).append(row)
     lines = [
         "## Docker Compose vs Helm defaults",
         "",
         f"Compose at `{ref}`. {len(found)} differences; {status}.",
-        "",
-        "| Name | Compose | Helm | Section | Reason |",
-        "|---|---|---|---|---|",
     ]
-    for name, (left, right) in found.items():
-        section, reason = rows.get(name, ("**not recorded**", ""))
-        cells = [f"`{name}`", f"`{left}`", f"`{right}`", section, reason]
-        lines.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
+    for section, section_rows in sections.items():
+        if section_rows:
+            lines += ["", f"### {section}", "", "| Name | Compose | Helm | Reason |", "|---|---|---|---|", *section_rows]
     for line in problems:
         if "no longer different" in line:
             lines.append(f"\n- {line}")

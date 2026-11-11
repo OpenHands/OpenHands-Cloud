@@ -111,5 +111,17 @@ def test_summary_lists_each_difference_with_its_section_and_reason():
     report = summary(found, table, check(found, recorded_names(table)), "1.91.0")
 
     assert "Compose at `1.91.0`. 2 differences; 1 problem(s)." in report
-    assert "| `RATE_LIMITING_ENABLED` | `false` | `<unset>` | Product defaults | Production protection. |" in report
-    assert "| `NEW_FLAG` | `true` | `<unset>` | **not recorded** |  |" in report
+    assert report.index("### Not recorded") < report.index("| `NEW_FLAG` | `true` | `<unset>` |  |")
+    assert report.index("### Product defaults") < report.index(
+        "| `RATE_LIMITING_ENABLED` | `false` | `<unset>` | Production protection. |"
+    )
+
+
+def test_summary_shortens_long_values():
+    long_value = "server.verified_models.litellm_proxy_model_router.LiteLLMProxyModelServiceInjector"
+    found = {"OH_LLM_MODEL_KIND": (long_value, "<unset>")}
+
+    report = summary(found, "", [], "1.91.0")
+
+    assert "`server.verified_models.litellm_proxy_mo…`" in report
+    assert long_value not in report
