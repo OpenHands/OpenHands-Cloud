@@ -137,9 +137,11 @@ def differences(compose: dict, manifests: list[dict]) -> dict[str, tuple[str, st
     return found
 
 
+NOT_COMPARED = "Not compared"
+
+
 def recorded_names(table: str) -> set[str]:
-    """Names in the first cell of each table row, written in backticks."""
-    return set(re.findall(r"^\|\s*`([^`]+)`", table, flags=re.MULTILINE))
+    return set(recorded_rows(table))
 
 
 def check(found: dict[str, tuple[str, str]], recorded: set[str]) -> list[str]:
@@ -156,14 +158,23 @@ def check(found: dict[str, tuple[str, str]], recorded: set[str]) -> list[str]:
 
 
 def recorded_rows(table: str) -> dict[str, tuple[str, str]]:
-    """Map each recorded name to its (section heading, last cell)."""
+    """Map each recorded name to its (section heading, reason).
+
+    A table row records the name in its first cell, with the reason in its last
+    cell. A list item records every backticked name after its final ": ", with
+    the text before it as the reason.
+    """
     rows, section = {}, ""
     for line in table.splitlines():
         if line.startswith("## "):
             section = line[3:].strip()
-        match = re.match(r"^\|\s*`([^`]+)`.*\|\s*([^|]*?)\s*\|\s*$", line)
-        if match:
-            rows[match.group(1)] = (section, match.group(2))
+        row = re.match(r"^\|\s*`([^`]+)`.*\|\s*([^|]*?)\s*\|\s*$", line)
+        if row:
+            rows[row.group(1)] = (section, row.group(2))
+        elif line.startswith("- ") and ": " in line:
+            label, names = line[2:].rsplit(": ", 1)
+            for name in re.findall(r"`([^`]+)`", names):
+                rows[name] = (section, label)
     return rows
 
 
@@ -176,16 +187,21 @@ def summary(found: dict[str, tuple[str, str]], table: str, problems: list[str], 
     rows = recorded_rows(table)
     status = f"{len(problems)} problem(s)" if problems else "every difference is recorded"
     sections: dict[str, list[str]] = {"Not recorded": []}
-    sections.update({section: [] for section, _ in rows.values()})
+    sections.update({section: [] for section, _ in rows.values() if section != NOT_COMPARED})
+    hidden = 0
     for name, (left, right) in found.items():
         section, reason = rows.get(name, ("Not recorded", ""))
+        if section == NOT_COMPARED:
+            hidden += 1
+            continue
         cells = [f"`{name}`", f"`{shorten(left)}`", f"`{shorten(right)}`", reason]
         row = "| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |"
         sections.setdefault(section, []).append(row)
     lines = [
         "## Docker Compose vs Helm defaults",
         "",
-        f"Compose at `{ref}`. {len(found)} differences; {status}.",
+        f"Compose at `{ref}`. {len(found)} differences; {status}. "
+        f"{hidden} platform wiring and same-behaviour names are listed under {NOT_COMPARED} in `{TABLE}` and not shown.",
     ]
     for section, section_rows in sections.items():
         if section_rows:

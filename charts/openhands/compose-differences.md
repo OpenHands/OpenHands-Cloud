@@ -4,9 +4,9 @@ Docker Compose (`docker-compose.yml` in OpenHands/enterprise) is the default Ope
 
 `scripts/check_compose_helm_defaults.py` keeps this page exact. It renders the chart with `scripts/compose_parity_values.yaml`, reads the Compose file at the chart's `appVersion` tag, and compares the app container's environment and the bundled services. It fails when a difference is not listed here, or when a listed name no longer differs.
 
-## Product defaults
+## Defaults that differ
 
-These change what a user sees or can do. Each one is either fixed or given a reason. Reason pending: the reference install is not yet agreed.
+These change what a user sees or can do. Each one is either fixed in Helm or given a reason here.
 
 | Name | What differs | Reason |
 |---|---|---|
@@ -27,83 +27,33 @@ These change what a user sees or can do. Each one is either fixed or given a rea
 | `POSTHOG_CLIENT_KEY` | Compose sets a real PostHog key. Helm sets a placeholder. | Same as `ENABLE_POSTHOG_ANALYTICS`. With analytics off, Helm sends nothing, so its key is unused. |
 | `service:canvas-server` | Compose bundles Agent Canvas. Helm does not (it needs an ingress host). | Pending |
 
-## Same behaviour, different value
+## Not compared
 
-The values differ, but the app behaves the same.
+These names differ in the rendered environment, but not in what a user sees. The check still requires each one to be listed here, so a new variable is never missed.
 
-| Name | Why the behaviour is the same |
-|---|---|
-| `ENABLE_AUTOMATIONS` | Both show Automations. Helm sets `true` because the bundled service has a URL. Compose leaves it unset, and the app default is `true`. |
-| `CONVERSATION_MANAGER_CLASS` | Helm sets it; no reader found in app 1.89.0. |
-| `DISABLE_WAITLIST` | Helm sets it; no reader found in app 1.89.0. |
-| `DUPLICATE_EMAIL_CHECK` | Helm sets `true`, which is the app default. |
-| `ENABLE_BILLING` | Compose sets `false`, which is the app default. |
-| `OH_LLM_MODEL_KIND` | The enterprise-server image already sets the same value. |
-| `OH_SANDBOX_MAX_NUM_SANDBOXES` | Helm sets `10`, which is the app default. |
-| `OPENHANDS_CONVERSATION_VALIDATOR_CLS` | Helm sets it; no reader found in app 1.89.0. |
-| `OPENHANDS_EXPERIMENT_MANAGER_CLS` | Helm sets it; no reader found in app 1.89.0. |
-| `OPENHANDS_MCP_CONFIG_CLS` | Helm sets it; no reader found in app 1.89.0. |
-| `SANDBOX_CLOSE_DELAY` | Helm sets it; no reader found in app 1.89.0. |
-| `SANDBOX_KEEP_RUNTIME_ALIVE` | Helm sets it; no reader found in app 1.89.0. |
+### Same behaviour, different value
 
-## Platform wiring
+- Both show Automations. Helm sets `true` because the bundled service has a URL. Compose leaves it unset, and the app default is `true`: `ENABLE_AUTOMATIONS`
+- Helm sets it; no reader found in app 1.89.0: `CONVERSATION_MANAGER_CLASS`, `DISABLE_WAITLIST`, `OPENHANDS_CONVERSATION_VALIDATOR_CLS`, `OPENHANDS_EXPERIMENT_MANAGER_CLS`, `OPENHANDS_MCP_CONFIG_CLS`, `SANDBOX_CLOSE_DELAY`, `SANDBOX_KEEP_RUNTIME_ALIVE`
+- Helm sets `true`, which is the app default: `DUPLICATE_EMAIL_CHECK`
+- Compose sets `false`, which is the app default: `ENABLE_BILLING`
+- The enterprise-server image already sets the same value: `OH_LLM_MODEL_KIND`
+- Helm sets `10`, which is the app default: `OH_SANDBOX_MAX_NUM_SANDBOXES`
 
-Helm runs on Kubernetes and Compose runs on one Docker host, so these connect different components. They do not change what a user sees.
+### Platform wiring
 
-| Name | What it wires |
-|---|---|
-| `AGENT_SERVER_IMAGE_REPOSITORY` | Sandbox image and user |
-| `AGENT_SERVER_IMAGE_TAG` | Sandbox image and user |
-| `AUTH_WEB_HOST` | Keycloak connection |
-| `AUTOMATIONS_SERVICE_KEY` | Automations service connection and secrets |
-| `AUTOMATION_SERVICE_URL` | Automations service connection and secrets |
-| `AUTOMATION_WEBHOOK_SECRET` | Automations service connection and secrets |
-| `DB_HOST` | Database connection |
-| `DB_NAME` | Database connection |
-| `DB_PASS` | Database connection |
-| `DB_SSL_MODE` | Database connection |
-| `DB_USER` | Database connection |
-| `FILE_STORE` | File storage: bucket in Helm, local volume in Compose |
-| `FILE_STORE_PATH` | File storage: bucket in Helm, local volume in Compose |
-| `JWT_SECRET` | Secret reference |
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak connection |
-| `KEYCLOAK_CLIENT_ID` | Keycloak connection |
-| `KEYCLOAK_CLIENT_SECRET` | Keycloak connection |
-| `KEYCLOAK_REALM_NAME` | Keycloak connection |
-| `KEYCLOAK_SERVER_URL` | Keycloak connection |
-| `KEYCLOAK_SMTP_PASSWORD` | Keycloak connection |
-| `LAMINAR_WEB_HOST` | Public hostnames and URLs |
-| `LITE_LLM_API_KEY` | LiteLLM proxy connection |
-| `LITE_LLM_API_URL` | LiteLLM proxy connection |
-| `LITE_LLM_TEAM_ID` | LiteLLM proxy connection |
-| `LOG_JSON` | Log format for the cluster log collector |
-| `LOG_JSON_LEVEL_KEY` | Log format for the cluster log collector |
-| `NO_SETUP` | Sandbox image and user |
-| `OH_AGENT_SERVER_ENV` | Sandbox image and user |
-| `OH_RESOLVER_LABEL` | Server class and integration wiring |
-| `OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `OH_SANDBOX_SPEC_KIND` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `OH_SANDBOX_WEB_URL` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `OH_WEB_URL` | Public hostnames and URLs |
-| `OPENHANDS_CONFIG_CLS` | Server class and integration wiring |
-| `OPENHANDS_GITHUB_SERVICE_CLS` | Server class and integration wiring |
-| `OPENHANDS_GITLAB_SERVICE_CLS` | Server class and integration wiring |
-| `OPENHANDS_PROVIDER_BASE_URL` | LiteLLM proxy connection |
-| `PERMITTED_CORS_ORIGINS` | Public hostnames and URLs |
-| `PGSSLMODE` | Database connection |
-| `REDIS_HOST` | Redis connection |
-| `REDIS_PASSWORD` | Redis connection |
-| `REDIS_PORT` | Redis connection |
-| `RUNTIME` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `RUNTIME_URL_PATTERN` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `RUN_AS_OPENHANDS` | Sandbox image and user |
-| `RUN_MIGRATIONS_ON_STARTUP` | Migrations: an init container in Helm, app startup in Compose |
-| `SANDBOX_API_KEY` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_CONTAINER_URL_PATTERN` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_DOCKER_NETWORK` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_HOST_PORT` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_INTERNAL_URL` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_REMOTE_RUNTIME_API_TIMEOUT` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_REMOTE_RUNTIME_API_URL` | Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose |
-| `SANDBOX_USER_ID` | Sandbox image and user |
-| `WEB_HOST` | Public hostnames and URLs |
+Helm runs on Kubernetes and Compose runs on one Docker host, so these connect different components.
+
+- Sandbox image and user: `AGENT_SERVER_IMAGE_REPOSITORY`, `AGENT_SERVER_IMAGE_TAG`, `NO_SETUP`, `OH_AGENT_SERVER_ENV`, `RUN_AS_OPENHANDS`, `SANDBOX_USER_ID`
+- Keycloak connection: `AUTH_WEB_HOST`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_REALM_NAME`, `KEYCLOAK_SERVER_URL`, `KEYCLOAK_SMTP_PASSWORD`
+- Automations service connection and secrets: `AUTOMATIONS_SERVICE_KEY`, `AUTOMATION_SERVICE_URL`, `AUTOMATION_WEBHOOK_SECRET`
+- Database connection: `DB_HOST`, `DB_NAME`, `DB_PASS`, `DB_SSL_MODE`, `DB_USER`, `PGSSLMODE`
+- File storage: bucket in Helm, local volume in Compose: `FILE_STORE`, `FILE_STORE_PATH`
+- Secret reference: `JWT_SECRET`
+- Public hostnames and URLs: `LAMINAR_WEB_HOST`, `OH_WEB_URL`, `PERMITTED_CORS_ORIGINS`, `WEB_HOST`
+- LiteLLM proxy connection: `LITE_LLM_API_KEY`, `LITE_LLM_API_URL`, `LITE_LLM_TEAM_ID`, `OPENHANDS_PROVIDER_BASE_URL`
+- Log format for the cluster log collector: `LOG_JSON`, `LOG_JSON_LEVEL_KEY`
+- Server class and integration wiring: `OH_RESOLVER_LABEL`, `OPENHANDS_CONFIG_CLS`, `OPENHANDS_GITHUB_SERVICE_CLS`, `OPENHANDS_GITLAB_SERVICE_CLS`
+- Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose: `OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME`, `OH_SANDBOX_SPEC_KIND`, `OH_SANDBOX_WEB_URL`, `RUNTIME`, `RUNTIME_URL_PATTERN`, `SANDBOX_API_KEY`, `SANDBOX_CONTAINER_URL_PATTERN`, `SANDBOX_DOCKER_NETWORK`, `SANDBOX_HOST_PORT`, `SANDBOX_INTERNAL_URL`, `SANDBOX_REMOTE_RUNTIME_API_TIMEOUT`, `SANDBOX_REMOTE_RUNTIME_API_URL`
+- Redis connection: `REDIS_HOST`, `REDIS_PASSWORD`, `REDIS_PORT`
+- Migrations: an init container in Helm, app startup in Compose: `RUN_MIGRATIONS_ON_STARTUP`
