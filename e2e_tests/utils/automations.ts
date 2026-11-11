@@ -175,23 +175,32 @@ export async function listRuns(
   return parsed.runs;
 }
 
+function isTerminal(status: RunStatus): boolean {
+  return status !== "PENDING" && status !== "RUNNING";
+}
+
+const RUN_POLL_INTERVAL_MS = 3_000;
+
+function formatLifecycle(history: RunStatus[]): string {
+  return history.length > 0 ? history.join(" -> ") : "no run observed";
+}
+
 /**
  * Poll the automation's runs until the most recent one reaches a terminal
  * status (anything past ``PENDING``/``RUNNING``), or until ``timeoutMs`` elapses.
  *
  * The automation service assigns a fresh run id on dispatch; when the first
  * poll finds any run at all we adopt its id and keep polling that specific
- * run so a later cron tick can't confuse the assertion.
+ * run so a later cron tick can't confuse the assertion. Every status change is
+ * appended to ``history`` so a timeout can report the lifecycle it observed.
  */
-function isTerminal(status: RunStatus): boolean {
-  return status !== "PENDING" && status !== "RUNNING";
-}
-
-export async function waitForRunTerminal(
+async function pollRunToTerminal(
   baseUrl: string,
   apiKey: string,
   automationId: string,
   timeoutMs: number,
+  pollIntervalMs: number,
+  history: RunStatus[],
 ): Promise<AutomationRun> {
   const deadline = Date.now() + timeoutMs;
   let trackedRunId: string | undefined;
@@ -207,16 +216,77 @@ export async function waitForRunTerminal(
     if (current && !trackedRunId) {
       trackedRunId = current.id;
     }
+    if (current && history[history.length - 1] !== current.status) {
+      history.push(current.status);
+    }
     if (current && isTerminal(current.status)) {
       return current;
     }
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await new Promise((resolve) => {
+      setTimeout(resolve, pollIntervalMs);
+    });
   }
 
   throw new Error(
     `waitForRunTerminal: run for automation ${automationId} did not reach ` +
-      `a terminal status within ${timeoutMs}ms`,
+      `a terminal status within ${timeoutMs}ms ` +
+      `(lifecycle: ${formatLifecycle(history)})`,
   );
+}
+
+/**
+ * Wait for the run to reach any terminal status, including ``FAILED``. Only
+ * use this when the test asserts on the terminal status itself; a success path
+ * must use ``waitForRunCompleted``.
+ */
+export async function waitForRunTerminal(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<AutomationRun> {
+  return pollRunToTerminal(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+    [],
+  );
+}
+
+/**
+ * Wait for the run to finish and require ``COMPLETED``. ``FAILED``,
+ * ``CANCELLED``, ``SKIPPED`` and a run that never reaches a terminal status
+ * (for example a missing callback) all throw, naming the final status, the
+ * run's ``error_detail`` and the lifecycle observed while polling.
+ */
+export async function waitForRunCompleted(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<AutomationRun> {
+  const history: RunStatus[] = [];
+  const run = await pollRunToTerminal(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+    history,
+  );
+  if (run.status !== "COMPLETED") {
+    throw new Error(
+      `waitForRunCompleted: run ${run.id} of automation ${automationId} ` +
+        `ended ${run.status}, expected COMPLETED ` +
+        `(error_detail: ${run.error_detail ?? "none"}; ` +
+        `lifecycle: ${formatLifecycle(history)})`,
+    );
+  }
+  return run;
 }
 
 /**
