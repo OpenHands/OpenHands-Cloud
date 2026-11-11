@@ -16,6 +16,8 @@
  *    bypassing cron scheduling. Returns the run's initial state.
  *  - ``GET /api/automation/v1/{id}/runs?limit=N`` — list runs for an
  *    automation; used to poll the dispatched run to a terminal status.
+ *  - ``POST /api/automation/v1/uploads`` and ``POST /api/automation/v1`` —
+ *    upload a script tarball and create a custom-script automation from it.
  *  - ``DELETE /api/automation/v1/{id}`` — remove an automation (cleanup).
  *  - ``GET /api/automation/v1?limit=1`` — reachability probe; used to
  *    detect whether the service is deployed on the target cluster before
@@ -51,6 +53,15 @@ export interface AutomationResponse {
   [key: string]: unknown;
 }
 
+/** Payload for ``POST /api/automation/v1`` (custom script from an uploaded tarball). */
+export interface CreateScriptAutomationPayload {
+  name: string;
+  trigger: CronTrigger;
+  tarball_path: string;
+  entrypoint: string;
+  timeout?: number;
+}
+
 /** Terminal states for an automation run. */
 export type RunStatus =
   | "PENDING"
@@ -65,6 +76,8 @@ export interface AutomationRun {
   id: string;
   status: RunStatus;
   error_detail?: string | null;
+  conversation_id?: string | null;
+  run_metadata?: { finish_tool_response?: unknown } | null;
   created_at?: string;
   finished_at?: string | null;
   [key: string]: unknown;
@@ -121,6 +134,62 @@ export async function createPromptAutomation(
     const body = await response.text();
     throw new Error(
       `createPromptAutomation failed (${response.status} ${response.statusText}): ${body}`,
+    );
+  }
+  return (await response.json()) as AutomationResponse;
+}
+
+/** Upload a gzipped tarball and return its ``oh-internal://`` path. */
+export async function uploadTarball(
+  baseUrl: string,
+  apiKey: string,
+  name: string,
+  tarball: Buffer,
+): Promise<string> {
+  const url = new URL(
+    `api/automation/v1/uploads?name=${encodeURIComponent(name)}`,
+    baseUrl,
+  ).toString();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { ...bearerHeaders(apiKey), "Content-Type": "application/gzip" },
+    body: tarball,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `uploadTarball failed (${response.status} ${response.statusText}): ${body}`,
+    );
+  }
+  const upload = (await response.json()) as {
+    status: string;
+    tarball_path: string | null;
+    error_message: string | null;
+  };
+  if (upload.status !== "COMPLETED" || !upload.tarball_path) {
+    throw new Error(
+      `uploadTarball ended ${upload.status}: ${upload.error_message ?? "no tarball_path"}`,
+    );
+  }
+  return upload.tarball_path;
+}
+
+/** Create an automation that runs a script from an uploaded tarball. */
+export async function createScriptAutomation(
+  baseUrl: string,
+  apiKey: string,
+  payload: CreateScriptAutomationPayload,
+): Promise<AutomationResponse> {
+  const url = new URL("api/automation/v1", baseUrl).toString();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: bearerHeaders(apiKey),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `createScriptAutomation failed (${response.status} ${response.statusText}): ${body}`,
     );
   }
   return (await response.json()) as AutomationResponse;
@@ -312,5 +381,29 @@ export async function deleteAutomation(
   const body = await response.text();
   throw new Error(
     `deleteAutomation failed (${response.status} ${response.statusText}): ${body}`,
+  );
+}
+
+/** Delete an uploaded tarball by its ``oh-internal://uploads/{id}`` path. A 404 counts as already deleted. */
+export async function deleteUpload(
+  baseUrl: string,
+  apiKey: string,
+  tarballPath: string,
+): Promise<void> {
+  const uploadId = tarballPath.split("/").pop() ?? "";
+  const url = new URL(
+    `api/automation/v1/uploads/${encodeURIComponent(uploadId)}`,
+    baseUrl,
+  ).toString();
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: bearerHeaders(apiKey),
+  });
+  if (response.ok || response.status === 404) {
+    return;
+  }
+  const body = await response.text();
+  throw new Error(
+    `deleteUpload failed (${response.status} ${response.statusText}): ${body}`,
   );
 }
