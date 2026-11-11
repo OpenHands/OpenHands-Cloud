@@ -1,0 +1,17 @@
+# SOPS configuration for OpenHands-Cloud
+# =============================================================================
+# NOTE: For the staging environments deployed to platform-team-sandbox,
+# secrets are managed in the all-hands-system namespace and copied to
+# deployment namespaces at deploy time. This SOPS config is kept for future
+# use with production deployments or environments requiring repo-managed secrets.
+# =============================================================================
+creation_rules:
+  # Platform Team Sandbox secrets (if needed in future)
+  - path_regex: envs/staging-.*/.*secrets.*\.yaml$
+    gcp_kms: projects/platform-team-sandbox/locations/global/keyRings/sops-key-ring/cryptoKeys/sops-key
+    encrypted_regex: "^(data|stringData|config)$"
+
+  # Production environment secrets (future use)
+  - path_regex: envs/production/.*secrets.*\.yaml$
+    gcp_kms: projects/global-432717/locations/global/keyRings/sops-key-ring/cryptoKeys/sops-key
+    encrypted_regex: "^(data|stringData|config)$"
