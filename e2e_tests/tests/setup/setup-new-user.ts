@@ -16,6 +16,7 @@ import {
 } from "../../utils/auth-helpers";
 import { fetchWebClientConfig } from "../../utils/billing";
 import { ensureRealmUser } from "../../utils/keycloak-admin";
+import { deleteOrphanedAccounts } from "../../utils/org-management";
 
 /**
  * New User setup.
@@ -70,13 +71,24 @@ setup("authenticate new user", async ({ page, baseURL }) => {
   // Create the synthetic user on the first run against this instance; after
   // that only reset its password, so its Keycloak ``sub`` -- and with it the
   // app account -- stays the same.
-  await ensureRealmUser(adminConfig, {
+  const keycloakUserId = await ensureRealmUser(adminConfig, {
     email: creds.email,
     username: creds.username,
     password: creds.password,
     firstName: "E2E",
     lastName: "New User",
   });
+
+  const superAdminKey = process.env.SUPER_ADMIN_API_KEY;
+  if (superAdminKey) {
+    await deleteOrphanedAccounts(
+      baseURL || "",
+      superAdminKey,
+      creds.email,
+      keycloakUserId,
+      "New user setup",
+    );
+  }
 
   await page.goto(baseURL || "/");
 

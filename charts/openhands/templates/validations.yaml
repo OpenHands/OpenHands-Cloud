@@ -15,6 +15,10 @@ are never rendered, so a server-less release must not trip them.
 {{- if and .Values.enabled .Values.enterpriseSSO.idpMetadataUrl (not (include "openhands.keycloakProvisionRealm" .)) -}}
 {{- fail "enterpriseSSO.idpMetadataUrl requires chart-managed Keycloak realm provisioning. Set keycloak.enabled=true or keycloak.provisionRealm=true, or leave enterpriseSSO.idpMetadataUrl empty and manage the provider manually." -}}
 {{- end -}}
+{{- $tls := .Values.tls | default dict -}}
+{{- if and $tls.existingSecret (not $tls.enabled) -}}
+{{- fail (printf "tls.existingSecret is set to %q but tls.enabled is false, so no ingress would serve it. Set tls.enabled=true, or leave tls.existingSecret empty." (toString $tls.existingSecret)) -}}
+{{- end -}}
 {{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict -}}
 {{- if and .Values.enabled (eq $orgCondenser.maxTokens nil) (or $orgCondenser.applyToExisting $orgCondenser.overwriteExisting) -}}
 {{- fail "orgDefaults.condenser.maxTokens must be set before applyToExisting or overwriteExisting can be enabled." -}}

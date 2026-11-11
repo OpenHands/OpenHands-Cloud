@@ -10,11 +10,15 @@ import { getReportPortalReporter } from "./reportportal";
 import {
   authReturningFile,
   authNewUserFile,
+  e2eRunId,
   isUserEnabled,
   testIgnoreFor,
 } from "./utils/config";
 
 dotenv.config({ path: path.resolve(import.meta.dirname, ".env") });
+
+// Set once in the runner process so every worker inherits the same ID.
+e2eRunId();
 
 function getBaseURL(): string {
   const baseUrl = process.env.BASE_URL?.trim();
@@ -120,9 +124,22 @@ export default defineConfig({
     // Authenticate the Returning User via GitHub (federated through
     // Keycloak's GitHub identity provider). Matches no tests (so it doesn't
     // launch a browser) when RETURNING_GITHUB_USERNAME is unset.
+    // Run-wide setup and teardown (README "Setup and teardown"). The teardown
+    // runs after every project that depends on setup:global, also on failure.
+    {
+      name: "setup:global",
+      testMatch: /setup\/global\.setup\.ts/,
+      teardown: "teardown:global",
+    },
+    {
+      name: "teardown:global",
+      testMatch: /setup\/global\.teardown\.ts/,
+    },
+
     {
       name: "setup:returning",
       testMatch: matchFor(hasReturningUser, /setup\/setup-returning\.ts/),
+      dependencies: ["setup:global"],
     },
 
     // Create the synthetic New User in Keycloak (or reset its password) and
@@ -131,6 +148,7 @@ export default defineConfig({
     {
       name: "setup:new-user",
       testMatch: matchFor(hasNewUser, /setup\/setup-new-user\.ts/),
+      dependencies: ["setup:global"],
     },
 
     // --- Test projects --------------------------------------------------

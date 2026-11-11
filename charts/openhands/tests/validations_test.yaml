@@ -174,3 +174,17 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: fails when tls.existingSecret is set with tls disabled
+    set:
+      tls.enabled: false
+      tls.existingSecret: customer-tls
+    asserts:
+      - failedTemplate:
+          errorMessage: 'tls.existingSecret is set to "customer-tls" but tls.enabled is false, so no ingress would serve it. Set tls.enabled=true, or leave tls.existingSecret empty.'
+  - it: renders no resources when tls.existingSecret is set with tls enabled
+    set:
+      tls.enabled: true
+      tls.existingSecret: customer-tls
+    asserts:
+      - hasDocuments:
+          count: 0

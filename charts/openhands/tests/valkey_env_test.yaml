@@ -94,7 +94,7 @@ tests:
   - it: analyses redis as a StatefulSet in the support bundle
     set:
       replicated.enabled: true
-      replicated.redisPassword: test-password
+      supportBundle.redisPassword: test-password
     asserts:
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
@@ -119,7 +119,7 @@ tests:
       redis.enabled: false
       valkey.enabled: true
       replicated.enabled: true
-      replicated.redisPassword: test-password
+      supportBundle.redisPassword: test-password
     asserts:
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
@@ -146,7 +146,7 @@ tests:
       redis.enabled: false
       valkey.enabled: true
       replicated.enabled: true
-      replicated.redisPassword: test-password
+      supportBundle.redisPassword: test-password
     asserts:
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
