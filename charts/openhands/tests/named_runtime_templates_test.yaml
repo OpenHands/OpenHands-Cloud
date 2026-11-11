@@ -1,0 +1,66 @@
+suite: named sandbox image and resource templates
+templates:
+  - charts/runtime-api/templates/warm-runtimes-configmap.yaml
+tests:
+  - it: preserves a cold custom-image template with a zero count despite a nonzero global count
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 3
+      runtime-api.warmRuntimes.configs:
+        - name: custom_large
+          display_name: Custom Build (8 GB)
+          image: registry.example.test/custom:1
+          working_dir: /workspace/project
+          command: [agent-server]
+          environment: {}
+          count: 0
+          resources:
+            requests: {memory: 6Gi, cpu: 1000m}
+            limits: {memory: 8Gi, cpu: 2000m}
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 0'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"display_name": "Custom Build \(8 GB\)"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "registry.example.test/custom:1"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"resources": \{"limits":\{"cpu":"2000m","memory":"8Gi"\},"requests":\{"cpu":"1000m","memory":"6Gi"\}\}'
+  - it: keeps legacy templates valid without optional labels or resources
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 2
+      runtime-api.warmRuntimes.configs:
+        - name: legacy
+          working_dir: /workspace
+          command: [agent-server]
+          environment: {}
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"(display_name|resources)"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 2'
+
+  - it: inherits the global count when the per-template count is null
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 2
+      runtime-api.warmRuntimes.configs:
+        - name: nullable
+          count: null
+          working_dir: /workspace
+          command: [agent-server]
+          environment: {}
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count":\s*,'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 2'

@@ -289,6 +289,9 @@ warmRuntimes:
   configs: []
   # Canonical map form. Each key becomes the config name unless the entry sets
   # `name` explicitly. Maps merge cleanly across values layers.
+  # Each entry may also set display_name and resources.requests/limits.cpu/memory
+  # when running a Runtime API version that supports named sizing templates.
+  # A per-entry count of 0 keeps it discoverable without reserving warm capacity.
   # Set `fuse_s3_mount: true` on an entry for fusey warm pods: dormant startup,
   # /workspace FUSE-mounted from object storage instead of a PVC. Needs the
   # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
