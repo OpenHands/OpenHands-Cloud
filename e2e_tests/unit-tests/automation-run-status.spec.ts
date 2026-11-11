@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   waitForRunCompleted,
+  waitForRunFailed,
   waitForRunTerminal,
   type RunStatus,
 } from "../utils/automations";
@@ -16,7 +17,8 @@ import {
  * ended ``FAILED`` used to pass the automation suite. These tests run a local
  * stand-in for ``GET /api/automation/v1/{id}/runs`` that replays a scripted
  * status sequence, then prove ``waitForRunCompleted`` rejects every outcome
- * except ``COMPLETED`` and reports the failure detail.
+ * except ``COMPLETED`` and reports the failure detail. The failure-path
+ * helper ``waitForRunFailed`` gets the mirror proof: only ``FAILED`` passes.
  */
 
 const API_KEY = "qa-fixture-key";
@@ -171,4 +173,55 @@ test("the corrected helper returns a COMPLETED run", async () => {
   );
 
   expect(run).toMatchObject({ id: `run-${id}`, status: "COMPLETED" });
+});
+
+test("the failure-path helper returns a FAILED run with its error detail", async () => {
+  const id = script("expected-failed", {
+    statuses: ["PENDING", "RUNNING", "FAILED"],
+    errorDetail: "fixture: expected diagnostic",
+  });
+
+  const run = await waitForRunFailed(baseUrl, API_KEY, id, TIMEOUT_MS, POLL_MS);
+
+  expect(run).toMatchObject({
+    id: `run-${id}`,
+    status: "FAILED",
+    error_detail: "fixture: expected diagnostic",
+  });
+});
+
+test("the failure-path helper rejects a COMPLETED run", async () => {
+  const id = script("unexpected-completed", {
+    statuses: ["PENDING", "RUNNING", "COMPLETED"],
+  });
+
+  await expect(
+    waitForRunFailed(baseUrl, API_KEY, id, TIMEOUT_MS, POLL_MS),
+  ).rejects.toThrow(
+    `waitForRunFailed: run run-${id} of automation ${id} ended COMPLETED, expected FAILED (error_detail: none; lifecycle: PENDING -> RUNNING -> COMPLETED)`,
+  );
+});
+
+(["CANCELLED", "SKIPPED"] as const).forEach((status) => {
+  test(`the failure-path helper rejects a terminal ${status} run`, async () => {
+    const id = script(`expected-failed-${status.toLowerCase()}`, {
+      statuses: ["RUNNING", status],
+    });
+
+    await expect(
+      waitForRunFailed(baseUrl, API_KEY, id, TIMEOUT_MS, POLL_MS),
+    ).rejects.toThrow(`ended ${status}, expected FAILED`);
+  });
+});
+
+test("the failure-path helper times out on a run whose callback never arrives", async () => {
+  const id = script("expected-failed-missing-callback", {
+    statuses: ["PENDING", "RUNNING"],
+  });
+
+  await expect(
+    waitForRunFailed(baseUrl, API_KEY, id, TIMEOUT_MS, POLL_MS),
+  ).rejects.toThrow(
+    `did not reach a terminal status within ${TIMEOUT_MS}ms (lifecycle: PENDING -> RUNNING)`,
+  );
 });
