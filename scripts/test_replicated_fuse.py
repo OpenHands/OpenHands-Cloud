@@ -6,6 +6,7 @@ that the values handed to the chart agree with what the chart creates.
 """
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,22 @@ def test_the_values_point_the_fuse_mount_at_a_bucket_the_chart_creates(kvm):
     assert mount["s3"]["accessKeyId"] == account["accessKey"]
     assert mount["s3"]["secretAccessKey"] == account["secretKey"]
     assert mount["s3"]["region"]
+
+
+def test_the_bundled_minio_creates_the_workspaces_bucket_without_purging_it(tmp_path):
+    minio = chart_values()["minio"]
+    values_path = tmp_path / "values.yaml"
+    values_path.write_text(yaml.safe_dump({"buckets": minio["buckets"], "svcaccts": minio["svcaccts"]}))
+    dependency = next((ROOT / "charts/openhands/charts").glob("minio-*.tgz"))
+
+    rendered = subprocess.run(
+        ["helm", "template", "openhands", str(dependency), "-f", str(values_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    assert 'createBucket runtime-api-workspaces "none" false false false' in rendered
 
 
 def test_the_broker_url_the_sandboxes_call_is_already_set():
