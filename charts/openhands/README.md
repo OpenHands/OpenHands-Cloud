@@ -979,8 +979,11 @@ external LiteLLM proxy, configure and validate the same behavior there.
 ## Automations chart configuration
 
 Local Automations defaults on. It requires configuration before the chart can
-render; incomplete prerequisites fail before a rollout. These inputs apply to
-the app and secrets charts, which are separate releases:
+render; incomplete prerequisites fail before a rollout. This is a breaking
+change: an existing install that upgrades with unchanged values fails to render
+until it either configures the inputs below or sets `automation.enabled: false`.
+Nothing is applied when the render fails. These inputs apply to the app and
+secrets charts, which are separate releases:
 
 - Set `automation.filestore.type` explicitly (`s3` or `gcs`), and configure its
   package bucket, endpoint and credentials/identity. App conversation storage is
