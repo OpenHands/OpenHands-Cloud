@@ -64,7 +64,7 @@ No conversation-store or volume defaults change as part of this rollout. */}}
 {{- if not (has $a.filestore.type (list "s3" "gcs" "google_cloud")) -}}
 {{- fail "Local Automations requires an explicit automation.filestore.type (s3 or gcs). Configure its durable package store before enabling the service; existing GCS users must pin gcs. Set automation.enabled=false to retain the previous default-off behavior." -}}
 {{- end -}}
-{{- $dbHost := tpl $a.database.host . -}}
+{{- $dbHost := tpl $a.database.host . | trim -}}
 {{- $bundledDb := .Values.postgresql.fullnameOverride | default (printf "%s-postgresql" .Release.Name) -}}
 {{- if .Values.postgresql.enabled -}}
 {{- $bundledDb = include "postgresql.v1.primary.fullname" (index .Subcharts "postgresql") -}}
@@ -75,6 +75,18 @@ No conversation-store or volume defaults change as part of this rollout. */}}
 {{- $dbAliases := list $bundledDb (printf "%s.%s" $bundledDb .Release.Namespace) (printf "%s.%s.svc" $bundledDb .Release.Namespace) (printf "%s.%s.svc.cluster.local" $bundledDb .Release.Namespace) -}}
 {{- if not $dbHost -}}
 {{- fail "Local Automations requires automation.database.host." -}}
+{{- end -}}
+{{- range $field := list "user" "name" -}}
+{{- if not (toString (get $a.database $field) | trim) -}}
+{{- fail (printf "Local Automations requires automation.database.%s." $field) -}}
+{{- end -}}
+{{- end -}}
+{{- $dbPort := atoi (toString $a.database.port) -}}
+{{- if or (lt $dbPort 1) (gt $dbPort 65535) -}}
+{{- fail (printf "automation.database.port must be between 1 and 65535, got %q." (toString $a.database.port)) -}}
+{{- end -}}
+{{- if not (toString $a.filestore.bucket | trim) -}}
+{{- fail "Local Automations requires automation.filestore.bucket." -}}
 {{- end -}}
 {{- if has (trimSuffix "." $dbHost) $dbAliases -}}
 {{- if not .Values.postgresql.enabled -}}
@@ -109,7 +121,9 @@ by bootstrap and prerequisite checks. Other env overrides remain supported. */}}
 {{- fail "Automations targets bundled MinIO but it is disabled or ephemeral. Enable minio.enabled and durable minio.persistence, or configure an external automation.filestore." -}}
 {{- end -}}
 {{- end -}}
-{{- if and (eq $endpoint (printf "http://%s-rustfs-svc:9000" .Release.Name)) (not .Values.rustfs.enabled) -}}
+{{- $rustfsName := printf "%s-rustfs-svc" .Release.Name -}}
+{{- $rustfsAliases := list $rustfsName (printf "%s.%s" $rustfsName .Release.Namespace) (printf "%s.%s.svc" $rustfsName .Release.Namespace) (printf "%s.%s.svc.cluster.local" $rustfsName .Release.Namespace) -}}
+{{- if and (has (trimSuffix "." $storeHost) $rustfsAliases) (not .Values.rustfs.enabled) -}}
 {{- fail "Automations targets bundled RustFS but rustfs.enabled is false. Enable it with operator-provisioned credentials or configure an external automation.filestore." -}}
 {{- end -}}
 {{- end -}}

@@ -374,6 +374,106 @@ tests:
   - template: validations.yaml
     failedTemplate:
       errorPattern: Automations targets bundled MinIO but it is disabled or ephemeral
+- it: rejects a disabled bundled RustFS by short name
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-rustfs-svc:9000
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled RustFS but rustfs.enabled is false
+- it: rejects a disabled bundled RustFS by namespace-qualified name
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-rustfs-svc.enterprise.svc.cluster.local:9000
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled RustFS but rustfs.enabled is false
+- it: rejects a disabled bundled RustFS over https
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: https://review-rustfs-svc:9000
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Automations targets bundled RustFS but rustfs.enabled is false
+- it: accepts an enabled bundled RustFS
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: s3
+    automation.filestore.endpoint: http://review-rustfs-svc:9000
+    rustfs.enabled: true
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: rejects a whitespace database host
+  set:
+    automation.enabled: true
+    automation.database.host: " "
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires automation.database.host
+- it: rejects a blank database user
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.user: " "
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires automation.database.user
+- it: rejects a blank database name
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.name: ""
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires automation.database.name
+- it: rejects database port 0
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.port: 0
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: automation.database.port must be between 1 and 65535
+- it: rejects a database port above 65535
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.database.port: 70000
+    automation.filestore.type: gcs
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: automation.database.port must be between 1 and 65535
+- it: rejects a blank package bucket
+  set:
+    automation.enabled: true
+    automation.database.host: db.example.com
+    automation.filestore.type: gcs
+    automation.filestore.bucket: " "
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires automation.filestore.bucket
 - it: accepts an existing durable PostgreSQL mounted from a pre-provisioned claim
   release:
     upgrade: true
