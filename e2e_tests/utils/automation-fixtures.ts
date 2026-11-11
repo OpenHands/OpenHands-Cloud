@@ -54,3 +54,13 @@ export function completedRunScript(expectedOutput: string): string {
   );
   return source.replace("__EXPECTED_OUTPUT__", JSON.stringify(expectedOutput));
 }
+
+/**
+ * Script that raises a known error and reports ``FAILED`` with
+ * ``expectedError`` through the completion callback. It starts no
+ * conversation, so a run of it must end ``FAILED`` with no linked conversation.
+ */
+export function failedRunScript(expectedError: string): string {
+  const source = readFileSync(path.join(fixturesDir, "failed_run.py"), "utf8");
+  return source.replace("__EXPECTED_ERROR__", JSON.stringify(expectedError));
+}
