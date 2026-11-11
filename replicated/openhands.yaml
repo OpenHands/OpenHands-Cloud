@@ -48,13 +48,6 @@ spec:
       # KOTS passes the saved choice and explicit DB/store configuration.
       # Prerequisite and online data-path guards still apply.
       upgradeAcknowledged: true
-    automationServiceKey:
-      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-    automationWebhookSecret:
-      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
-    automationService:
-      url: '{{repl if ConfigOptionEquals "automations_enabled" "1" }}http://automation/api/automation{{repl end}}'
-      eventForwardingEnabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
 
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 

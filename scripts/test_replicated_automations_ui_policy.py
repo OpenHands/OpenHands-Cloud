@@ -33,8 +33,15 @@ def test_saved_on_choice_supplies_the_service_url_the_chart_default_needs() -> N
     assert values["automation"]["enabled"] is True
 
 
-def test_saved_off_choice_leaves_automation_wiring_to_chart_defaults() -> None:
+def test_saved_choice_overrides_the_chart_default_that_turns_automations_on() -> None:
     values = replicated_values()
 
-    for key in ("automation", "automationService", "automationServiceKey", "automationWebhookSecret"):
+    assert values["automation"]["enabled"] == SAVED_CHOICE
+    assert values["automation"]["upgradeAcknowledged"] is True
+
+
+def test_saved_off_choice_leaves_service_wiring_to_chart_defaults() -> None:
+    values = replicated_values()
+
+    for key in ("automationService", "automationServiceKey", "automationWebhookSecret"):
         assert key not in values
