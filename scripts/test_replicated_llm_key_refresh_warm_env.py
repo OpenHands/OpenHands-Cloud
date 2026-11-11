@@ -111,8 +111,11 @@ def render_warm_configs(
     """Render warm-runtimes.json the way a Replicated install gets it: Replicated
     values layered over the chart defaults, with global.agentServerEnv merged in."""
     values = spec["values"]
-    # count is a KOTS template string; only the configs matter here.
+    # count and fuse.enabled are KOTS template strings; only the configs matter
+    # here. The fuse pool is a deepCopy of the base entry, and enabling it also
+    # needs the fuseMount storage settings, so leave it off.
     warm = {**values["runtime-api"]["warmRuntimes"], "count": 1}
+    warm["fuse"] = {**warm["fuse"], "enabled": False}
     # Only agentServerEnv from global: the rest holds {{repl}} strings that
     # third-party subcharts tpl-render and helm cannot parse.
     agent_server_env = {
