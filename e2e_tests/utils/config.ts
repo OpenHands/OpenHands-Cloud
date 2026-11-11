@@ -107,6 +107,7 @@ export const ROLE_ONLY_SPECS: Record<RunUser, readonly string[]> = {
     "014-login.spec.ts",
     "015-automation-completed-journey.spec.ts",
     "016-automation-failed-journey.spec.ts",
+    "017-automation-non-completed-journey.spec.ts",
   ],
 };
 

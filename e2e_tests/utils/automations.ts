@@ -18,6 +18,8 @@
  *    automation; used to poll the dispatched run to a terminal status.
  *  - ``POST /api/automation/v1/uploads`` and ``POST /api/automation/v1`` —
  *    upload a script tarball and create a custom-script automation from it.
+ *  - ``POST /api/automation/v1/runs/{run_id}/cancel`` — cancel a pending or
+ *    running run (cleanup, and the cancellation fixture).
  *  - ``DELETE /api/automation/v1/{id}`` — remove an automation (cleanup).
  *  - ``GET /api/automation/v1?limit=1`` — reachability probe; used to
  *    detect whether the service is deployed on the target cluster before
@@ -77,9 +79,11 @@ export interface AutomationRun {
   status: RunStatus;
   error_detail?: string | null;
   conversation_id?: string | null;
+  bash_command_id?: string | null;
   run_metadata?: { finish_tool_response?: unknown } | null;
   created_at?: string;
   finished_at?: string | null;
+  completed_at?: string | null;
   [key: string]: unknown;
 }
 
@@ -377,6 +381,51 @@ export async function waitForRunCompleted(
   );
 }
 
+/** What the success-path assertion reported for a run that must not pass it. */
+export interface SuccessAssertionFailure {
+  /** The error ``waitForRunCompleted`` threw: final status, detail and lifecycle. */
+  message: string;
+  /** How long the bounded wait took before it gave up or saw the terminal status. */
+  elapsedMs: number;
+}
+
+/**
+ * Evaluate the success assertion (``waitForRunCompleted``) for a run that is
+ * built to fail it, and return the failure it reported. The assertion must
+ * reject; if it resolves, the run passed the success path, which is the
+ * regression a journey of non-``COMPLETED`` outcomes exists to catch, so this
+ * throws.
+ */
+export async function captureSuccessAssertionFailure(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<SuccessAssertionFailure> {
+  const startedAt = Date.now();
+  const outcome = await waitForRunCompleted(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+  ).then(
+    (run) => ({ run }),
+    (error: Error) => ({ error }),
+  );
+  if ("run" in outcome) {
+    throw new Error(
+      `the success assertion passed run ${outcome.run.id} of automation ${automationId} ` +
+        "although the run was built to end in any status but COMPLETED",
+    );
+  }
+  return {
+    message: outcome.error.message,
+    elapsedMs: Date.now() - startedAt,
+  };
+}
+
 /**
  * Wait for the run to finish and require ``FAILED``, for a journey that
  * fails on purpose. ``COMPLETED``, ``CANCELLED``, ``SKIPPED`` and a run that
@@ -399,6 +448,40 @@ export async function waitForRunFailed(
     timeoutMs,
     pollIntervalMs,
   );
+}
+
+/**
+ * Cancel every run of the automation that is still ``PENDING`` or ``RUNNING``,
+ * so a test that abandons a run leaves nothing active. Returns the ids it
+ * cancelled. A run that reaches a terminal status between the list and the
+ * cancel (409) is already done and is skipped.
+ */
+export async function cancelActiveRuns(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+): Promise<string[]> {
+  const runs = await listRuns(baseUrl, apiKey, automationId, 100);
+  const cancelled: string[] = [];
+  for (const run of runs.filter((r) => !isTerminal(r.status))) {
+    const url = new URL(
+      `api/automation/v1/runs/${encodeURIComponent(run.id)}/cancel`,
+      baseUrl,
+    ).toString();
+    const response = await fetch(url, {
+      method: "POST",
+      headers: bearerHeaders(apiKey),
+    });
+    if (response.ok) {
+      cancelled.push(run.id);
+    } else if (response.status !== 409) {
+      const body = await response.text();
+      throw new Error(
+        `cancelActiveRuns failed (${response.status} ${response.statusText}): ${body}`,
+      );
+    }
+  }
+  return cancelled;
 }
 
 /**
