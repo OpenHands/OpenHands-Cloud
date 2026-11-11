@@ -27,7 +27,7 @@ def test_the_release_check_runs_on_release_please_prs_and_manually_only():
     job = load(CHECK)["jobs"]["check-fusey-image"]
     assert "startsWith(github.head_ref, 'release-please--')" in job["if"]
     assert "workflow_dispatch" in job["if"]
-    assert "fusey_image.py --wait" in step(job, "Check the image")["run"]
+    assert "scripts/fusey_image.py" in step(job, "Check the image")["run"]
 
 
 def test_the_release_check_only_reads_and_cannot_publish():

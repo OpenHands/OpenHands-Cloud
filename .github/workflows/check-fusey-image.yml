@@ -5,9 +5,9 @@ name: Check fusey image
 # agent-server tag and the fusey version (see scripts/fusey_image.py), so a
 # release cannot ship pointing at an image that was never built.
 #
-# The image is built by the "Build Fusey Image" workflow in OpenHands/runtime-api.
-# On failure the log names the inputs to run it with. Nothing reruns this check
-# when that build ends, so the check waits for it.
+# runtime-api owns the pin (fusey-image.env) and builds the image on release,
+# before its chart bump PR opens, so a missing image means the chart pins have
+# drifted from runtime-api. The log says how to fix it. This check builds nothing.
 
 on:
   # Deliberately unfiltered by path, for the reason check-agent-server-sync.yml
@@ -30,7 +30,7 @@ jobs:
         startsWith(github.head_ref, 'release-please--')
       }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           status=0
-          uv run scripts/fusey_image.py --wait 1200 --interval 30 > report.txt 2>&1 || status=$?
+          uv run scripts/fusey_image.py > report.txt 2>&1 || status=$?
           cat report.txt
           {
             echo '### Fusey image'

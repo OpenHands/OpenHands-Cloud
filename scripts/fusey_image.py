@@ -11,12 +11,13 @@ agent-server tag and the fusey version separately and derive the image tag. A
 chart release must not name an image that does not exist, so this check reads
 those pins and asks the registry for the tag, for amd64 and arm64.
 
-The image is built by the "Build Fusey Image" workflow in OpenHands/runtime-api.
-This repo only checks that it exists.
+runtime-api owns the pin (``fusey-image.env``) and builds the image when it
+releases, before the bump PR for this chart opens. This repo only checks that the
+image the charts name exists, which catches pins that have drifted from runtime-api.
 
 Run it from the chart repo root:
 
-    uv run scripts/fusey_image.py [--wait SECONDS]
+    uv run scripts/fusey_image.py
 
 Exit status is 0 when the image is published and 1 when it is not or a pin cannot
 be read.
@@ -27,7 +28,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,7 +48,7 @@ DEFAULT_REGISTRY_URL = "https://ghcr.io"
 
 BUILD_REPO = "OpenHands/runtime-api"
 BUILD_WORKFLOW = "fusey-image.yaml"
-BUILD_WORKFLOW_NAME = "Build Fusey Image"
+BUILD_PIN_FILE = "fusey-image.env"
 
 
 class FuseyImageError(Exception):
@@ -98,12 +98,15 @@ class FuseyImage:
 
     @property
     def build_instructions(self) -> str:
-        """How to publish this image with the runtime-api workflow."""
+        """How to get this image published through runtime-api."""
         return (
-            f"Build it with the '{BUILD_WORKFLOW_NAME}' workflow in {BUILD_REPO}, "
-            f"using these inputs:\n"
-            f"  agent_server_tag: {self.agent_server_tag}\n"
-            f"  fusey_version:    v{self.fusey_version}\n\n"
+            f"{BUILD_REPO} owns this image and builds it when it releases, from "
+            f"{BUILD_PIN_FILE}. The charts are ahead of it or out of step with it.\n"
+            f"To publish this image, set these in {BUILD_PIN_FILE} in {BUILD_REPO}, "
+            f"release it, then bump the runtime-api chart tag here:\n"
+            f"  AGENT_SERVER_TAG={self.agent_server_tag}\n"
+            f"  FUSEY_VERSION={self.fusey_version}\n\n"
+            f"To build it before that release:\n"
             f"  gh workflow run {BUILD_WORKFLOW} --repo {BUILD_REPO} "
             f"-f agent_server_tag={self.agent_server_tag} "
             f"-f fusey_version=v{self.fusey_version}\n\n"
@@ -230,29 +233,6 @@ def check(repo_root: Path, registry_url: str = DEFAULT_REGISTRY_URL) -> str:
     return f"{image.reference} is published for {', '.join(sorted(architectures))}."
 
 
-def wait_for_image(
-    repo_root: Path,
-    registry_url: str,
-    timeout: float,
-    interval: float,
-) -> str:
-    """Run `check`, retrying until it passes or `timeout` seconds have gone by.
-
-    A release PR can be checked while the image is still being built, and
-    nothing reruns the check when the build ends. Waiting here lets the check
-    pass on its own once the image appears. Pin errors are not retried: no wait
-    fixes them.
-    """
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            return check(repo_root, registry_url)
-        except ImageNotPublishedError:
-            if time.monotonic() >= deadline:
-                raise
-        time.sleep(interval)
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -263,24 +243,10 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_REGISTRY_URL,
         help=f"Registry to query (default: {DEFAULT_REGISTRY_URL}).",
     )
-    parser.add_argument(
-        "--wait",
-        type=float,
-        default=0,
-        metavar="SECONDS",
-        help="Keep retrying for this long while the image is not yet published.",
-    )
-    parser.add_argument(
-        "--interval",
-        type=float,
-        default=30,
-        metavar="SECONDS",
-        help="With --wait: pause between attempts (default: 30).",
-    )
     args = parser.parse_args(argv)
 
     try:
-        print(wait_for_image(args.repo_root, args.registry_url, args.wait, args.interval))
+        print(check(args.repo_root, args.registry_url))
     except FuseyImageError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

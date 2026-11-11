@@ -187,7 +187,7 @@ def test_check_asks_the_registry_for_the_derived_tag_only(tmp_path, registry):
     assert any(request.endswith("/manifests/1.70.0-python-fusey0.0.14") for request in registry.requests)
 
 
-def test_a_missing_tag_says_how_to_build_it_with_the_exact_inputs(tmp_path, registry):
+def test_a_missing_tag_says_how_to_publish_it_with_the_exact_pins(tmp_path, registry):
     write_values(tmp_path, f"{registry.host}/{PACKAGE}", agent_server_tag="1.70.0-python", version="0.1.2")
 
     with pytest.raises(FuseyImageError) as error:
@@ -195,7 +195,8 @@ def test_a_missing_tag_says_how_to_build_it_with_the_exact_inputs(tmp_path, regi
 
     message = str(error.value)
     assert f"{registry.host}/{PACKAGE}:1.70.0-python-fusey0.1.2 is not published" in message
-    assert "'Build Fusey Image' workflow in OpenHands/runtime-api" in message
+    assert "set these in fusey-image.env in OpenHands/runtime-api" in message
+    assert "AGENT_SERVER_TAG=1.70.0-python\n  FUSEY_VERSION=0.1.2" in message
     # runtime-api's workflow takes the version with its leading v.
     assert (
         "gh workflow run fusey-image.yaml --repo OpenHands/runtime-api "
@@ -237,31 +238,6 @@ def test_check_refuses_a_repository_on_another_registry(tmp_path, registry):
 
     with pytest.raises(FuseyImageError, match="is not on"):
         fusey_image.check(tmp_path, registry.url)
-
-
-def test_wait_returns_as_soon_as_the_image_appears(tmp_path, registry):
-    write_values(tmp_path, f"{registry.host}/{PACKAGE}")
-    threading.Timer(0.3, lambda: registry.tags.update({TAG: FULL_INDEX})).start()
-
-    report = fusey_image.wait_for_image(tmp_path, registry.url, timeout=10, interval=0.05)
-
-    assert TAG in report
-
-
-def test_wait_gives_up_after_the_timeout_with_the_check_error(tmp_path, registry):
-    write_values(tmp_path, f"{registry.host}/{PACKAGE}")
-
-    with pytest.raises(FuseyImageError, match="is not published"):
-        fusey_image.wait_for_image(tmp_path, registry.url, timeout=0.2, interval=0.05)
-
-    assert len(registry.requests) > 2  # it retried
-
-
-def test_wait_does_not_retry_a_pin_error(tmp_path, registry):
-    write_values(tmp_path, f"{registry.host}/{PACKAGE}", **{"runtime-api": {"fuseyImage": {"version": "0.0.13"}}})
-
-    with pytest.raises(FuseyImageError, match="disagree"):
-        fusey_image.wait_for_image(tmp_path, registry.url, timeout=10, interval=10)
 
 
 def test_the_command_exits_nonzero_with_the_error_on_stderr(tmp_path, registry, capsys):
