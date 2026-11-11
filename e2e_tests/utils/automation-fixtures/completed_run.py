@@ -17,7 +17,9 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 EXPECTED_OUTPUT = __EXPECTED_OUTPUT__
-AGENT_URL = "http://127.0.0.1:" + os.environ.get("AGENT_SERVER_PORT", "8000")
+# Kubernetes sandboxes serve on 60000 and leave AGENT_SERVER_PORT unset; the
+# Docker Compose stack sets it to 8000.
+AGENT_URL = "http://127.0.0.1:" + os.environ.get("AGENT_SERVER_PORT", "60000")
 SESSION_KEY = os.environ.get("SESSION_API_KEY") or os.environ.get(
     "OH_SESSION_API_KEYS_0", ""
 )
