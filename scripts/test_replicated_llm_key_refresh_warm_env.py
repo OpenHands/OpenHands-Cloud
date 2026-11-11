@@ -112,7 +112,15 @@ def render_warm_configs(
     values layered over the chart defaults, with global.agentServerEnv merged in."""
     values = spec["values"]
     # count is a KOTS template string; only the configs matter here.
+    # fuse.enabled is another. Turn the fuse pool on, with the fuseMount settings
+    # the chart then requires, so its config is checked too.
     warm = {**values["runtime-api"]["warmRuntimes"], "count": 1}
+    warm["fuse"] = {**warm["fuse"], "enabled": True}
+    fuse_mount = {
+        "enabled": True,
+        "bucket": "workspaces",
+        "runtimeApiBaseUrl": "http://runtime-api",
+    }
     # Only agentServerEnv from global: the rest holds {{repl}} strings that
     # third-party subcharts tpl-render and helm cannot parse.
     agent_server_env = {
@@ -123,7 +131,7 @@ def render_warm_configs(
         yaml.safe_dump(
             {
                 "global": {"agentServerEnv": agent_server_env},
-                "runtime-api": {"warmRuntimes": warm},
+                "runtime-api": {"warmRuntimes": warm, "fuseMount": fuse_mount},
             },
             overrides,
         )
@@ -146,7 +154,11 @@ def render_warm_configs(
             capture_output=True,
             text=True,
         ).stdout
-    return json.loads(yaml.safe_load(manifest)["data"]["warm-runtimes.json"])["configs"]
+    configs = json.loads(yaml.safe_load(manifest)["data"]["warm-runtimes.json"])[
+        "configs"
+    ]
+    assert any(config.get("fuse_s3_mount") for config in configs), "no fuse pool"
+    return configs
 
 
 def test_replicated_warm_env_matches_app_injected_request_env() -> None:
