@@ -1732,9 +1732,9 @@ spec:
               message: Must start with github://, https://, or http://
         - name: super_admin_dashboard_enabled
           title: Enable Super Admin Dashboard
-          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
+          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname. On a new install, the first user to sign in also sees the first-install setup. Existing users will not see it.
           type: bool
-          default: "0"
+          default: "1"
         - name: super_admin_emails
           title: Super Admin Emails
           help_text: >-
@@ -1892,7 +1892,6 @@ spec:
           title: Enable Agent Profiles
           help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles.
           type: bool
-          hidden: true
           default: "0"
         - name: model_routing_enabled
           title: Enable Model Routing
@@ -1903,7 +1902,6 @@ spec:
           title: Enable Organization MCP Servers
           help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP.
           type: bool
-          hidden: true
           default: "0"
 
     - name: advanced_options
