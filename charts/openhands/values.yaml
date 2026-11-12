@@ -128,6 +128,11 @@ securityContext:
   runAsNonRoot: true
 
 env:
+  # Hides editing only; saved personal credentials remain usable.
+  OH_ALLOW_USER_LLM_CONFIGURATION: "false"
+  HIDE_BILLING_PAGE: "true"
+  EMAIL_CHANGE_ENABLED: "false"
+  OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "false"
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   # How the app addresses a sandbox. Must agree with the runtime-api's

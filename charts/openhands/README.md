@@ -1,6 +1,13 @@
-# OpenHands Cloud Helm Chart
+# OpenHands Enterprise Helm Chart
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
+
+## Enterprise policy defaults
+
+By default the chart hides personal LLM key editing and the Billing page, and
+disables email changes. It shows the Automations page only when the app has a
+service URL. Explicit `env` overrides win. See
+[enterprise-defaults.md](enterprise-defaults.md) before you upgrade.
 
 ## Prerequisites
 
