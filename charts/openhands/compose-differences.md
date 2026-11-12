@@ -22,7 +22,7 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 | `ENABLE_INTEGRATED_IDP` | Compose uses the app's built-in password login. Helm uses Keycloak. | Production installs sign in through Keycloak for SSO. Compose uses a built-in login for one evaluator. |
 | `ENABLE_LEGACY_LITELLM` | Compose: each user brings an LLM key; no LiteLLM proxy. Helm: the LiteLLM proxy is on, with budgets. | Production installs use the LiteLLM proxy for managed models and budgets. Compose has each user bring a key. |
 | `RATE_LIMITING_ENABLED` | Compose turns rate limiting off. Helm leaves it on. | Production installs keep rate limiting on. Compose turns it off for one evaluator. |
-| `OH_APP_CONVERSATION_SANDBOX_GROUPING_STRATEGY` | Compose shares a sandbox between conversations. Helm gives each conversation its own sandbox. | Kubernetes runs each conversation in its own sandbox. Compose shares sandboxes to save resources on one host. |
+| `OH_APP_CONVERSATION_SANDBOX_GROUPING_STRATEGY` | Compose shares a sandbox between conversations. Helm gives each conversation its own sandbox. | Helm installs need each conversation in its own sandbox. Compose shares sandboxes to run faster on one local machine. |
 | `ENABLE_POSTHOG_ANALYTICS` | Compose sends backend analytics to PostHog. Helm does not. | Product analytics cover the Compose evaluator funnel only (OHE-3657). Helm installs stay off. |
 | `POSTHOG_CLIENT_KEY` | Compose sets a real PostHog key. Helm sets a placeholder. | Same as `ENABLE_POSTHOG_ANALYTICS`. With analytics off, Helm sends nothing, so its key is unused. |
 | `service:canvas-server` | Compose bundles Agent Canvas. Helm does not (it needs an ingress host). | Agent Canvas needs an ingress host in Helm, so it cannot run with no input. |
