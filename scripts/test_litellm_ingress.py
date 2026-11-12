@@ -15,6 +15,8 @@ def render_litellm_ingress(*set_args: str, values: dict | None = None) -> dict:
         "template",
         "openhands",
         str(OPENHANDS_CHART),
+        "--set",
+        "automation.enabled=false",
         "--show-only",
         "charts/litellm-helm/templates/ingress.yaml",
         "--set",

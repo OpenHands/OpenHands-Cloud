@@ -1384,7 +1384,8 @@ plugin-directory:
   env: {}
 
 automationServiceKey:
-  enabled: false
+  # null follows the local service; explicit true/false still wins.
+  enabled: null
   existingSecret: automation-service-key
   secretKey: automation-service-key
 
@@ -1393,11 +1394,12 @@ automationService:
   # URL of the automation service (e.g., https://staging.all-hands.dev/api/automation)
   url: ""
   # Enable forwarding events to the automation service
-  eventForwardingEnabled: false
+  eventForwardingEnabled: null
 
 # Automation webhook secret for verifying webhook signatures
 automationWebhookSecret:
-  enabled: false
+  # null follows the local service.
+  enabled: null
   existingSecret: automation-webhook-secret
   secretKey: webhook-secret
 
@@ -1406,7 +1408,9 @@ automationWebhookSecret:
 # The automation service handles scheduled and event-driven automation execution
 # Routing is handled by parent chart via /api/automation subpath
 automation:
-  enabled: false
+  enabled: true
+  # Acknowledge only after backup and review; this does not migrate data.
+  upgradeAcknowledged: false
   
   image:
     repository: ghcr.io/openhands/automation
@@ -1483,9 +1487,9 @@ automation:
   
   # URL configuration
   # OpenHands API URL for dispatching sandbox runs (e.g., https://staging.all-hands.dev)
-  openhandsApiUrl: ""
+  openhandsApiUrl: "http://openhands-service.{{ .Release.Namespace }}.svc.cluster.local:3000"
   # Automation service base URL for completion callbacks (e.g., https://staging.all-hands.dev/api/automation)
-  automationBaseUrl: ""
+  automationBaseUrl: "http://automation.{{ .Release.Namespace }}.svc.cluster.local"
   
   # PostgreSQL database configuration
   database:
@@ -1494,7 +1498,7 @@ automation:
     #   - Cloud SQL: "my-project:us-central1:my-instance"
     #   - In-cluster: "openhands-main-postgresql"
     #   - Feature env: "openhands-feature-branch-postgresql"
-    host: ""
+    host: "{{ .Release.Name }}-postgresql"
     port: "5432"
     sslMode: "prefer"
     user: "automation_user"
@@ -1505,7 +1509,7 @@ automation:
     # Create database and user in an existing PostgreSQL instance
     # When true, runs an init container to create the database and user
     # Useful when sharing a PostgreSQL instance with other services
-    createDatabaseUser: false
+    createDatabaseUser: true
     # Superuser used to create the automation database and user.
     # Defaults to "postgres" but must be overridden when the external PostgreSQL
     # admin account uses a different name.
@@ -1528,8 +1532,8 @@ automation:
   # the full key reference. To use the bundled MinIO, set type: s3 and
   # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
-    # "s3" or "gcs"
-    type: gcs
+    # Choose s3 or gcs explicitly to avoid switching an existing package store.
+    type: ""
     # Bucket to store packages in (both backends).
     bucket: automation-data
     # s3 only. Leave empty for AWS; set for other S3-compatible stores. TLS is

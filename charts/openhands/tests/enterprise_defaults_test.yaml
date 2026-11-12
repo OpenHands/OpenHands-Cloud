@@ -22,14 +22,19 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "false"}
-  - it: hides automation UI when the local service is enabled without a service URL
+  - it: shows automation UI with the local service fallback URL
     set:
       automation.enabled: true
+      postgresql.primary.persistence.enabled: true
     asserts:
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
-          content: {name: ENABLE_AUTOMATIONS, value: "false"}
+          content: {name: ENABLE_AUTOMATIONS, value: "true"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: "http://automation/api/automation"}
   - it: shows automation UI when the local service is enabled with its service URL
     set:
       automation.enabled: true
@@ -55,6 +60,11 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_AUTOMATIONS, value: "false"}
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL}
+          any: true
       - template: deployment.yaml
         notContains:
           path: spec.template.spec.containers[0].env
@@ -174,3 +184,48 @@ tests:
               secretKeyRef:
                 name: external-automation-auth
                 key: token
+  - it: respects an empty env URL even with the local service enabled
+    set:
+      automation.enabled: true
+      postgresql.primary.persistence.enabled: true
+      env.AUTOMATION_SERVICE_URL: ""
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: ""}
+          count: 1
+  - it: respects a whitespace env URL even with the local service enabled
+    set:
+      automation.enabled: true
+      postgresql.primary.persistence.enabled: true
+      env.AUTOMATION_SERVICE_URL: " "
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: " "}
+          count: 1
+  - it: treats a null env URL as unset even with the local service enabled
+    set:
+      automation.enabled: true
+      postgresql.primary.persistence.enabled: true
+      env.AUTOMATION_SERVICE_URL: null
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_AUTOMATIONS, value: "false"}
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: AUTOMATION_SERVICE_URL, value: ""}
+          count: 1

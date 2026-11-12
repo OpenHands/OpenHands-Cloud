@@ -43,6 +43,8 @@ def render_proxy_config(*set_args: str, values: dict | None = None) -> dict:
         "template",
         "openhands",
         str(OPENHANDS_CHART),
+        "--set",
+        "automation.enabled=false",
         "--show-only",
         CONFIGMAP,
         "--set",

@@ -43,6 +43,11 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    automation:
+      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+      # Saved configuration supplies the data paths; upgrade guards still apply.
+      upgradeAcknowledged: true
+
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
     budgetPreflight:
@@ -1524,6 +1529,9 @@ spec:
         tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
     postgresql:
       enabled: true
+      primary:
+        persistence:
+          enabled: true
     redis:
       enabled: true
     replicated:
@@ -1540,6 +1548,9 @@ spec:
           enabled: true
     automation:
       enabled: true
+      # Image collection needs no live package store.
+      filestore:
+        type: gcs
     agent-canvas:
       enabled: true
     device-plugin:

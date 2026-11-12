@@ -50,6 +50,10 @@ REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 APP_HOSTNAME_TEMPLATE = '{{repl ConfigOption "computed_app_hostname" }}'
 APP_HOSTNAME = "app.example.com"
 WARM_CONFIGMAP = "charts/runtime-api/templates/warm-runtimes-configmap.yaml"
+AUTOMATION_ENABLED_SETS = (
+    "automation.enabled=true,automation.filestore.type=gcs,"
+    "postgresql.primary.persistence.enabled=true"
+)
 
 
 def rendered_env_value(manifest: str, env_name: str) -> str:
@@ -95,6 +99,8 @@ def render_openhands_app(spec: dict) -> str:
             f"ingress.host={APP_HOSTNAME}",
             "--set",
             f"litellm-helm.enabled={str(values['litellm-helm']['enabled']).lower()}",
+            "--set",
+            AUTOMATION_ENABLED_SETS,
             "--show-only",
             "templates/deployment.yaml",
         ],
@@ -144,6 +150,8 @@ def render_warm_configs(
                 str(OPENHANDS_CHART),
                 "--namespace",
                 spec["namespace"],
+                "--set",
+                AUTOMATION_ENABLED_SETS,
                 "-f",
                 overrides.name,
                 "--show-only",
