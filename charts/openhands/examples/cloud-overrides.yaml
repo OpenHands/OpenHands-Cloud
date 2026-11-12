@@ -1,4 +1,4 @@
-# The chart copies these plain flags into the structured flags; see ../enterprise-defaults.md.
+# Structured flags override plain UI flags; see ../enterprise-defaults.md.
 env:
   OH_ALLOW_USER_LLM_CONFIGURATION: "true"
   HIDE_BILLING_PAGE: "false"

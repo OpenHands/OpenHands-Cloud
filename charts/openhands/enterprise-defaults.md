@@ -45,12 +45,11 @@ is not set. An install in that mode must set these instead:
 
 The two email variables work in both modes.
 
-The chart sets `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`, so the app is
-in this mode by default. To keep the plain flags above working, the chart copies
-the effective value of each one (`OH_ALLOW_USER_LLM_CONFIGURATION`,
-`HIDE_BILLING_PAGE`, `ENABLE_AUTOMATIONS`, `ENABLE_SUPER_ADMIN`) into its
-structured flag. Set the plain flag as before, or set the structured flag
-explicitly to override the copy.
+The chart sets only plain flags, so the plain `ENABLE_SUPER_ADMIN` default reaches
+both the server and the web client. An install that already sets any
+`OH_WEB_CLIENT_FEATURE_FLAGS_*` variable must also set
+`OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`, because the app then ignores
+the plain flag in the web client.
 
 ## Upgrading
 

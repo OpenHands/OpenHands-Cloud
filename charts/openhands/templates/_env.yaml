@@ -57,21 +57,6 @@
 # Match the app's whitespace handling to avoid showing an unusable Automations page.
 - name: ENABLE_AUTOMATIONS
   value: {{ not (empty (trim $automationServiceUrl)) | quote }}
-{{- /*
-    The app ignores the plain UI flags once any OH_WEB_CLIENT_FEATURE_FLAGS_* is set, and
-    the Super Admin default sets one. Mirror each plain flag (including operator overrides)
-    so the web client keeps seeing the same values.
-   */}}
-{{- $plainEnv := .Values.env | default dict }}
-{{- $automationsEnabled := ternary (get $plainEnv "ENABLE_AUTOMATIONS") (not (empty (trim $automationServiceUrl))) (hasKey $plainEnv "ENABLE_AUTOMATIONS") }}
-- name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS
-  value: {{ $automationsEnabled | toString | quote }}
-{{- range $structured, $plain := dict "ALLOW_USER_LLM_CONFIGURATION" "OH_ALLOW_USER_LLM_CONFIGURATION" "HIDE_BILLING_PAGE" "HIDE_BILLING_PAGE" "ENABLE_SUPER_ADMIN" "ENABLE_SUPER_ADMIN" }}
-{{- if hasKey $plainEnv $plain }}
-- name: OH_WEB_CLIENT_FEATURE_FLAGS_{{ $structured }}
-  value: {{ get $plainEnv $plain | toString | quote }}
-{{- end }}
-{{- end }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL

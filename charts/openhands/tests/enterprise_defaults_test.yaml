@@ -22,44 +22,12 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "false"}
-  - it: enables the Super Admin dashboard for the server and web client
+  - it: enables the Super Admin dashboard
     asserts:
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_SUPER_ADMIN, value: "true"}
-          count: 1
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN, value: "true"}
-          count: 1
-  - it: mirrors the plain UI flags into structured flags so the app does not drop them
-    asserts:
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION, value: "false"}
-          count: 1
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE, value: "true"}
-          count: 1
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS, value: "false"}
-          count: 1
-  - it: mirrors the derived automation flag into the structured flag
-    set:
-      automation.enabled: true
-      postgresql.primary.persistence.enabled: true
-    asserts:
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS, value: "true"}
           count: 1
   - it: turns the Super Admin dashboard off with an explicit value
     set:
@@ -70,41 +38,13 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_SUPER_ADMIN, value: "false"}
           count: 1
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN, value: "false"}
-          count: 1
-  - it: carries plain policy overrides into the structured flags
-    set:
-      env.OH_ALLOW_USER_LLM_CONFIGURATION: "true"
-      env.HIDE_BILLING_PAGE: false
-      env.ENABLE_AUTOMATIONS: true
+  - it: leaves the structured web client flags unset by default
     asserts:
       - template: deployment.yaml
-        contains:
+        notContains:
           path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION, value: "true"}
-          count: 1
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE, value: "false"}
-          count: 1
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS, value: "true"}
-          count: 1
-  - it: lets an explicit structured flag win over the mirrored value
-    set:
-      env.OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN: "false"
-    asserts:
-      - template: deployment.yaml
-        contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN, value: "false"}
-          count: 1
+          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN}
+          any: true
   - it: shows automation UI with the local service fallback URL
     set:
       automation.enabled: true
