@@ -1,0 +1,10 @@
+# CVEs accepted by the enforced image scan. Give each a statement and an
+# expired_at date so an exception cannot outlive its reason:
+#   - id: CVE-0000-00000
+#     statement: Why this is not exploitable here, and the tracking issue.
+#     expired_at: 2026-12-31
+# Entries apply to every scanned image and every caller of the workflow. Trivy's
+# YAML format also supports `purls` and `paths` per entry to scope an exception
+# narrowly. The test suite warns 14 days before an entry expires and fails once
+# it has expired.
+vulnerabilities: []
