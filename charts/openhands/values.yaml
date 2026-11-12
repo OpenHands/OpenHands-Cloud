@@ -131,6 +131,9 @@ env:
   # Hides editing only; saved personal credentials remain usable.
   OH_ALLOW_USER_LLM_CONFIGURATION: "false"
   HIDE_BILLING_PAGE: "true"
+  # Shows /super-admin. On a fresh install the first user to sign in also gets
+  # the first-install setup; upgraded installs with existing users do not.
+  ENABLE_SUPER_ADMIN: "true"
   EMAIL_CHANGE_ENABLED: "false"
   OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "false"
   DISABLE_WAITLIST: "true"

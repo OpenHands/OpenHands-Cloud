@@ -8,6 +8,7 @@ in your overlay replaces each default without creating a duplicate entry.
 | Personal LLM key editing | hidden: `OH_ALLOW_USER_LLM_CONFIGURATION: "false"` | `"true"` |
 | Billing page | hidden: `HIDE_BILLING_PAGE: "true"` | `"false"` |
 | Email changes | disabled: `EMAIL_CHANGE_ENABLED` and `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` are `"false"` | set both to `"true"` |
+| Super Admin dashboard | shown at `/super-admin`: `ENABLE_SUPER_ADMIN: "true"` | `"false"` |
 | Automations page | shown only when the app has a service URL (`automationService.url` or `env.AUTOMATION_SERVICE_URL`) | `env.ENABLE_AUTOMATIONS: "true"` |
 
 Enabling the bundled `automation` subchart (`automation.enabled: true`) does not by itself show the Automations page, because the chart does not derive the service URL. Set `automationService.url` as well.
@@ -25,6 +26,11 @@ Enabling the bundled `automation` subchart (`automation.enabled: true`) does not
   disable billing.
 - With `EMAIL_CHANGE_ENABLED: "false"`, the email change API returns 403.
 
+- `ENABLE_SUPER_ADMIN` mounts the Super Admin API and shows the dashboard. On a
+  fresh install, the first user to sign in becomes the first Super Admin and
+  goes through the first-install setup. An upgraded install that already has
+  users does not run the setup again.
+
 ## Structured feature flags
 
 The app reads web client feature flags in one of two modes. If any
@@ -38,6 +44,13 @@ is not set. An install in that mode must set these instead:
 - `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS`
 
 The two email variables work in both modes.
+
+The chart sets `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`, so the app is
+in this mode by default. To keep the plain flags above working, the chart copies
+the effective value of each one (`OH_ALLOW_USER_LLM_CONFIGURATION`,
+`HIDE_BILLING_PAGE`, `ENABLE_AUTOMATIONS`, `ENABLE_SUPER_ADMIN`) into its
+structured flag. Set the plain flag as before, or set the structured flag
+explicitly to override the copy.
 
 ## Upgrading
 
