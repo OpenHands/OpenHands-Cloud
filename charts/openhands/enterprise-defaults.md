@@ -28,6 +28,10 @@ in your overlay replaces each default without creating a duplicate entry.
   organization, and sign-in moves a member of the default organization out of
   their personal workspace and into it. The server reads the plain variable in both
   flag modes.
+- While personal workspaces are hidden, the app does not switch a user into
+  their personal workspace. Conversations stored there cannot be opened from
+  the UI, and a link to one opens the launcher instead. Nothing is deleted:
+  with `HIDE_PERSONAL_WORKSPACES: "false"` they open again.
 
 ## Structured feature flags
 
