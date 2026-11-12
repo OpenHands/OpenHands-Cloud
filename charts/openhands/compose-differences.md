@@ -12,12 +12,10 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 |---|---|---|
 | `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` | Compose sets structured web client flags, so the app ignores plain UI flags. Helm sets none, so it reads plain flags. | Compose uses the built-in password login. Helm signs in through Keycloak. |
 | `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` | Same as above. | Turning on the SuperAdmin dashboard in Helm is tracked in OHE-3694. |
-| `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES` | Same as above. | Pending |
 | `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` | Same as `EMAIL_CHANGE_ENABLED`, for the UI. | Enterprise policy for production installs, which matches Replicated. |
-| `HIDE_PERSONAL_WORKSPACES` | Compose hides personal workspaces once a user belongs to an organization. Helm shows them. | Pending |
 | `ENABLE_SUPER_ADMIN` | Compose turns on the SuperAdmin dashboard. Helm leaves it off. Tracked in OHE-3694. | Turning on the SuperAdmin dashboard in Helm is tracked in OHE-3694. |
 | `ENABLE_INTEGRATED_IDP` | Compose uses the app's built-in password login. Helm uses Keycloak. | Production installs sign in through Keycloak for SSO. Compose uses a built-in login for one evaluator. |
 | `ENABLE_LEGACY_LITELLM` | Compose: each user brings an LLM key; no LiteLLM proxy. Helm: the LiteLLM proxy is on, with budgets. | Production installs use the LiteLLM proxy for managed models and budgets. Compose has each user bring a key. |
@@ -34,6 +32,7 @@ These names differ in the rendered environment, but not in what a user sees. The
 ### Same behaviour, different value
 
 - Both show Automations. Helm sets `true` because the bundled service has a URL. Compose leaves it unset, and the app default is `true`: `ENABLE_AUTOMATIONS`
+- Both hide personal workspaces. Compose also sets the structured flag; Helm sets only the plain `HIDE_PERSONAL_WORKSPACES`, which its plain-flag mode reads: `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES`
 - Helm sets it; no reader found in app 1.89.0: `CONVERSATION_MANAGER_CLASS`, `DISABLE_WAITLIST`, `OPENHANDS_CONVERSATION_VALIDATOR_CLS`, `OPENHANDS_EXPERIMENT_MANAGER_CLS`, `OPENHANDS_MCP_CONFIG_CLS`, `SANDBOX_CLOSE_DELAY`, `SANDBOX_KEEP_RUNTIME_ALIVE`
 - Helm sets `true`, which is the app default: `DUPLICATE_EMAIL_CHECK`
 - Compose sets `false`, which is the app default: `ENABLE_BILLING`
