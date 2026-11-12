@@ -8,9 +8,9 @@ import {
   deactivateAgentProfile,
   deleteConversationsLaunchedBy,
   deletePersonalAgentProfile,
-  getActiveLlmProfileName,
   getLaunchedAgentProfile,
   getPersonalAgentProfile,
+  getUsableLlmProfileName,
   listAgentProfiles,
   listConversationsLaunchedBy,
   listAgentReplies,
@@ -40,9 +40,11 @@ import { e2eTimestamp } from "../utils/org-management";
  *    with the instruction intact, and the conversation still shows the marker.
  *
  * The UI performs the configuration; the API only checks stored and effective
- * state. The journey needs an LLM profile on the actor, like
- * `003-conversations-legacy`, and skips when the instance's **Agent profiles
- * page** option (`feature_flags.enable_agent_profiles_page`) is off.
+ * state. An Agent Profile must reference a saved LLM profile and the suite
+ * provisions none, so the journey builds on the actor's active one (or its
+ * first) and skips, rather than fails, when the actor has none. It also skips
+ * when the instance's **Agent profiles page** option
+ * (`feature_flags.enable_agent_profiles_page`) is off.
  * `afterEach` puts the member's previous default back, then deletes the
  * conversations and the profile, newest first.
  */
@@ -107,8 +109,11 @@ test.describe("agent profile journey: create, select, launch", () => {
       await test.step("Record the member's current default profile", async () =>
         (await listAgentProfiles(request)).active_agent_profile_id);
 
-    const llmProfileName = await getActiveLlmProfileName(request);
-    expect(llmProfileName, "the actor has an active LLM profile").toBeTruthy();
+    const llmProfileName = await getUsableLlmProfileName(request);
+    test.skip(
+      !llmProfileName,
+      "the actor has no saved LLM profile to build an Agent Profile on",
+    );
 
     await test.step("Create the profile with one runtime instruction in settings", async () => {
       await openAgentProfilesSettings(page);
@@ -122,7 +127,7 @@ test.describe("agent profile journey: create, select, launch", () => {
       const llmSelector = page.getByTestId("agent-profile-llm-selector");
       await expect(
         llmSelector,
-        "the actor needs an LLM profile to build an Agent Profile on",
+        "the editor offers the actor's saved LLM profiles",
       ).toBeVisible();
       await llmSelector.click();
       await llmSelector.press("ControlOrMeta+A");

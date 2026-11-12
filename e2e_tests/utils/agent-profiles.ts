@@ -55,16 +55,21 @@ export async function listAgentProfiles(
   return (await response.json()) as AgentProfileList;
 }
 
-/** The name of the LLM profile the member's conversations use, or ``null`` when none is active. */
-export async function getActiveLlmProfileName(
+/**
+ * The LLM profile an Agent Profile can be built on: the member's active one, or
+ * else the first they have. ``null`` when they have none, for example when the
+ * managed LLM lives only in the account's agent settings.
+ */
+export async function getUsableLlmProfileName(
   request: APIRequestContext,
 ): Promise<string | null> {
   const response = await request.get("/api/v1/settings/profiles");
-  if (!response.ok()) throw await failure("getActiveLlmProfileName", response);
-  const { active_profile: active } = (await response.json()) as {
+  if (!response.ok()) throw await failure("getUsableLlmProfileName", response);
+  const { active_profile: active, profiles } = (await response.json()) as {
     active_profile: string | null;
+    profiles?: Array<{ name: string }>;
   };
-  return active;
+  return active ?? profiles?.[0]?.name ?? null;
 }
 
 /** The member's own profile ``name`` as stored, or ``null`` when there is none. */
