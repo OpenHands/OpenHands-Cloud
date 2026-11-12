@@ -10,22 +10,22 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 
 | Name | What differs | Reason |
 |---|---|---|
-| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` | Compose sets structured web client flags, so the app ignores plain UI flags. Helm sets none, so it reads plain flags. | Pending |
-| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` | Same as above. | Pending |
+| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` | Compose sets structured web client flags, so the app ignores plain UI flags. Helm sets none, so it reads plain flags. | Compose uses the built-in password login. Helm signs in through Keycloak. |
+| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` | Same as above. | Turning on the SuperAdmin dashboard in Helm is tracked in OHE-3694. |
 | `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES` | Same as above. | Pending |
-| `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Pending |
-| `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Pending |
-| `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Pending |
-| `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` | Same as `EMAIL_CHANGE_ENABLED`, for the UI. | Pending |
+| `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
+| `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
+| `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
+| `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` | Same as `EMAIL_CHANGE_ENABLED`, for the UI. | Enterprise policy for production installs, which matches Replicated. |
 | `HIDE_PERSONAL_WORKSPACES` | Compose hides personal workspaces once a user belongs to an organization. Helm shows them. | Pending |
-| `ENABLE_SUPER_ADMIN` | Compose turns on the SuperAdmin dashboard. Helm leaves it off. Tracked in OHE-3694. | Pending |
-| `ENABLE_INTEGRATED_IDP` | Compose uses the app's built-in password login. Helm uses Keycloak. | Pending |
-| `ENABLE_LEGACY_LITELLM` | Compose: each user brings an LLM key; no LiteLLM proxy. Helm: the LiteLLM proxy is on, with budgets. | Pending |
-| `RATE_LIMITING_ENABLED` | Compose turns rate limiting off. Helm leaves it on. | Pending |
-| `OH_APP_CONVERSATION_SANDBOX_GROUPING_STRATEGY` | Compose shares a sandbox between conversations. Helm gives each conversation its own sandbox. | Pending |
+| `ENABLE_SUPER_ADMIN` | Compose turns on the SuperAdmin dashboard. Helm leaves it off. Tracked in OHE-3694. | Turning on the SuperAdmin dashboard in Helm is tracked in OHE-3694. |
+| `ENABLE_INTEGRATED_IDP` | Compose uses the app's built-in password login. Helm uses Keycloak. | Production installs sign in through Keycloak for SSO. Compose uses a built-in login for one evaluator. |
+| `ENABLE_LEGACY_LITELLM` | Compose: each user brings an LLM key; no LiteLLM proxy. Helm: the LiteLLM proxy is on, with budgets. | Production installs use the LiteLLM proxy for managed models and budgets. Compose has each user bring a key. |
+| `RATE_LIMITING_ENABLED` | Compose turns rate limiting off. Helm leaves it on. | Production installs keep rate limiting on. Compose turns it off for one evaluator. |
+| `OH_APP_CONVERSATION_SANDBOX_GROUPING_STRATEGY` | Compose shares a sandbox between conversations. Helm gives each conversation its own sandbox. | Kubernetes runs each conversation in its own sandbox. Compose shares sandboxes to save resources on one host. |
 | `ENABLE_POSTHOG_ANALYTICS` | Compose sends backend analytics to PostHog. Helm does not. | Product analytics cover the Compose evaluator funnel only (OHE-3657). Helm installs stay off. |
 | `POSTHOG_CLIENT_KEY` | Compose sets a real PostHog key. Helm sets a placeholder. | Same as `ENABLE_POSTHOG_ANALYTICS`. With analytics off, Helm sends nothing, so its key is unused. |
-| `service:canvas-server` | Compose bundles Agent Canvas. Helm does not (it needs an ingress host). | Pending |
+| `service:canvas-server` | Compose bundles Agent Canvas. Helm does not (it needs an ingress host). | Agent Canvas needs an ingress host in Helm, so it cannot run with no input. |
 
 ## Not compared
 
