@@ -424,7 +424,7 @@ global:
   # global wins; this default only applies when rendering the subchart alone.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.60.1-python
+    tag: 1.62.0-python
   # Fusey-enabled variant of the agent-server image, used by the derived fuse
   # warm pool (runtime-api warmRuntimes.fuse). Its tag is not pinned separately:
   # it is <agentServerImage.tag>-fusey<version>, so it cannot drift from the

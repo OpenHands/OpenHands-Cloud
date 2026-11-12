@@ -134,7 +134,10 @@ spec:
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       # Agent Profiles: the Agent Profiles and Agent Context settings pages and
       # organization agent profile management. Only the web client reads these
-      # flags, so the FEATURE_FLAGS-prefixed form is the one that applies.
+      # flags, so the FEATURE_FLAGS-prefixed form is the one that applies. They
+      # are the starting value: the Enable Agent Profiles (beta) switch on
+      # Super Admin > Instance Settings overrides them once a Super Admin has
+      # changed it.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
@@ -145,7 +148,9 @@ spec:
       ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
       # Organization MCP servers (OHE-3091). Only the web client reads this flag
       # (enterprise Settings > MCP and Agent Profiles, and Agent Canvas), so the
-      # FEATURE_FLAGS-prefixed form is the one that applies.
+      # FEATURE_FLAGS-prefixed form is the one that applies. It is the starting
+      # value: the Enable Organization MCP Servers (beta) switch on Super
+      # Admin > Instance Settings overrides it once a Super Admin has changed it.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_MCP_SERVERS: 'repl{{ ConfigOptionEquals "org_mcp_servers_enabled" "1" }}'
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
