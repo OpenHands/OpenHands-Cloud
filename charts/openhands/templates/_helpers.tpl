@@ -160,3 +160,17 @@ checksum/license: {{ printf "%s|%s" (toString (.Values.license.key | default "")
 http://automation/api/automation
 {{- end -}}
 {{- end -}}
+
+{{/*
+Main application host, with the branch prefix when ingress.prefixWithBranch is
+set. Empty when ingress.host is unset.
+*/}}
+{{- define "openhands.appHost" -}}
+{{- with .Values.ingress.host -}}
+{{- if $.Values.ingress.prefixWithBranch -}}
+{{- printf "%s.%s" $.Values.branchSanitized . -}}
+{{- else -}}
+{{- . -}}
+{{- end -}}
+{{- end -}}
+{{- end }}

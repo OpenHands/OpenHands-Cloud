@@ -55,6 +55,14 @@ agent-canvas:
       secretName: app-all-hands-dev-tls
 ```
 
+Alternatively, set `staticServer.lockToCloudConfigMap` to the name of a
+ConfigMap whose `AGENT_CANVAS_LOCK_TO_CLOUD` key holds the URL. The
+deployment passes it as `--lock-to-cloud $(AGENT_CANVAS_LOCK_TO_CLOUD)`, and
+an empty value leaves the lock off. An explicit `lockToCloud` wins. The
+umbrella `openhands` chart renders such a ConfigMap with its own app URL
+(`http(s)://<ingress.host>`) and sets this value, so a default install is
+locked to itself.
+
 ### Disabling telemetry
 
 `staticServer.disableTelemetry` (default `true`) sets

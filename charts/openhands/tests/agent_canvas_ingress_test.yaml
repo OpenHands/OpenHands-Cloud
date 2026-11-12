@@ -5,6 +5,8 @@ tests:
   - it: does not render when agent-canvas is disabled
     set:
       agent-canvas.enabled: false
+      ingress.enabled: true
+      ingress.host: app.example.com
     asserts:
       - hasDocuments:
           count: 0
@@ -68,6 +70,120 @@ tests:
           count: 1
       - notExists:
           path: spec.tls
+
+  - it: does not render when the main ingress has no host
+    set:
+      ingress.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: falls back to the main ingress host and TLS secret
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.rules[0].host
+          value: app.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /canvas
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: app.example.com
+      - equal:
+          path: spec.tls[0].secretName
+          value: app-all-hands--tls
+
+  - it: uses the existing TLS secret of the main host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      tls.existingSecret: my-cert
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: my-cert
+
+  - it: omits TLS on the main host when TLS is disabled
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.tls
+
+  - it: prefixes the main host with the branch
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      ingress.prefixWithBranch: true
+      branchSanitized: pr-252
+      tls.enabled: true
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: pr-252.app.example.com
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: pr-252.app.example.com
+
+  - it: prefers the canvas host and TLS block over the main ingress
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      agent-canvas.ingress.host: canvas.example.com
+      agent-canvas.ingress.tls.enabled: true
+      agent-canvas.ingress.tls.secretName: canvas-tls
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: canvas.example.com
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: canvas.example.com
+      - equal:
+          path: spec.tls[0].secretName
+          value: canvas-tls
+
+  - it: does not borrow the main TLS secret for an explicit canvas host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      agent-canvas.ingress.host: canvas.example.com
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: canvas.example.com
+      - notExists:
+          path: spec.tls
+
+  - it: serves the main host when the canvas ingress is enabled without its own host
+    set:
+      ingress.host: app.example.com
+      agent-canvas.ingress.enabled: true
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: app.example.com
+
+  - it: fails when the canvas TLS secret is not provided
+    set:
+      agent-canvas.ingress.enabled: true
+      agent-canvas.ingress.host: canvas.example.com
+      agent-canvas.ingress.tls.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true
 
   - it: fails when the ingress host is not provided
     set:

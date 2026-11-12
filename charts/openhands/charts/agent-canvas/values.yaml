@@ -63,6 +63,10 @@ staticServer:
   # https://app.all-hands.dev). Leave empty for the standard
   # user-managed "Manage Backends" flow.
   lockToCloud: ""
+  # Name of a ConfigMap whose AGENT_CANVAS_LOCK_TO_CLOUD key supplies the
+  # --lock-to-cloud URL when lockToCloud is empty. An empty key value leaves
+  # the lock off. Empty here means no lock is derived.
+  lockToCloudConfigMap: ""
   rejectPrefixes:
     - /api
     - /server_info

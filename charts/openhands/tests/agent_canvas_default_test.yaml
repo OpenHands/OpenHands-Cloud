@@ -1,0 +1,140 @@
+suite: agent canvas on by default
+templates:
+  - agent-canvas-config.yaml
+  - ingress-agent-canvas.yaml
+  - charts/agent-canvas/templates/deployment.yaml
+  - charts/agent-canvas/templates/service.yaml
+tests:
+  - it: renders the Deployment, Service and ConfigMap by default
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        isKind:
+          of: Deployment
+      - template: charts/agent-canvas/templates/service.yaml
+        isKind:
+          of: Service
+      - template: agent-canvas-config.yaml
+        isKind:
+          of: ConfigMap
+      - template: agent-canvas-config.yaml
+        equal:
+          path: metadata.name
+          value: agent-canvas-config
+      - template: agent-canvas-config.yaml
+        equal:
+          path: data.AGENT_CANVAS_LOCK_TO_CLOUD
+          value: ""
+      - template: ingress-agent-canvas.yaml
+        hasDocuments:
+          count: 0
+
+  - it: renders nothing when agent-canvas is disabled
+    set:
+      agent-canvas.enabled: false
+      ingress.enabled: true
+      ingress.host: app.example.com
+    asserts:
+      - template: agent-canvas-config.yaml
+        hasDocuments:
+          count: 0
+      - template: ingress-agent-canvas.yaml
+        hasDocuments:
+          count: 0
+
+  - it: locks the UI to the https app URL without requiring auth
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+    asserts:
+      - template: agent-canvas-config.yaml
+        equal:
+          path: data.AGENT_CANVAS_LOCK_TO_CLOUD
+          value: https://app.example.com
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].args
+          content: --lock-to-cloud
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].args
+          content: $(AGENT_CANVAS_LOCK_TO_CLOUD)
+      - template: charts/agent-canvas/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].args
+          content: --auth-required
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_LOCK_TO_CLOUD
+            valueFrom:
+              configMapKeyRef:
+                name: agent-canvas-config
+                key: AGENT_CANVAS_LOCK_TO_CLOUD
+
+  - it: uses an http app URL when TLS is disabled
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+    asserts:
+      - template: agent-canvas-config.yaml
+        equal:
+          path: data.AGENT_CANVAS_LOCK_TO_CLOUD
+          value: http://app.example.com
+
+  - it: carries the branch prefix in the app URL
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      ingress.prefixWithBranch: true
+      branchSanitized: pr-252
+      tls.enabled: true
+    asserts:
+      - template: agent-canvas-config.yaml
+        equal:
+          path: data.AGENT_CANVAS_LOCK_TO_CLOUD
+          value: https://pr-252.app.example.com
+
+  - it: lets an explicit lockToCloud win over the derived URL
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      agent-canvas.staticServer.lockToCloud: https://other.example.com
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].args
+          content: https://other.example.com
+      - template: charts/agent-canvas/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].args
+          content: $(AGENT_CANVAS_LOCK_TO_CLOUD)
+      - template: charts/agent-canvas/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_LOCK_TO_CLOUD
+            valueFrom:
+              configMapKeyRef:
+                name: agent-canvas-config
+                key: AGENT_CANVAS_LOCK_TO_CLOUD
+
+  - it: reads the lock from the configured ConfigMap name
+    set:
+      agent-canvas.staticServer.lockToCloudConfigMap: custom-config
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        equal:
+          path: spec.template.spec.containers[0].env[1].valueFrom.configMapKeyRef.name
+          value: custom-config
+
+  - it: requires auth when authRequired is set
+    set:
+      agent-canvas.staticServer.authRequired: true
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].args
+          content: --auth-required

@@ -1,14 +1,20 @@
 {{- /*
   Ingress entry for the agent-canvas frontend-only deployment.
 
-  Agent Canvas is mounted under a configurable subpath on a consumer-provided
-  host. The frontend bundle is built with the same basename and static-server
-  receives the same --base-path.
+  Agent Canvas is mounted under a configurable subpath. It uses
+  agent-canvas.ingress.host when set, else the main application host. The
+  frontend bundle is built with the same basename and static-server receives
+  the same --base-path.
 */}}
 {{- $agentCanvas := index .Values "agent-canvas" -}}
-{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled }}
 {{- $ingress := $agentCanvas.ingress -}}
-{{- $host := required "agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true" $ingress.host -}}
+{{- $appHost := include "openhands.appHost" . -}}
+{{- if and $agentCanvas.enabled (or $ingress.enabled .Values.ingress.enabled) }}
+{{- $host := $ingress.host | default $appHost -}}
+{{- if $ingress.enabled -}}
+{{- $host = required "agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true" $host -}}
+{{- end -}}
+{{- if $host }}
 {{- $path := default "/canvas" $ingress.path -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -22,13 +28,16 @@ metadata:
   {{- end }}
 spec:
   ingressClassName: {{ default "traefik" $ingress.className }}
-  {{- with $ingress.tls }}
-  {{- if .enabled }}
+  {{- if $ingress.tls.enabled }}
   tls:
   - hosts:
     - {{ $host }}
-    secretName: {{ required "agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true" .secretName }}
-  {{- end }}
+    secretName: {{ required "agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true" $ingress.tls.secretName }}
+  {{- else if and (not $ingress.host) .Values.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $host }}
+    secretName: {{ include "openhands.tlsSecretName" $ }}
   {{- end }}
   rules:
   - host: {{ $host }}
@@ -41,4 +50,5 @@ spec:
             name: agent-canvas
             port:
               number: {{ default 8000 (index $agentCanvas "service" "port") }}
+{{- end }}
 {{- end }}
