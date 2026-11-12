@@ -130,6 +130,33 @@ tests:
           path: spec.template.spec.containers[0].env[1].valueFrom.configMapKeyRef.name
           value: custom-config
 
+  - it: still passes the lock env var when telemetry is not disabled
+    set:
+      agent-canvas.staticServer.disableTelemetry: false
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AGENT_CANVAS_LOCK_TO_CLOUD
+            valueFrom:
+              configMapKeyRef:
+                name: agent-canvas-config
+                key: AGENT_CANVAS_LOCK_TO_CLOUD
+
+  - it: adds no lock argument when no ConfigMap name is set
+    set:
+      agent-canvas.staticServer.lockToCloudConfigMap: ""
+    asserts:
+      - template: charts/agent-canvas/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].args
+          content: --lock-to-cloud
+      - template: charts/agent-canvas/templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].args
+          content: $(AGENT_CANVAS_LOCK_TO_CLOUD)
+
   - it: requires auth when authRequired is set
     set:
       agent-canvas.staticServer.authRequired: true
