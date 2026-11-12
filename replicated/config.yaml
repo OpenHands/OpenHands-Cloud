@@ -1890,7 +1890,7 @@ spec:
       items:
         - name: agent_profiles_enabled
           title: Enable Agent Profiles
-          help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles. This option sets the starting value. After a Super Admin changes the Enable Agent Profiles switch on Super Admin > Instance Settings, the switch overrides this option.
+          help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles. This option sets the starting value. After a Super Admin changes the Enable Agent Profiles (beta) switch on Super Admin > Instance Settings, the switch overrides this option.
           type: bool
           default: "0"
         - name: model_routing_enabled
@@ -1900,7 +1900,7 @@ spec:
           default: "1"
         - name: org_mcp_servers_enabled
           title: Enable Organization MCP Servers
-          help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP. This option sets the starting value. After a Super Admin changes the Enable Organization MCP Servers switch on Super Admin > Instance Settings, the switch overrides this option.
+          help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP. This option sets the starting value. After a Super Admin changes the Enable Organization MCP Servers (beta) switch on Super Admin > Instance Settings, the switch overrides this option.
           type: bool
           default: "0"
 
