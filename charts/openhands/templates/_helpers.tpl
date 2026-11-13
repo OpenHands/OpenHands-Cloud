@@ -149,3 +149,14 @@ a Secret only when they start, so a changed license has to roll them.
 checksum/license: {{ printf "%s|%s" (toString (.Values.license.key | default "")) (toString (.Values.license.offlineLicense | default "")) | sha256sum }}
 {{- end -}}
 {{- end -}}
+
+{{/* An explicitly empty URL hides the Automations UI by default. */}}
+{{- define "openhands.automation.serviceUrl" -}}
+{{- if hasKey (.Values.env | default dict) "AUTOMATION_SERVICE_URL" -}}
+{{- get .Values.env "AUTOMATION_SERVICE_URL" | default "" | toString -}}
+{{- else if .Values.automationService.url -}}
+{{- .Values.automationService.url -}}
+{{- else if .Values.automation.enabled -}}
+http://automation/api/automation
+{{- end -}}
+{{- end -}}

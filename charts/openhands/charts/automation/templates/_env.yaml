@@ -2,12 +2,12 @@
 # OpenHands API base URL (for dispatching sandbox runs)
 {{- if .Values.openhandsApiUrl }}
 - name: AUTOMATION_OPENHANDS_API_BASE_URL
-  value: {{ .Values.openhandsApiUrl | quote }}
+  value: {{ tpl .Values.openhandsApiUrl . | quote }}
 {{- end }}
 # Automation service base URL (for completion callbacks from sandboxes)
 {{- if .Values.automationBaseUrl }}
 - name: AUTOMATION_BASE_URL
-  value: {{ .Values.automationBaseUrl | quote }}
+  value: {{ tpl .Values.automationBaseUrl . | quote }}
 {{- end }}
 # Scratch directory for git sync checkouts; the same value mounts the
 # workspace emptyDir, so the write path and the mount cannot drift apart.
@@ -15,7 +15,7 @@
   value: {{ .Values.workspace.mountPath | quote }}
 # PostgreSQL database configuration
 - name: AUTOMATION_DB_HOST
-  value: {{ .Values.database.host | quote }}
+  value: {{ tpl .Values.database.host . | quote }}
 - name: AUTOMATION_DB_PORT
   value: {{ .Values.database.port | quote }}
 - name: AUTOMATION_DB_SSL_MODE
@@ -41,7 +41,7 @@
 {{- end }}
 # Uploaded-package storage (see values.filestore). "google_cloud" normalizes
 # to "gcs", the service's native FILE_STORE value.
-{{- $store := .Values.filestore.type }}
+{{- $store := required "automation.filestore.type is required for local Automations; select s3 or gcs and configure a durable package store, or set automation.enabled=false." .Values.filestore.type }}
 {{- if eq $store "google_cloud" }}{{- $store = "gcs" }}{{- end }}
 - name: FILE_STORE
   value: {{ $store | quote }}
@@ -50,11 +50,11 @@
   value: {{ .Values.filestore.bucket | quote }}
 {{- with .Values.filestore.endpoint }}
 - name: AWS_S3_ENDPOINT
-  value: {{ . | quote }}
+  value: {{ tpl . $ | quote }}
 # The service refuses an AWS_S3_SECURE value that contradicts the endpoint
 # scheme, so it is derived rather than configurable.
 - name: AWS_S3_SECURE
-  value: {{ hasPrefix "https://" . | quote }}
+  value: {{ hasPrefix "https://" (tpl . $) | quote }}
 {{- end }}
 {{- with .Values.filestore.region }}
 - name: AWS_REGION

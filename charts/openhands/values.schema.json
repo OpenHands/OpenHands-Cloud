@@ -6,6 +6,25 @@
   "required": ["image"],
   "properties": {
     "enabled": { "type": "boolean" },
+    "automation": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "upgradeAcknowledged": { "type": "boolean" }
+      }
+    },
+    "automationServiceKey": {
+      "type": "object",
+      "properties": { "enabled": { "type": ["boolean", "null"] } }
+    },
+    "automationWebhookSecret": {
+      "type": "object",
+      "properties": { "enabled": { "type": ["boolean", "null"] } }
+    },
+    "automationService": {
+      "type": "object",
+      "properties": { "eventForwardingEnabled": { "type": ["boolean", "null"] } }
+    },
     "dailyConversationLimit": { "type": ["integer", "null"] },
     "duplicateEmailCheck": { "type": "boolean" },
     "orgDefaults": {

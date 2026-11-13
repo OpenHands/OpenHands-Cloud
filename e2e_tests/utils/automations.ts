@@ -16,6 +16,10 @@
  *    bypassing cron scheduling. Returns the run's initial state.
  *  - ``GET /api/automation/v1/{id}/runs?limit=N`` — list runs for an
  *    automation; used to poll the dispatched run to a terminal status.
+ *  - ``POST /api/automation/v1/uploads`` and ``POST /api/automation/v1`` —
+ *    upload a script tarball and create a custom-script automation from it.
+ *  - ``POST /api/automation/v1/runs/{run_id}/cancel`` — cancel a pending or
+ *    running run (cleanup, and the cancellation fixture).
  *  - ``DELETE /api/automation/v1/{id}`` — remove an automation (cleanup).
  *  - ``GET /api/automation/v1?limit=1`` — reachability probe; used to
  *    detect whether the service is deployed on the target cluster before
@@ -51,6 +55,15 @@ export interface AutomationResponse {
   [key: string]: unknown;
 }
 
+/** Payload for ``POST /api/automation/v1`` (custom script from an uploaded tarball). */
+export interface CreateScriptAutomationPayload {
+  name: string;
+  trigger: CronTrigger;
+  tarball_path: string;
+  entrypoint: string;
+  timeout?: number;
+}
+
 /** Terminal states for an automation run. */
 export type RunStatus =
   | "PENDING"
@@ -65,8 +78,12 @@ export interface AutomationRun {
   id: string;
   status: RunStatus;
   error_detail?: string | null;
+  conversation_id?: string | null;
+  bash_command_id?: string | null;
+  run_metadata?: { finish_tool_response?: unknown } | null;
   created_at?: string;
   finished_at?: string | null;
+  completed_at?: string | null;
   [key: string]: unknown;
 }
 
@@ -126,6 +143,62 @@ export async function createPromptAutomation(
   return (await response.json()) as AutomationResponse;
 }
 
+/** Upload a gzipped tarball and return its ``oh-internal://`` path. */
+export async function uploadTarball(
+  baseUrl: string,
+  apiKey: string,
+  name: string,
+  tarball: Buffer,
+): Promise<string> {
+  const url = new URL(
+    `api/automation/v1/uploads?name=${encodeURIComponent(name)}`,
+    baseUrl,
+  ).toString();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { ...bearerHeaders(apiKey), "Content-Type": "application/gzip" },
+    body: tarball,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `uploadTarball failed (${response.status} ${response.statusText}): ${body}`,
+    );
+  }
+  const upload = (await response.json()) as {
+    status: string;
+    tarball_path: string | null;
+    error_message: string | null;
+  };
+  if (upload.status !== "COMPLETED" || !upload.tarball_path) {
+    throw new Error(
+      `uploadTarball ended ${upload.status}: ${upload.error_message ?? "no tarball_path"}`,
+    );
+  }
+  return upload.tarball_path;
+}
+
+/** Create an automation that runs a script from an uploaded tarball. */
+export async function createScriptAutomation(
+  baseUrl: string,
+  apiKey: string,
+  payload: CreateScriptAutomationPayload,
+): Promise<AutomationResponse> {
+  const url = new URL("api/automation/v1", baseUrl).toString();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: bearerHeaders(apiKey),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `createScriptAutomation failed (${response.status} ${response.statusText}): ${body}`,
+    );
+  }
+  return (await response.json()) as AutomationResponse;
+}
+
 /**
  * Dispatch a run for an existing automation. Bypasses cron so the suite
  * does not have to wait for the schedule to fire.
@@ -175,23 +248,32 @@ export async function listRuns(
   return parsed.runs;
 }
 
+function isTerminal(status: RunStatus): boolean {
+  return status !== "PENDING" && status !== "RUNNING";
+}
+
+const RUN_POLL_INTERVAL_MS = 3_000;
+
+function formatLifecycle(history: RunStatus[]): string {
+  return history.length > 0 ? history.join(" -> ") : "no run observed";
+}
+
 /**
  * Poll the automation's runs until the most recent one reaches a terminal
  * status (anything past ``PENDING``/``RUNNING``), or until ``timeoutMs`` elapses.
  *
  * The automation service assigns a fresh run id on dispatch; when the first
  * poll finds any run at all we adopt its id and keep polling that specific
- * run so a later cron tick can't confuse the assertion.
+ * run so a later cron tick can't confuse the assertion. Every status change is
+ * appended to ``history`` so a timeout can report the lifecycle it observed.
  */
-function isTerminal(status: RunStatus): boolean {
-  return status !== "PENDING" && status !== "RUNNING";
-}
-
-export async function waitForRunTerminal(
+async function pollRunToTerminal(
   baseUrl: string,
   apiKey: string,
   automationId: string,
   timeoutMs: number,
+  pollIntervalMs: number,
+  history: RunStatus[],
 ): Promise<AutomationRun> {
   const deadline = Date.now() + timeoutMs;
   let trackedRunId: string | undefined;
@@ -207,16 +289,199 @@ export async function waitForRunTerminal(
     if (current && !trackedRunId) {
       trackedRunId = current.id;
     }
+    if (current && history[history.length - 1] !== current.status) {
+      history.push(current.status);
+    }
     if (current && isTerminal(current.status)) {
       return current;
     }
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await new Promise((resolve) => {
+      setTimeout(resolve, pollIntervalMs);
+    });
   }
 
   throw new Error(
     `waitForRunTerminal: run for automation ${automationId} did not reach ` +
-      `a terminal status within ${timeoutMs}ms`,
+      `a terminal status within ${timeoutMs}ms ` +
+      `(lifecycle: ${formatLifecycle(history)})`,
   );
+}
+
+/**
+ * Wait for the run to reach any terminal status, including ``FAILED``. Only
+ * use this when the test asserts on the terminal status itself; a success path
+ * must use ``waitForRunCompleted``.
+ */
+export async function waitForRunTerminal(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<AutomationRun> {
+  return pollRunToTerminal(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+    [],
+  );
+}
+
+async function waitForRunEndingIn(
+  expected: "COMPLETED" | "FAILED",
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs: number,
+): Promise<AutomationRun> {
+  const history: RunStatus[] = [];
+  const run = await pollRunToTerminal(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+    history,
+  );
+  if (run.status !== expected) {
+    throw new Error(
+      `waitForRun${expected === "COMPLETED" ? "Completed" : "Failed"}: ` +
+        `run ${run.id} of automation ${automationId} ` +
+        `ended ${run.status}, expected ${expected} ` +
+        `(error_detail: ${run.error_detail ?? "none"}; ` +
+        `lifecycle: ${formatLifecycle(history)})`,
+    );
+  }
+  return run;
+}
+
+/**
+ * Wait for the run to finish and require ``COMPLETED``. ``FAILED``,
+ * ``CANCELLED``, ``SKIPPED`` and a run that never reaches a terminal status
+ * (for example a missing callback) all throw, naming the final status, the
+ * run's ``error_detail`` and the lifecycle observed while polling.
+ */
+export async function waitForRunCompleted(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<AutomationRun> {
+  return waitForRunEndingIn(
+    "COMPLETED",
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+  );
+}
+
+/** What the success-path assertion reported for a run that must not pass it. */
+export interface SuccessAssertionFailure {
+  /** The error ``waitForRunCompleted`` threw: final status, detail and lifecycle. */
+  message: string;
+  /** How long the bounded wait took before it gave up or saw the terminal status. */
+  elapsedMs: number;
+}
+
+/**
+ * Evaluate the success assertion (``waitForRunCompleted``) for a run that is
+ * built to fail it, and return the failure it reported. The assertion must
+ * reject; if it resolves, the run passed the success path, which is the
+ * regression a journey of non-``COMPLETED`` outcomes exists to catch, so this
+ * throws.
+ */
+export async function captureSuccessAssertionFailure(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<SuccessAssertionFailure> {
+  const startedAt = Date.now();
+  const outcome = await waitForRunCompleted(
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+  ).then(
+    (run) => ({ run }),
+    (error: Error) => ({ error }),
+  );
+  if ("run" in outcome) {
+    throw new Error(
+      `the success assertion passed run ${outcome.run.id} of automation ${automationId} ` +
+        "although the run was built to end in any status but COMPLETED",
+    );
+  }
+  return {
+    message: outcome.error.message,
+    elapsedMs: Date.now() - startedAt,
+  };
+}
+
+/**
+ * Wait for the run to finish and require ``FAILED``, for a journey that
+ * fails on purpose. ``COMPLETED``, ``CANCELLED``, ``SKIPPED`` and a run that
+ * never reaches a terminal status all throw, so only the expected failure
+ * passes. The error names the final status, the run's ``error_detail`` and
+ * the lifecycle observed while polling.
+ */
+export async function waitForRunFailed(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+  timeoutMs: number,
+  pollIntervalMs = RUN_POLL_INTERVAL_MS,
+): Promise<AutomationRun> {
+  return waitForRunEndingIn(
+    "FAILED",
+    baseUrl,
+    apiKey,
+    automationId,
+    timeoutMs,
+    pollIntervalMs,
+  );
+}
+
+/**
+ * Cancel every run of the automation that is still ``PENDING`` or ``RUNNING``,
+ * so a test that abandons a run leaves nothing active. Returns the ids it
+ * cancelled. A run that reaches a terminal status between the list and the
+ * cancel (409) is already done and is skipped.
+ */
+export async function cancelActiveRuns(
+  baseUrl: string,
+  apiKey: string,
+  automationId: string,
+): Promise<string[]> {
+  const runs = await listRuns(baseUrl, apiKey, automationId, 100);
+  const cancelled: string[] = [];
+  for (const run of runs.filter((r) => !isTerminal(r.status))) {
+    const url = new URL(
+      `api/automation/v1/runs/${encodeURIComponent(run.id)}/cancel`,
+      baseUrl,
+    ).toString();
+    const response = await fetch(url, {
+      method: "POST",
+      headers: bearerHeaders(apiKey),
+    });
+    if (response.ok) {
+      cancelled.push(run.id);
+    } else if (response.status !== 409) {
+      const body = await response.text();
+      throw new Error(
+        `cancelActiveRuns failed (${response.status} ${response.statusText}): ${body}`,
+      );
+    }
+  }
+  return cancelled;
 }
 
 /**
@@ -242,5 +507,29 @@ export async function deleteAutomation(
   const body = await response.text();
   throw new Error(
     `deleteAutomation failed (${response.status} ${response.statusText}): ${body}`,
+  );
+}
+
+/** Delete an uploaded tarball by its ``oh-internal://uploads/{id}`` path. A 404 counts as already deleted. */
+export async function deleteUpload(
+  baseUrl: string,
+  apiKey: string,
+  tarballPath: string,
+): Promise<void> {
+  const uploadId = tarballPath.split("/").pop() ?? "";
+  const url = new URL(
+    `api/automation/v1/uploads/${encodeURIComponent(uploadId)}`,
+    baseUrl,
+  ).toString();
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: bearerHeaders(apiKey),
+  });
+  if (response.ok || response.status === 404) {
+    return;
+  }
+  const body = await response.text();
+  throw new Error(
+    `deleteUpload failed (${response.status} ${response.statusText}): ${body}`,
   );
 }

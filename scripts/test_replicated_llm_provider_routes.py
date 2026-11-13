@@ -348,6 +348,8 @@ def exported_secret_env(provider: str) -> frozenset[str]:
             "template",
             "openhands-secrets",
             str(SECRETS_CHART),
+            "--set",
+            "automation.enabled=false",
             "--show-only",
             "templates/litellm-env-secrets.yaml",
             "--values",

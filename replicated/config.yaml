@@ -1608,6 +1608,25 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_fuse_enabled
+          title: Store sandbox workspaces in the bundled object storage (FUSE)
+          help_text: >-
+            Adds a second warm pool whose sandboxes keep /workspace in the bundled MinIO
+            through a FUSE mount instead of a persistent volume. The default pool and
+            existing sandboxes are unchanged. The cluster node(s) MUST expose /dev/fuse.
+            Verify with `ls -l /dev/fuse` on the node. Not available with a custom
+            sandbox image.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "0" }}'
+        # A saved "1" survives the option being hidden, so the values read this
+        # instead: the fuse image tag derives from the agent-server tag, which a
+        # custom sandbox image replaces.
+        - name: computed_sandbox_fuse_enabled
+          title: Computed Sandbox FUSE Workspaces
+          type: text
+          hidden: true
+          default: '{{repl and (ConfigOptionEquals "sandbox_fuse_enabled" "1") (ConfigOptionEquals "custom_sandbox_image_enabled" "0") }}'
         - name: sandbox_dedicated_nodes
           title: Run sandboxes on dedicated nodes
           help_text: >-
@@ -1713,9 +1732,9 @@ spec:
               message: Must start with github://, https://, or http://
         - name: super_admin_dashboard_enabled
           title: Enable Super Admin Dashboard
-          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
+          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname. On a new install, the first user to sign in also sees the first-install setup. Existing users will not see it.
           type: bool
-          default: "0"
+          default: "1"
         - name: super_admin_emails
           title: Super Admin Emails
           help_text: >-
@@ -1871,9 +1890,8 @@ spec:
       items:
         - name: agent_profiles_enabled
           title: Enable Agent Profiles
-          help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles.
+          help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles. This option sets the starting value. After a Super Admin changes the Enable Agent Profiles (beta) switch on Super Admin > Instance Settings, the switch overrides this option.
           type: bool
-          hidden: true
           default: "0"
         - name: model_routing_enabled
           title: Enable Model Routing
@@ -1882,9 +1900,8 @@ spec:
           default: "1"
         - name: org_mcp_servers_enabled
           title: Enable Organization MCP Servers
-          help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP.
+          help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP. This option sets the starting value. After a Super Admin changes the Enable Organization MCP Servers (beta) switch on Super Admin > Instance Settings, the switch overrides this option.
           type: bool
-          hidden: true
           default: "0"
 
     - name: advanced_options
