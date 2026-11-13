@@ -22,6 +22,29 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED, value: "false"}
+  - it: enables the Super Admin dashboard
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_SUPER_ADMIN, value: "true"}
+          count: 1
+  - it: turns the Super Admin dashboard off with an explicit value
+    set:
+      env.ENABLE_SUPER_ADMIN: "false"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_SUPER_ADMIN, value: "false"}
+          count: 1
+  - it: leaves the structured web client flags unset by default
+    asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN}
+          any: true
   - it: shows automation UI with the local service fallback URL
     set:
       automation.enabled: true
