@@ -160,3 +160,30 @@ checksum/license: {{ printf "%s|%s" (toString (.Values.license.key | default "")
 http://automation/api/automation
 {{- end -}}
 {{- end -}}
+
+{{/*
+Main application host, with the branch prefix when ingress.prefixWithBranch is
+set. Empty when ingress.host is unset.
+*/}}
+{{- define "openhands.appHost" -}}
+{{- with .Values.ingress.host -}}
+{{- if $.Values.ingress.prefixWithBranch -}}
+{{- printf "%s.%s" $.Values.branchSanitized . -}}
+{{- else -}}
+{{- . -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+URL that Agent Canvas locks itself to. Empty when there is no app host, or when
+Agent Canvas is served on its own host that differs from the app host.
+*/}}
+{{- define "openhands.agentCanvasLockURL" -}}
+{{- $agentCanvas := index .Values "agent-canvas" -}}
+{{- $host := include "openhands.appHost" . -}}
+{{- $ownHost := $agentCanvas.ingress.host -}}
+{{- if and $host (or (not $ownHost) (eq $ownHost $host)) -}}
+{{- printf "%s://%s" (ternary "https" "http" .Values.tls.enabled) $host -}}
+{{- end -}}
+{{- end }}
