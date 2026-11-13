@@ -28,6 +28,7 @@ for configuring admin console access through Replicated.
 
 # Automation
 
+- [Releases: release candidates and promotion to stable](./docs/releases.md)
 - [Automated image-tag bumps](./docs/automated-image-tag-bumps.md)
 - [Automated development chart bumps](./docs/development-chart-bumps.md)
 - [Automated staging chart bumps](./docs/staging-chart-bumps.md)
