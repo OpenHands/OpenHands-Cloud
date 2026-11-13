@@ -29,12 +29,18 @@ jobs:
           ENTERPRISE_TAG=$(yq '.image.tag' charts/openhands/values.yaml)
           AGENT_SERVER_TAG=$(yq '.global.agentServerImage.tag' charts/openhands/values.yaml)
 
-          # Build the image list as JSON array
+          FUSEY_VERSION=$(yq '.global.fuseyImage.version' charts/openhands/values.yaml)
+
+          # Build the image list as JSON array. The fusey image is built in
+          # OpenHands/runtime-api after a pin change merges, so a pull request
+          # that changes the pin has no image to scan yet.
           IMAGES=$(jq -n -c \
             --arg runtime_api "openhands/runtime-api:${RUNTIME_API_TAG}" \
             --arg enterprise "openhands/enterprise-server:${ENTERPRISE_TAG}" \
             --arg agent_server "openhands/agent-server:${AGENT_SERVER_TAG}" \
-            '[$runtime_api, $enterprise, $agent_server]')
+            --arg fusey "openhands/agent-server-fusey:${AGENT_SERVER_TAG}-fusey${FUSEY_VERSION}" \
+            --arg event "${GITHUB_EVENT_NAME}" \
+            '[$runtime_api, $enterprise, $agent_server] + (if $event == "push" then [$fusey] else [] end)')
 
           echo "images=${IMAGES}" >> "$GITHUB_OUTPUT"
           echo "Discovered images: ${IMAGES}"
