@@ -1,6 +1,5 @@
 {{- $agentCanvas := index .Values "agent-canvas" -}}
 {{- if $agentCanvas.enabled }}
-{{- $host := include "openhands.appHost" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,5 +7,5 @@ metadata:
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
 data:
-  AGENT_CANVAS_LOCK_TO_CLOUD: {{ if $host }}{{ printf "%s://%s" (ternary "https" "http" .Values.tls.enabled) $host | quote }}{{ else }}""{{ end }}
+  AGENT_CANVAS_LOCK_TO_CLOUD: {{ include "openhands.agentCanvasLockURL" . | quote }}
 {{- end }}

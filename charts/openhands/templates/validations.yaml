@@ -56,6 +56,17 @@ script in its usage-error path, so refuse it at render time instead.
 {{- fail (printf "budgetReconcileGate.mode must be \"strict\" or \"acknowledge\", got %q." (toString .Values.budgetReconcileGate.mode)) -}}
 {{- end -}}
 
+{{/*
+Agent Canvas is on by default and no longer defaults staticServer.authRequired
+to true. An install that serves Agent Canvas on its own host, with no lock to
+this installation, must choose explicitly instead of silently losing the API
+key screen on upgrade.
+*/}}
+{{- $agentCanvas := index .Values "agent-canvas" -}}
+{{- if and $agentCanvas.enabled $agentCanvas.ingress.host (not $agentCanvas.staticServer.lockToCloud) (not (include "openhands.agentCanvasLockURL" .)) (kindIs "invalid" $agentCanvas.staticServer.authRequired) -}}
+{{- fail "agent-canvas.ingress.host is set without agent-canvas.staticServer.lockToCloud, and agent-canvas.staticServer.authRequired is not set. This chart no longer defaults authRequired to true. Set agent-canvas.staticServer.authRequired=true to keep the API key screen, set it to false to accept the new default, or set agent-canvas.staticServer.lockToCloud." -}}
+{{- end -}}
+
 {{/* Missing dependencies must fail before replacing healthy app pods. */}}
 {{- if .Values.automation.enabled -}}
 {{- $a := .Values.automation -}}

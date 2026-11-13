@@ -1901,7 +1901,9 @@ agent-canvas:
     # runtime, via AGENT_CANVAS_DISABLE_TELEMETRY=1. Defaults to true for
     # self-hosted deployments; a SaaS deployment can override to false.
     disableTelemetry: true
-    authRequired: false
+    # null (unset) renders without --auth-required. A render fails if Agent Canvas
+    # has its own ingress host, no lock, and this is unset: choose true or false.
+    authRequired: null
     # ConfigMap rendered by this chart; its URL is passed as --lock-to-cloud
     # unless lockToCloud is set.
     lockToCloudConfigMap: agent-canvas-config

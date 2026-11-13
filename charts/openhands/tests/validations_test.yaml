@@ -188,3 +188,51 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+  - it: fails when agent-canvas has its own host, no lock, and authRequired is unset
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      agent-canvas.ingress.host: canvas.example.com
+    asserts:
+      - failedTemplate:
+          errorMessage: "agent-canvas.ingress.host is set without agent-canvas.staticServer.lockToCloud, and agent-canvas.staticServer.authRequired is not set. This chart no longer defaults authRequired to true. Set agent-canvas.staticServer.authRequired=true to keep the API key screen, set it to false to accept the new default, or set agent-canvas.staticServer.lockToCloud."
+  - it: renders no resources when agent-canvas has its own host and authRequired is true
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      agent-canvas.ingress.host: canvas.example.com
+      agent-canvas.staticServer.authRequired: true
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when agent-canvas has its own host and authRequired is false
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      agent-canvas.ingress.host: canvas.example.com
+      agent-canvas.staticServer.authRequired: false
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when agent-canvas has its own host and an explicit lock
+    set:
+      agent-canvas.ingress.host: canvas.example.com
+      agent-canvas.staticServer.lockToCloud: https://app.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: renders no resources when the agent-canvas host equals the app host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      agent-canvas.ingress.host: app.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: skips the agent-canvas auth guard when agent-canvas is disabled
+    set:
+      agent-canvas.enabled: false
+      agent-canvas.ingress.host: canvas.example.com
+    asserts:
+      - hasDocuments:
+          count: 0

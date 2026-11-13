@@ -61,7 +61,18 @@ deployment passes it as `--lock-to-cloud $(AGENT_CANVAS_LOCK_TO_CLOUD)`, and
 an empty value leaves the lock off. An explicit `lockToCloud` wins. The
 umbrella `openhands` chart renders such a ConfigMap with its own app URL
 (`http(s)://<ingress.host>`) and sets this value, so a default install is
-locked to itself.
+locked to itself. The ConfigMap value is empty (no lock) when
+`agent-canvas.ingress.host` is set to a host other than the app host.
+
+#### Upgrading the `openhands` chart
+
+The umbrella chart enables Agent Canvas by default. Set
+`agent-canvas.enabled: false` to omit it. The umbrella chart leaves
+`staticServer.authRequired` unset, which renders without `--auth-required`.
+The render fails, with a message that names the fix, when Agent Canvas has its
+own `ingress.host`, no `lockToCloud`, and `staticServer.authRequired` is unset.
+Set `authRequired` to `true` to keep the API key screen, or to `false` to accept
+the new default.
 
 ### Disabling telemetry
 

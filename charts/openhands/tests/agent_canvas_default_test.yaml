@@ -96,6 +96,35 @@ tests:
           path: data.AGENT_CANVAS_LOCK_TO_CLOUD
           value: https://pr-252.app.example.com
 
+  - it: leaves the lock off when agent-canvas is served on a different host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      agent-canvas.ingress.host: canvas.example.com
+      agent-canvas.staticServer.authRequired: true
+    asserts:
+      - template: agent-canvas-config.yaml
+        equal:
+          path: data.AGENT_CANVAS_LOCK_TO_CLOUD
+          value: ""
+      - template: charts/agent-canvas/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].args
+          content: --auth-required
+
+  - it: derives the lock when the agent-canvas host equals the app host
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      agent-canvas.ingress.host: app.example.com
+    asserts:
+      - template: agent-canvas-config.yaml
+        equal:
+          path: data.AGENT_CANVAS_LOCK_TO_CLOUD
+          value: https://app.example.com
+
   - it: lets an explicit lockToCloud win over the derived URL
     set:
       ingress.enabled: true
