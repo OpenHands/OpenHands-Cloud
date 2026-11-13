@@ -1,0 +1,20 @@
+# Provision the package bucket and its credentials Secret before installing.
+postgresql:
+  primary:
+    persistence:
+      enabled: true
+      # Choose the volume size before installation; claim templates are immutable.
+automation:
+  enabled: true
+  # Public URLs keep callbacks reachable from outside the cluster.
+  openhandsApiUrl: https://app.example.com
+  automationBaseUrl: https://app.example.com
+  filestore:
+    type: s3
+    bucket: enterprise-automation-packages
+    endpoint: https://object-store.example.com
+    region: us-east-1
+    createBucket: false
+    existingSecret: automation-package-store
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY

@@ -9,7 +9,7 @@ This directory contains the Playwright harness and release-level end-to-end test
 - An explicit non-production or intentionally selected release target
 - Three credential sets: Keycloak admin, Returning User (GitHub), and New User (synthetic Keycloak-native) — or pre-generated Playwright storage states for the two user roles
 
-> **Opt-in roles:** Each user role is enabled by setting its own username env var (`RETURNING_GITHUB_USERNAME` for the federated GitHub user, `KEYCLOAK_NEW_USER_USERNAME` for the synthetic Keycloak-native user). Leave either unset (or empty) to skip that role entirely — its setup project, Keycloak cleanup, and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
+> **Opt-in roles:** Each user role is enabled by setting its own username env var (`RETURNING_GITHUB_USERNAME` for the federated GitHub user, `KEYCLOAK_NEW_USER_USERNAME` for the synthetic Keycloak-native user). Leave either unset (or empty) to skip that role entirely — its setup project and test projects are excluded from the run. This is useful for fresh clusters (e.g. a spun-up test cluster with no existing users) where the "returning" path doesn't apply, or where only one role is relevant.
 
 ## Install
 
@@ -122,7 +122,10 @@ variables). They skip when it is off.
 then works through organization, Super Admin, membership and account actions
 on a throwaway user and organizations. It deletes them afterwards. It runs for
 whichever role is a Super Admin, and skips unless user provisioning is enabled.
-Its emails use `example.com`, because the server rejects `.test` addresses.
+When the Returning User is not a Super Admin and `SUPER_ADMIN_API_KEY` is set,
+the spec grants it Super Admin through that key for the run and revokes the
+grant afterwards. Its emails use `example.com`, because the server rejects
+`.test` addresses.
 
 `tests/012-first-install.spec.ts` walks the `/install` wizard. That wizard only
 exists for the first user to sign in after a fresh install with the option
@@ -203,12 +206,12 @@ Three credential sets are required before any test run:
 
 | Role           | Provider          | Credentials                                | Purpose                                                                                                                           |
 | -------------- | ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Keycloak admin | Keycloak          | username + password                        | Administers Keycloak; deletes and recreates the synthetic New User before each run                                                |
+| Keycloak admin | Keycloak          | username + password                        | Administers Keycloak; creates the synthetic New User or resets its password before each run                                       |
 | Super admin    | API key           | unbound superadmin API key                 | Creates orgs and provisions users via the REST API (org-management specs)                                                         |
 | Returning User | GitHub (via Keycloak IdP) | username + password + optional TOTP secret | An existing federated user; exercises the full app ↔ Keycloak ↔ GitHub round-trip on every run                             |
-| New User       | Keycloak (native) | Keycloak username + password + reserved e2e-only email | A synthetic account the harness deletes and recreates each run; exercises the app's first-login onboarding path deterministically |
+| New User       | Keycloak (native) | Keycloak username + password + reserved e2e-only email | A synthetic account the harness creates once per instance and reuses; exercises the app's first-login onboarding path on that first run |
 
-The New User is not federated to GitHub. At the start of a run the Keycloak admin deletes any user matching `KEYCLOAK_NEW_USER_EMAIL`, then creates a fresh Keycloak-native user with the configured username and password. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow, producing a first-login browser session for the test projects to reuse.
+The New User is not federated to GitHub. At the start of a run the Keycloak admin looks up the user matching `KEYCLOAK_NEW_USER_EMAIL` and resets its password, creating the Keycloak-native user with the configured username on the first run against an instance. The user keeps one Keycloak `sub` per instance because the app's OAuth V2 login links accounts by it: a recreated user would be matched by email instead, which the app refuses once more than one account shares the email. Playwright drives Keycloak's local Sign-In form (bypassing the "Log in with GitHub" social button) and completes the app's TOS / onboarding flow when the app shows it, producing a browser session for the test projects to reuse. To exercise the first-login path again, delete the e2e account through the Super Admin API (`DELETE /api/admin/users/{user_id}`); the next run recreates it.
 
 ### Login flows
 
@@ -219,7 +222,7 @@ The app has two login pages, chosen by `feature_flags.enable_oauth_v2_login` in 
 
 Both reach Keycloak with `kc_idp_hint=github`, which skips Keycloak's own form. `setup:new-user` reads the flag and removes the hint where that flow carries it: from the Keycloak request (legacy) or from the app's `/oauth/{id}/login` redirect (OAuth V2, because Playwright cannot intercept redirect hops). `tests/014-login.spec.ts` checks each flow's login page and sign-in round trip as the New User; the describe for the flow the instance does not use is skipped and says why. Run one flow with `--grep @oauth-v1` or `--grep @oauth-v2`.
 
-`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. Both the delete-by-email and create-user paths refuse any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — deletion in the production realm is only ever destructive.
+`KEYCLOAK_NEW_USER_EMAIL` **must** be under the reserved `e2e.example.com` namespace (RFC 2606 reserves `example.com`, so it can never be a real mailbox). Not `.test`: the server validates emails with pydantic `EmailStr`, which rejects special-use TLDs, so `provision-user` returns 422 for them. `.e2e.test` is still accepted for the deploy transition only. The Keycloak provisioning path refuses any address outside this namespace, and the setup itself refuses to run when `BASE_URL` resolves to the production host — writes to the production realm are only ever destructive.
 
 ### Environment variables
 
@@ -227,7 +230,7 @@ Deployment:
 
 - `BASE_URL` (required) — release environment under test.
 
-Keycloak admin (cleanup):
+Keycloak admin (New User provisioning):
 
 - `KEYCLOAK_REALM` — realm to administer (default: `allhands`).
 - `KEYCLOAK_ADMIN_USERNAME` — admin username.
@@ -238,9 +241,17 @@ The Keycloak server URL is derived from `BASE_URL` by prefixing the subdomain wi
 
 Super admin (org management):
 
-- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by `006-org-management.spec.ts` and `011-automations.spec.ts` to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
+- `SUPER_ADMIN_API_KEY` — API key of an instance-level superadmin, used by `006-org-management.spec.ts`, `011-automations.spec.ts`, `015-automation-completed-journey.spec.ts`, `016-automation-failed-journey.spec.ts` and `017-automation-non-completed-journey.spec.ts` to create organizations and provision users directly via the REST API (outside the browser). The key must be **unbound** (no org binding) so the server resolves the target org per-request from the `X-Org-Id` header — the superadmin is not a member of the orgs it creates.
 
 The `011-automations` suite also probes `/api/automation/v1?limit=1` for reachability and skips the whole suite when the automation subchart is not deployed on the target cluster; no additional env var is required.
+
+`tests/015-automation-completed-journey.spec.ts` is the strict success-path journey: it uploads a deterministic script (`utils/automation-fixtures/completed_run.py`, no LLM or real credential), dispatches it with the automation page's **Run now** button, and passes only when the run ends `COMPLETED`. It then checks the run page, the run's task outcome and the conversation the run links to. Any other terminal status, or a run that never reports back within four minutes, fails the step with the lifecycle observed. It needs the same provisioning and reachability as `011-automations`.
+
+`tests/016-automation-failed-journey.spec.ts` is its failure-path counterpart: it uploads a deterministic script (`utils/automation-fixtures/failed_run.py`) that raises a known, run-scoped error and reports it through the completion callback, dispatches it with **Run now**, and passes only when the run ends `FAILED`. It then checks that `error_detail` is exactly the expected error, that the run page and the Logs dialog show the run as failed with that error, and that the run links no conversation. `COMPLETED`, any other terminal status, or a callback that never arrives within four minutes fails the step with the lifecycle observed. It needs the same provisioning and reachability as `011-automations`.
+
+`tests/017-automation-non-completed-journey.spec.ts` proves that no other outcome can pass the success path. It runs three deterministic scripts (`utils/automation-fixtures/stalled_run.py`, `utils/automation-fixtures/missing_callback_run.py`; no LLM or real credential) in one throwaway organization, each started with **Run now**: a run that stalls, a stalled run cancelled from the Home page's **Cancel run** menu item, and a script that exits without calling the completion callback. For each, the success assertion (`waitForRunCompleted`, polled for at most 30 seconds) must fail within that bound and report the timeout or the final status with the lifecycle it observed, and the run page must not show the run as completed. A run the test abandons while it is still active is cancelled, so no run is left running; a stalled script also stops itself after two minutes. A fixture that reaches `COMPLETED` fails the journey. It needs the same provisioning and reachability as `011-automations`.
+
+`tests/018-agent-profile-journey.spec.ts` covers the Agent Profile journey in the actor's own workspace, under both roles. It creates a personal profile on the **Agent profiles** settings page with one runtime instruction ("Default + your instructions") that tells the agent to end every message with a run-scoped marker, sets it as the default, and starts a conversation from the home composer. It passes only when the stored profile holds the instruction, the conversation record names the profile as its launcher, the agent's own replies carry the marker (the user's prompt never mentions it), and a reload of the settings page and of the conversation shows the same state. An Agent Profile must reference a saved LLM profile and the suite provisions none, so the journey builds on the actor's active LLM profile (or its first one), which must follow instructions. It skips, with the reason in the report, when the actor has no saved LLM profile (for example when the managed LLM lives only in the account's agent settings) or when the instance's Agent Profiles page option (`feature_flags.enable_agent_profiles_page`) is off. `afterEach` restores the member's previous default, then deletes the conversations the profile launched and the profile.
 
 Returning User (GitHub):
 
@@ -250,7 +261,7 @@ Returning User (GitHub):
 
 New User (synthetic Keycloak-native account):
 
-- `KEYCLOAK_NEW_USER_USERNAME` — **required to enable this role**; leave unset to skip the New User (and Keycloak cleanup + creation) entirely.
+- `KEYCLOAK_NEW_USER_USERNAME` — **required to enable this role**; leave unset to skip the New User (and its Keycloak provisioning) entirely.
 - `KEYCLOAK_NEW_USER_PASSWORD` — required when the role is enabled. Set on the user by the Admin API and submitted through Keycloak's local login form.
 - `KEYCLOAK_NEW_USER_EMAIL` — required when the role is enabled (see above). Also used by `006-org-management.spec.ts` to provision the user into a test org via the REST API.
 
@@ -273,8 +284,10 @@ Each role has its own setup project that logs in via GitHub and writes a Playwri
 ### Project topology
 
 ```text
-keycloak-cleanup ──▶ setup:new-user
-setup:returning
+setup:global ··▶ teardown:global (runs after everything below, also on failure)
+
+setup:returning ──▶ setup:global
+setup:new-user  ──▶ setup:global
 
 chromium:returning ──▶ setup:returning
 chromium:new-user  ──▶ setup:new-user
@@ -284,6 +297,23 @@ chromium:new-user  ──▶ setup:new-user
 Every `*.spec.ts` file is picked up by both the `:returning` and `:new-user` variants of each browser, so the same suite runs once per user role. A spec that tests only one role is listed in `ROLE_ONLY_SPECS` (`utils/config.ts`), and the other role's projects do not schedule it, so it never shows up as a skipped test. Specs read the active role via `runUser(testInfo)` (see `utils/config.ts`), which resolves Playwright project metadata (`project.metadata.user`) and falls back to the `AUTH_RUN_USER` env var for ad-hoc single-spec runs.
 
 Spec filenames are numbered (`001-`, `002-`, …) because Playwright runs the files within a project in filename order. Keep the prefixes when adding a spec; a spec that must run at a particular point says why in its own header.
+
+### Setup and teardown
+
+The suite runs against shared, long-lived instances, so every run must leave them as it found them. Cleanup has three layers, following Playwright's [global setup and teardown](https://playwright.dev/docs/test-global-setup-teardown) projects:
+
+| Layer | Where | Deletes | Catches |
+| -- | -- | -- | -- |
+| Per spec (primary) | `afterAll` / `afterEach` with a `Cleanup` (`utils/cleanup.ts`) | Exactly the IDs the spec created | Normal runs, including failed tests and retries |
+| Global teardown | `teardown:global` (`tests/setup/global.teardown.ts`) | Every `e2eOrgName` org tagged with this run's ID | A spec whose own cleanup failed |
+| Global setup | `setup:global` (`tests/setup/global.setup.ts`) | `e2eOrgName` orgs from other runs older than 2 hours | Runs that crashed before teardown |
+
+Rules for specs that create data:
+
+- Call `cleanup.defer(label, fn)` right after each create and `await cleanup.run()` in `afterAll` (or `afterEach` for per-test data). Steps run newest-first, so children are deleted before their parents. A failing step is logged and never fails the test.
+- Name orgs with `e2eOrgName(label)` (`utils/org-management.ts`). It adds a timestamp and `run-<E2E_RUN_ID>`, which is how the global setup and teardown recognize leftovers. `playwright.config.ts` sets `E2E_RUN_ID` once per run, and every worker inherits it.
+- The global sweeps need `SUPER_ADMIN_API_KEY` and the Super Admin directory API. They skip without the key, never run against production, and never fail the run. Add sweeps for other kinds of leaked data to the same two files.
+- `--no-deps` skips the global setup and teardown, so a run with it cleans up only through the specs' own hooks.
 
 ### Auth behavior: `AUTH_METHOD`
 
@@ -304,9 +334,6 @@ BASE_URL=https://release-under-test.example.test npm run test:new-user
 
 # Just the auth setup (both users)
 BASE_URL=https://release-under-test.example.test npm run setup:auth
-
-# Just the Keycloak cleanup
-BASE_URL=https://release-under-test.example.test npm run keycloak:cleanup
 ```
 
 ## Argo execution contract
@@ -329,7 +356,7 @@ e2e_tests/
 ├── fixtures/          # Generated or mounted authentication state
 ├── pages/             # Shared page objects
 ├── tests/
-│   ├── setup/         # Per-role setup projects (keycloak-cleanup, setup-returning, setup-new-user)
+│   ├── setup/         # Per-role setup projects (setup-returning, setup-new-user)
 │   └── *.spec.ts      # Specs run under both user roles
 ├── utils/             # Shared config, auth helpers, keycloak admin, test helpers
 ├── package-lock.json  # Locked Node dependencies

@@ -4,6 +4,43 @@ metadata:
   name: openhands-config
 spec:
   groups:
+    - name: license
+      title: License
+      description: Your OpenHands Enterprise license from Customer Center. An upcoming release will enforce the license through Customer Center, so set it before you upgrade to that release.
+      items:
+        - name: license_source
+          title: License Type
+          # One source line per bullet, as on hostname_mode below.
+          help_text: |
+            • **License key** — for an install that can reach Customer Center.
+            • **Offline license file** — for an install that can't reach Customer Center.
+          type: select_one
+          default: '{{repl if IsAirgap }}offline{{repl else }}key{{repl end }}'
+          items:
+            - name: key
+              title: License key
+            - name: offline
+              title: Offline license file
+        - name: license_key
+          title: License Key
+          help_text: The license key from Customer Center.
+          type: password
+          recommended: true
+          when: 'repl{{ ConfigOptionEquals "license_source" "key" }}'
+        - name: offline_license
+          title: Offline License File
+          help_text: The offline license file you downloaded from Customer Center.
+          type: file
+          recommended: true
+          when: 'repl{{ ConfigOptionEquals "license_source" "offline" }}'
+          # Validation runs against the decoded file contents. Every offline
+          # license is a JSON envelope with a signature, so this catches another
+          # file uploaded by mistake, such as the Replicated license.
+          validation:
+            regex:
+              pattern: '"signature"'
+              message: 'This file does not look like an OpenHands offline license file.'
+
     - name: domain_configuration
       title: Domain Configuration
       description: Configure hostnames and domains for OpenHands services
@@ -275,6 +312,46 @@ spec:
       title: Certificate Configuration
       description: Configure TLS certificates for secure HTTPS connections
       items:
+        - name: tls_certificate_source
+          title: Certificate Source
+          help_text: |
+            • **Upload** — OpenHands stores the uploaded certificate and rewrites it on every deploy.
+            • **Existing secret** — OpenHands reads a `kubernetes.io/tls` secret you manage and never writes it, so a certificate renewed outside the Admin Console (by hand, cert-manager or another tool) stays in place across deploys.
+          type: select_one
+          # Upload is what every install before this option did, so it is the default for all of them.
+          default: "upload"
+          items:
+            - name: "upload"
+              title: "Upload"
+            - name: "secret"
+              title: "Existing secret"
+        - name: tls_existing_certificate_name
+          title: TLS Secret Name
+          # One source line per bullet, as on tls_certificate below.
+          help_text: |
+            Name of a `kubernetes.io/tls` secret in the `openhands` namespace, with `tls.crt` (the full chain) and `tls.key`. Create it before deploying. Do not use `openhands-tls` or any secret OpenHands created; switching sources deletes those.
+            {{repl if ConfigOptionEquals "hostname_mode" "wildcard" }}Use a single wildcard SAN:
+            • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl else }}It must cover:
+            • `{{repl ConfigOption "computed_app_hostname" }}`
+            • `{{repl ConfigOption "computed_auth_hostname" }}`
+            • `{{repl ConfigOption "computed_llm_proxy_hostname" }}`
+            • `{{repl ConfigOption "computed_runtime_api_hostname" }}`
+            • `{{repl ConfigOption "computed_analytics_hostname" }}`
+            • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl end }}
+          type: text
+          required: true
+          when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "secret" }}'
+          validation:
+            regex:
+              # DNS-1123 subdomain, labels up to 63 characters. RE2 can't also cap the 253-character total.
+              pattern: '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$'
+              message: 'Must be a Kubernetes secret name: lowercase letters, digits and "-", in parts separated by single "." characters, each starting and ending with a letter or digit.'
+        # Every consumer of the serving certificate reads this name.
+        - name: computed_tls_certificate_name
+          title: Computed TLS Secret Name
+          type: text
+          hidden: true
+          default: '{{repl if ConfigOptionEquals "tls_certificate_source" "secret" }}{{repl ConfigOption "tls_existing_certificate_name" }}{{repl else }}openhands-tls{{repl end }}'
         - name: tls_certificate
           title: TLS Certificate
           # help_text supports Go templates and the Admin Console re-renders it
@@ -294,6 +371,7 @@ spec:
             • `{{repl ConfigOption "computed_sandbox_wildcard" }}`{{repl end }}
           type: file
           required: true
+          when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "upload" }}'
           # Validation runs against the base64-decoded file contents, so we can
           # check for the PEM header directly. This catches the common mistake of
           # uploading the private key (or a key/cert swap) into the certificate field.
@@ -306,6 +384,7 @@ spec:
           help_text: Upload your TLS private key file (.key or .pem)
           type: file
           required: true
+          when: 'repl{{ ConfigOptionEquals "tls_certificate_source" "upload" }}'
           # Matches PRIVATE KEY, RSA/EC/DSA/ENCRYPTED/OPENSSH PRIVATE KEY, but NOT
           # "BEGIN CERTIFICATE" -- so a cert accidentally uploaded here is rejected.
           validation:
@@ -1372,9 +1451,11 @@ spec:
               message: Must be a positive integer (in seconds)
         - name: sandbox_dead_seconds
           title: Deletion Time (seconds)
-          help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed.
+          help_text: How long (in seconds) before paused conversations are permanently deleted. Once deleted, the conversation's storage is freed and it can no longer be accessed. A paused conversation keeps its full Storage Size on disk until then, so lower this to free disk sooner, or raise it to keep conversations resumable for longer.
           type: text
-          default: "864000"
+          # `value:` not `default:`, for the reason given on hostname_mode above. Only new Embedded
+          # Cluster installs get 3 days: their hostpath PVCs are unbounded and share one node's disk.
+          value: '{{repl if and (eq Sequence 0) (eq Distribution "embedded-cluster") }}259200{{repl else }}864000{{repl end }}'
           validation:
             regex:
               pattern: ^[1-9][0-9]*$
@@ -1527,6 +1608,25 @@ spec:
             /dev/kvm. Verify with `ls -l /dev/kvm` on the node.
           type: bool
           default: "0"
+        - name: sandbox_fuse_enabled
+          title: Store sandbox workspaces in the bundled object storage (FUSE)
+          help_text: >-
+            Adds a second warm pool whose sandboxes keep /workspace in the bundled MinIO
+            through a FUSE mount instead of a persistent volume. The default pool and
+            existing sandboxes are unchanged. The cluster node(s) MUST expose /dev/fuse.
+            Verify with `ls -l /dev/fuse` on the node. Not available with a custom
+            sandbox image.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "0" }}'
+        # A saved "1" survives the option being hidden, so the values read this
+        # instead: the fuse image tag derives from the agent-server tag, which a
+        # custom sandbox image replaces.
+        - name: computed_sandbox_fuse_enabled
+          title: Computed Sandbox FUSE Workspaces
+          type: text
+          hidden: true
+          default: '{{repl and (ConfigOptionEquals "sandbox_fuse_enabled" "1") (ConfigOptionEquals "custom_sandbox_image_enabled" "0") }}'
         - name: sandbox_dedicated_nodes
           title: Run sandboxes on dedicated nodes
           help_text: >-
@@ -1632,9 +1732,9 @@ spec:
               message: Must start with github://, https://, or http://
         - name: super_admin_dashboard_enabled
           title: Enable Super Admin Dashboard
-          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname, and the first-install setup to instance Super Admins.
+          help_text: Show the Super Admin dashboard, accessible at /super-admin on your application hostname. On a new install, the first user to sign in also sees the first-install setup. Existing users will not see it.
           type: bool
-          default: "0"
+          default: "1"
         - name: super_admin_emails
           title: Super Admin Emails
           help_text: >-
@@ -1683,6 +1783,12 @@ spec:
               title: "2 days"
             - name: "3"
               title: "3 days (default)"
+        - name: clickhouse_diagnostic_log_cleanup_enabled
+          title: Hourly ClickHouse Diagnostic Log Cleanup
+          help_text: Empty Laminar's ClickHouse diagnostic tables, such as `trace_log` and `text_log`, every hour, and remove leftover `system.*_log_N` copies. `query_log` and `error_log` keep the retention above. Turn this on if ClickHouse diagnostic logs are filling the node's disk.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "analytics_enabled" "1" }}'
 
     - name: automations_configuration
       title: Automations
@@ -1777,6 +1883,26 @@ spec:
           help_text: Deploy the Agent Canvas UI, served at /canvas on your application hostname. The UI is locked to this instance's OpenHands backend.
           type: bool
           default: "1"
+
+    - name: agent_features
+      title: Agent Features
+      description: Turn agent features on or off for everyone on this instance.
+      items:
+        - name: agent_profiles_enabled
+          title: Enable Agent Profiles
+          help_text: Replace the Agent settings page with Agent Profiles and the Agent Context page, and let organization admins manage the organization's shared agent profiles. This option sets the starting value. After a Super Admin changes the Enable Agent Profiles (beta) switch on Super Admin > Instance Settings, the switch overrides this option.
+          type: bool
+          default: "0"
+        - name: model_routing_enabled
+          title: Enable Model Routing
+          help_text: Show the Model Router page in organization settings. Once an organization admin creates and activates a router, it chooses the model for each conversation in that organization.
+          type: bool
+          default: "1"
+        - name: org_mcp_servers_enabled
+          title: Enable Organization MCP Servers
+          help_text: Show the organization's MCP servers on Settings > MCP, where owners and admins add MCP servers for everyone in the organization and members connect to them. Agent Canvas's MCP Servers item then opens Settings > MCP. This option sets the starting value. After a Super Admin changes the Enable Organization MCP Servers (beta) switch on Super Admin > Instance Settings, the switch overrides this option.
+          type: bool
+          default: "0"
 
     - name: advanced_options
       title: Advanced Options

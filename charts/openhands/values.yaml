@@ -12,7 +12,24 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.81.0
+  tag: 1.92.0
+
+# OpenHands Enterprise license from Customer Center. Set a license key, or an
+# offline license file if this install can't reach Customer Center. An upcoming
+# release will enforce the license through Customer Center. Until then, an
+# install without a license keeps working.
+license:
+  # License key from Customer Center. The chart stores it in the
+  # openhands-license Secret.
+  key: ""
+  # Contents of the offline license file downloaded from Customer Center. Pass
+  # the file with `--set-file license.offlineLicense=<path>`. When set,
+  # OpenHands reads the license from it and ignores the license key.
+  offlineLicense: ""
+  # Secret you manage instead, with a `license-key` or `offline-license` entry.
+  # When set, the chart ignores key and offlineLicense and creates no Secret.
+  # Restart the openhands pods after you change it.
+  existingSecret: ""
 
 autoscaling:
   enabled: false
@@ -111,6 +128,11 @@ securityContext:
   runAsNonRoot: true
 
 env:
+  # Hides editing only; saved personal credentials remain usable.
+  OH_ALLOW_USER_LLM_CONFIGURATION: "false"
+  HIDE_BILLING_PAGE: "true"
+  EMAIL_CHANGE_ENABLED: "false"
+  OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "false"
   DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   # How the app addresses a sandbox. Must agree with the runtime-api's
@@ -444,6 +466,8 @@ smtp:
 
 tls:
   enabled: false
+  # kubernetes.io/tls Secret managed outside this release. Ingresses and preflights use it instead of app-all-hands-<env>-tls.
+  existingSecret: ""
 
 certificate:
   enabled: false
@@ -472,7 +496,7 @@ keycloak:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/keycloak
-    tag: 26.8.0-debian-12-oh1
+    tag: 26.8.0-debian-12-oh2
   # Parent-chart pre-upgrade hook (not consumed by the Keycloak subchart): when
   # the upgrade changes the Keycloak version, copy the database to
   # <database>_backup_<old version> on the same server before Keycloak migrates
@@ -648,6 +672,11 @@ laminar:
       # used by Laminar. The chart applies this with a Helm install/upgrade hook
       # so it survives Replicated/KOTS reconciliation and upgrades.
       retentionDays: 3
+      cleanup:
+        # Replaces the TTL hook with a CronJob that truncates system.*_log tables
+        # and keeps query_log/error_log for retentionDays.
+        enabled: false
+        schedule: "7 * * * *"
 
   frontend:
     ingress:
@@ -831,6 +860,13 @@ minio:
       # upgrade of a persistent install (Replicated sets persistence.enabled:
       # true) would wipe every conversation and session file. A render-time
       # guard in templates/validations.yaml rejects true for bundled installs.
+      purge: false
+    # Fuse-mounted sandbox workspaces (runtime-api.fuseMount). Always created so
+    # turning fuse on, off and on again never touches a bucket that holds
+    # workspaces: the minio chart never deletes a bucket that leaves this list,
+    # and purge: false keeps the post-upgrade job from emptying it.
+    - name: runtime-api-workspaces
+      policy: none
       purge: false
   svcaccts:
     # Bundled minio dev creds. The runtime-api reap path can't read .Values.minio
@@ -1050,6 +1086,101 @@ budgetReconcileGate:
       memory: "1Gi"
       cpu: "500m"
 
+# Egress NetworkPolicy for sandbox pods. Sandboxes run untrusted code, and by
+# default they share a namespace with postgres, redis, keycloak, and LiteLLM.
+# When enabled, sandboxes can reach only the destinations allowed below. The
+# policy selects pods with a runtime_id label in runtime-api's sandbox
+# namespace, so the other pods in that namespace are unaffected.
+#
+# Off by default because the right settings depend on the cluster.
+# Review each rule before enabling.
+# See "Sandbox Network Isolation" in the README for per-environment examples.
+sandboxNetworkPolicy:
+  enabled: false
+  # Empty uses "<release fullname>-sandbox-egress".
+  name: ""
+  # Added to the chart's labels; a key set here overrides the chart's value.
+  labels: {}
+  annotations: {}
+
+  # IPv4 internet: every address except blockedCIDRs. The defaults are the
+  # private, shared (CGNAT), and link-local ranges, plus Azure's platform
+  # endpoint (a public IP that AKS pods can otherwise reach). Link-local
+  # covers cloud metadata servers. Add any node, pod, or service CIDR that
+  # falls outside these ranges.
+  internet:
+    enabled: true
+    blockedCIDRs:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 100.64.0.0/10
+      - 169.254.0.0/16
+      - 168.63.129.16/32
+
+  # IPv6 internet: every address except blockedCIDRs (unique local and
+  # link-local by default). Enable on IPv6 and dual-stack clusters, or
+  # sandboxes lose all IPv6 egress. If your nodes or pods use global IPv6
+  # addresses (EKS IPv6 clusters, for example), add those ranges.
+  ipv6:
+    enabled: false
+    blockedCIDRs:
+      - fc00::/7
+      - fe80::/10
+
+  # Cluster DNS. `to` and `ports` use the NetworkPolicy egress rule format,
+  # and an override replaces the whole list. `to` must not be empty, because
+  # an empty `to` allows every destination. The default matches CoreDNS and
+  # NodeLocal DNSCache pods, which some network plugins (GKE Dataplane V2)
+  # redirect DNS queries to.
+  dns:
+    enabled: true
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values:
+                - kube-dns
+                - node-local-dns
+    ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+
+  # The in-cluster ingress controller, in the same format as dns. Sandboxes
+  # reach runtime URLs and the app's webhook endpoint at the public hostname,
+  # and most clusters route that traffic directly to the controller pods. The
+  # defaults match Traefik's container ports in any namespace.
+  ingressController:
+    enabled: true
+    to:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+    ports:
+      - protocol: TCP
+        port: 8000
+      - protocol: TCP
+        port: 8443
+
+  # The bundled LiteLLM and Laminar are allowed automatically when enabled.
+  # Add a rule here (NetworkPolicyEgressRule format) for each internal
+  # destination that sandboxes need, such as git servers, proxies, package
+  # mirrors, and private LLM endpoints.
+  extraEgress: []
+  # - to:
+  #     - ipBlock:
+  #         cidr: 10.20.0.15/32
+  #   ports:
+  #     - protocol: TCP
+  #       port: 443
+
 runtime-api:
   enabled: true
   replicaCount: 1
@@ -1251,7 +1382,8 @@ plugin-directory:
   env: {}
 
 automationServiceKey:
-  enabled: false
+  # null follows the local service; explicit true/false still wins.
+  enabled: null
   existingSecret: automation-service-key
   secretKey: automation-service-key
 
@@ -1260,11 +1392,12 @@ automationService:
   # URL of the automation service (e.g., https://staging.all-hands.dev/api/automation)
   url: ""
   # Enable forwarding events to the automation service
-  eventForwardingEnabled: false
+  eventForwardingEnabled: null
 
 # Automation webhook secret for verifying webhook signatures
 automationWebhookSecret:
-  enabled: false
+  # null follows the local service.
+  enabled: null
   existingSecret: automation-webhook-secret
   secretKey: webhook-secret
 
@@ -1273,7 +1406,9 @@ automationWebhookSecret:
 # The automation service handles scheduled and event-driven automation execution
 # Routing is handled by parent chart via /api/automation subpath
 automation:
-  enabled: false
+  enabled: true
+  # Acknowledge only after backup and review; this does not migrate data.
+  upgradeAcknowledged: false
   
   image:
     repository: ghcr.io/openhands/automation
@@ -1350,9 +1485,9 @@ automation:
   
   # URL configuration
   # OpenHands API URL for dispatching sandbox runs (e.g., https://staging.all-hands.dev)
-  openhandsApiUrl: ""
+  openhandsApiUrl: "http://openhands-service.{{ .Release.Namespace }}.svc.cluster.local:3000"
   # Automation service base URL for completion callbacks (e.g., https://staging.all-hands.dev/api/automation)
-  automationBaseUrl: ""
+  automationBaseUrl: "http://automation.{{ .Release.Namespace }}.svc.cluster.local"
   
   # PostgreSQL database configuration
   database:
@@ -1361,7 +1496,7 @@ automation:
     #   - Cloud SQL: "my-project:us-central1:my-instance"
     #   - In-cluster: "openhands-main-postgresql"
     #   - Feature env: "openhands-feature-branch-postgresql"
-    host: ""
+    host: "{{ .Release.Name }}-postgresql"
     port: "5432"
     sslMode: "prefer"
     user: "automation_user"
@@ -1372,7 +1507,7 @@ automation:
     # Create database and user in an existing PostgreSQL instance
     # When true, runs an init container to create the database and user
     # Useful when sharing a PostgreSQL instance with other services
-    createDatabaseUser: false
+    createDatabaseUser: true
     # Superuser used to create the automation database and user.
     # Defaults to "postgres" but must be overridden when the external PostgreSQL
     # admin account uses a different name.
@@ -1395,8 +1530,8 @@ automation:
   # the full key reference. To use the bundled MinIO, set type: s3 and
   # endpoint: http://<release>-minio:9000 with createBucket: true.
   filestore:
-    # "s3" or "gcs"
-    type: gcs
+    # Choose s3 or gcs explicitly to avoid switching an existing package store.
+    type: ""
     # Bucket to store packages in (both backends).
     bucket: automation-data
     # s3 only. Leave empty for AWS; set for other S3-compatible stores. TLS is
@@ -1472,9 +1607,24 @@ automation:
     enabled: false
 
 replicated:
-  # Deploys the Replicated SDK subchart (license enforcement) and the
-  # troubleshoot preflight/support-bundle Secrets. The SDK's license is
-  # injected by the Replicated registry at chart-pull time, not set here.
+  # Deploys the Replicated SDK subchart (license enforcement). The SDK's license
+  # is injected by the Replicated registry at chart-pull time, so it only works
+  # on a chart pulled from registry.replicated.com; a ghcr install has no
+  # license and the SDK pod crashloops. The Replicated installer turns it on in
+  # replicated/openhands.yaml.
+  enabled: false
+
+preflight:
+  # Renders the troubleshoot preflight spec into a Secret labelled
+  # troubleshoot.sh/kind=preflight. Run it before an install or upgrade with
+  # `helm template ... | kubectl preflight -`; the Replicated installer runs it
+  # automatically.
+  enabled: true
+
+supportBundle:
+  # Renders the troubleshoot support-bundle spec into a Secret labelled
+  # troubleshoot.sh/kind=support-bundle, which `kubectl support-bundle
+  # --load-cluster-specs` and Replicated installs both discover.
   enabled: true
   # Database credentials below are rendered only into the support-bundle Secret;
   # each collector also requires its password to be set. The troubleshoot
@@ -1491,7 +1641,17 @@ global:
   # either of those for per-use exceptions; set it here to move them together.
   agentServerImage:
     repository: ghcr.io/openhands/agent-server
-    tag: 1.59.0-python-slim
+    tag: 1.62.0-python
+  # Fusey-enabled variant of the agent-server image, used by the derived fuse
+  # warm pool (runtime-api warmRuntimes.fuse). Its tag is not pinned separately:
+  # it is <agentServerImage.tag>-fusey<version>, so it cannot drift from the
+  # agent-server tag above. runtime-api owns the pin and builds the image on
+  # release: the agent-server tag above and this version must equal
+  # AGENT_SERVER_TAG and FUSEY_VERSION in fusey-image.env at the runtime-api
+  # release this chart pins.
+  fuseyImage:
+    repository: ghcr.io/openhands/agent-server-fusey
+    version: 0.0.14
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267

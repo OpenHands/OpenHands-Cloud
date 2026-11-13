@@ -21,6 +21,10 @@ spec:
       # global.agentServerImage.
       agentServerImage:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server'
+      # Fusey-enabled variant of the image above, for the fuse warm pool. The
+      # tag is derived from agentServerImage.tag and the chart's pinned version.
+      fuseyImage:
+        repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/agent-server-fusey'
       # Runtime (agent-server sandbox) env vars. The chart serialises this map
       # into OH_AGENT_SERVER_ENV and mirrors it into every warm-runtime entry's
       # env (runtime-api claims warm pods by exact env match, so a key here
@@ -39,6 +43,11 @@ spec:
     imagePullSecrets:
       - name: '{{repl ImagePullSecretName }}'
 
+    automation:
+      enabled: repl{{ ConfigOptionEquals "automations_enabled" "1" }}
+      # Saved configuration supplies the data paths; upgrade guards still apply.
+      upgradeAcknowledged: true
+
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
     budgetPreflight:
@@ -47,6 +56,8 @@ spec:
       mode: 'repl{{ ConfigOption "budget_reconcile_gate_mode" }}'
 
     env:
+      ENABLE_AUTOMATIONS: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS: 'repl{{ ConfigOptionEquals "automations_enabled" "1" }}'
       KEYCLOAK_ADMIN_CLIENT_ID: openhands-provisioner
       # Default model for new users/orgs: the first non-empty line of the
       # "Anthropic Models" KOTS textarea (anthropic is the base provider; the
@@ -121,6 +132,26 @@ spec:
       # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      # Agent Profiles: the Agent Profiles and Agent Context settings pages and
+      # organization agent profile management. Only the web client reads these
+      # flags, so the FEATURE_FLAGS-prefixed form is the one that applies. They
+      # are the starting value: the Enable Agent Profiles (beta) switch on
+      # Super Admin > Instance Settings overrides them once a Super Admin has
+      # changed it.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_PROFILES_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AGENT_CONTEXT_PAGE: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_AGENT_PROFILES: 'repl{{ ConfigOptionEquals "agent_profiles_enabled" "1" }}'
+      # Model Routing. Needs both forms — see the ENABLE_JIRA_DC note above.
+      # The server reads it to serve the router API and apply the active
+      # router at launch; the web client reads it for the Model Router page.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
+      ENABLE_MODEL_ROUTER: 'repl{{ ConfigOptionEquals "model_routing_enabled" "1" }}'
+      # Organization MCP servers (OHE-3091). Only the web client reads this flag
+      # (enterprise Settings > MCP and Agent Profiles, and Agent Canvas), so the
+      # FEATURE_FLAGS-prefixed form is the one that applies. It is the starting
+      # value: the Enable Organization MCP Servers (beta) switch on Super
+      # Admin > Instance Settings overrides it once a Super Admin has changed it.
+      OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_ORG_MCP_SERVERS: 'repl{{ ConfigOptionEquals "org_mcp_servers_enabled" "1" }}'
       # Super-admin escape hatch (server/auth/constants.py:SUPER_ADMIN_EMAILS):
       # comma-separated emails that always hold the instance-level Super Admin
       # role, granted on every successful OAuth V2 login regardless of the
@@ -154,7 +185,7 @@ spec:
     tlsStore:
       enabled: true
       name: default
-      secretName: openhands-tls
+      secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
 
     tls:
       enabled: true
@@ -294,7 +325,7 @@ spec:
       ingress:
         enabled: true
         className: traefik
-        # Replicated uses the customer-uploaded openhands-tls Secret.
+        # Replicated serves the secret named by computed_tls_certificate_name.
         annotations: null
         hosts:
           - host: '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
@@ -302,7 +333,7 @@ spec:
               - path: /
                 pathType: Prefix
         tls:
-          - secretName: openhands-tls
+          - secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
             hosts:
               - '{{repl ConfigOption "computed_llm_proxy_hostname" }}'
       proxy_config:
@@ -360,7 +391,7 @@ spec:
         className: traefik
         host: '{{repl ConfigOption "computed_runtime_api_hostname" }}'
         tls: true
-        tlsSecretName: openhands-tls
+        tlsSecretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
         # Suppress the chart's default letsencrypt annotation: Replicated
         # installs use a manually-uploaded TLS cert (openhands-tls), and the
         # cluster-issuer annotation triggers cert-manager to take SSA
@@ -436,9 +467,15 @@ spec:
         # Must match the device-plugin subchart's domain + device name (the
         # legacy smarter-devices domain; see the device-plugin block below).
         KVM_DEVICE_RESOURCE: "smarter-devices/kvm"
+        # Same domain for /dev/fuse, so the fuse pool requests what the
+        # device-plugin block below advertises.
+        FUSE_DEVICE_RESOURCE: "smarter-devices/fuse"
       warmRuntimes:
         enabled: true
         count: repl{{ ConfigOption "sandbox_warm_runtime_count" }}
+        # Second pool cloned from the default entry with the fusey image.
+        fuse:
+          enabled: repl{{ ConfigOptionEquals "computed_sandbox_fuse_enabled" "true" }}
         configsByName:
           # Keep this key aligned with the chart values for Helm merging.
           default:
@@ -484,6 +521,19 @@ spec:
             run_as_user: 10001
             run_as_group: 10001
             fs_group: 10001
+      # Workspaces for the fuse pool live in the bundled MinIO. The bucket is
+      # created by the parent chart's minio.buckets; RUNTIME_API_BASE_URL above
+      # is the broker URL the sandboxes call. The credentials are the bundled
+      # MinIO's svcaccts pair, as for the automation filestore below.
+      fuseMount:
+        enabled: repl{{ ConfigOptionEquals "computed_sandbox_fuse_enabled" "true" }}
+        storageProvider: s3
+        bucket: runtime-api-workspaces
+        s3:
+          endpoint: http://openhands-minio:9000
+          region: us-east-1
+          accessKeyId: default
+          secretAccessKey: notasecret
       ingressBase:
         enabled: true
         apiVersion: networking.k8s.io/v1
@@ -499,18 +549,19 @@ spec:
     # squat/generic-device-plugin DaemonSet. Replaces the smarter-device-manager
     # plugin that used to live in the runtime-api subchart.
     device-plugin:
-      enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+      enabled: repl{{ or (ConfigOptionEquals "sandbox_kvm_enabled" "1") (ConfigOptionEquals "computed_sandbox_fuse_enabled" "true") }}
       # Keep the resource domain smarter-device-manager used, even though the
       # plugin behind it changed: pause/resume reuses a runtime's Deployment
       # as-is (resume just scales replicas 0->1), so pre-upgrade pod templates
       # keep requesting smarter-devices/kvm forever. Renaming the resource
       # would leave every pre-upgrade sandbox unschedulable on its next
-      # resume. Must match KVM_DEVICE_RESOURCE above (and FUSE_DEVICE_RESOURCE
-      # if fuse mounts ever ship here).
+      # resume. Must match KVM_DEVICE_RESOURCE and FUSE_DEVICE_RESOURCE above.
       domain: smarter-devices
       devices:
         kvm:
-          enabled: true
+          enabled: repl{{ ConfigOptionEquals "sandbox_kvm_enabled" "1" }}
+        fuse:
+          enabled: repl{{ ConfigOptionEquals "computed_sandbox_fuse_enabled" "true" }}
       # The embedded cluster is k0s, which doesn't quota-restrict the system
       # priority classes the way GKE does, so the DaemonSet can take the
       # conventional device-plugin priority.
@@ -568,8 +619,9 @@ spec:
     # config.yaml; CI (check-secret-checksum) fails if a password field is missing here.
     # Grouped in order: LLM provider keys; app/infra secrets (admin, postgres,
     # redis, jwt, keycloak, litellm, sandbox, plugin-directory, automation); then
-    # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar).
-    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_ai_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automation_kv_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key")) }}'
+    # auth/integration secrets (bitbucket DC, jira DC, github, gitlab, slack, laminar);
+    # then the license.
+    secretsChecksum: 'repl{{ sha256sum (printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" (ConfigOption "anthropic_api_key") (ConfigOption "openai_api_key") (ConfigOption "google_gemini_api_key") (ConfigOption "deepseek_api_key") (ConfigOption "mistral_api_key") (ConfigOption "azure_api_key") (ConfigOption "azure_ai_api_key") (ConfigOption "azure_client_secret") (ConfigOption "groq_api_key") (ConfigOption "openrouter_api_key") (ConfigOption "aws_secret_access_key") (ConfigOption "custom_api_key") (ConfigOption "admin_password") (ConfigOption "postgres_password") (ConfigOption "redis_password") (ConfigOption "jwt_secret") (ConfigOption "keycloak_admin_password") (ConfigOption "keycloak_admin_ui_password") (ConfigOption "keycloak_client_secret") (ConfigOption "litellm_api_key") (ConfigOption "litellm_admin_password") (ConfigOption "litellm_salt_key") (ConfigOption "default_api_key") (ConfigOption "sandbox_api_key") (ConfigOption "keycloak_smtp_password") (ConfigOption "smtp_username") (ConfigOption "smtp_password") (ConfigOption "plugin_directory_identity_shared_secret") (ConfigOption "plugin_directory_session_secret") (ConfigOption "automation_service_key") (ConfigOption "automation_webhook_secret") (ConfigOption "automation_git_sync_secret") (ConfigOption "automation_kv_secret") (ConfigOption "automations_db_password") (ConfigOption "bitbucket_data_center_client_secret") (ConfigOption "bitbucket_data_center_bot_token") (ConfigOption "azure_devops_client_secret") (ConfigOption "azure_devops_webhook_secret") (ConfigOption "jira_data_center_client_secret") (ConfigOption "jira_data_center_service_account_email") (ConfigOption "jira_data_center_service_account_pat") (ConfigOption "github_oauth_client_secret") (ConfigOption "github_app_webhook_secret") (ConfigOption "gitlab_oauth_client_secret") (ConfigOption "slack_client_secret") (ConfigOption "slack_signing_secret") (ConfigOption "external_postgres_password") (ConfigOption "custom_sandbox_image_registry_password") (ConfigOption "laminar_project_api_key") (ConfigOption "license_key") (ConfigOption "offline_license")) }}'
     bitbucketDataCenter:
       enabled: repl{{ ConfigOptionEquals "bitbucket_data_center_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "bitbucket_data_center_domain" }}'
@@ -604,13 +656,15 @@ spec:
       enabled: true
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
+      image:
+        registry: images.r9.all-hands.dev
+        repository: library/replicated-sdk-image
+
+    supportBundle:
       redisPassword: 'repl{{ ConfigOption "redis_password" }}'
       postgresUsername: 'repl{{ ConfigOption "postgres_username" }}'
       postgresPassword: 'repl{{ ConfigOption "postgres_password" }}'
       postgresDatabase: 'repl{{ ConfigOption "postgres_database" }}'
-      image:
-        registry: images.r9.all-hands.dev
-        repository: library/replicated-sdk-image
 
     crdCheck:
       enabled: true
@@ -633,6 +687,33 @@ spec:
         {{repl ConfigOptionData "tls_ca_certificate" | nindent 8 }}
 
   optionalValues:
+    # Pass only the license type the operator chose, so a value left in the
+    # other field never reaches the app.
+    - when: '{{repl ConfigOptionEquals "license_source" "key" }}'
+      recursiveMerge: true
+      values:
+        license:
+          key: '{{repl ConfigOption "license_key" | trim }}'
+    - when: '{{repl ConfigOptionEquals "license_source" "offline" }}'
+      recursiveMerge: true
+      values:
+        license:
+          offlineLicense: |
+            {{repl ConfigOptionData "offline_license" | nindent 12 }}
+    # The operator owns the certificate, so nothing here may render a TLS secret.
+    - when: '{{repl ConfigOptionEquals "tls_certificate_source" "secret" }}'
+      recursiveMerge: true
+      values:
+        tls:
+          existingSecret: '{{repl ConfigOption "tls_existing_certificate_name" }}'
+        keycloak:
+          ingress:
+            tls: false
+            secrets: []
+            extraTls:
+              - hosts:
+                  - '{{repl ConfigOption "computed_auth_hostname" }}'
+                secretName: '{{repl ConfigOption "tls_existing_certificate_name" }}'
     - when: '{{repl ne (ConfigOption "additional_cors_origins" | trim) "" }}'
       recursiveMerge: true
       values:
@@ -825,6 +906,8 @@ spec:
           # warmRuntimes default entry both inherit this. Tag pinned in the chart.
           agentServerImage:
             repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server'
+          fuseyImage:
+            repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/agent-server-fusey'
         image:
           repository: '{{repl LocalRegistryHost }}/{{repl LocalRegistryNamespace }}/deploy'
         keycloak:
@@ -1180,13 +1263,13 @@ spec:
             RUNTIME_URL_SEPARATOR: "/"
             USE_GATEWAY_API: "true"
             GATEWAY_NAME: "sandbox-gateway"
-            RUNTIME_CERT_SECRET: "openhands-tls"
+            RUNTIME_CERT_SECRET: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           ingressBase:
             enabled: false
           sandboxGateway:
             enabled: true
             hostname: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
-            tlsSecretName: openhands-tls
+            tlsSecretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
     - when: '{{repl ConfigOptionEquals "analytics_enabled" "1" }}'
       recursiveMerge: true
       values:
@@ -1236,6 +1319,8 @@ spec:
           clickhouse:
             diagnostics:
               retentionDays: repl{{ ConfigOption "clickhouse_diagnostic_log_retention_days" }}
+              cleanup:
+                enabled: repl{{ ConfigOptionEquals "clickhouse_diagnostic_log_cleanup_enabled" "1" }}
             persistence:
               storageClass: "openebs-hostpath" # default storage class for the k0s embededed cluster
             s3:
@@ -1276,7 +1361,7 @@ spec:
               className: "traefik"
               tls:
                 enabled: true
-                secretName: "openhands-tls"
+                secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
                 clusterIssuer: "" # leave empty — cert-manager not needed
             env:
               nextauthUrl: 'https://{{repl ConfigOption "computed_analytics_hostname" }}'
@@ -1287,7 +1372,7 @@ spec:
             className: "traefik"
             tls:
               enabled: true
-              secretName: "openhands-tls"
+              secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           postgres:
             persistence:
               storageClass: "openebs-hostpath"
@@ -1360,7 +1445,7 @@ spec:
             path: /canvas
             tls:
               enabled: true
-              secretName: openhands-tls
+              secretName: '{{repl ConfigOption "computed_tls_certificate_name" }}'
           staticServer:
             basePath: /canvas
             authRequired: false
@@ -1447,12 +1532,28 @@ spec:
         tag: 'RELEASE.2023-05-18T16-59-00Z-amd64@sha256:9e46d9ed12fa66361f6482b0081d65c2d68e01cbbdede8b964950f76e5a35701'
     postgresql:
       enabled: true
+      primary:
+        persistence:
+          enabled: true
     redis:
+      enabled: true
+    replicated:
       enabled: true
     runtime-api:
       enabled: true
+      # The fuse pool's image must land in the airgap bundle too.
+      fuseMount:
+        enabled: true
+        bucket: runtime-api-workspaces
+        runtimeApiBaseUrl: https://runtime-api.example.com
+      warmRuntimes:
+        fuse:
+          enabled: true
     automation:
       enabled: true
+      # Image collection needs no live package store.
+      filestore:
+        type: gcs
     agent-canvas:
       enabled: true
     device-plugin:

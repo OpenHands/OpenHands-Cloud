@@ -1,5 +1,6 @@
 {{- define "openhands.env.defaults" }}
 {{- $integrations := .Values.integrations | default dict }}
+{{- $automationServiceUrl := include "openhands.automation.serviceUrl" . }}
 {{- $orgCondenser := (.Values.orgDefaults | default dict).condenser | default dict }}
 - name: RUNTIME
   value: remote
@@ -53,6 +54,9 @@
 - name: OPENHANDS_ORG_DEFAULTS_CONDENSER_OVERWRITE_EXISTING
   value: {{ $orgCondenser.overwriteExisting | default false | quote }}
 {{- end }}
+# Match the app's whitespace handling to avoid showing an unusable Automations page.
+- name: ENABLE_AUTOMATIONS
+  value: {{ not (empty (trim $automationServiceUrl)) | quote }}
 - name: DUPLICATE_EMAIL_CHECK
   value: {{ .Values.duplicateEmailCheck | quote }}
 - name: OH_RESOLVER_LABEL
@@ -436,6 +440,22 @@
       name: {{ .Values.tavily.auth.existingSecret }}
       key: tavily-api-key
 {{- end }}
+{{- /* Both entries are optional: an existingSecret may hold either one. With an
+       offline license, the app ignores the license key. */}}
+{{- with include "openhands.license.secretName" . }}
+- name: OPENHANDS_LICENSE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: license-key
+      optional: true
+- name: OPENHANDS_OFFLINE_LICENSE
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: offline-license
+      optional: true
+{{- end }}
 {{- /* Keycloak's public hostname. An explicitly configured keycloak ingress
        hostname wins: that is the host the keycloak Ingress serves, and the
        realm's frontendUrl and redirect URIs are templated from this value, so
@@ -701,7 +721,7 @@ the app UI and webhook users are matched by email. */}}
   value: "true"
 {{- end }}
 
-{{- if .Values.automationServiceKey.enabled }}
+{{- if or (eq .Values.automationServiceKey.enabled true) (and (eq .Values.automationServiceKey.enabled nil) .Values.automation.enabled) }}
 - name: AUTOMATIONS_SERVICE_KEY
   valueFrom:
     secretKeyRef:
@@ -709,16 +729,16 @@ the app UI and webhook users are matched by email. */}}
       key: {{ .Values.automationServiceKey.secretKey }}
 {{- end }}
 
-{{- if .Values.automationService.url }}
+{{- if $automationServiceUrl }}
 - name: AUTOMATION_SERVICE_URL
-  value: {{ .Values.automationService.url | quote }}
+  value: {{ $automationServiceUrl | quote }}
 {{- end }}
-{{- if .Values.automationService.eventForwardingEnabled }}
+{{- if or (eq .Values.automationService.eventForwardingEnabled true) (and (eq .Values.automationService.eventForwardingEnabled nil) .Values.automation.enabled) }}
 - name: AUTOMATION_EVENT_FORWARDING_ENABLED
   value: "true"
 {{- end }}
 
-{{- if .Values.automationWebhookSecret.enabled }}
+{{- if or (eq .Values.automationWebhookSecret.enabled true) (and (eq .Values.automationWebhookSecret.enabled nil) .Values.automation.enabled) }}
 - name: AUTOMATION_WEBHOOK_SECRET
   valueFrom:
     secretKeyRef:
@@ -841,6 +861,9 @@ the app UI and webhook users are matched by email. */}}
 {{- end }}
 {{- /* Append overrides (these take precedence) */}}
 {{- range $key, $value := $envOverrides }}
+{{- if eq $key "AUTOMATION_SERVICE_URL" }}
+{{- $value = include "openhands.automation.serviceUrl" $ }}
+{{- end }}
 {{- $filtered = append $filtered (dict "name" $key "value" ($value | toString)) }}
 {{- end }}
 {{- $filtered | toYaml }}

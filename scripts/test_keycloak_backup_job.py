@@ -24,6 +24,7 @@ pytestmark = pytest.mark.skipif(
 def render_job() -> dict:
     out = subprocess.run(
         ["helm", "template", "oh", str(ROOT / "charts/openhands"), "--is-upgrade",
+         "--set", "automation.enabled=false",
          "--set", "keycloak.enabled=true", "-s", "templates/keycloak-backup-job.yaml"],
         check=True, capture_output=True, text=True,
     ).stdout

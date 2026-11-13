@@ -1,0 +1,20 @@
+{{- if .Values.fuseMount.enabled }}
+{{- $fuse := .Values.fuseMount }}
+{{- $provider := $fuse.storageProvider | default "s3" }}
+{{- if not (has $provider (list "s3" "gcs")) }}
+{{- fail (printf "fuseMount.storageProvider must be s3 or gcs, got %q" $provider) }}
+{{- end }}
+{{- if not $fuse.bucket }}
+{{- fail "fuseMount.bucket is required when fuseMount.enabled" }}
+{{- end }}
+{{- if and (not $fuse.runtimeApiBaseUrl) (not (hasKey .Values.env "RUNTIME_API_BASE_URL")) }}
+{{- fail "fuseMount.runtimeApiBaseUrl (or env.RUNTIME_API_BASE_URL) is required when fuseMount.enabled: sandbox pods call this URL to reach the storage broker" }}
+{{- end }}
+{{- if eq $provider "s3" }}
+{{- $fuseCreds := include "runtime-api.s3CredentialsKey" $fuse.s3 }}
+{{- $archiveCreds := include "runtime-api.archiveS3CredentialsKey" . }}
+{{- if and $fuseCreds $archiveCreds (ne $fuseCreds $archiveCreds) }}
+{{- fail "fuseMount.s3 and runtimeFileArchive.s3 set different credentials, but both feed AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY; use the same credentials or give one an ambient identity" }}
+{{- end }}
+{{- end }}
+{{- end }}

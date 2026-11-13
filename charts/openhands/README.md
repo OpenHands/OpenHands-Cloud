@@ -1,11 +1,21 @@
-# OpenHands Cloud Helm Chart
+# OpenHands Enterprise Helm Chart
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
+
+## Enterprise policy defaults
+
+By default the chart hides personal LLM key editing and the Billing page, and
+disables email changes. It shows the Automations page only when the app has a
+service URL. Explicit `env` overrides win. See
+[enterprise-defaults.md](enterprise-defaults.md) before you upgrade.
+
+Local Automations defaults on and needs configuration before the chart can
+render. See [Automations chart configuration](#automations-chart-configuration).
 
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3.2.0+
+- Helm 3.18.4 (CI baseline; older versions are not qualified here), or compatible Helm 4
 - Ingress controller (recommended: Traefik)
 - A TLS solution for certificates (recommended: cert-manager)
 
@@ -17,6 +27,37 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
+
+### License
+
+An upcoming release will enforce the OpenHands Enterprise license through
+Customer Center. Set your license now so the upgrade to that release doesn't
+change anything for your users. Until then, an install without a license keeps
+working, and `helm install` and `helm upgrade` print a warning.
+
+Set the license key from Customer Center:
+
+```yaml
+license:
+  key: <license-key>
+```
+
+If the install can't reach Customer Center, download an offline license file
+from Customer Center and pass it instead:
+
+```bash
+helm upgrade openhands ... --set-file license.offlineLicense=<path-to-offline-license>
+```
+
+The chart stores either one in the `openhands-license` Secret. To manage the
+Secret yourself, create it with a `license-key` or `offline-license` entry, set
+`license.existingSecret` to its name, and restart the openhands pods after you
+change it:
+
+```bash
+kubectl create secret generic my-license -n openhands \
+  --from-literal=license-key=<license-key>
+```
 
 ### Organization condenser defaults
 
@@ -704,6 +745,179 @@ runtime-api:
 
 > **Note:** The VolumeSnapshot CRDs must be installed in your cluster. Most managed Kubernetes services (GKE, EKS) include these by default. If not, see the [Kubernetes VolumeSnapshot documentation](https://kubernetes.io/docs/concepts/storage/volume-snapshots/).
 
+### Sandbox Network Isolation
+
+We recommend restricting sandbox network access with the chart's sandbox egress NetworkPolicy. With
+the policy enabled, sandboxes can reach the internet, cluster DNS, your ingress controller, and the
+bundled LiteLLM and Laminar. They can't reach node, pod, or VPC-internal addresses, which include
+the kubelet, cloud metadata servers, other sandboxes, the application's databases, and the
+Kubernetes API server when its endpoint is private. Some network plugins, including the VPC CNI on
+EKS, always allow a pod to reach the node it runs on, so on those clusters sandboxes can still reach
+their own node. The policy selects only sandbox pods in runtime-api's sandbox namespace
+(`runtime-api.sandbox_namespace`), so the other pods in that namespace are unaffected.
+
+The policy requires a network plugin that enforces NetworkPolicy:
+
+- **GKE**: Dataplane V2, or network policy enforcement (`--enable-network-policy`).
+- **EKS**: The VPC CNI with `enableNetworkPolicy` set to `"true"`.
+- **AKS**: Azure CNI Powered by Cilium, Calico, or Azure Network Policy Manager.
+- **OpenShift**: OVN-Kubernetes, the default plugin.
+
+Flannel alone doesn't enforce NetworkPolicy.
+
+To enable the policy, review these settings under `sandboxNetworkPolicy` in `values.yaml` against
+your cluster:
+
+- `internet.blockedCIDRs`: Add your node, pod, and Service CIDRs if any fall outside the defaults.
+  If your Kubernetes API server endpoint is public, add its IP
+  (`kubectl -n default get endpointslices -l kubernetes.io/service-name=kubernetes`).
+- `ingressController`: Match your ingress controller's pods and container ports. Sandboxes reach
+  runtime URLs and the app at their public hostnames. If those hostnames resolve to an internal
+  load balancer or to node IPs (a NodePort or hostPort ingress controller), add those addresses as
+  `ipBlock` entries and add the ports that clients connect to, usually 80 and 443.
+- `extraEgress`: Add the internal destinations that sandboxes need, such as git servers, proxies,
+  package mirrors, and private LLM endpoints.
+- `ipv6.enabled`: Set to `true` on IPv6 and dual-stack clusters. If your nodes or pods use global
+  IPv6 addresses, add those ranges to `ipv6.blockedCIDRs`.
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.15/32  # Internal git server
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+The `dns` and `ingressController` rules use the NetworkPolicy egress rule format. When you
+override `to` or `ports`, your list replaces the default list.
+
+#### GKE
+
+The defaults work on GKE. If your cluster uses NodeLocal DNSCache without Dataplane V2 and its
+Service range is private, add the kube-dns Service IP
+(`kubectl -n kube-system get svc kube-dns`) to the DNS rule:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values: [kube-dns, node-local-dns]
+      - ipBlock:
+          cidr: 10.3.0.10/32  # Your kube-dns Service IP
+```
+
+#### EKS
+
+Sandboxes reach an internet-facing load balancer through the internet rule. For an internal load
+balancer, add its subnets to `ingressController` as described above.
+
+In its default `standard` mode, the VPC CNI allows all traffic from a new pod until it applies the
+pod's policies, which takes a few seconds. To block traffic until then, set
+`NETWORK_POLICY_ENFORCING_MODE` to `strict`. Strict mode requires a network policy for every pod
+in the cluster.
+
+#### AKS
+
+The defaults block `168.63.129.16`, the Azure platform endpoint. If your node pools use LocalDNS,
+add its addresses to the DNS rule:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values: [kube-dns, node-local-dns]
+      - ipBlock:
+          cidr: 169.254.10.10/32
+      - ipBlock:
+          cidr: 169.254.10.11/32
+```
+
+With Azure CNI Powered by Cilium, LocalDNS also needs the policy described in
+[Microsoft's LocalDNS guidance](https://learn.microsoft.com/en-us/azure/aks/azure-cni-powered-by-cilium#is-aks-local-dns-supported-with-azure-cni-powered-by-cilium).
+
+#### OpenShift
+
+OpenShift serves cluster DNS from the `openshift-dns` namespace on port 5353. This example also
+allows the default OpenShift router:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+    ports:
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 5353
+  ingressController:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-ingress
+        podSelector:
+          matchLabels:
+            ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+    ports:
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 443
+```
+
+If the router uses the `HostNetwork` endpoint publishing strategy, allow your node CIDR instead,
+as described in the next section.
+
+#### On-Premises and Other Clusters
+
+If your ingress controller listens on node IPs through a NodePort or hostPort, add your node CIDR
+and the ports that clients connect to:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  ingressController:
+    to:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+      - ipBlock:
+          cidr: 10.0.1.0/24  # Your node CIDR
+    ports:
+      - protocol: TCP
+        port: 8000
+      - protocol: TCP
+        port: 8443
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 443
+```
+
 ## Upgrading
 
 To upgrade the chart:
@@ -760,3 +974,47 @@ a removed limit from cached authorization data, even after a successful save.
 This increases authorization database reads; production throughput has not been
 load-tested. It does not enable or disable LLM response caching. If you use an
 external LiteLLM proxy, configure and validate the same behavior there.
+
+
+## Automations chart configuration
+
+Local Automations defaults on. It requires configuration before the chart can
+render; incomplete prerequisites fail before a rollout. This is a breaking
+change: an existing install that upgrades with unchanged values fails to render
+until it either configures the inputs below or sets `automation.enabled: false`.
+Nothing is applied when the render fails. These inputs apply to the app and
+secrets charts, which are separate releases:
+
+- Set `automation.filestore.type` explicitly (`s3` or `gcs`), and configure its
+  package bucket, endpoint and credentials/identity. App conversation storage is
+  separate and is not changed by this feature.
+- Use durable `automation.database` storage. For a fresh shared PostgreSQL, set
+  `postgresql.primary.persistence.enabled: true`; `existingClaim` alone does not
+  enable persistence. For a pre-provisioned external DB, configure its connection
+  and password Secret and set `createDatabaseUser: false`.
+- Provision the existing automation service, webhook, Git-sync, KV and DB password
+  Secrets first. The companion chart defaults on and requires the corresponding
+  nonempty `config.automation_service_key`, `config.automation_webhook_secret`,
+  `config.automation_git_sync_secret`, `config.automation_kv_secret` and
+  `config.automations_db_password` values (the DB password may fall back to
+  `config.postgres_password`). Retain existing key
+  values; the chart does not generate or rotate encryption keys.
+- An enabled upgrade requires `automation.upgradeAcknowledged: true` after backup
+  and review. Pin `automation.database.createDatabaseUser` to its deployed mode.
+  Online guards reject DB/package-store repointing, adding superuser bootstrap,
+  and an in-place emptyDir-to-PVC conversion. The acknowledgment migrates nothing.
+- Set `automation.enabled: false` to retain the former default-off behavior.
+  Keep existing Secrets for a previously active service, even while disabled.
+  For an installation that never used Automations, its secrets release may also
+  explicitly set `automation.enabled: false`.
+
+Explicit app auth/forwarding overrides remain supported. For a separately
+managed service, disable the local dependency and configure `automationService.*`
+and its existing auth Secrets. See the [configured values example](examples/enterprise-automations.yaml)
+and [external-service values example](examples/external-automations.yaml).
+
+Secret/data-path lookup guards require an online render in an existing namespace
+and read access to its default ServiceAccount and exact referenced Secrets.
+Client-only/GitOps rendering cannot prove these prerequisites exist. Live
+upgrade/execution qualification remains open. Provider installation docs and
+skills will be a separate PR after platform review of this Helm change.

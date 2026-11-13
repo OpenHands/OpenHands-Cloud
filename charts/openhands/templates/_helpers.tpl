@@ -63,3 +63,100 @@ entirely. A chart-level `affinity` value wins over the umbrella-wide
 {{- toYaml . -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Namespace runtime-api creates sandbox pods in. Mirrors the K8S_NAMESPACE
+resolution in the runtime-api subchart: its env.K8S_NAMESPACE override, then
+sandbox_namespace, then the release namespace.
+*/}}
+{{- define "openhands.sandboxNamespace" -}}
+{{- $runtimeApi := index .Values "runtime-api" | default dict -}}
+{{- $env := $runtimeApi.env | default dict -}}
+{{- if hasKey $env "K8S_NAMESPACE" -}}
+{{- $env.K8S_NAMESPACE -}}
+{{- else -}}
+{{- $runtimeApi.sandbox_namespace | default .Release.Namespace -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+One sandboxNetworkPolicy egress rule (dns or ingressController). Takes a dict
+with `name` (for error messages) and `rule`. An empty `to` would allow every
+destination on the rule's ports, so it fails the render instead.
+*/}}
+{{- define "openhands.sandboxNetworkPolicy.rule" -}}
+{{- if not .rule.to -}}
+{{- fail (printf "sandboxNetworkPolicy.%s.to is empty, which would allow every destination. List the destinations, or set sandboxNetworkPolicy.%s.enabled to false." .name .name) -}}
+{{- end -}}
+- to:
+    {{- toYaml .rule.to | nindent 4 }}
+  {{- with .rule.ports }}
+  ports:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}
+
+{{/*
+TLS secret the chart's ingresses serve. tls.existingSecret must not name a
+secret the installer renders, or switching to it would get it deleted.
+*/}}
+{{- define "openhands.tlsSecretName" -}}
+{{- $rendered := printf "app-all-hands-%v-tls" (.Values.tls.env | default "") -}}
+{{- $reserved := list "openhands-tls" $rendered -}}
+{{- with ((.Values.keycloak | default dict).ingress | default dict).hostname -}}
+{{- $reserved = append $reserved (printf "%s-tls" .) -}}
+{{- end -}}
+{{- with .Values.tls.existingSecret -}}
+{{- if has . $reserved -}}
+{{- fail (printf "tls.existingSecret %q is managed by the installer; copy the certificate into a secret with a different name" .) -}}
+{{- end -}}
+{{- . -}}
+{{- else -}}
+{{- $rendered -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+"true" when the chart renders the openhands-license Secret from license.key or
+license.offlineLicense, and empty otherwise. license.existingSecret wins over
+both.
+*/}}
+{{- define "openhands.license.managed" -}}
+{{- $license := .Values.license | default dict -}}
+{{- if and (not $license.existingSecret) (or (trim (toString ($license.key | default ""))) (trim (toString ($license.offlineLicense | default "")))) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Secret the license env vars read, or empty when no license is set.
+*/}}
+{{- define "openhands.license.secretName" -}}
+{{- $license := .Values.license | default dict -}}
+{{- if $license.existingSecret -}}
+{{- $license.existingSecret -}}
+{{- else if include "openhands.license.managed" . -}}
+openhands-license
+{{- end -}}
+{{- end -}}
+
+{{/*
+Pod-template annotation for the chart-rendered license. Pods read env vars from
+a Secret only when they start, so a changed license has to roll them.
+*/}}
+{{- define "openhands.license.checksumAnnotation" -}}
+{{- if include "openhands.license.managed" . -}}
+checksum/license: {{ printf "%s|%s" (toString (.Values.license.key | default "")) (toString (.Values.license.offlineLicense | default "")) | sha256sum }}
+{{- end -}}
+{{- end -}}
+
+{{/* An explicitly empty URL hides the Automations UI by default. */}}
+{{- define "openhands.automation.serviceUrl" -}}
+{{- if hasKey (.Values.env | default dict) "AUTOMATION_SERVICE_URL" -}}
+{{- get .Values.env "AUTOMATION_SERVICE_URL" | default "" | toString -}}
+{{- else if .Values.automationService.url -}}
+{{- .Values.automationService.url -}}
+{{- else if .Values.automation.enabled -}}
+http://automation/api/automation
+{{- end -}}
+{{- end -}}
