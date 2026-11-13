@@ -499,7 +499,7 @@ keycloak:
   image:
     registry: ghcr.io
     repository: openhands/third-party-images/keycloak
-    tag: 26.8.0-debian-12-oh2
+    tag: 26.8.0-debian-12-oh3
   # Parent-chart pre-upgrade hook (not consumed by the Keycloak subchart): when
   # the upgrade changes the Keycloak version, copy the database to
   # <database>_backup_<old version> on the same server before Keycloak migrates

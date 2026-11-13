@@ -97,7 +97,7 @@ sandboxUpgradeCoordinator:
   enabled: false
   image:
     repository: docker.io/alpine/k8s
-    tag: "1.30.0"
+    tag: "1.36.6"
     pullPolicy: IfNotPresent
   # Namespace where runtime-api creates sandbox pods and their PDBs (its
   # K8S_NAMESPACE). In the openhands chart this is the openhands release namespace.
