@@ -52,6 +52,7 @@ tests:
     set:
       warmRuntimes.enabled: true
       warmRuntimes.fuse.enabled: true
+      global.agentServerImage.tag: 1.60.1-python
       fuseMount.enabled: true
       fuseMount.bucket: workspaces
       fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
