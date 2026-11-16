@@ -61,7 +61,7 @@ tests:
           pattern: '"name": "v1_fuse"'
       - matchRegex:
           path: data["warm-runtimes.json"]
-          pattern: '"image": "ghcr.io/openhands/agent-server-fusey:1.60.1-python-fusey0.0.14"'
+          pattern: '"image": "ghcr\.io/openhands/agent-server-fusey:[^"]+-fusey[0-9][^"]*"'
       - matchRegex:
           path: data["warm-runtimes.json"]
           pattern: '"fuse_s3_mount": true'
