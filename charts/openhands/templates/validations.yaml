@@ -71,8 +71,12 @@ script in its usage-error path, so refuse it at render time instead.
 {{- end -}}
 {{- end -}}
 {{- $dbAliases := list $bundledDb (printf "%s.%s" $bundledDb .Release.Namespace) (printf "%s.%s.svc" $bundledDb .Release.Namespace) (printf "%s.%s.svc.cluster.local" $bundledDb .Release.Namespace) -}}
-{{- if not $dbHost -}}
-{{- fail "Local Automations requires automation.database.host." -}}
+{{- if not (or $dbHost (toString $a.gcp.dbInstance | trim)) -}}
+{{- fail "Local Automations requires automation.database.host or automation.gcp.dbInstance." -}}
+{{- end -}}
+{{/* The bootstrap init container connects with psql to the host; it cannot use gcp.dbInstance. */}}
+{{- if and $a.database.createDatabaseUser (not $dbHost) -}}
+{{- fail "automation.database.createDatabaseUser requires automation.database.host. Set createDatabaseUser=false for a pre-provisioned Cloud SQL database." -}}
 {{- end -}}
 {{- range $field := list "user" "name" -}}
 {{- if not (toString (get $a.database $field) | trim) -}}

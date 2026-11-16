@@ -424,6 +424,41 @@ tests:
   - template: validations.yaml
     failedTemplate:
       errorPattern: Local Automations requires automation.database.host
+- it: accepts a Cloud SQL instance in place of a database host
+  set:
+    automation.enabled: true
+    automation.database.host: ""
+    automation.database.createDatabaseUser: false
+    automation.gcp.dbInstance: application-db
+    automation.filestore.type: gcs
+    automation.filestore.bucket: sessions
+  asserts:
+  - template: validations.yaml
+    hasDocuments:
+      count: 0
+- it: rejects the database bootstrap with a Cloud SQL instance and no host
+  set:
+    automation.enabled: true
+    automation.database.host: ""
+    automation.database.createDatabaseUser: true
+    automation.gcp.dbInstance: application-db
+    automation.filestore.type: gcs
+    automation.filestore.bucket: sessions
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: automation.database.createDatabaseUser requires automation.database.host
+- it: rejects a whitespace Cloud SQL instance without a database host
+  set:
+    automation.enabled: true
+    automation.database.host: ""
+    automation.gcp.dbInstance: " "
+    automation.filestore.type: gcs
+    automation.filestore.bucket: sessions
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires automation.database.host or automation.gcp.dbInstance
 - it: rejects a blank database user
   set:
     automation.enabled: true
