@@ -1,10 +1,6 @@
 {{- /*
-  Ingress entry for the agent-canvas frontend-only deployment.
-
-  Agent Canvas is mounted under a configurable subpath. It uses
-  agent-canvas.ingress.host when set, else the main application host. The
-  frontend bundle is built with the same basename and static-server receives
-  the same --base-path.
+  The path must match the frontend bundle's basename and static-server's
+  --base-path.
 */}}
 {{- $agentCanvas := index .Values "agent-canvas" -}}
 {{- $ingress := $agentCanvas.ingress -}}
@@ -17,7 +13,7 @@
 {{- if $host }}
 {{- $path := default "/canvas" $ingress.path -}}
 {{- $className := $ingress.className | default .Values.ingress.class -}}
-{{- /* On the main host, match the main ingress annotations. */ -}}
+{{- /* Shares the app's host, so it needs the app's annotations, such as the certificate issuer. */ -}}
 {{- $annotations := $ingress.annotations -}}
 {{- if not $ingress.host -}}
 {{- $annotations = .Values.ingress.root.annotations | default .Values.ingress.annotations -}}

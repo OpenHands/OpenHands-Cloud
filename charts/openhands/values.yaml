@@ -1878,7 +1878,7 @@ integrations-hub:
 # ───────────────────────────────────────────────────────────────────────
 # The agent-canvas subchart deploys the static frontend under `/canvas`, on
 # agent-canvas.ingress.host or else on ingress.host, locked to this
-# installation's app URL. Set enabled: false to omit it.
+# installation's app URL.
 agent-canvas:
   enabled: true
 

@@ -162,8 +162,7 @@ http://automation/api/automation
 {{- end -}}
 
 {{/*
-Main application host, with the branch prefix when ingress.prefixWithBranch is
-set. Empty when ingress.host is unset.
+App host, with the branch prefix. Empty when ingress.host is unset.
 */}}
 {{- define "openhands.appHost" -}}
 {{- with .Values.ingress.host -}}
