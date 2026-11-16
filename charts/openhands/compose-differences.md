@@ -29,7 +29,7 @@ These names differ in the rendered environment, but not in what a user sees. The
 ### Same behaviour, different value
 
 - Both show Automations. Helm sets `true` because the bundled service has a URL. Compose leaves it unset, and the app default is `true`: `ENABLE_AUTOMATIONS`
-- Helm sets it; no reader found in app 1.89.0: `CONVERSATION_MANAGER_CLASS`, `DISABLE_WAITLIST`, `OPENHANDS_CONVERSATION_VALIDATOR_CLS`, `OPENHANDS_EXPERIMENT_MANAGER_CLS`, `OPENHANDS_MCP_CONFIG_CLS`, `SANDBOX_CLOSE_DELAY`, `SANDBOX_KEEP_RUNTIME_ALIVE`
+- Helm sets it; no reader found in app 1.94.0 or its OpenHands SDK packages: `CONVERSATION_MANAGER_CLASS`, `DISABLE_WAITLIST`, `OPENHANDS_CONVERSATION_VALIDATOR_CLS`, `OPENHANDS_EXPERIMENT_MANAGER_CLS`, `OPENHANDS_MCP_CONFIG_CLS`, `SANDBOX_CLOSE_DELAY`, `SANDBOX_KEEP_RUNTIME_ALIVE`
 - Helm sets `true`, which is the app default: `DUPLICATE_EMAIL_CHECK`
 - Compose sets `false`, which is the app default: `ENABLE_BILLING`
 - The enterprise-server image already sets the same value: `OH_LLM_MODEL_KIND`
