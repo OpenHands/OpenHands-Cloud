@@ -140,7 +140,7 @@ tests:
           value:
             cert-manager.io/cluster-issuer: letsencrypt
 
-  - it: keeps its own class and annotations on its own host
+  - it: uses the main ingress class and its own annotations on its own host
     set:
       ingress.enabled: true
       ingress.host: app.example.com
@@ -154,11 +154,22 @@ tests:
     asserts:
       - equal:
           path: spec.ingressClassName
-          value: traefik
+          value: nginx
       - equal:
           path: metadata.annotations
           value:
             canvas: "true"
+
+  - it: prefers an explicit canvas ingress class over the main ingress class
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      ingress.class: nginx
+      agent-canvas.ingress.className: traefik
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
 
   - it: omits TLS on the main host when TLS is disabled
     set:

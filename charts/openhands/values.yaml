@@ -1889,7 +1889,8 @@ agent-canvas:
   ingress:
     enabled: false
     host: ""
-    className: traefik
+    # Empty uses ingress.class.
+    className: ""
     annotations: {}
     path: /canvas
     tls:

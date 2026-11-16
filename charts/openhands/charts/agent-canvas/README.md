@@ -67,9 +67,9 @@ locked to itself. The ConfigMap value is empty (no lock) when
 #### Upgrading the `openhands` chart
 
 The umbrella chart enables Agent Canvas by default. Set
-`agent-canvas.enabled: false` to omit it. On the app host, the Canvas ingress
-uses the main `ingress.class` and annotations. With its own `ingress.host`, it
-uses `ingress.className` and `ingress.annotations` from these values. The umbrella chart leaves
+`agent-canvas.enabled: false` to omit it. The Canvas ingress uses the main
+`ingress.class` unless `ingress.className` is set here. On the app host it also
+uses the main ingress annotations. The umbrella chart leaves
 `staticServer.authRequired` unset, which renders without `--auth-required`.
 The render fails, with a message that names the fix, when Agent Canvas has its
 own `ingress.host`, no `lockToCloud`, and `staticServer.authRequired` is unset.

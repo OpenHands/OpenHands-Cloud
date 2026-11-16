@@ -36,7 +36,8 @@ service:
 ingress:
   enabled: false
   host: ""
-  className: traefik
+  # Empty uses the umbrella chart's ingress.class.
+  className: ""
   annotations: {}
   path: /canvas
   tls:

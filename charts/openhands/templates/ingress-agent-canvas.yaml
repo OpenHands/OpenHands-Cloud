@@ -16,11 +16,10 @@
 {{- end -}}
 {{- if $host }}
 {{- $path := default "/canvas" $ingress.path -}}
-{{- /* On the main host, match the main ingress class and annotations. */ -}}
-{{- $className := default "traefik" $ingress.className -}}
+{{- $className := $ingress.className | default .Values.ingress.class -}}
+{{- /* On the main host, match the main ingress annotations. */ -}}
 {{- $annotations := $ingress.annotations -}}
 {{- if not $ingress.host -}}
-{{- $className = .Values.ingress.class -}}
 {{- $annotations = .Values.ingress.root.annotations | default .Values.ingress.annotations -}}
 {{- end }}
 apiVersion: networking.k8s.io/v1
