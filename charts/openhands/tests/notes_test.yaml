@@ -109,3 +109,48 @@ tests:
     asserts:
       - notMatchRegexRaw:
           pattern: "OpenHands Enterprise license"
+  - it: warns to restart Agent Canvas when the upgrade changes its lock URL
+    release:
+      upgrade: true
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+    kubernetesProvider: &live-canvas-http
+      scheme:
+        "v1/ConfigMap":
+          gvr: {group: "", version: v1, resource: configmaps}
+          namespaced: true
+      objects:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {name: agent-canvas-config, namespace: NAMESPACE}
+          data:
+            AGENT_CANVAS_LOCK_TO_CLOUD: http://app.example.com
+    asserts:
+      - matchRegexRaw:
+          pattern: "Agent Canvas is still locked to http://app.example.com"
+      - matchRegexRaw:
+          pattern: "kubectl rollout restart deployment/agent-canvas -n NAMESPACE"
+  - it: stays quiet about Agent Canvas when its lock URL does not change
+    release:
+      upgrade: true
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+    kubernetesProvider: *live-canvas-http
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Agent Canvas is still locked"
+  - it: stays quiet about Agent Canvas when lockToCloud is set explicitly
+    release:
+      upgrade: true
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+      agent-canvas.staticServer.lockToCloud: https://app.example.com
+    kubernetesProvider: *live-canvas-http
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Agent Canvas is still locked"

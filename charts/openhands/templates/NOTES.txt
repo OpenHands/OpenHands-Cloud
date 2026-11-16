@@ -14,6 +14,20 @@ is in {{ $.Values.keycloak.externalDatabase.database }}_backup_{{ regexFind "26\
 {{ end }}
 {{- end }}
 {{- end }}
+{{- $agentCanvas := index .Values "agent-canvas" }}
+{{- if and $agentCanvas.enabled .Release.IsUpgrade (not $agentCanvas.staticServer.lockToCloud) $agentCanvas.staticServer.lockToCloudConfigMap }}
+{{- $live := lookup "v1" "ConfigMap" .Release.Namespace "agent-canvas-config" }}
+{{- $oldURL := dig "data" "AGENT_CANVAS_LOCK_TO_CLOUD" "" $live }}
+{{- $newURL := include "openhands.agentCanvasLockURL" . }}
+{{- if and $live (ne $oldURL $newURL) }}
+WARNING: Agent Canvas is still locked to {{ $oldURL | default "no URL" }}. This
+upgrade changes its lock URL to {{ $newURL | default "no URL" }}, but the pod
+reads it only at start. Restart Agent Canvas:
+
+    kubectl rollout restart deployment/agent-canvas -n {{ .Release.Namespace }}
+
+{{ end }}
+{{- end }}
 {{- if and .Values.redis.enabled .Values.valkey.enabled }}
 NOTE: both cache backends are enabled, so two caches are deployed and Redis is
 the one in use. If you meant to move to Valkey, also set:

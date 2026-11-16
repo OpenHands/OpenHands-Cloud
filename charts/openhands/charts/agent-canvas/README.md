@@ -66,7 +66,8 @@ locked to itself. The ConfigMap value is empty (no lock) when
 
 The pod reads the ConfigMap only when it starts. After an upgrade that changes
 the app URL (`ingress.host` or `tls.enabled`), restart Agent Canvas so it locks
-to the new URL:
+to the new URL. The `helm upgrade` output prints this warning when the URL
+changes:
 
 ```bash
 kubectl rollout restart deployment/agent-canvas -n <namespace>
