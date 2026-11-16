@@ -154,3 +154,28 @@ tests:
     asserts:
       - notMatchRegexRaw:
           pattern: "Agent Canvas is still locked"
+  - it: stays quiet about Agent Canvas on the first upgrade that adds its ConfigMap
+    release:
+      upgrade: true
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+    kubernetesProvider:
+      scheme:
+        "v1/ConfigMap":
+          gvr: {group: "", version: v1, resource: configmaps}
+          namespaced: true
+      objects: []
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Agent Canvas is still locked"
+  - it: stays quiet about Agent Canvas on a fresh install
+    set:
+      ingress.enabled: true
+      ingress.host: app.example.com
+      tls.enabled: true
+    kubernetesProvider: *live-canvas-http
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Agent Canvas is still locked"
