@@ -47,7 +47,7 @@ interface CurrentUser {
 }
 
 interface AdminUsers {
-  users: {
+  items: {
     user_id: string;
     memberships: { org_id: string; role: string }[];
   }[];
@@ -275,8 +275,10 @@ test.describe("Super Admin dashboard @super-admin", () => {
         createdOrgIds.push(orgB.id);
         await expect(form).toBeHidden();
 
-        const { users } = await json<AdminUsers>(
-          await page.request.get("/api/admin/directory/users"),
+        const { items: users } = await json<AdminUsers>(
+          await page.request.get(
+            `/api/admin/directory/users?q=${encodeURIComponent(email)}`,
+          ),
           "load users",
         );
         const membership = users

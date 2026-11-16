@@ -165,23 +165,53 @@ export async function deleteOrg(
   }
 }
 
-/** Every organization on the instance, as the Super Admin directory lists them. */
+/**
+ * Every item of a paginated Super Admin list (``{items, total}``, ``page_id``
+ * is an offset). ``q`` is the server's case-insensitive partial match.
+ */
+async function listAdminItems<T>(
+  baseUrl: string,
+  apiKey: string,
+  path: string,
+  params: Record<string, string>,
+): Promise<T[]> {
+  const items: T[] = [];
+  for (;;) {
+    const url = new URL(path, baseUrl);
+    for (const [key, value] of Object.entries({
+      ...params,
+      page_id: String(items.length),
+      limit: String(ADMIN_PAGE_SIZE),
+    })) {
+      url.searchParams.set(key, value);
+    }
+    const response = await fetch(url, { headers: superAdminHeaders(apiKey) });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        `GET ${path} failed (${response.status} ${response.statusText}): ${body}`,
+      );
+    }
+    const page = (await response.json()) as { items: T[]; total: number };
+    items.push(...page.items);
+    if (page.items.length === 0 || items.length >= page.total) {
+      return items;
+    }
+  }
+}
+
+/** The largest page the Super Admin lists serve. */
+const ADMIN_PAGE_SIZE = 100;
+
+/** Every non-personal organization whose name contains "e2e". */
 export async function listAllOrgs(
   baseUrl: string,
   apiKey: string,
 ): Promise<Array<{ id: string; name: string }>> {
-  const url = new URL("api/admin/organizations", baseUrl).toString();
-  const response = await fetch(url, { headers: superAdminHeaders(apiKey) });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `listAllOrgs failed (${response.status} ${response.statusText}): ${body}`,
-    );
-  }
-  const { organizations } = (await response.json()) as {
-    organizations: Array<{ id: string; name: string }>;
-  };
-  return organizations;
+  return listAdminItems(baseUrl, apiKey, "api/admin/organizations", {
+    q: "e2e",
+    include_personal: "false",
+  });
 }
 
 /** Filesystem- and name-safe UTC timestamp, e.g. ``2026-11-04T20-03-58-435Z``. */
@@ -275,14 +305,11 @@ export async function deleteOrphanedAccounts(
   logPrefix: string,
 ): Promise<void> {
   assertE2eOnlyEmail(email);
-  const url = new URL("api/admin/directory/users", baseUrl).toString();
   let users: Array<{ user_id: string | null; email: string | null }>;
   try {
-    const response = await fetch(url, { headers: superAdminHeaders(apiKey) });
-    if (!response.ok) {
-      throw new Error(`${response.status} ${await response.text()}`);
-    }
-    ({ users } = await response.json());
+    users = await listAdminItems(baseUrl, apiKey, "api/admin/directory/users", {
+      q: email,
+    });
   } catch (err) {
     console.warn(`${logPrefix}: could not list users, skipping: ${err}`);
     return;
