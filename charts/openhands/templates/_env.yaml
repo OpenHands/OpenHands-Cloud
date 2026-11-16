@@ -776,8 +776,6 @@ the app UI and webhook users are matched by email. */}}
   value: "self_hosted"
 # OH_APP_CONVERSATION_INFO_KIND / OH_LLM_MODEL_KIND are baked into the enterprise
 # image (OpenHands#14811), so the chart no longer sets them — keeps the two in sync.
-- name: CONVERSATION_MANAGER_CLASS
-  value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}
 - name: PLUGIN_DIRECTORY_HOST
   value: {{ (index .Values "plugin-directory").appUrl | quote }}
