@@ -9,9 +9,8 @@ in your overlay replaces each default without creating a duplicate entry.
 | Billing page | hidden: `HIDE_BILLING_PAGE: "true"` | `"false"` |
 | Email changes | disabled: `EMAIL_CHANGE_ENABLED` and `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` are `"false"` | set both to `"true"` |
 | Super Admin dashboard | shown at `/super-admin`: `ENABLE_SUPER_ADMIN: "true"` | `"false"` |
-| Automations page | shown only when the app has a service URL (`automationService.url` or `env.AUTOMATION_SERVICE_URL`) | `env.ENABLE_AUTOMATIONS: "true"` |
-
-Enabling the bundled `automation` subchart (`automation.enabled: true`) does not by itself show the Automations page, because the chart does not derive the service URL. Set `automationService.url` as well.
+| Personal workspaces | hidden once a user belongs to an organization: `HIDE_PERSONAL_WORKSPACES: "true"` | `"false"` |
+| Automations page | shown only when the app has a service URL (`automationService.url`, `env.AUTOMATION_SERVICE_URL`, or the bundled service's URL when `automation.enabled` is true) | `env.ENABLE_AUTOMATIONS: "true"` |
 
 ## What the flags do
 
@@ -29,6 +28,15 @@ Enabling the bundled `automation` subchart (`automation.enabled: true`) does not
   fresh install, the first user to sign in becomes the first Super Admin and
   goes through the first-install setup. An upgraded install that already has
   users does not run the setup again.
+- `HIDE_PERSONAL_WORKSPACES` also changes the server. The organization list
+  marks a personal workspace hidden for a user who belongs to a team
+  organization, and sign-in moves a member of the default organization out of
+  their personal workspace and into it. The server reads the plain variable in both
+  flag modes.
+- While personal workspaces are hidden, the app does not switch a user into
+  their personal workspace. Conversations stored there cannot be opened from
+  the UI, and a link to one opens the launcher instead. Nothing is deleted:
+  with `HIDE_PERSONAL_WORKSPACES: "false"` they open again.
 
 ## Structured feature flags
 
@@ -41,6 +49,8 @@ is not set. An install in that mode must set these instead:
 - `OH_WEB_CLIENT_FEATURE_FLAGS_ALLOW_USER_LLM_CONFIGURATION`
 - `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_BILLING_PAGE`
 - `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_AUTOMATIONS`
+- `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES`, together with the
+  plain `HIDE_PERSONAL_WORKSPACES` that the server reads
 
 The two email variables work in both modes.
 
