@@ -16,18 +16,25 @@
 {{- end -}}
 {{- if $host }}
 {{- $path := default "/canvas" $ingress.path -}}
+{{- /* On the main host, match the main ingress class and annotations. */ -}}
+{{- $className := default "traefik" $ingress.className -}}
+{{- $annotations := $ingress.annotations -}}
+{{- if not $ingress.host -}}
+{{- $className = .Values.ingress.class -}}
+{{- $annotations = .Values.ingress.root.annotations | default .Values.ingress.annotations -}}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-agent-canvas-ingress
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
-  {{- with $ingress.annotations }}
+  {{- with $annotations }}
   annotations:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
 spec:
-  ingressClassName: {{ default "traefik" $ingress.className }}
+  ingressClassName: {{ $className }}
   {{- if $ingress.tls.enabled }}
   tls:
   - hosts:
