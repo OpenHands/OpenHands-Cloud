@@ -3,8 +3,13 @@ templates:
   - deployment.yaml
   - litellm-config-script.yaml
 tests:
-  - it: hides personal key editing and billing and disables email changes
+  - it: hides personal key editing, billing and personal workspaces and disables email changes
     asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: HIDE_PERSONAL_WORKSPACES, value: "true"}
+          count: 1
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
@@ -81,7 +86,13 @@ tests:
       env.HIDE_BILLING_PAGE: "false"
       env.EMAIL_CHANGE_ENABLED: "true"
       env.OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "true"
+      env.HIDE_PERSONAL_WORKSPACES: "false"
     asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: HIDE_PERSONAL_WORKSPACES, value: "false"}
+          count: 1
       - template: deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
