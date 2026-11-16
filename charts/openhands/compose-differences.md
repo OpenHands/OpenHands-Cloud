@@ -11,13 +11,12 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 | Name | What differs | Reason |
 |---|---|---|
 | `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` | Compose sets structured web client flags, so the app ignores plain UI flags. Helm sets none, so it reads plain flags. | Compose uses the built-in password login. Helm signs in through Keycloak. |
-| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` | Same as above. | Turning on the SuperAdmin dashboard in Helm is tracked in OHE-3694. |
+| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` | Same as above. | Helm sets the plain `ENABLE_SUPER_ADMIN`, so the dashboard is on in both. |
 | `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES` | Same as above. | Pending |
 | `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` | Same as `EMAIL_CHANGE_ENABLED`, for the UI. | Enterprise policy for production installs, which matches Replicated. |
-| `ENABLE_SUPER_ADMIN` | Compose turns on the SuperAdmin dashboard. Helm leaves it off. Tracked in OHE-3694. | Turning on the SuperAdmin dashboard in Helm is tracked in OHE-3694. |
 | `ENABLE_INTEGRATED_IDP` | Compose uses the app's built-in password login. Helm uses Keycloak. | Production installs sign in through Keycloak for SSO. Compose uses a built-in login for one evaluator. |
 | `ENABLE_LEGACY_LITELLM` | Compose: each user brings an LLM key; no LiteLLM proxy. Helm: the LiteLLM proxy is on, with budgets. | Production installs use the LiteLLM proxy for managed models and budgets. Compose has each user bring a key. |
 | `RATE_LIMITING_ENABLED` | Compose turns rate limiting off. Helm leaves it on. | Production installs keep rate limiting on. Compose turns it off for one evaluator. |
