@@ -435,6 +435,17 @@ tests:
   - template: validations.yaml
     hasDocuments:
       count: 0
+- it: rejects a whitespace Cloud SQL instance without a database host
+  set:
+    automation.enabled: true
+    automation.database.host: ""
+    automation.gcp.dbInstance: " "
+    automation.filestore.type: gcs
+    automation.filestore.bucket: sessions
+  asserts:
+  - template: validations.yaml
+    failedTemplate:
+      errorPattern: Local Automations requires automation.database.host or automation.gcp.dbInstance
 - it: rejects a blank database user
   set:
     automation.enabled: true
