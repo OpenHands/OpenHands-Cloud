@@ -137,7 +137,6 @@ env:
   EMAIL_CHANGE_ENABLED: "false"
   OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "false"
   HIDE_PERSONAL_WORKSPACES: "true"
-  DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   # How the app addresses a sandbox. Must agree with the runtime-api's
   # RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR pair below, which is what names
