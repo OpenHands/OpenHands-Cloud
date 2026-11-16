@@ -40,14 +40,11 @@ autoscaling:
 
 appConfig:
   OPENHANDS_CONFIG_CLS: "server.config.SaaSServerConfig"
-  OPENHANDS_CONVERSATION_VALIDATOR_CLS: "storage.saas_conversation_validator.SaasConversationValidator"
   OPENHANDS_GITHUB_SERVICE_CLS: "integrations.github.github_service.SaaSGitHubService"
   OPENHANDS_GITLAB_SERVICE_CLS: "integrations.gitlab.gitlab_service.SaaSGitLabService"
   OPENHANDS_BITBUCKET_SERVICE_CLS: "integrations.bitbucket.bitbucket_service.SaaSBitBucketService"
   OPENHANDS_BITBUCKET_DATA_CENTER_SERVICE_CLS: "integrations.bitbucket_data_center.bitbucket_dc_service.SaaSBitbucketDCService"
   OPENHANDS_AZURE_DEVOPS_SERVICE_CLS: "integrations.azure_devops.azure_devops_service.SaaSAzureDevOpsService"
-  OPENHANDS_MCP_CONFIG_CLS: "server.mcp.mcp_config.SaaSOpenHandsMCPConfig"
-  OPENHANDS_EXPERIMENT_MANAGER_CLS: "experiments.experiment_manager.SaaSExperimentManager"
   POSTHOG_CLIENT_KEY: "1234abcd"
 
 # Maximum conversations a user may start per UTC day. null leaves the
@@ -137,7 +134,6 @@ env:
   EMAIL_CHANGE_ENABLED: "false"
   OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED: "false"
   HIDE_PERSONAL_WORKSPACES: "true"
-  DISABLE_WAITLIST: "true"
   SANDBOX_REMOTE_RUNTIME_API_TIMEOUT: "60"
   # How the app addresses a sandbox. Must agree with the runtime-api's
   # RUNTIME_BASE_URL / RUNTIME_URL_SEPARATOR pair below, which is what names

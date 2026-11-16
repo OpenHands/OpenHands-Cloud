@@ -26,12 +26,6 @@
 - name: OPENHANDS_AZURE_DEVOPS_SERVICE_CLS
   value: {{ .Values.appConfig.OPENHANDS_AZURE_DEVOPS_SERVICE_CLS }}
 {{- end }}
-- name: OPENHANDS_MCP_CONFIG_CLS
-  value: {{ .Values.appConfig.OPENHANDS_MCP_CONFIG_CLS }}
-- name: OPENHANDS_CONVERSATION_VALIDATOR_CLS
-  value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
-- name: OPENHANDS_EXPERIMENT_MANAGER_CLS
-  value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
 {{- if ne .Values.dailyConversationLimit nil }}
 - name: OH_DAILY_CONVERSATION_LIMIT
   value: {{ .Values.dailyConversationLimit | quote }}
@@ -72,10 +66,6 @@
 
 - name: FILE_STORE_PATH
   value: {{ .Values.filestore.bucket }}
-- name: SANDBOX_KEEP_RUNTIME_ALIVE
-  value: 'true'
-- name: SANDBOX_CLOSE_DELAY
-  value: "1800"
 {{- if eq .Values.filestore.type "s3" }}
 {{- /* Empty endpoint targets the bundled MinIO when it is deployed, otherwise
        real AWS (boto3 uses the regional endpoint). */}}
@@ -776,8 +766,6 @@ the app UI and webhook users are matched by email. */}}
   value: "self_hosted"
 # OH_APP_CONVERSATION_INFO_KIND / OH_LLM_MODEL_KIND are baked into the enterprise
 # image (OpenHands#14811), so the chart no longer sets them — keeps the two in sync.
-- name: CONVERSATION_MANAGER_CLASS
-  value: server.saas_nested_conversation_manager.SaasNestedConversationManager
 {{- if (index .Values "plugin-directory").enabled }}
 - name: PLUGIN_DIRECTORY_HOST
   value: {{ (index .Values "plugin-directory").appUrl | quote }}
