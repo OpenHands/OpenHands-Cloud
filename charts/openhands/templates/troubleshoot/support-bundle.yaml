@@ -721,7 +721,10 @@ spec:
         timeout: 30s
     # Read-only automation DB dump via the automation pod's own creds (asyncpg).
     # Webhook/automation/run metadata only — never webhook_secret, prompts,
-    # tarball paths, event payloads or error detail.
+    # tarball paths, event payloads or error detail. A failed run is described
+    # by the enumerated status_detail fields (which step failed and how), not by
+    # its free-text detail or output; free-text columns appear only as IS NOT
+    # NULL presence flags.
     - exec:
         name: app/automation-db
         collectorName: automation-db-diagnostics
@@ -765,15 +768,41 @@ spec:
                      "ORDER BY created_at"),
                     ("automations",
                      "SELECT id, org_id, user_id, name, model, enabled, last_triggered_at, "
-                     "last_polled_at, created_at, updated_at, deleted_at FROM automations "
+                     "last_polled_at, created_at, updated_at, deleted_at, state, disabled_at, "
+                     "run_as_kind, agent_profile_id, timeout, keep_alive, "
+                     "trigger->>'type' AS trigger_type, trigger->>'source' AS trigger_source, "
+                     "preset_metadata->>'preset_type' AS preset_type, "
+                     "(plugin_spec IS NOT NULL) AS has_plugin_spec FROM automations "
                      "ORDER BY created_at"),
                     ("automation_runs status counts",
                      "SELECT status, COUNT(*) AS n FROM automation_runs "
                      "GROUP BY status ORDER BY n DESC"),
                     ("automation_runs recent",
                      "SELECT id, automation_id, status, conversation_id, sandbox_id, "
-                     "created_at, started_at, completed_at FROM automation_runs "
+                     "created_at, started_at, completed_at, timeout_at, sandbox_cleanup_due_at, "
+                     "trigger_source, trigger_event_id, (error_detail IS NOT NULL) AS has_error_detail, "
+                     "status_detail->>'phase' AS detail_phase, status_detail->>'kind' AS detail_kind, "
+                     "status_detail->>'source' AS detail_source, "
+                     "status_detail->>'operation' AS detail_operation, "
+                     "status_detail->>'code' AS detail_code, "
+                     "status_detail->>'status_code' AS detail_status_code, "
+                     "status_detail->>'transient' AS detail_transient, "
+                     "status_detail->>'count' AS detail_count FROM automation_runs "
                      "ORDER BY created_at DESC LIMIT 50"),
+                    ("automation_runs failures by cause (14d)",
+                     "SELECT status, status_detail->>'phase' AS detail_phase, "
+                     "status_detail->>'kind' AS detail_kind, "
+                     "status_detail->>'operation' AS detail_operation, "
+                     "status_detail->>'code' AS detail_code, COUNT(*) AS n, "
+                     "MAX(created_at) AS last_seen FROM automation_runs "
+                     "WHERE created_at > now() - interval '14 days' AND status_detail IS NOT NULL "
+                     "GROUP BY 1, 2, 3, 4, 5 ORDER BY n DESC LIMIT 50"),
+                    ("integration_events by source (14d)",
+                     "SELECT source, COUNT(*) AS events, "
+                     "COUNT(*) FILTER (WHERE matched_count = 0) AS matched_no_automation, "
+                     "MAX(received_at) AS last_received FROM integration_events "
+                     "WHERE received_at > now() - interval '14 days' "
+                     "GROUP BY source ORDER BY events DESC"),
                     ("automation_runs daily peak concurrent (14d, 5-min samples)",
                      "WITH iv AS (SELECT r.started_at AS s, COALESCE(r.completed_at, CASE WHEN "
                      "r.status IN ('PENDING', 'RUNNING') THEN now() ELSE r.started_at END) AS e, a.user_id "
