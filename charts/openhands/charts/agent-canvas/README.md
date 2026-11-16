@@ -64,6 +64,14 @@ umbrella `openhands` chart renders such a ConfigMap with its own app URL
 locked to itself. The ConfigMap value is empty (no lock) when
 `agent-canvas.ingress.host` is set to a host other than the app host.
 
+The pod reads the ConfigMap only when it starts. After an upgrade that changes
+the app URL (`ingress.host` or `tls.enabled`), restart Agent Canvas so it locks
+to the new URL:
+
+```bash
+kubectl rollout restart deployment/agent-canvas -n <namespace>
+```
+
 #### Upgrading the `openhands` chart
 
 The umbrella chart enables Agent Canvas by default. Set

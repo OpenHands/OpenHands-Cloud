@@ -1907,5 +1907,6 @@ agent-canvas:
     # has its own ingress host, no lock, and this is unset: choose true or false.
     authRequired: null
     # ConfigMap rendered by this chart; its URL is passed as --lock-to-cloud
-    # unless lockToCloud is set.
+    # unless lockToCloud is set. Read at pod start: restart agent-canvas after
+    # changing ingress.host or tls.enabled.
     lockToCloudConfigMap: agent-canvas-config
