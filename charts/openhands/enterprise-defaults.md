@@ -25,7 +25,6 @@ Enabling the bundled `automation` subchart (`automation.enabled: true`) does not
 - `HIDE_BILLING_PAGE` changes only page visibility. It does not enable or
   disable billing.
 - With `EMAIL_CHANGE_ENABLED: "false"`, the email change API returns 403.
-
 - `ENABLE_SUPER_ADMIN` mounts the Super Admin API and shows the dashboard. On a
   fresh install, the first user to sign in becomes the first Super Admin and
   goes through the first-install setup. An upgraded install that already has
