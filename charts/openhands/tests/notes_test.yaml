@@ -129,7 +129,7 @@ tests:
             AGENT_CANVAS_LOCK_TO_CLOUD: http://app.example.com
     asserts:
       - matchRegexRaw:
-          pattern: "Agent Canvas is still locked to http://app.example.com"
+          pattern: "changes the Agent Canvas lock URL from\\s+http://app.example.com to https://app.example.com"
       - matchRegexRaw:
           pattern: "kubectl rollout restart deployment/agent-canvas -n NAMESPACE"
   - it: stays quiet about Agent Canvas when its lock URL does not change
@@ -141,7 +141,7 @@ tests:
     kubernetesProvider: *live-canvas-http
     asserts:
       - notMatchRegexRaw:
-          pattern: "Agent Canvas is still locked"
+          pattern: "Agent Canvas lock URL"
   - it: stays quiet about Agent Canvas when lockToCloud is set explicitly
     release:
       upgrade: true
@@ -153,7 +153,7 @@ tests:
     kubernetesProvider: *live-canvas-http
     asserts:
       - notMatchRegexRaw:
-          pattern: "Agent Canvas is still locked"
+          pattern: "Agent Canvas lock URL"
   - it: stays quiet about Agent Canvas on the first upgrade that adds its ConfigMap
     release:
       upgrade: true
@@ -169,7 +169,7 @@ tests:
       objects: []
     asserts:
       - notMatchRegexRaw:
-          pattern: "Agent Canvas is still locked"
+          pattern: "Agent Canvas lock URL"
   - it: stays quiet about Agent Canvas on a fresh install
     set:
       ingress.enabled: true
@@ -178,4 +178,4 @@ tests:
     kubernetesProvider: *live-canvas-http
     asserts:
       - notMatchRegexRaw:
-          pattern: "Agent Canvas is still locked"
+          pattern: "Agent Canvas lock URL"
