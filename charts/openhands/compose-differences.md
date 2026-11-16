@@ -10,9 +10,7 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 
 | Name | What differs | Reason |
 |---|---|---|
-| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` | Compose sets structured web client flags, so the app ignores plain UI flags. Helm sets none, so it reads plain flags. | Compose uses the built-in password login. Helm signs in through Keycloak. |
-| `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` | Same as above. | Helm sets the plain `ENABLE_SUPER_ADMIN`, so the dashboard is on in both. |
-| `OH_WEB_CLIENT_FEATURE_FLAGS_HIDE_PERSONAL_WORKSPACES` | Same as above. | Helm sets the plain `HIDE_PERSONAL_WORKSPACES`, so personal workspaces are hidden in both. |
+| `ENABLE_OAUTH_V2_LOGIN` | Compose turns on the app's OAuth v2 login, which its built-in password login uses. Helm leaves it off. | Compose uses the built-in password login. Helm signs in through Keycloak. |
 | `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
@@ -23,7 +21,6 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 | `OH_APP_CONVERSATION_SANDBOX_GROUPING_STRATEGY` | Compose shares a sandbox between conversations. Helm gives each conversation its own sandbox. | Helm installs need each conversation in its own sandbox. Compose shares sandboxes to run faster on one local machine. |
 | `ENABLE_POSTHOG_ANALYTICS` | Compose sends backend analytics to PostHog. Helm does not. | Product analytics cover the Compose evaluator funnel only (OHE-3657). Helm installs stay off. |
 | `POSTHOG_CLIENT_KEY` | Compose sets a real PostHog key. Helm sets a placeholder. | Same as `ENABLE_POSTHOG_ANALYTICS`. With analytics off, Helm sends nothing, so its key is unused. |
-| `service:canvas-server` | Compose bundles Agent Canvas. Helm does not (it needs an ingress host). | Agent Canvas needs an ingress host in Helm, so it cannot run with no input. |
 
 ## Not compared
 
@@ -52,6 +49,6 @@ Helm runs on Kubernetes and Compose runs on one Docker host, so these connect di
 - LiteLLM proxy connection: `LITE_LLM_API_KEY`, `LITE_LLM_API_URL`, `LITE_LLM_TEAM_ID`, `OPENHANDS_PROVIDER_BASE_URL`
 - Log format for the cluster log collector: `LOG_JSON`, `LOG_JSON_LEVEL_KEY`
 - Server class and integration wiring: `OH_RESOLVER_LABEL`, `OPENHANDS_CONFIG_CLS`, `OPENHANDS_GITHUB_SERVICE_CLS`, `OPENHANDS_GITLAB_SERVICE_CLS`
-- Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose: `OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME`, `OH_SANDBOX_SPEC_KIND`, `OH_SANDBOX_WEB_URL`, `RUNTIME`, `RUNTIME_URL_PATTERN`, `SANDBOX_API_KEY`, `SANDBOX_CONTAINER_URL_PATTERN`, `SANDBOX_DOCKER_NETWORK`, `SANDBOX_HOST_PORT`, `SANDBOX_INTERNAL_URL`, `SANDBOX_REMOTE_RUNTIME_API_TIMEOUT`, `SANDBOX_REMOTE_RUNTIME_API_URL`
+- Sandbox runtime: Kubernetes runtime API in Helm, local Docker in Compose: `OH_SANDBOX_SPEC_DEFAULT_SPEC_NAME`, `OH_SANDBOX_SPEC_KIND`, `OH_SANDBOX_WEB_URL`, `RUNTIME`, `RUNTIME_URL_PATTERN`, `SANDBOX_API_KEY`, `SANDBOX_CONTAINER_URL_PATTERN`, `SANDBOX_DOCKER_NETWORK`, `SANDBOX_HOST_PORT`, `SANDBOX_INTERNAL_URL`, `SANDBOX_PAUSE_ON_SHUTDOWN`, `SANDBOX_REMOTE_RUNTIME_API_TIMEOUT`, `SANDBOX_REMOTE_RUNTIME_API_URL`
 - Redis connection: `REDIS_HOST`, `REDIS_PASSWORD`, `REDIS_PORT`
 - Migrations: an init container in Helm, app startup in Compose: `RUN_MIGRATIONS_ON_STARTUP`
