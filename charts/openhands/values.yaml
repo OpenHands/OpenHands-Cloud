@@ -40,7 +40,6 @@ autoscaling:
 
 appConfig:
   OPENHANDS_CONFIG_CLS: "server.config.SaaSServerConfig"
-  OPENHANDS_CONVERSATION_VALIDATOR_CLS: "storage.saas_conversation_validator.SaasConversationValidator"
   OPENHANDS_GITHUB_SERVICE_CLS: "integrations.github.github_service.SaaSGitHubService"
   OPENHANDS_GITLAB_SERVICE_CLS: "integrations.gitlab.gitlab_service.SaaSGitLabService"
   OPENHANDS_BITBUCKET_SERVICE_CLS: "integrations.bitbucket.bitbucket_service.SaaSBitBucketService"
