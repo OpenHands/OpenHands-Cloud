@@ -1,4 +1,5 @@
 {{- $port := int .Values.service.port -}}
+{{- $lockFromConfigMap := and (not .Values.staticServer.lockToCloud) .Values.staticServer.lockToCloudConfigMap -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,9 +53,12 @@ spec:
             {{- if .Values.staticServer.authRequired }}
             - --auth-required
             {{- end }}
-            {{- with .Values.staticServer.lockToCloud }}
+            {{- if .Values.staticServer.lockToCloud }}
             - --lock-to-cloud
-            - {{ . | quote }}
+            - {{ .Values.staticServer.lockToCloud | quote }}
+            {{- else if $lockFromConfigMap }}
+            - --lock-to-cloud
+            - $(AGENT_CANVAS_LOCK_TO_CLOUD)
             {{- end }}
             {{- range .Values.staticServer.rejectPrefixes }}
             - --reject-prefix
@@ -64,13 +68,20 @@ spec:
             - name: http
               containerPort: {{ $port }}
               protocol: TCP
-          {{- if or .Values.staticServer.disableTelemetry .Values.env }}
+          {{- if or .Values.staticServer.disableTelemetry .Values.env $lockFromConfigMap }}
           env:
             {{- if .Values.staticServer.disableTelemetry }}
             # static-server.mjs reads this and injects
             # window.__AGENT_CANVAS_DO_NOT_TRACK__ to disable product telemetry.
             - name: AGENT_CANVAS_DISABLE_TELEMETRY
               value: "1"
+            {{- end }}
+            {{- if $lockFromConfigMap }}
+            - name: AGENT_CANVAS_LOCK_TO_CLOUD
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.staticServer.lockToCloudConfigMap }}
+                  key: AGENT_CANVAS_LOCK_TO_CLOUD
             {{- end }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}

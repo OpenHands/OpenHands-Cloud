@@ -1,0 +1,11 @@
+{{- $agentCanvas := index .Values "agent-canvas" -}}
+{{- if $agentCanvas.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-canvas-config
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+data:
+  AGENT_CANVAS_LOCK_TO_CLOUD: {{ include "openhands.agentCanvasLockURL" . | quote }}
+{{- end }}

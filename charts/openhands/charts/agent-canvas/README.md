@@ -55,6 +55,36 @@ agent-canvas:
       secretName: app-all-hands-dev-tls
 ```
 
+Alternatively, set `staticServer.lockToCloudConfigMap` to the name of a
+ConfigMap whose `AGENT_CANVAS_LOCK_TO_CLOUD` key holds the URL. The
+deployment passes it as `--lock-to-cloud $(AGENT_CANVAS_LOCK_TO_CLOUD)`, and
+an empty value leaves the lock off. An explicit `lockToCloud` wins. The
+umbrella `openhands` chart renders such a ConfigMap with its own app URL
+(`http(s)://<ingress.host>`) and sets this value, so a default install is
+locked to itself. The ConfigMap value is empty (no lock) when
+`agent-canvas.ingress.host` is set to a host other than the app host.
+
+The pod reads the ConfigMap only when it starts. After an upgrade that changes
+the app URL (`ingress.host` or `tls.enabled`), restart Agent Canvas so it locks
+to the new URL. The `helm upgrade` output prints this warning when the URL
+changes:
+
+```bash
+kubectl rollout restart deployment/agent-canvas -n <namespace>
+```
+
+#### Upgrading the `openhands` chart
+
+The umbrella chart enables Agent Canvas by default. Set
+`agent-canvas.enabled: false` to omit it. The Canvas ingress uses the main
+`ingress.class` unless `ingress.className` is set here. On the app host it also
+uses the main ingress annotations. The umbrella chart leaves
+`staticServer.authRequired` unset, which renders without `--auth-required`.
+The render fails, with a message that names the fix, when Agent Canvas has its
+own `ingress.host`, no `lockToCloud`, and `staticServer.authRequired` is unset.
+Set `authRequired` to `true` to keep the API key screen, or to `false` to accept
+the new default.
+
 ### Disabling telemetry
 
 `staticServer.disableTelemetry` (default `true`) sets

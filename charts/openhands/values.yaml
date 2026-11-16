@@ -1879,10 +1879,11 @@ integrations-hub:
 # ───────────────────────────────────────────────────────────────────────
 # Agent Canvas (subchart): frontend-only deployment
 # ───────────────────────────────────────────────────────────────────────
-# When enabled, the agent-canvas subchart deploys the static frontend under
-# `/canvas` on the configured Agent Canvas ingress host.
+# The agent-canvas subchart deploys the static frontend under `/canvas`, on
+# agent-canvas.ingress.host or else on ingress.host, locked to this
+# installation's app URL.
 agent-canvas:
-  enabled: false
+  enabled: true
 
   image:
     repository: ghcr.io/openhands/agent-canvas
@@ -1891,7 +1892,8 @@ agent-canvas:
   ingress:
     enabled: false
     host: ""
-    className: traefik
+    # Empty uses ingress.class.
+    className: ""
     annotations: {}
     path: /canvas
     tls:
@@ -1904,3 +1906,10 @@ agent-canvas:
     # runtime, via AGENT_CANVAS_DISABLE_TELEMETRY=1. Defaults to true for
     # self-hosted deployments; a SaaS deployment can override to false.
     disableTelemetry: true
+    # null (unset) renders without --auth-required. A render fails if Agent Canvas
+    # has its own ingress host, no lock, and this is unset: choose true or false.
+    authRequired: null
+    # ConfigMap rendered by this chart; its URL is passed as --lock-to-cloud
+    # unless lockToCloud is set. Read at pod start: restart agent-canvas after
+    # changing ingress.host or tls.enabled.
+    lockToCloudConfigMap: agent-canvas-config
