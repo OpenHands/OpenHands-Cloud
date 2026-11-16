@@ -8,6 +8,7 @@ in your overlay replaces each default without creating a duplicate entry.
 | Personal LLM key editing | hidden: `OH_ALLOW_USER_LLM_CONFIGURATION: "false"` | `"true"` |
 | Billing page | hidden: `HIDE_BILLING_PAGE: "true"` | `"false"` |
 | Email changes | disabled: `EMAIL_CHANGE_ENABLED` and `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` are `"false"` | set both to `"true"` |
+| Super Admin dashboard | shown at `/super-admin`: `ENABLE_SUPER_ADMIN: "true"` | `"false"` |
 | Personal workspaces | hidden once a user belongs to an organization: `HIDE_PERSONAL_WORKSPACES: "true"` | `"false"` |
 | Automations page | shown only when the app has a service URL (`automationService.url`, `env.AUTOMATION_SERVICE_URL`, or the bundled service's URL when `automation.enabled` is true) | `env.ENABLE_AUTOMATIONS: "true"` |
 
@@ -23,6 +24,10 @@ in your overlay replaces each default without creating a duplicate entry.
 - `HIDE_BILLING_PAGE` changes only page visibility. It does not enable or
   disable billing.
 - With `EMAIL_CHANGE_ENABLED: "false"`, the email change API returns 403.
+- `ENABLE_SUPER_ADMIN` mounts the Super Admin API and shows the dashboard. On a
+  fresh install, the first user to sign in becomes the first Super Admin and
+  goes through the first-install setup. An upgraded install that already has
+  users does not run the setup again.
 - `HIDE_PERSONAL_WORKSPACES` also changes the server. The organization list
   marks a personal workspace hidden for a user who belongs to a team
   organization, and sign-in moves a member of the default organization out of
@@ -48,6 +53,12 @@ is not set. An install in that mode must set these instead:
   plain `HIDE_PERSONAL_WORKSPACES` that the server reads
 
 The two email variables work in both modes.
+
+The chart sets only plain flags, so the plain `ENABLE_SUPER_ADMIN` default reaches
+both the server and the web client. An install that already sets any
+`OH_WEB_CLIENT_FEATURE_FLAGS_*` variable must also set
+`OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`, because the app then ignores
+the plain flag in the web client.
 
 ## Upgrading
 
