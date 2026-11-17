@@ -9,7 +9,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
@@ -627,3 +629,81 @@ def test_pre_upgrade_check_stops_the_upgrade_when_keycloak_does_not_answer():
         extra_env={"CHECK_WAIT_SECONDS": "5"},
     )
     assert "did not answer for 5 seconds" in out
+
+
+def remove_provisioner_admin_role(url):
+    _, auth = login(url, BOOTSTRAP_PASSWORD)
+    master = url + "/admin/realms/master"
+    _, clients = request(
+        master + "/clients?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    _, user = request(
+        master + "/clients/" + clients[0]["id"] + "/service-account-user",
+        token=auth["access_token"],
+    )
+    _, admin_role = request(master + "/roles/admin", token=auth["access_token"])
+    assert (
+        request(
+            master + "/users/" + user["id"] + "/role-mappings/realm",
+            token=auth["access_token"],
+            method="DELETE",
+            json_body=[admin_role],
+        )[0]
+        == 204
+    )
+
+
+@old_keycloak
+def test_scope_hook_waits_for_the_scope_when_the_old_keycloak_forbids(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    remove_provisioner_admin_role(keycloak)
+    out = run_scope_hook(keycloak, "26.8.2", timeout=15)
+    assert out.startswith("TIMEOUT")
+    assert "to create the kc-admin-api scope" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_stops_on_a_refused_console_password(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    _, auth = login(keycloak, CONSOLE_PASSWORD)
+    assert (
+        request(
+            keycloak + "/admin/realms/master",
+            token=auth["access_token"],
+            method="PUT",
+            json_body={"passwordPolicy": "length(40)"},
+        )[0]
+        == 204
+    )
+    out = run_scope_hook(keycloak, "26.8.2", "too short", mode="check", success=False)
+    assert "Keycloak refused the console password" in out
+    assert "Set a new Keycloak Admin Password" not in out
+
+
+def test_keycloak_config_keeps_waiting_while_keycloak_drops_requests():
+    class Handler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def do_POST(self):
+            self.close_connection = True
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(subprocess.TimeoutExpired) as error:
+            reconcile(
+                f"http://127.0.0.1:{server.server_port}",
+                client_id="openhands-provisioner",
+                needs_scope=True,
+                timeout=10,
+            )
+    finally:
+        server.shutdown()
+    out = error.value.stdout or ""
+    out = out if isinstance(out, str) else out.decode()
+    assert "Waiting for Keycloak 26.8.2 or later" in out
