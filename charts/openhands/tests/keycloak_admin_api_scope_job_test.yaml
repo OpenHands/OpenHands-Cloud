@@ -1,0 +1,28 @@
+suite: Keycloak kc-admin-api scope hook
+templates:
+  - templates/keycloak-admin-api-scope-job.yaml
+set:
+  automation.enabled: false
+tests:
+  - it: runs after every install and upgrade of the bundled Keycloak
+    set:
+      keycloak.enabled: true
+      keycloak.image.tag: 26.8.2-debian-12-oh1
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TARGET_VERSION
+            value: 26.8.2
+  - it: is not rendered without the bundled Keycloak
+    set:
+      keycloak.enabled: false
+      keycloak.provisionRealm: true
+    asserts:
+      - hasDocuments:
+          count: 0

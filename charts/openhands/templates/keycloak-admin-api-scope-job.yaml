@@ -1,0 +1,104 @@
+{{- /*
+Keycloak 26.8.2 rejects Admin REST API tokens without the kc-admin-api client scope, and its
+migration adds the scope only to built-in clients. Keycloak can reach 26.8.2 without the app pod
+restarting (a redeploy, the README roll-forward), so the keycloak-config init container alone
+misses it. This hook runs after every install and upgrade, once Keycloak is up.
+*/ -}}
+{{- if and .Values.enabled .Values.keycloak.enabled (include "openhands.keycloakProvisionRealm" .) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-keycloak-admin-api-scope
+  labels:
+    {{- include "openhands.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-admin-api-scope
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-admin-api-scope
+    spec:
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "openhands.affinity" .) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: keycloak-admin-api-scope
+          image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              CLIENT_ID=$(printf '%s' "${KEYCLOAK_ADMIN_CLIENT_ID:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              if [ -z "$CLIENT_ID" ]; then
+                echo "No Keycloak admin client is configured; nothing to do."
+                exit 0
+              fi
+              KC=$KEYCLOAK_SERVER_URL
+              # keycloak-config may have moved the admin login to the console password.
+              admin_token() {
+                for PW in "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" "$KEYCLOAK_ADMIN_PASSWORD"; do
+                  [ -n "$PW" ] || continue
+                  T=$(curl -sS "$KC/realms/master/protocol/openid-connect/token" \
+                    --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \
+                    --data-urlencode username=admin --data-urlencode "password=$PW" | jq -r '.access_token // empty') || true
+                  if [ -n "$T" ]; then echo "$T"; return 0; fi
+                done
+                return 1
+              }
+              # Without --wait this can run before the new Keycloak starts, so wait for the scope it creates.
+              NEED_SCOPE=false
+              if [ -n "$TARGET_VERSION" ] && [ "$(printf '26.8.2\n%s\n' "$TARGET_VERSION" | sort -V | head -n 1)" = 26.8.2 ]; then
+                NEED_SCOPE=true
+              fi
+              while :; do
+                SCOPE_ID=""
+                if TOKEN=$(admin_token) && SCOPES=$(curl -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
+                  SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
+                  if [ -n "$SCOPE_ID" ] || [ "$NEED_SCOPE" = false ]; then break; fi
+                fi
+                echo "Waiting for Keycloak $TARGET_VERSION to serve the admin API..."
+                sleep 5
+              done
+              if [ -z "$SCOPE_ID" ]; then
+                echo "This Keycloak has no kc-admin-api scope; nothing to do."
+                exit 0
+              fi
+              QUERY=$(printf '%s' "$CLIENT_ID" | jq -sRr @uri)
+              CLIENT=$(curl -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN" | jq -r '.[0].id // empty')
+              if [ -z "$CLIENT" ]; then
+                echo "Client \"$CLIENT_ID\" does not exist yet; keycloak-config creates it with the scope."
+                exit 0
+              fi
+              curl -fsS -X PUT "$KC/admin/realms/master/clients/$CLIENT/default-client-scopes/$SCOPE_ID" -H "Authorization: Bearer $TOKEN"
+              echo "Client \"$CLIENT_ID\" has the kc-admin-api scope."
+          env:
+            {{- include "openhands.env" . | nindent 12 }}
+            - name: KEYCLOAK_ADMIN_UI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: admin-ui-password
+                  optional: true
+            - name: TARGET_VERSION
+              value: {{ regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString .Values.keycloak.image.tag) | quote }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+{{- end }}
