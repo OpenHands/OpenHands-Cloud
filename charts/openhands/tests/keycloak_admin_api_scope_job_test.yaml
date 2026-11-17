@@ -47,6 +47,32 @@ tests:
             name: TARGET_VERSION
             value: 26.8.2
         documentIndex: 1
+  - it: needs the kc-admin-api scope from Keycloak 26.8.2 on
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.image.tag: 26.8.2-debian-12-oh1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NEEDS_ADMIN_API_SCOPE
+            value: "true"
+        documentIndex: 1
+  - it: does not need the scope before Keycloak 26.8.2
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: true
+      keycloak.image.tag: 26.8.1-debian-12-r0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NEEDS_ADMIN_API_SCOPE
+            value: "false"
+        documentIndex: 1
   - it: is not rendered on a fresh install
     set:
       keycloak.enabled: true

@@ -568,3 +568,31 @@ def test_scope_hook_leaves_a_client_with_a_wrong_secret_alone(keycloak):
     reconcile(keycloak, client_id="openhands-provisioner")
     out = run_scope_hook(keycloak, "26.8.2", client_secret="not-the-client-secret")
     assert 'rejects the "openhands-provisioner" client secret' in out
+
+
+def test_scope_hook_fails_clearly_when_the_provisioner_lacks_admin_rights(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    if not has_admin_api_scope(keycloak):
+        pytest.skip("This Keycloak has no kc-admin-api scope (added in 26.8.2)")
+    _, auth = login(keycloak, BOOTSTRAP_PASSWORD)
+    master = keycloak + "/admin/realms/master"
+    _, clients = request(
+        master + "/clients?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    _, user = request(
+        master + "/clients/" + clients[0]["id"] + "/service-account-user",
+        token=auth["access_token"],
+    )
+    _, admin_role = request(master + "/roles/admin", token=auth["access_token"])
+    # With the scope but without the admin role, the admin API answers 403.
+    assert (
+        request(
+            master + "/users/" + user["id"] + "/role-mappings/realm",
+            token=auth["access_token"],
+            method="DELETE",
+            json_body=[admin_role],
+        )[0]
+        == 204
+    )
+    out = run_scope_hook(keycloak, "26.8.2", timeout=30, success=False)
+    assert "still has no Admin REST API access (provisioner: forbidden" in out
