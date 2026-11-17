@@ -69,3 +69,13 @@ jobs:
           --with ruamel.yaml
           --with PyYAML
           python -m pytest scripts -q
+
+      # The step above pins 26.3.3, where the kc-admin-api tests skip; this runs them on the shipped version.
+      - name: Run Keycloak script tests against Keycloak 26.8.2
+        env:
+          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.8.2
+        run: >-
+          uv run
+          --with pytest
+          --with PyYAML
+          python -m pytest scripts/test_keycloak_admin_password.py -q
