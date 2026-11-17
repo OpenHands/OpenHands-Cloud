@@ -10,7 +10,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
@@ -689,3 +691,35 @@ def test_pre_upgrade_check_stops_on_a_refused_console_password(keycloak):
     out = run_scope_hook(keycloak, "26.8.2", "too short", mode="check", success=False)
     assert "Keycloak refused the console password" in out
     assert "Set a new Keycloak Admin Password" not in out
+
+
+def test_scope_hook_retries_an_admin_login_that_gets_no_answer():
+    # Keycloak 26.8.2 rejects the provisioner, then drops the admin login, as during a pod swap.
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            if "grant_type=client_credentials" in body:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"access_token": "provisioner"}')
+            else:
+                self.close_connection = True
+
+        def do_GET(self):
+            self.send_response(401)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}", "26.8.2", timeout=10
+        )
+    finally:
+        server.shutdown()
+    assert out.startswith("TIMEOUT")
+    assert "to create the kc-admin-api scope" in out
