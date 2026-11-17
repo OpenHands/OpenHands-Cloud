@@ -70,8 +70,8 @@ jobs:
           --with PyYAML
           python -m pytest scripts -q
 
-  # The job above pins Keycloak 26.3.3, where the kc-admin-api tests skip. Its own job, so the
-  # extra Keycloak containers do not push the main job past its timeout.
+  # The job above pins Keycloak 26.3.3, where the kc-admin-api tests skip. These tests run in a
+  # separate job so their Keycloak containers do not push the main job past its timeout.
   keycloak-scripts-shipped-version:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
