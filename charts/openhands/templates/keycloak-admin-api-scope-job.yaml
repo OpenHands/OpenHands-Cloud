@@ -15,7 +15,7 @@ KC=$KEYCLOAK_SERVER_URL
 CHECK_WAIT_SECONDS=${CHECK_WAIT_SECONDS:-240}
 
 # Before the migration the provisioner can still set the admin password, so any new console password
-# fixes it. After the migration only the current admin password can.
+# restores the admin login. After the migration only the current admin password works.
 no_admin() {
   if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then TRIED="the bootstrap admin password and the console password"; else TRIED="the bootstrap admin password (no console password is set)"; fi
   echo "ERROR: the \"$CLIENT_ID\" client needs the kc-admin-api scope for Keycloak $TARGET_VERSION. Adding it needs a login as the Keycloak admin user, and Keycloak rejects $TRIED." >&2
@@ -86,7 +86,7 @@ if [ "$NEEDS_ADMIN_API_SCOPE" != true ]; then
 fi
 
 if [ "$MODE" = check ]; then
-  # The migration is one way, so an unproven admin login stops the upgrade rather than letting it through.
+  # The migration is one way, so the upgrade waits here until the admin login is proven.
   WAITED=0
   while provisioner_status && [ "$STATUS" = down ]; do
     [ "$WAITED" -lt "$CHECK_WAIT_SECONDS" ] || {
