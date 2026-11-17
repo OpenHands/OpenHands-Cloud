@@ -206,6 +206,12 @@ data:
         echo "$RESPONSE" | jq '[.]' > "$ADMIN_CREDENTIAL_DIR/role.json"
         keycloak_write POST "$KC_MASTER/users/$PROVISIONER_USER_ID/role-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
         keycloak_write POST "$KC_MASTER/clients/$PROVISIONER_ID/scope-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+        # Keycloak 26.8.2+ rejects Admin REST API tokens without the kc-admin-api scope; older versions lack it.
+        keycloak_get_optional "$KC_MASTER/client-scopes"
+        ADMIN_API_SCOPE_ID=$(echo "$RESPONSE" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
+        if [ -n "$ADMIN_API_SCOPE_ID" ]; then
+          keycloak_write PUT "$KC_MASTER/clients/$PROVISIONER_ID/default-client-scopes/$ADMIN_API_SCOPE_ID" /dev/null
+        fi
         USE_PROVISIONER=true
       fi
       refresh_access_token
