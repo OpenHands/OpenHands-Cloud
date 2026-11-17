@@ -453,3 +453,20 @@ def test_scope_hook_waits_while_keycloak_is_older_than_the_target(keycloak):
         pytest.skip("This Keycloak has the kc-admin-api scope")
     with pytest.raises(subprocess.TimeoutExpired):
         run_scope_hook(keycloak, "26.8.2", timeout=15)
+
+
+def test_scope_hook_skips_an_install_without_a_provisioner(keycloak):
+    reconcile(keycloak)
+    _, auth = login(keycloak, BOOTSTRAP_PASSWORD)
+    _, scopes = request(
+        keycloak + "/admin/realms/master/client-scopes", token=auth["access_token"]
+    )
+    if not any(s["name"] == "kc-admin-api" for s in scopes):
+        pytest.skip("This Keycloak has no kc-admin-api scope (added in 26.8.2)")
+    out = run_scope_hook(keycloak, "26.8.2", client_id="")
+    assert 'Client "openhands-provisioner" does not exist' in out
+
+
+def test_scope_hook_keeps_waiting_while_keycloak_is_down():
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_scope_hook("http://127.0.0.1:9", "26.8.2", timeout=10)
