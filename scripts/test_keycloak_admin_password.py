@@ -10,7 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 
@@ -793,3 +793,28 @@ def test_pre_upgrade_check_reports_a_missing_admin_user():
     finally:
         server.shutdown()
     assert "could not find the Keycloak admin user" in out
+
+
+def test_pre_upgrade_check_gives_up_on_a_keycloak_that_never_answers():
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            time.sleep(60)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            mode="check",
+            timeout=45,
+            success=False,
+            extra_env={"CHECK_WAIT_SECONDS": "1"},
+        )
+    finally:
+        server.shutdown()
+    assert "did not answer for 1 seconds" in out

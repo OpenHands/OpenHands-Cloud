@@ -171,7 +171,8 @@ its version cannot be read (a digest-pinned image), or an earlier rollout has no
 {{- end }}
 {{- end }}
 {{- $rolling := ne (dig "status" "currentRevision" "" $kc) (dig "status" "updateRevision" "" $kc) }}
-{{- $pending := and $kc (or (not $running) (semverCompare "<26.8.2" (default "0.0.0" $running)) $rolling) }}
+{{- /* An unreadable version counts as 0.0.0, so a digest-pinned image is checked. */}}
+{{- $pending := and $kc (or (semverCompare "<26.8.2" (default "0.0.0" $running)) $rolling) }}
 {{- $jobs := list (dict "mode" "fix" "hook" "post-upgrade" "weight" "0" "backoff" 2) }}
 {{- if and .Values.keycloak.preUpgradeAdminCheck.enabled $pending }}
 {{- $jobs = prepend $jobs (dict "mode" "check" "hook" "pre-upgrade" "weight" "9" "backoff" 0) }}
