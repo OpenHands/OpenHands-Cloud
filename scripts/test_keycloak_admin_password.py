@@ -386,6 +386,10 @@ def test_console_password_is_only_passed_to_provisioning_container():
         item for item in init["env"] if item["name"] == "KEYCLOAK_NEEDS_ADMIN_API_SCOPE"
     )
     assert needs["value"] == "true"
+    target = next(
+        item for item in init["env"] if item["name"] == "KEYCLOAK_TARGET_VERSION"
+    )
+    assert target["value"] == "26.8.2"
     for container in spec["containers"]:
         assert not any(
             item["name"] == "KEYCLOAK_ADMIN_UI_PASSWORD" for item in container["env"]
@@ -926,3 +930,34 @@ def test_pre_upgrade_check_passes_a_client_with_a_wrong_secret(keycloak):
         keycloak, "26.8.2", mode="check", client_secret="not-the-client-secret"
     )
     assert "the upgrade does not change this client" in out
+
+
+def test_check_wait_ends_before_the_hook_deadline():
+    wait = int(re.search(r"CHECK_WAIT_SECONDS:-(\d+)", scope_script()).group(1))
+    job = (
+        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
+    ).read_text()
+    deadline = int(re.search(r"activeDeadlineSeconds: (\d+)", job).group(1))
+    assert wait + 30 <= deadline
+
+
+def test_pre_upgrade_check_does_not_blame_the_password_when_the_admin_login_gets_no_answer():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (None, "")
+        ),
+        lambda path: (401, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            mode="check",
+            success=False,
+        )
+    finally:
+        server.shutdown()
+    assert "stopped answering during the admin login check" in out
+    assert "Set the Keycloak Admin Password" not in out
