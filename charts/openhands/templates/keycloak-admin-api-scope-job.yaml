@@ -12,6 +12,8 @@ CLIENT_ID=$(printf '%s' "${KEYCLOAK_ADMIN_CLIENT_ID:-}" | sed 's/^[[:space:]]*//
 CLIENT_ID=${CLIENT_ID:-openhands-provisioner}
 SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-$KEYCLOAK_ADMIN_PASSWORD}
 KC=$KEYCLOAK_SERVER_URL
+# Bounded, so a Keycloak that accepts a connection but never answers cannot stall the hook.
+CURL="curl --connect-timeout 5 --max-time 20"
 CHECK_WAIT_SECONDS=${CHECK_WAIT_SECONDS:-240}
 
 # Before the migration the provisioner can still set the admin password, so any new console password
@@ -31,7 +33,7 @@ no_admin() {
 # bad-client (wrong secret or disabled service account), forbidden, or down.
 provisioner_status() {
   CODE=""
-  if ! R=$(curl -sS "$KC/realms/master/protocol/openid-connect/token" \
+  if ! R=$($CURL -sS "$KC/realms/master/protocol/openid-connect/token" \
     --data-urlencode "client_id=$CLIENT_ID" --data-urlencode grant_type=client_credentials \
     --data-urlencode "client_secret=$SECRET"); then STATUS=down; return; fi
   PT=$(printf '%s' "$R" | jq -r '.access_token // empty' 2>/dev/null) || PT=""
@@ -43,7 +45,7 @@ provisioner_status() {
     esac
     return
   fi
-  if ! CODE=$(curl -sS -o /tmp/scopes.json -w '%{http_code}' "$KC/admin/realms/master/client-scopes" \
+  if ! CODE=$($CURL -sS -o /tmp/scopes.json -w '%{http_code}' "$KC/admin/realms/master/client-scopes" \
     -H "Authorization: Bearer $PT"); then STATUS=down; return; fi
   case $CODE in
     200) if jq -e 'any(.[]; .name == "kc-admin-api")' /tmp/scopes.json >/dev/null; then STATUS=works; else STATUS=old; fi ;;
@@ -59,12 +61,12 @@ admin_token() {
   TOKEN_RC=1
   for PW in "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" "$KEYCLOAK_ADMIN_PASSWORD"; do
     [ -n "$PW" ] || continue
-    if ! R=$(curl -sS "$KC/realms/master/protocol/openid-connect/token" \
+    if ! R=$($CURL -sS "$KC/realms/master/protocol/openid-connect/token" \
       --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \
       --data-urlencode username=admin --data-urlencode "password=$PW"); then TOKEN_RC=2; continue; fi
     T=$(printf '%s' "$R" | jq -r '.access_token // empty' 2>/dev/null) || { TOKEN_RC=2; continue; }
     if [ -n "$T" ]; then echo "$T"; return 0; fi
-    printf '%s' "$R" | jq -e '.error' >/dev/null 2>&1 || TOKEN_RC=2
+    [ "$(printf '%s' "$R" | jq -r '.error // empty' 2>/dev/null)" = invalid_grant ] || TOKEN_RC=2
   done
   return $TOKEN_RC
 }
@@ -83,10 +85,13 @@ admin_login_works() {
 # after the migration. The old Keycloak still accepts the provisioner, so apply it now.
 apply_console_password() {
   [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ] || return 0
-  ADMIN_ID=$(curl -fsS "$KC/admin/realms/master/users?username=admin&exact=true" -H "Authorization: Bearer $PT" | jq -r '.[0].id // empty')
-  [ -n "$ADMIN_ID" ] || return 0
+  if ! USERS=$($CURL -fsS "$KC/admin/realms/master/users?username=admin&exact=true" -H "Authorization: Bearer $PT") \
+    || ! ADMIN_ID=$(printf '%s' "$USERS" | jq -er '.[0].id'); then
+    echo "ERROR: could not find the Keycloak admin user to apply the console password. Check that Keycloak answers and that the master realm has a user named admin, then deploy again." >&2
+    exit 1
+  fi
   if ! jq -n --arg password "$KEYCLOAK_ADMIN_UI_PASSWORD" '{type: "password", value: $password, temporary: false}' \
-    | curl -fsS -X PUT "$KC/admin/realms/master/users/$ADMIN_ID/reset-password" \
+    | $CURL -fsS -X PUT "$KC/admin/realms/master/users/$ADMIN_ID/reset-password" \
       -H "Authorization: Bearer $PT" -H "Content-Type: application/json" --data @-; then
     echo "ERROR: Keycloak refused the console password for the admin user, for example because of the master realm password policy. Choose another Keycloak Admin Password, then deploy again." >&2
     exit 1
@@ -101,15 +106,14 @@ fi
 
 if [ "$MODE" = check ]; then
   # The migration is one way, so the upgrade waits here until the admin login is proven.
-  WAITED=0
+  START=$(date +%s)
   while provisioner_status && [ "$STATUS" = down ]; do
-    [ "$WAITED" -lt "$CHECK_WAIT_SECONDS" ] || {
-      echo "ERROR: Keycloak did not answer for $CHECK_WAIT_SECONDS seconds (HTTP ${CODE:-none}), so the admin login cannot be checked before the one-way migration. Make Keycloak reachable, then deploy again." >&2
+    [ $(($(date +%s) - START)) -lt "$CHECK_WAIT_SECONDS" ] || {
+      echo "ERROR: Keycloak did not answer for $CHECK_WAIT_SECONDS seconds (HTTP ${CODE:-none}), so the admin login cannot be checked before the one-way migration. Make Keycloak reachable, then deploy again. To deploy a fix while Keycloak cannot answer, turn off \"Check Keycloak Admin Login Before Upgrade\" (keycloak.preUpgradeAdminCheck.enabled=false)." >&2
       exit 1
     }
     echo "Waiting for Keycloak to answer..."
     sleep 5
-    WAITED=$((WAITED + 5))
   done
   case $STATUS in
     works) echo "Client \"$CLIENT_ID\" already has Admin REST API access." ;;
@@ -139,7 +143,7 @@ done
 while :; do
   RC=0; TOKEN=$(admin_token) || RC=$?
   [ "$RC" -ne 1 ] || no_admin after
-  if [ "$RC" -eq 0 ] && SCOPES=$(curl -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
+  if [ "$RC" -eq 0 ] && SCOPES=$($CURL -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
     SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
     [ -z "$SCOPE_ID" ] || break
   fi
@@ -147,24 +151,29 @@ while :; do
   sleep 5
 done
 QUERY=$(printf '%s' "$CLIENT_ID" | jq -sRr @uri)
-CLIENTS=$(curl -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN")
+CLIENTS=$($CURL -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN")
 CLIENT=$(printf '%s' "$CLIENTS" | jq -r '.[0].id')
-curl -fsS -X PUT "$KC/admin/realms/master/clients/$CLIENT/default-client-scopes/$SCOPE_ID" -H "Authorization: Bearer $TOKEN"
+$CURL -fsS -X PUT "$KC/admin/realms/master/clients/$CLIENT/default-client-scopes/$SCOPE_ID" -H "Authorization: Bearer $TOKEN"
 provisioner_status
 [ "$STATUS" = works ] || { echo "ERROR: client \"$CLIENT_ID\" still has no Admin REST API access (provisioner: $STATUS, HTTP ${CODE:-none})." >&2; exit 1; }
 echo "Client \"$CLIENT_ID\" has the kc-admin-api scope."
 {{- end }}
-{{- if and .Values.enabled .Values.keycloak.enabled .Release.IsUpgrade (include "openhands.keycloakProvisionRealm" .) }}
-{{- /* The check only matters while a migration to 26.8.2 is pending, so it reads the running Keycloak image. */}}
-{{- $running := "" }}
+{{- if and .Values.enabled .Values.keycloak.enabled .Release.IsUpgrade (include "openhands.keycloakProvisionRealm" .) (eq (include "openhands.keycloakNeedsAdminApiScope" .) "true") }}
+{{- /*
+The check matters only while a migration to 26.8.2 may be pending: the running Keycloak is older,
+its version cannot be read (a digest-pinned image), or an earlier rollout has not finished.
+*/}}
 {{- $kc := lookup "apps/v1" "StatefulSet" .Release.Namespace .Values.keycloak.fullnameOverride }}
+{{- $running := "" }}
 {{- range (dig "spec" "template" "spec" "containers" list $kc) }}
 {{- if eq .name "keycloak" }}
 {{- $running = regexFind "[0-9]+\\.[0-9]+\\.[0-9]+" (regexFind ":[^:@/]+$" .image) }}
 {{- end }}
 {{- end }}
+{{- $rolling := ne (dig "status" "currentRevision" "" $kc) (dig "status" "updateRevision" "" $kc) }}
+{{- $pending := and $kc (or (not $running) (semverCompare "<26.8.2" (default "0.0.0" $running)) $rolling) }}
 {{- $jobs := list (dict "mode" "fix" "hook" "post-upgrade" "weight" "0" "backoff" 2) }}
-{{- if and $running (semverCompare "<26.8.2" $running) }}
+{{- if and .Values.keycloak.preUpgradeAdminCheck.enabled $pending }}
 {{- $jobs = prepend $jobs (dict "mode" "check" "hook" "pre-upgrade" "weight" "9" "backoff" 0) }}
 {{- end }}
 {{- range $job := $jobs }}

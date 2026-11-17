@@ -229,6 +229,8 @@ spec:
         existingSecretPasswordKey: password
       preUpgradeBackup:
         enabled: repl{{ ConfigOptionEquals "keycloak_pre_upgrade_backup" "1" }}
+      preUpgradeAdminCheck:
+        enabled: repl{{ ConfigOptionEquals "keycloak_pre_upgrade_admin_check" "1" }}
       image:
         repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/third-party-images/keycloak'
       keycloakConfigCli:

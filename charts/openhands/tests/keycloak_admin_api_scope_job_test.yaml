@@ -116,17 +116,80 @@ tests:
           content:
             name: NEEDS_ADMIN_API_SCOPE
             value: "true"
-  - it: does not need the scope before Keycloak 26.8.2
+  - it: renders no hooks for a Keycloak target before 26.8.2
     release:
       upgrade: true
     set:
       keycloak.image.tag: 26.8.1-debian-12-r0
+      keycloak.preUpgradeBackup.enabled: false
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: NEEDS_ADMIN_API_SCOPE
-            value: "false"
+      - hasDocuments:
+          count: 0
+  - it: checks when the running Keycloak version cannot be read
+    release:
+      upgrade: true
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak@sha256:2bd0dcba55c7500e7a6794ca4c0770662923d60ae16cafe098bdaa05cb713b80
+    asserts:
+      - hasDocuments:
+          count: 2
+  - it: checks when an earlier Keycloak rollout has not finished
+    release:
+      upgrade: true
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak:26.8.2-debian-12-oh1
+          status:
+            currentRevision: keycloak-old
+            updateRevision: keycloak-new
+    asserts:
+      - hasDocuments:
+          count: 2
+  - it: skips the check when it is turned off
+    release:
+      upgrade: true
+    set:
+      keycloak.preUpgradeAdminCheck.enabled: false
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak:26.8.0-debian-12-oh2
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
   - it: passes only the Keycloak settings, not the whole app environment
     release:
       upgrade: true

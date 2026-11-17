@@ -723,3 +723,73 @@ def test_scope_hook_retries_an_admin_login_that_gets_no_answer():
         server.shutdown()
     assert out.startswith("TIMEOUT")
     assert "to create the kc-admin-api scope" in out
+
+
+def stub_keycloak(token_reply, admin_reply):
+    """A stand-in Keycloak. token_reply(grant) and admin_reply(path) return (status, body)."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, status, body):
+            if status is None:
+                self.close_connection = True
+                return
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            grant = "client_credentials" if "client_credentials" in body else "password"
+            self._send(*token_reply(grant))
+
+        def do_GET(self):
+            self._send(*admin_reply(self.path))
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_scope_hook_retries_an_admin_login_error_that_is_not_a_rejected_password():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (500, '{"error": "unknown_error"}')
+        ),
+        lambda path: (401, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}", "26.8.2", timeout=10
+        )
+    finally:
+        server.shutdown()
+    assert out.startswith("TIMEOUT")
+    assert "to create the kc-admin-api scope" in out
+
+
+def test_pre_upgrade_check_reports_a_missing_admin_user():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (400, '{"error": "invalid_grant"}')
+        ),
+        lambda path: (200, "[]") if "client-scopes" in path else (500, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            CONSOLE_PASSWORD,
+            mode="check",
+            success=False,
+        )
+    finally:
+        server.shutdown()
+    assert "could not find the Keycloak admin user" in out
