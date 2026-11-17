@@ -118,6 +118,11 @@ data:
       ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=tmpadmin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
       if [ "$ACCESS_TOKEN" = "null" ]; then
         NEW_ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=admin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
+        # An earlier deploy moved the admin login to the console password; Keycloak 26.8.2 then
+        # rejects the provisioner until this run adds its kc-admin-api scope.
+        if [ "$NEW_ACCESS_TOKEN" = "null" ] && [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
+          NEW_ACCESS_TOKEN=$(curl -s "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" --data-urlencode client_id=admin-cli --data-urlencode grant_type=password --data-urlencode username=admin --data-urlencode "password=$KEYCLOAK_ADMIN_UI_PASSWORD" | jq -r '.access_token')
+        fi
         if [ "$NEW_ACCESS_TOKEN" = "null" ]; then
           echo "Couldn't login using either the \"admin\" or \"tmpadmin\" accounts."
           exit 1;

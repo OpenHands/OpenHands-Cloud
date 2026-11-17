@@ -1,8 +1,8 @@
 {{- /*
 Keycloak 26.8.2 rejects Admin REST API tokens without the kc-admin-api client scope, and its
-migration adds the scope only to built-in clients. Keycloak can reach 26.8.2 without the app pod
-restarting (a redeploy, the README roll-forward), so the keycloak-config init container alone
-misses it. This hook runs after every install and upgrade, once Keycloak is up.
+migration adds the scope only to built-in clients. The keycloak-config init container adds it to
+the provisioner client, but only when the app pod restarts, and a redeploy or the README
+roll-forward moves Keycloak to 26.8.2 without a restart.
 */ -}}
 {{- if and .Values.enabled .Values.keycloak.enabled (include "openhands.keycloakProvisionRealm" .) }}
 apiVersion: batch/v1
@@ -44,11 +44,9 @@ spec:
           args:
             - |
               set -eu
+              # Same default as keycloak-config, which also creates this client when only a console password is set.
               CLIENT_ID=$(printf '%s' "${KEYCLOAK_ADMIN_CLIENT_ID:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-              if [ -z "$CLIENT_ID" ]; then
-                echo "No Keycloak admin client is configured; nothing to do."
-                exit 0
-              fi
+              CLIENT_ID=${CLIENT_ID:-openhands-provisioner}
               KC=$KEYCLOAK_SERVER_URL
               # keycloak-config may have moved the admin login to the console password.
               admin_token() {
@@ -71,6 +69,9 @@ spec:
                 if TOKEN=$(admin_token) && SCOPES=$(curl -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
                   SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
                   if [ -n "$SCOPE_ID" ] || [ "$NEED_SCOPE" = false ]; then break; fi
+                elif curl -fsS -o /dev/null "$KC/realms/master"; then
+                  echo "ERROR: Keycloak is up but rejects the admin login with both the admin and the console password." >&2
+                  exit 1
                 fi
                 echo "Waiting for Keycloak $TARGET_VERSION to serve the admin API..."
                 sleep 5
@@ -80,9 +81,10 @@ spec:
                 exit 0
               fi
               QUERY=$(printf '%s' "$CLIENT_ID" | jq -sRr @uri)
-              CLIENT=$(curl -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN" | jq -r '.[0].id // empty')
+              CLIENTS=$(curl -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN")
+              CLIENT=$(printf '%s' "$CLIENTS" | jq -r '.[0].id // empty')
               if [ -z "$CLIENT" ]; then
-                echo "Client \"$CLIENT_ID\" does not exist yet; keycloak-config creates it with the scope."
+                echo "Client \"$CLIENT_ID\" does not exist; nothing to do."
                 exit 0
               fi
               curl -fsS -X PUT "$KC/admin/realms/master/clients/$CLIENT/default-client-scopes/$SCOPE_ID" -H "Authorization: Bearer $TOKEN"
