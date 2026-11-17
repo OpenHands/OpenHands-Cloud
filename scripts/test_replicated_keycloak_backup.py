@@ -72,8 +72,6 @@ def test_admin_check_is_on_by_default_and_drives_the_chart_value() -> None:
 def test_admin_check_failure_message_names_the_toggle_as_the_admin_console_shows_it() -> (
     None
 ):
-    job = (
-        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
-    ).read_text()
+    job = (ROOT / "charts/openhands/templates/_keycloak.yaml").read_text()
 
     assert f'turn off \\"{admin_check_toggle()["title"]}\\"' in job
