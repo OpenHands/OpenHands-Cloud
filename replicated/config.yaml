@@ -1692,7 +1692,7 @@ spec:
           default: "1"
         - name: keycloak_pre_upgrade_admin_check
           title: Check Keycloak Admin Login Before Upgrade
-          help_text: Before an upgrade to Keycloak 26.8.2 or later, check that the Keycloak admin user can sign in, which the upgrade needs to give the OpenHands admin client access to the new Keycloak admin API. Stop the upgrade before Keycloak migrates if the check fails. Disable only to deploy a fix while Keycloak cannot answer; the OpenHands admin client then needs the kc-admin-api client scope added by hand.
+          help_text: Before an upgrade to Keycloak 26.8.2 or later, check that the Keycloak admin user can sign in, which the upgrade needs to give the OpenHands admin client access to the new Keycloak admin API. Stop the upgrade before Keycloak migrates if the check fails. Disable only to deploy a fix while Keycloak cannot answer. If the admin sign-in then fails after the upgrade, the OpenHands admin client needs the kc-admin-api client scope added by hand.
           type: bool
           default: "1"
         - name: budget_preflight_mode

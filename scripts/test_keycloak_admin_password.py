@@ -111,9 +111,7 @@ def keycloak():
 
 
 def scope_script():
-    template = (
-        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
-    ).read_text()
+    template = (ROOT / "charts/openhands/templates/_keycloak.yaml").read_text()
     return template.split('define "openhands.keycloakAdminApiScopeScript" -}}\n', 1)[
         1
     ].split("\n{{- end }}", 1)[0]
@@ -818,3 +816,35 @@ def test_pre_upgrade_check_gives_up_on_a_keycloak_that_never_answers():
     finally:
         server.shutdown()
     assert "did not answer for 1 seconds" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_explains_an_admin_user_that_cannot_sign_in(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    _, auth = login(keycloak, CONSOLE_PASSWORD)
+    master = keycloak + "/admin/realms/master"
+    _, users = request(
+        master + "/users?username=admin&exact=true", token=auth["access_token"]
+    )
+    assert (
+        request(
+            master + "/users/" + users[0]["id"],
+            token=auth["access_token"],
+            method="PUT",
+            json_body={"requiredActions": ["CONFIGURE_TOTP"]},
+        )[0]
+        == 204
+    )
+    out = run_scope_hook(
+        keycloak, "26.8.2", "another console password", mode="check", success=False
+    )
+    assert "may have a one-time password or a required action" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_passes_a_client_with_a_wrong_secret(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(
+        keycloak, "26.8.2", mode="check", client_secret="not-the-client-secret"
+    )
+    assert "the upgrade does not change this client" in out
