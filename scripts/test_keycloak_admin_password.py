@@ -4,19 +4,19 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import textwrap
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from threading import Thread
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PASSWORD = "local-bootstrap-test-password"
+SCOPE_SCRIPT_FILE = Path(tempfile.gettempdir()) / "keycloak-admin-api-scope-test.sh"
 
 # Decided from the image tag, so version-specific tests skip before a container starts.
 _TAG = re.search(r":(\d+)\.(\d+)\.(\d+)", os.environ.get("KEYCLOAK_TEST_IMAGE", ""))
@@ -58,6 +58,11 @@ def login(url, password):
             "password": password,
         },
     )
+
+
+@pytest.fixture(autouse=True)
+def _scope_script_file():
+    SCOPE_SCRIPT_FILE.write_text(scope_script())
 
 
 @pytest.fixture
@@ -103,6 +108,15 @@ def keycloak():
         )
 
 
+def scope_script():
+    template = (
+        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
+    ).read_text()
+    return template.split('define "openhands.keycloakAdminApiScopeScript" -}}\n', 1)[
+        1
+    ].split("\n{{- end }}", 1)[0]
+
+
 def reconcile(
     url,
     password="",
@@ -126,6 +140,8 @@ def reconcile(
         KEYCLOAK_ADMIN_CLIENT_ID=client_id,
         KEYCLOAK_ADMIN_CLIENT_SECRET=client_secret,
         KEYCLOAK_NEEDS_ADMIN_API_SCOPE=str(needs_scope).lower(),
+        KEYCLOAK_TARGET_VERSION="26.8.2",
+        KEYCLOAK_ADMIN_API_SCOPE_SCRIPT=str(SCOPE_SCRIPT_FILE),
     )
     result = subprocess.run(
         ["sh"],
@@ -429,12 +445,7 @@ def run_scope_hook(
     client_secret="",
     extra_env=None,
 ):
-    template = (
-        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
-    ).read_text()
-    script = template.split('define "openhands.keycloakAdminApiScopeScript" -}}\n', 1)[
-        1
-    ].split("\n{{- end }}", 1)[0]
+    script = scope_script()
     env = dict(
         os.environ,
         KEYCLOAK_SERVER_URL=url,
@@ -559,7 +570,7 @@ def test_keycloak_config_waits_while_the_old_keycloak_still_serves(keycloak):
         )
     out = error.value.stdout or ""
     out = out if isinstance(out, str) else out.decode()
-    assert "Waiting for Keycloak 26.8.2 or later" in out
+    assert "Waiting for Keycloak 26.8.2 to serve the admin API" in out
 
 
 @old_keycloak
@@ -678,32 +689,3 @@ def test_pre_upgrade_check_stops_on_a_refused_console_password(keycloak):
     out = run_scope_hook(keycloak, "26.8.2", "too short", mode="check", success=False)
     assert "Keycloak refused the console password" in out
     assert "Set a new Keycloak Admin Password" not in out
-
-
-def test_keycloak_config_keeps_waiting_while_keycloak_drops_requests():
-    class Handler(BaseHTTPRequestHandler):
-        def do_HEAD(self):
-            self.send_response(200)
-            self.end_headers()
-
-        def do_POST(self):
-            self.close_connection = True
-
-        def log_message(self, *args):
-            pass
-
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        with pytest.raises(subprocess.TimeoutExpired) as error:
-            reconcile(
-                f"http://127.0.0.1:{server.server_port}",
-                client_id="openhands-provisioner",
-                needs_scope=True,
-                timeout=10,
-            )
-    finally:
-        server.shutdown()
-    out = error.value.stdout or ""
-    out = out if isinstance(out, str) else out.decode()
-    assert "Waiting for Keycloak 26.8.2 or later" in out

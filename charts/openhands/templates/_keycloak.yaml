@@ -32,11 +32,19 @@ migration_model (e.g. "26.8.0" from tag "26.8.0-debian-12-oh1").
 {{- end -}}
 
 {{/*
+Keycloak version in keycloak.image.tag, or "" for an unversioned tag. Unlike
+openhands.keycloakVersion, it does not fail the render.
+*/}}
+{{- define "openhands.keycloakTargetVersion" -}}
+{{- regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString .Values.keycloak.image.tag) -}}
+{{- end -}}
+
+{{/*
 "true" when the bundled Keycloak is 26.8.2 or later, which rejects Admin REST API tokens without
 the kc-admin-api scope. An unversioned tag counts as not needing it.
 */}}
 {{- define "openhands.keycloakNeedsAdminApiScope" -}}
-{{- $version := regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString .Values.keycloak.image.tag) -}}
+{{- $version := include "openhands.keycloakTargetVersion" . -}}
 {{- if and .Values.keycloak.enabled $version (semverCompare ">=26.8.2" $version) -}}
 true
 {{- else -}}

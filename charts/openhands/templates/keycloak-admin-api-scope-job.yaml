@@ -53,16 +53,30 @@ provisioner_status() {
   esac
 }
 
-# keycloak-config may have moved the admin login to the console password.
+# keycloak-config may have moved the admin login to the console password. Returns 1 when Keycloak
+# rejects both passwords, and 2 when it did not answer, so callers retry instead of blaming a password.
 admin_token() {
+  TOKEN_RC=1
   for PW in "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" "$KEYCLOAK_ADMIN_PASSWORD"; do
     [ -n "$PW" ] || continue
-    T=$(curl -sS "$KC/realms/master/protocol/openid-connect/token" \
+    if ! R=$(curl -sS "$KC/realms/master/protocol/openid-connect/token" \
       --data-urlencode client_id=admin-cli --data-urlencode grant_type=password \
-      --data-urlencode username=admin --data-urlencode "password=$PW" | jq -r '.access_token // empty') || true
+      --data-urlencode username=admin --data-urlencode "password=$PW"); then TOKEN_RC=2; continue; fi
+    T=$(printf '%s' "$R" | jq -r '.access_token // empty' 2>/dev/null) || { TOKEN_RC=2; continue; }
     if [ -n "$T" ]; then echo "$T"; return 0; fi
+    printf '%s' "$R" | jq -e '.error' >/dev/null 2>&1 || TOKEN_RC=2
   done
-  return 1
+  return $TOKEN_RC
+}
+
+# Stops the check when Keycloak rejects both passwords; a Keycloak that stops answering is reported as such.
+admin_login_works() {
+  RC=0; admin_token >/dev/null || RC=$?
+  if [ "$RC" -eq 2 ]; then
+    echo "ERROR: Keycloak stopped answering during the admin login check. Make Keycloak reachable, then deploy again." >&2
+    exit 1
+  fi
+  return $RC
 }
 
 # A console password changed in this deploy reaches the admin user only when keycloak-config runs,
@@ -100,10 +114,10 @@ if [ "$MODE" = check ]; then
   case $STATUS in
     works) echo "Client \"$CLIENT_ID\" already has Admin REST API access." ;;
     no-client) echo "Client \"$CLIENT_ID\" does not exist; nothing to check." ;;
-    old) admin_token >/dev/null || apply_console_password
-         admin_token >/dev/null || no_admin before
+    old) admin_login_works || apply_console_password
+         admin_login_works || no_admin before
          echo "The Keycloak admin login works, so the post-upgrade hook can add the kc-admin-api scope." ;;
-    *) admin_token >/dev/null || no_admin after
+    *) admin_login_works || no_admin after
        echo "The Keycloak admin login works, so the post-upgrade hook can add the kc-admin-api scope." ;;
   esac
   exit 0
@@ -123,10 +137,12 @@ while :; do
 done
 # A forbidden provisioner can come from the old Keycloak too, so wait for the new one to create the scope.
 while :; do
-  TOKEN=$(admin_token) || no_admin after
-  SCOPES=$(curl -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN")
-  SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
-  [ -z "$SCOPE_ID" ] || break
+  RC=0; TOKEN=$(admin_token) || RC=$?
+  [ "$RC" -ne 1 ] || no_admin after
+  if [ "$RC" -eq 0 ] && SCOPES=$(curl -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
+    SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
+    [ -z "$SCOPE_ID" ] || break
+  fi
   echo "Waiting for Keycloak $TARGET_VERSION to create the kc-admin-api scope..."
   sleep 5
 done
@@ -139,7 +155,19 @@ provisioner_status
 echo "Client \"$CLIENT_ID\" has the kc-admin-api scope."
 {{- end }}
 {{- if and .Values.enabled .Values.keycloak.enabled .Release.IsUpgrade (include "openhands.keycloakProvisionRealm" .) }}
-{{- range $job := list (dict "mode" "check" "hook" "pre-upgrade" "weight" "9") (dict "mode" "fix" "hook" "post-upgrade" "weight" "0") }}
+{{- /* The check only matters while a migration to 26.8.2 is pending, so it reads the running Keycloak image. */}}
+{{- $running := "" }}
+{{- $kc := lookup "apps/v1" "StatefulSet" .Release.Namespace .Values.keycloak.fullnameOverride }}
+{{- range (dig "spec" "template" "spec" "containers" list $kc) }}
+{{- if eq .name "keycloak" }}
+{{- $running = regexFind "[0-9]+\\.[0-9]+\\.[0-9]+" (regexFind ":[^:@/]+$" .image) }}
+{{- end }}
+{{- end }}
+{{- $jobs := list (dict "mode" "fix" "hook" "post-upgrade" "weight" "0" "backoff" 2) }}
+{{- if and $running (semverCompare "<26.8.2" $running) }}
+{{- $jobs = prepend $jobs (dict "mode" "check" "hook" "pre-upgrade" "weight" "9" "backoff" 0) }}
+{{- end }}
+{{- range $job := $jobs }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -156,7 +184,7 @@ metadata:
     "helm.sh/hook-weight": {{ $job.weight | quote }}
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  backoffLimit: 2
+  backoffLimit: {{ $job.backoff }}
   activeDeadlineSeconds: 600
   template:
     metadata:
@@ -185,7 +213,20 @@ spec:
             - |
               {{- include "openhands.keycloakAdminApiScopeScript" $ | nindent 14 }}
           env:
-            {{- include "openhands.env" $ | nindent 12 }}
+            {{- $env := $.Values.env | default dict }}
+            - name: KEYCLOAK_SERVER_URL
+              value: {{ index $env "KEYCLOAK_SERVER_URL" | default $.Values.keycloak.url | quote }}
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: admin-password
+            {{- range $name := list "KEYCLOAK_ADMIN_CLIENT_ID" "KEYCLOAK_ADMIN_CLIENT_SECRET" }}
+            {{- with index $env $name }}
+            - name: {{ $name }}
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             - name: KEYCLOAK_ADMIN_UI_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -193,7 +234,7 @@ spec:
                   key: admin-ui-password
                   optional: true
             - name: TARGET_VERSION
-              value: {{ regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString $.Values.keycloak.image.tag) | quote }}
+              value: {{ include "openhands.keycloakTargetVersion" $ | quote }}
             - name: NEEDS_ADMIN_API_SCOPE
               value: {{ include "openhands.keycloakNeedsAdminApiScope" $ | quote }}
             - name: MODE
