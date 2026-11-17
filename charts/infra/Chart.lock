@@ -1,12 +1,12 @@
 dependencies:
 - name: cert-manager
   repository: oci://quay.io/jetstack/charts
-  version: 1.20.2
+  version: 1.20.5
 - name: trust-manager
   repository: oci://quay.io/jetstack/charts
   version: 0.22.1
 - name: crd-check
   repository: oci://ghcr.io/openhands/helm-charts
   version: 0.1.0
-digest: sha256:ee6c9e0ba7c097cc59f0dc12409169a11831b548283b77ec7f8f90a94869ebf5
-generated: "2026-05-27T10:31:04.277099-04:00"
+digest: sha256:8558f94d00360b9bd0d85fec4a0f07c23892117f06f2f7706366148df99ec354
+generated: "2026-11-17T14:21:03.031099377Z"
