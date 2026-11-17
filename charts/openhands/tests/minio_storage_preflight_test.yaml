@@ -18,12 +18,12 @@ tests:
         documentIndex: 0
         matchRegex:
           path: stringData["preflight.yaml"]
-          pattern: 'checkName: "?Embedded storage capacity"?[\s\S]*max\(ephemeralStorageCapacity\) < 200Gi'
+          pattern: 'checkName: "?Embedded storage capacity"?[\s\S]*warn:\s+when: "?max\(ephemeralStorageCapacity\) < 200Gi"?'
       - template: troubleshoot/secrets.yaml
         documentIndex: 1
         matchRegex:
           path: stringData["support-bundle-spec"]
-          pattern: 'checkName: "?Embedded storage capacity"?[\s\S]*max\(ephemeralStorageCapacity\) < 200Gi'
+          pattern: 'checkName: "?Embedded storage capacity"?[\s\S]*warn:\s+when: "?max\(ephemeralStorageCapacity\) < 200Gi"?'
 
   - it: omits the check for non-hostpath storage
     set:
