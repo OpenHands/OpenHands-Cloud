@@ -1,0 +1,50 @@
+name: Check Compose / Helm defaults
+
+# Fails when the openhands chart's defaults differ from the Docker Compose
+# install in OpenHands/enterprise and the difference is not recorded in
+# charts/openhands/compose-differences.md. See
+# scripts/check_compose_helm_defaults.py.
+
+on:
+  pull_request:
+    paths:
+      - 'charts/openhands/**'
+      - 'scripts/check_compose_helm_defaults.py'
+      - 'scripts/compose_parity_values.yaml'
+      - '.github/workflows/check-compose-helm-defaults.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-compose-helm-defaults:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.18.4'
+
+      - name: Build OpenHands chart dependencies
+        run: |
+          helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm
+          helm repo add minio https://charts.min.io/
+          helm repo add rustfs https://charts.rustfs.com/
+          helm repo add valkey https://valkey.io/valkey-helm/
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build charts/openhands
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      # OpenHands/enterprise is public. The token only raises the rate limit.
+      - name: Compare chart defaults with Docker Compose
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run scripts/check_compose_helm_defaults.py

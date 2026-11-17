@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createServer, type Server } from "http";
+import { createServer, type Server, type ServerResponse } from "http";
 import type { AddressInfo } from "net";
 
 import { Cleanup } from "../utils/cleanup";
@@ -68,6 +68,18 @@ for (const name of [
   });
 }
 
+/**
+ * Answer a Super Admin list request the way the server does: ``page_id`` is
+ * an offset. Pages hold two items so the client has to page.
+ */
+function servePage(res: ServerResponse, url: URL, all: unknown[]): void {
+  const offset = Number(url.searchParams.get("page_id") ?? 0);
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(
+    JSON.stringify({ items: all.slice(offset, offset + 2), total: all.length }),
+  );
+}
+
 test.describe("sweepE2eOrgs against a stand-in admin API", () => {
   const orgs = [
     { id: "legacy", name: "e2e test org 2026-11-01T00-00-00-000Z" },
@@ -81,14 +93,16 @@ test.describe("sweepE2eOrgs against a stand-in admin API", () => {
   let baseUrl = "";
   let deleted: string[] = [];
   let auth: Array<string | undefined> = [];
+  let listQueries: string[] = [];
 
   test.beforeAll(async () => {
     server = createServer((req, res) => {
       auth.push(req.headers.authorization);
-      const id = /^\/api\/admin\/organizations\/(.+)$/.exec(req.url ?? "")?.[1];
-      if (req.method === "GET" && req.url === "/api/admin/organizations") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ organizations: orgs }));
+      const url = new URL(req.url ?? "", "http://stand-in");
+      const id = /^\/api\/admin\/organizations\/(.+)$/.exec(url.pathname)?.[1];
+      if (req.method === "GET" && url.pathname === "/api/admin/organizations") {
+        listQueries.push(url.search);
+        servePage(res, url, orgs);
       } else if (req.method === "DELETE" && id === "broken") {
         res.writeHead(500).end("boom");
       } else if (req.method === "DELETE" && id === "gone") {
@@ -111,6 +125,7 @@ test.describe("sweepE2eOrgs against a stand-in admin API", () => {
   test.beforeEach(() => {
     deleted = [];
     auth = [];
+    listQueries = [];
   });
 
   test("deletes only the selected e2e orgs and survives failed deletes", async () => {
@@ -124,6 +139,11 @@ test.describe("sweepE2eOrgs against a stand-in admin API", () => {
 
     expect(deleted).toEqual(["legacy"]);
     expect(new Set(auth)).toEqual(new Set(["Bearer key"]));
+    expect(listQueries).toEqual(
+      [0, 2, 4].map(
+        (offset) => `?q=e2e&include_personal=false&page_id=${offset}&limit=100`,
+      ),
+    );
   });
 
   test("a run's teardown deletes only that run's orgs", async () => {
@@ -142,10 +162,10 @@ test.describe("deleteOrphanedAccounts against a stand-in admin API", () => {
   const email = "e2e-new-user@e2e.example.com";
   const users = [
     { user_id: "current-sub", email },
-    { user_id: "old-sub", email: "E2E-New-User@e2e.example.com" },
     { user_id: "last-owner", email },
     { user_id: null, email },
     { user_id: "real-user", email: "someone@acme.com" },
+    { user_id: "old-sub", email: "E2E-New-User@e2e.example.com" },
   ];
   let server: Server;
   let baseUrl = "";
@@ -153,17 +173,17 @@ test.describe("deleteOrphanedAccounts against a stand-in admin API", () => {
 
   test.beforeAll(async () => {
     server = createServer((req, res) => {
+      const url = new URL(req.url ?? "", "http://stand-in");
       const id = /^\/api\/admin\/directory\/users\/(.+)$/.exec(
-        req.url ?? "",
+        url.pathname,
       )?.[1];
       if (req.headers.authorization !== "Bearer key") {
         res.writeHead(401).end();
       } else if (
         req.method === "GET" &&
-        req.url === "/api/admin/directory/users"
+        url.pathname === "/api/admin/directory/users"
       ) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ users }));
+        servePage(res, url, users);
       } else if (req.method === "DELETE" && id === "last-owner") {
         res.writeHead(409).end("last owner");
       } else if (req.method === "DELETE" && id) {
