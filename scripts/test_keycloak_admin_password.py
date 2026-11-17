@@ -125,6 +125,7 @@ def reconcile(
     client_secret="",
     needs_scope=False,
     timeout=None,
+    extra_env=None,
 ):
     template = (
         ROOT / "charts/openhands/templates/keycloak-config-script.yaml"
@@ -142,6 +143,7 @@ def reconcile(
         KEYCLOAK_NEEDS_ADMIN_API_SCOPE=str(needs_scope).lower(),
         KEYCLOAK_TARGET_VERSION="26.8.2",
         KEYCLOAK_ADMIN_API_SCOPE_SCRIPT=str(SCOPE_SCRIPT_FILE),
+        **(extra_env or {}),
     )
     result = subprocess.run(
         ["sh"],
@@ -537,6 +539,61 @@ def test_scope_hook_keeps_waiting_while_keycloak_is_down():
     assert out.startswith("TIMEOUT") and "Waiting for Keycloak 26.8.2" in out
 
 
+@old_keycloak
+def test_scope_hook_gives_up_when_keycloak_stays_older_than_the_target(keycloak):
+    # For example, keycloak.image.digest pins an older image than keycloak.image.tag.
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(
+        keycloak, "26.8.2", success=False, extra_env={"FIX_WAIT_SECONDS": "3"}
+    )
+    assert "still older than 26.8.2 after 3 seconds" in out
+    assert "keycloak.image.digest" in out
+
+
+@old_keycloak
+def test_keycloak_config_gives_up_when_keycloak_stays_older_than_the_target(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    result = reconcile(
+        keycloak,
+        client_id="openhands-provisioner",
+        needs_scope=True,
+        success=False,
+        timeout=30,
+        extra_env={"FIX_WAIT_SECONDS": "3"},
+    )
+    assert "keycloak.image.digest" in result.stderr
+
+
+@old_keycloak
+def test_scope_hook_gives_up_when_the_old_keycloak_forbids_and_stays(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    remove_provisioner_admin_role(keycloak)
+    out = run_scope_hook(
+        keycloak, "26.8.2", success=False, extra_env={"FIX_WAIT_SECONDS": "3"}
+    )
+    assert "still older than 26.8.2 after 3 seconds" in out
+
+
+def test_scope_hook_gives_up_when_keycloak_stays_down():
+    out = run_scope_hook(
+        "http://127.0.0.1:9",
+        "26.8.2",
+        success=False,
+        extra_env={"FIX_WAIT_SECONDS": "2"},
+    )
+    assert "Keycloak did not answer for 2 seconds" in out
+
+
+def test_fix_wait_ends_before_the_hook_deadline():
+    # Otherwise Kubernetes kills the Job before the script logs why it waited.
+    wait = int(re.search(r"FIX_WAIT_SECONDS:-(\d+)", scope_script()).group(1))
+    job = (
+        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
+    ).read_text()
+    deadline = int(re.search(r"activeDeadlineSeconds: (\d+)", job).group(1))
+    assert wait + 30 <= deadline
+
+
 def test_scope_hook_skips_an_install_without_a_provisioner(keycloak):
     reconcile(keycloak)
     out = run_scope_hook(keycloak, "26.8.2", client_id="")
@@ -769,6 +826,27 @@ def test_scope_hook_retries_an_admin_login_error_that_is_not_a_rejected_password
         server.shutdown()
     assert out.startswith("TIMEOUT")
     assert "to create the kc-admin-api scope" in out
+
+
+def test_scope_hook_gives_up_when_the_admin_login_never_answers():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (None, "")
+        ),
+        lambda path: (401, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            success=False,
+            extra_env={"FIX_WAIT_SECONDS": "2"},
+        )
+    finally:
+        server.shutdown()
+    assert "Keycloak did not answer for 2 seconds" in out
 
 
 def test_pre_upgrade_check_reports_a_missing_admin_user():

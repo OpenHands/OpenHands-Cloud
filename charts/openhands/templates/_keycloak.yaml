@@ -184,6 +184,20 @@ if [ "$MODE" = check ]; then
   exit 0
 fi
 
+# Below the hook Job's activeDeadlineSeconds (600), so the reason reaches the Job log.
+FIX_WAIT_SECONDS=${FIX_WAIT_SECONDS:-540}
+START=$(date +%s)
+# $1 is old (Keycloak answers but is older than the target) or down.
+wait_or_give_up() {
+  [ $(($(date +%s) - START)) -ge "$FIX_WAIT_SECONDS" ] || { echo "$2"; sleep 5; return; }
+  if [ "$1" = old ]; then
+    echo "ERROR: Keycloak is still older than $TARGET_VERSION after $FIX_WAIT_SECONDS seconds: it has no kc-admin-api scope, but keycloak.image.tag says $TARGET_VERSION. If keycloak.image.digest is set, it may pin an older image; point it at the $TARGET_VERSION image or remove it. Otherwise check why the keycloak StatefulSet has not rolled out $TARGET_VERSION." >&2
+  else
+    echo "ERROR: Keycloak did not answer for $FIX_WAIT_SECONDS seconds (HTTP ${CODE:-none}), so the \"$CLIENT_ID\" client cannot get the kc-admin-api scope. Check the keycloak pod log." >&2
+  fi
+  exit 1
+}
+
 # Without --wait this can run before the new Keycloak starts, so wait until it rejects the provisioner.
 while :; do
   provisioner_status
@@ -193,19 +207,20 @@ while :; do
     bad-client) echo "WARNING: Keycloak rejects the \"$CLIENT_ID\" client secret; not changing its scopes." >&2; exit 0 ;;
     rejected|forbidden) break ;;
   esac
-  echo "Waiting for Keycloak $TARGET_VERSION to serve the admin API (provisioner: $STATUS, HTTP ${CODE:-none})..."
-  sleep 5
+  wait_or_give_up "$STATUS" "Waiting for Keycloak $TARGET_VERSION to serve the admin API (provisioner: $STATUS, HTTP ${CODE:-none})..."
 done
 # A forbidden provisioner can come from the old Keycloak too, so wait for the new one to create the scope.
 while :; do
   RC=0; TOKEN=$(admin_token) || RC=$?
   [ "$RC" -ne 1 ] || no_admin after
+  KC_STATE=down
   if [ "$RC" -eq 0 ] && SCOPES=$($CURL -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
     SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
     [ -z "$SCOPE_ID" ] || break
+    KC_STATE=old
   fi
-  echo "Waiting for Keycloak $TARGET_VERSION to create the kc-admin-api scope..."
-  sleep 5
+  CODE=""
+  wait_or_give_up "$KC_STATE" "Waiting for Keycloak $TARGET_VERSION to create the kc-admin-api scope..."
 done
 QUERY=$(printf '%s' "$CLIENT_ID" | jq -sRr @uri)
 CLIENTS=$($CURL -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN")

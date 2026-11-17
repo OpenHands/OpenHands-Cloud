@@ -962,6 +962,7 @@ Keycloak 26.8.2 also rejects Admin REST API tokens that lack the `kc-admin-api` 
 - An `admin` user with a one-time password or a required action cannot sign in with a password, so the check stops the upgrade. Remove them from the `admin` user in the `master` realm first.
 - A post-upgrade hook (`<release>-keycloak-admin-api-fix`) adds the scope. It waits for Keycloak 26.8.2 to start, so run `helm upgrade` with `--timeout 10m` or longer.
 - `helm template` (ArgoCD) runs neither hook, so nothing checks the admin login before the migration. The `keycloak-config` init container of the `openhands` pod waits for Keycloak 26.8.2 and adds the scope. The move to 26.8.2 restarts that pod.
+- The hook and the init container wait up to 9 minutes. If Keycloak is still older than 26.8.2 after that, they fail and the log says why. One cause is a `keycloak.image.digest` that pins an older image than `keycloak.image.tag`. The init container then restarts and waits again.
 
 ## Uninstallation
 
