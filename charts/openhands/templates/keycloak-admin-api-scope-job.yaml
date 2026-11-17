@@ -20,9 +20,9 @@ its version cannot be read (a digest-pinned image), or an earlier rollout has no
 {{- $rolling := ne (dig "status" "currentRevision" "" $kc) (dig "status" "updateRevision" "" $kc) }}
 {{- /* An unreadable version counts as 0.0.0, so a digest-pinned image is checked. */}}
 {{- $pending := and $kc (or (semverCompare "<26.8.2" (default "0.0.0" $running)) $rolling) }}
-{{- $jobs := list (dict "mode" "fix" "hook" "post-upgrade" "weight" "0" "backoff" 2) }}
+{{- $jobs := list (dict "mode" "fix" "hook" "post-upgrade" "weight" "0") }}
 {{- if and (dig "preUpgradeAdminCheck" "enabled" true .Values.keycloak) $pending }}
-{{- $jobs = prepend $jobs (dict "mode" "check" "hook" "pre-upgrade" "weight" "9" "backoff" 0) }}
+{{- $jobs = prepend $jobs (dict "mode" "check" "hook" "pre-upgrade" "weight" "9") }}
 {{- end }}
 {{- range $job := $jobs }}
 ---
@@ -41,7 +41,8 @@ metadata:
     "helm.sh/hook-weight": {{ $job.weight | quote }}
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  backoffLimit: {{ $job.backoff }}
+  # No retries: a retried pod would wait again and end as DeadlineExceeded, hiding the script's error.
+  backoffLimit: 0
   activeDeadlineSeconds: 600
   template:
     metadata:

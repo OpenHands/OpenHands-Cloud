@@ -62,6 +62,10 @@ tests:
           path: metadata.annotations["helm.sh/hook-weight"]
           value: "0"
         documentIndex: 1
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+        documentIndex: 1
       - contains:
           path: spec.template.spec.containers[0].env
           content:
