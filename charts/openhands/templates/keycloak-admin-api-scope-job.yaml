@@ -69,7 +69,7 @@ admin_token() {
   return $TOKEN_RC
 }
 
-# Stops the check when Keycloak rejects both passwords; a Keycloak that stops answering is reported as such.
+# Returns 1 when Keycloak rejects both passwords, and stops the check when Keycloak stops answering.
 admin_login_works() {
   RC=0; admin_token >/dev/null || RC=$?
   if [ "$RC" -eq 2 ]; then
