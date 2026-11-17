@@ -90,7 +90,15 @@ def keycloak():
         )
 
 
-def reconcile(url, password="", success=True, client_id="", client_secret=""):
+def reconcile(
+    url,
+    password="",
+    success=True,
+    client_id="",
+    client_secret="",
+    needs_scope=False,
+    timeout=None,
+):
     template = (
         ROOT / "charts/openhands/templates/keycloak-config-script.yaml"
     ).read_text()
@@ -104,9 +112,16 @@ def reconcile(url, password="", success=True, client_id="", client_secret=""):
         KEYCLOAK_ADMIN_UI_PASSWORD=password,
         KEYCLOAK_ADMIN_CLIENT_ID=client_id,
         KEYCLOAK_ADMIN_CLIENT_SECRET=client_secret,
+        KEYCLOAK_NEEDS_ADMIN_API_SCOPE=str(needs_scope).lower(),
     )
     result = subprocess.run(
-        ["sh"], input=script, env=env, text=True, capture_output=True, check=False
+        ["sh"],
+        input=script,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=timeout,
     )
     if not success:
         assert result.returncode != 0
@@ -249,7 +264,7 @@ def provisioner_without_admin_api_scope(url, password=""):
 @pytest.mark.parametrize("password", ["", CONSOLE_PASSWORD])
 def test_upgrade_adds_admin_api_scope_to_existing_provisioner(keycloak, password):
     provisioner_without_admin_api_scope(keycloak, password)
-    reconcile(keycloak, password, client_id="openhands-provisioner")
+    reconcile(keycloak, password, client_id="openhands-provisioner", needs_scope=True)
     assert provisioner_admin_status(keycloak) == 200
 
 
@@ -394,6 +409,7 @@ def run_scope_hook(
     mode="fix",
     timeout=60,
     success=True,
+    client_secret="",
 ):
     template = (
         ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
@@ -407,7 +423,11 @@ def run_scope_hook(
         KEYCLOAK_ADMIN_PASSWORD=BOOTSTRAP_PASSWORD,
         KEYCLOAK_ADMIN_UI_PASSWORD=password,
         KEYCLOAK_ADMIN_CLIENT_ID=client_id,
+        KEYCLOAK_ADMIN_CLIENT_SECRET=client_secret,
         TARGET_VERSION=target_version,
+        NEEDS_ADMIN_API_SCOPE=str(
+            tuple(map(int, target_version.split("."))) >= (26, 8, 2)
+        ).lower(),
         MODE=mode,
     )
     try:
@@ -422,9 +442,10 @@ def run_scope_hook(
         )
     except subprocess.TimeoutExpired as error:
         out = error.stdout or ""
-        return "TIMEOUT\n" + (out if isinstance(out, str) else out.decode())
-    output = result.stdout + result.stderr
-    assert (result.returncode == 0) == success, output
+        output = "TIMEOUT\n" + (out if isinstance(out, str) else out.decode())
+    else:
+        output = result.stdout + result.stderr
+        assert (result.returncode == 0) == success, output
     assert BOOTSTRAP_PASSWORD not in output
     if password:
         assert password not in output
@@ -509,3 +530,41 @@ def test_pre_upgrade_check_needs_a_working_admin_login(keycloak, password, passe
 def test_pre_upgrade_check_skips_upgrades_that_keep_keycloak_before_26_8_2(keycloak):
     reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
     assert run_scope_hook(keycloak, "26.8.0", mode="check") == ""
+
+
+def test_keycloak_config_waits_while_the_old_keycloak_still_serves(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    if has_admin_api_scope(keycloak):
+        pytest.skip("Runs against a Keycloak before 26.8.2")
+    with pytest.raises(subprocess.TimeoutExpired) as error:
+        reconcile(
+            keycloak, client_id="openhands-provisioner", needs_scope=True, timeout=15
+        )
+    out = error.value.stdout or ""
+    out = out if isinstance(out, str) else out.decode()
+    assert "Waiting for Keycloak 26.8.2 or later" in out
+
+
+def test_pre_upgrade_check_applies_a_changed_console_password(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    if has_admin_api_scope(keycloak, CONSOLE_PASSWORD):
+        pytest.skip("Runs against a Keycloak before 26.8.2")
+    changed = "changed console password"
+    out = run_scope_hook(keycloak, "26.8.2", changed, mode="check")
+    assert "admin login works" in out
+    assert login(keycloak, changed)[0] == 200
+
+
+@pytest.mark.parametrize("password,passes", [(CONSOLE_PASSWORD, True), ("", False)])
+def test_pre_upgrade_check_after_keycloak_rejects_the_provisioner(
+    keycloak, password, passes
+):
+    provisioner_without_admin_api_scope(keycloak, CONSOLE_PASSWORD)
+    out = run_scope_hook(keycloak, "26.8.2", password, mode="check", success=passes)
+    assert ("admin login works" in out) == passes
+
+
+def test_scope_hook_leaves_a_client_with_a_wrong_secret_alone(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(keycloak, "26.8.2", client_secret="not-the-client-secret")
+    assert 'rejects the "openhands-provisioner" client secret' in out

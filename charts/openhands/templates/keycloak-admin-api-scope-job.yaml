@@ -12,21 +12,20 @@ CLIENT_ID=$(printf '%s' "${KEYCLOAK_ADMIN_CLIENT_ID:-}" | sed 's/^[[:space:]]*//
 CLIENT_ID=${CLIENT_ID:-openhands-provisioner}
 SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-$KEYCLOAK_ADMIN_PASSWORD}
 KC=$KEYCLOAK_SERVER_URL
-NEED_SCOPE=false
-if [ -n "$TARGET_VERSION" ] && [ "$(printf '26.8.2\n%s\n' "$TARGET_VERSION" | sort -V | head -n 1)" = 26.8.2 ]; then
-  NEED_SCOPE=true
-fi
-NO_ADMIN="ERROR: the \"$CLIENT_ID\" client needs the kc-admin-api scope for Keycloak $TARGET_VERSION, and adding it needs a Keycloak admin login, but Keycloak rejects the admin user with both the admin and the console password. Set the Keycloak Admin Password (keycloak-admin secret, key admin-ui-password) to the current password of the Keycloak admin user, then upgrade again."
+NO_ADMIN="ERROR: the \"$CLIENT_ID\" client needs the kc-admin-api scope for Keycloak $TARGET_VERSION, and adding it needs a Keycloak admin login, but Keycloak rejects the admin user with both the admin and the console password. Set the Keycloak Admin Password (keycloak-admin secret, key admin-ui-password) to the current password of the Keycloak admin user, then deploy again."
 
-# Sets STATUS: works, old (Keycloak before 26.8.2), rejected (needs the scope), no-client, or down.
+# Sets STATUS: works, old (Keycloak before 26.8.2), rejected (needs the scope), no-client,
+# bad-client (wrong secret or disabled service account), forbidden, or down.
 provisioner_status() {
+  CODE=""
   if ! R=$(curl -sS "$KC/realms/master/protocol/openid-connect/token" \
     --data-urlencode "client_id=$CLIENT_ID" --data-urlencode grant_type=client_credentials \
     --data-urlencode "client_secret=$SECRET"); then STATUS=down; return; fi
   PT=$(printf '%s' "$R" | jq -r '.access_token // empty' 2>/dev/null) || PT=""
   if [ -z "$PT" ]; then
     case $(printf '%s' "$R" | jq -r '.error // empty' 2>/dev/null) in
-      invalid_client|unauthorized_client) STATUS=no-client ;;
+      invalid_client) STATUS=no-client ;;
+      unauthorized_client) STATUS=bad-client ;;
       *) STATUS=down ;;
     esac
     return
@@ -36,6 +35,7 @@ provisioner_status() {
   case $CODE in
     200) if jq -e 'any(.[]; .name == "kc-admin-api")' /tmp/scopes.json >/dev/null; then STATUS=works; else STATUS=old; fi ;;
     401) STATUS=rejected ;;
+    403) STATUS=forbidden ;;
     *) STATUS=down ;;
   esac
 }
@@ -52,14 +52,27 @@ admin_token() {
   return 1
 }
 
+# A console password changed in this deploy reaches the admin user only when keycloak-config runs,
+# after the migration. The old Keycloak still accepts the provisioner, so apply it now.
+apply_console_password() {
+  [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ] || return 0
+  ADMIN_ID=$(curl -fsS "$KC/admin/realms/master/users?username=admin&exact=true" -H "Authorization: Bearer $PT" | jq -r '.[0].id // empty')
+  [ -n "$ADMIN_ID" ] || return 0
+  jq -n --arg password "$KEYCLOAK_ADMIN_UI_PASSWORD" '{type: "password", value: $password, temporary: false}' \
+    | curl -fsS -X PUT "$KC/admin/realms/master/users/$ADMIN_ID/reset-password" \
+      -H "Authorization: Bearer $PT" -H "Content-Type: application/json" --data @-
+  echo "Applied the console password to the Keycloak admin user."
+}
+
 if [ "$MODE" = check ]; then
-  [ "$NEED_SCOPE" = true ] || exit 0
+  [ "$NEEDS_ADMIN_API_SCOPE" = true ] || exit 0
   provisioner_status
   case $STATUS in
     works) echo "Client \"$CLIENT_ID\" already has Admin REST API access." ;;
     no-client) echo "Client \"$CLIENT_ID\" does not exist; nothing to check." ;;
-    down) echo "Keycloak did not answer; skipping the admin login check." ;;
-    *) admin_token >/dev/null || { echo "$NO_ADMIN" >&2; exit 1; }
+    down) echo "Keycloak did not answer (HTTP ${CODE:-none}); skipping the admin login check." ;;
+    *) if [ "$STATUS" = old ] && ! admin_token >/dev/null; then apply_console_password; fi
+       admin_token >/dev/null || { echo "$NO_ADMIN" >&2; exit 1; }
        echo "The Keycloak admin login works, so the post-upgrade hook can add the kc-admin-api scope." ;;
   esac
   exit 0
@@ -71,21 +84,23 @@ while :; do
   case $STATUS in
     works) echo "Client \"$CLIENT_ID\" has Admin REST API access; nothing to do."; exit 0 ;;
     no-client) echo "Client \"$CLIENT_ID\" does not exist; nothing to do."; exit 0 ;;
-    old) [ "$NEED_SCOPE" = true ] || { echo "This Keycloak has no kc-admin-api scope; nothing to do."; exit 0; } ;;
-    rejected) break ;;
+    bad-client) echo "WARNING: Keycloak rejects the \"$CLIENT_ID\" client secret; not changing its scopes." >&2; exit 0 ;;
+    old) [ "$NEEDS_ADMIN_API_SCOPE" = true ] || { echo "This Keycloak has no kc-admin-api scope; nothing to do."; exit 0; } ;;
+    rejected|forbidden) break ;;
   esac
-  echo "Waiting for Keycloak $TARGET_VERSION to serve the admin API..."
+  echo "Waiting for Keycloak $TARGET_VERSION to serve the admin API (provisioner: $STATUS, HTTP ${CODE:-none})..."
   sleep 5
 done
 TOKEN=$(admin_token) || { echo "$NO_ADMIN" >&2; exit 1; }
 SCOPES=$(curl -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN")
 SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
+[ -n "$SCOPE_ID" ] || { echo "ERROR: Keycloak $TARGET_VERSION has no kc-admin-api client scope in the master realm." >&2; exit 1; }
 QUERY=$(printf '%s' "$CLIENT_ID" | jq -sRr @uri)
 CLIENTS=$(curl -fsS "$KC/admin/realms/master/clients?clientId=$QUERY" -H "Authorization: Bearer $TOKEN")
 CLIENT=$(printf '%s' "$CLIENTS" | jq -r '.[0].id')
 curl -fsS -X PUT "$KC/admin/realms/master/clients/$CLIENT/default-client-scopes/$SCOPE_ID" -H "Authorization: Bearer $TOKEN"
 provisioner_status
-[ "$STATUS" = works ] || { echo "ERROR: client \"$CLIENT_ID\" still has no Admin REST API access ($STATUS)." >&2; exit 1; }
+[ "$STATUS" = works ] || { echo "ERROR: client \"$CLIENT_ID\" still has no Admin REST API access (provisioner: $STATUS, HTTP ${CODE:-none})." >&2; exit 1; }
 echo "Client \"$CLIENT_ID\" has the kc-admin-api scope."
 {{- end }}
 {{- if and .Values.enabled .Values.keycloak.enabled .Release.IsUpgrade (include "openhands.keycloakProvisionRealm" .) }}
@@ -144,6 +159,8 @@ spec:
                   optional: true
             - name: TARGET_VERSION
               value: {{ regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString $.Values.keycloak.image.tag) | quote }}
+            - name: NEEDS_ADMIN_API_SCOPE
+              value: {{ include "openhands.keycloakNeedsAdminApiScope" $ | quote }}
             - name: MODE
               value: {{ $job.mode }}
           resources:

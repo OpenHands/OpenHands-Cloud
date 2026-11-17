@@ -109,6 +109,17 @@ data:
         sleep 5
     done
 
+    # The app pod can restart before the old Keycloak pod is replaced. Adding kc-admin-api needs the
+    # new Keycloak, so wait while the provisioner still reaches an admin API that lacks the scope.
+    if [ "${KEYCLOAK_NEEDS_ADMIN_API_SCOPE:-false}" = true ]; then
+      while T=$(provisioning_token) \
+        && [ "$(curl -sS -o /tmp/kc-scopes.json -w '%{http_code}' "$KEYCLOAK_SERVER_URL/admin/realms/master/client-scopes" -H "Authorization: Bearer $T")" = 200 ] \
+        && ! jq -e 'any(.[]; .name == "kc-admin-api")' /tmp/kc-scopes.json >/dev/null; do
+        echo "Waiting for Keycloak 26.8.2 or later to replace the running Keycloak..."
+        sleep 5
+      done
+    fi
+
     USE_PROVISIONER=false
     if ACCESS_TOKEN=$(provisioning_token) && curl -fsS -o /dev/null \
       -H "Authorization: Bearer $ACCESS_TOKEN" \

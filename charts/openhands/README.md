@@ -954,7 +954,13 @@ To go forward to 26.8 again, find the cause in the `keycloak-0` log of the faile
 
 With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`. The hook never drops backups, and every later upgrade that changes the Keycloak version, patch releases included, adds another full copy of the database, so drop old `bitnami_keycloak_backup_*` databases before they fill the PostgreSQL volume.
 
-Patch upgrades can migrate one way too. Keycloak 26.8.2 runs a data migration on first start, so an upgrade from 26.8.0 backs up to `bitnami_keycloak_backup_26_8_0`. To roll back to 26.8.0, follow the steps above with that backup database, and upgrade with `keycloak.image.tag=26.8.0-debian-12-oh3`. Keep `keycloak.image.repository` as it is. No warning shows after a patch upgrade.
+Patch upgrades can migrate one way too. Keycloak 26.8.2 runs a data migration on first start, so an upgrade from 26.8.0 backs up to `bitnami_keycloak_backup_26_8_0`. To roll back to 26.8.0, follow the steps above with that backup database, and upgrade with `keycloak.image.tag=26.8.0-debian-12-oh3`. Keep `keycloak.image.repository` as it is. The `helm upgrade` notes warn only about an upgrade from 26.3, not about a patch upgrade.
+
+Keycloak 26.8.2 also rejects Admin REST API tokens that lack the `kc-admin-api` client scope, and its migration adds that scope only to the built-in clients. The chart adds it to the app's admin client (`KEYCLOAK_ADMIN_CLIENT_ID`, `openhands-provisioner` on Replicated). That needs a login as the Keycloak `admin` user, with the console password (`keycloak-admin` secret, key `admin-ui-password`) or the bootstrap admin password.
+
+- A pre-upgrade hook checks that login while the old Keycloak still runs. If neither password works, it stops the upgrade before the backup and the migration. The reason is in the log of the `<release>-keycloak-admin-api-check` Job. To continue, set the console password (on Replicated, **Keycloak Admin Password**) and upgrade again. The check applies it to the `admin` user before Keycloak migrates.
+- A post-upgrade hook (`<release>-keycloak-admin-api-fix`) adds the scope. It waits for Keycloak 26.8.2 to start, so run `helm upgrade` with `--timeout 10m` or longer.
+- `helm template` (ArgoCD) runs neither hook. There, the `keycloak-config` init container of the `openhands` pod adds the scope when the pod restarts. After a rollback and a roll-forward, run `kubectl rollout restart deployment/openhands -n openhands` once Keycloak 26.8.2 is ready.
 
 ## Uninstallation
 

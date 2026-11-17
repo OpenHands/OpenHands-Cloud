@@ -31,6 +31,16 @@ tests:
           path: metadata.annotations["helm.sh/hook"]
           value: post-upgrade
         documentIndex: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "0"
+        documentIndex: 1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MODE
+            value: fix
+        documentIndex: 1
       - contains:
           path: spec.template.spec.containers[0].env
           content:
