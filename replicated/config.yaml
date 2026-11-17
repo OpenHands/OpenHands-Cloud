@@ -930,7 +930,7 @@ spec:
       items:
         - name: keycloak_admin_ui_password
           title: Keycloak Admin Password
-          help_text: 'Sign in as admin at https://{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}/admin/. Set a password here, save, and deploy to apply it to the existing admin account. Leave blank to keep the current password. Manage this password here so future deployments keep the same value.'
+          help_text: 'Sign in as admin at https://{{repl if ConfigOptionEquals "hostname_mode" "custom" }}{{repl ConfigOption "auth_hostname" }}{{repl else }}{{repl ConfigOption "computed_auth_hostname" }}{{repl end }}/admin/. Set a password here, save, and deploy to apply it to the existing admin account. Leave blank to keep the current password. Manage this password here so future deployments keep the same value. The upgrade to Keycloak 26.8.2 needs this password or the bootstrap password to sign in as admin; if neither works, set a new password here and deploy again.'
           type: password
 
     - name: authentication_security

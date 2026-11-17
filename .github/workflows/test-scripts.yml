@@ -70,11 +70,15 @@ jobs:
           --with PyYAML
           python -m pytest scripts -q
 
-  # The job above pins Keycloak 26.3.3, where the kc-admin-api tests skip. These tests run in a
-  # separate job so their Keycloak containers do not push the main job past its timeout.
-  keycloak-scripts-shipped-version:
+  # The job above pins Keycloak 26.3.3, where the kc-admin-api tests skip. 26.8.0 is the
+  # patch-upgrade source and 26.8.2 the shipped version; one job each keeps every job in its timeout.
+  keycloak-scripts:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        keycloak: ['26.8.0', '26.8.2']
 
     steps:
       - name: Checkout
@@ -97,9 +101,9 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Run Keycloak script tests against Keycloak 26.8.2
+      - name: Run Keycloak script tests against Keycloak ${{ matrix.keycloak }}
         env:
-          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.8.2
+          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:${{ matrix.keycloak }}
         run: >-
           uv run
           --python 3.12

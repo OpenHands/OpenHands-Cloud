@@ -958,9 +958,9 @@ Patch upgrades can migrate one way too. Keycloak 26.8.2 runs a data migration on
 
 Keycloak 26.8.2 also rejects Admin REST API tokens that lack the `kc-admin-api` client scope, and its migration adds that scope only to the built-in clients. The chart adds it to the app's admin client (`KEYCLOAK_ADMIN_CLIENT_ID`, `openhands-provisioner` on Replicated). That needs a login as the Keycloak `admin` user, with the console password (`keycloak-admin` secret, key `admin-ui-password`) or the bootstrap admin password.
 
-- A pre-upgrade hook checks that login while the old Keycloak still runs. If neither password works, it stops the upgrade before the backup and the migration. The reason is in the log of the `<release>-keycloak-admin-api-check` Job. To continue, set the console password (on Replicated, **Keycloak Admin Password**) and upgrade again. The check applies it to the `admin` user before Keycloak migrates.
+- A pre-upgrade hook checks that login while the old Keycloak still runs. If neither password works, or Keycloak does not answer for 4 minutes, it stops the upgrade before the backup and the migration. The reason is in the log of the `<release>-keycloak-admin-api-check` Job. To continue, set a new console password (on Replicated, **Keycloak Admin Password**) and upgrade again. The check applies it to the `admin` user before Keycloak migrates.
 - A post-upgrade hook (`<release>-keycloak-admin-api-fix`) adds the scope. It waits for Keycloak 26.8.2 to start, so run `helm upgrade` with `--timeout 10m` or longer.
-- `helm template` (ArgoCD) runs neither hook. There, the `keycloak-config` init container of the `openhands` pod adds the scope when the pod restarts. After a rollback and a roll-forward, run `kubectl rollout restart deployment/openhands -n openhands` once Keycloak 26.8.2 is ready.
+- `helm template` (ArgoCD) runs neither hook. There, the `keycloak-config` init container of the `openhands` pod waits for Keycloak 26.8.2 and adds the scope. A change of Keycloak version restarts that pod.
 
 ## Uninstallation
 

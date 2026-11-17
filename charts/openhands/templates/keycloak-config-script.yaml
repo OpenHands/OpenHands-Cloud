@@ -109,12 +109,26 @@ data:
         sleep 5
     done
 
-    # The app pod can restart before the old Keycloak pod is replaced. Adding kc-admin-api needs the
-    # new Keycloak, so wait while the provisioner still reaches an admin API that lacks the scope.
+    # The app pod can restart before the new Keycloak replaces the old one, and adding kc-admin-api
+    # needs the new one. Keycloak is briefly down during that swap, so only a definite answer ends
+    # the wait: a token error (no such client), a 401 or 403, or the scope itself.
     if [ "${KEYCLOAK_NEEDS_ADMIN_API_SCOPE:-false}" = true ]; then
-      while T=$(provisioning_token) \
-        && [ "$(curl -sS -o /tmp/kc-scopes.json -w '%{http_code}' "$KEYCLOAK_SERVER_URL/admin/realms/master/client-scopes" -H "Authorization: Bearer $T")" = 200 ] \
-        && ! jq -e 'any(.[]; .name == "kc-admin-api")' /tmp/kc-scopes.json >/dev/null; do
+      while :; do
+        if R=$(curl -sS "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" \
+          --data-urlencode "client_id=$PROVISIONER_CLIENT_ID" --data-urlencode grant_type=client_credentials \
+          --data-urlencode "client_secret=$PROVISIONER_SECRET" 2>/dev/null); then
+          T=$(printf '%s' "$R" | jq -r '.access_token // empty' 2>/dev/null) || T=""
+          if [ -z "$T" ]; then
+            printf '%s' "$R" | jq -e '.error' >/dev/null 2>&1 && break
+          else
+            CODE=$(curl -sS -o /tmp/kc-scopes.json -w '%{http_code}' "$KEYCLOAK_SERVER_URL/admin/realms/master/client-scopes" \
+              -H "Authorization: Bearer $T" 2>/dev/null) || CODE=000
+            case $CODE in
+              200) jq -e 'any(.[]; .name == "kc-admin-api")' /tmp/kc-scopes.json >/dev/null 2>&1 && break ;;
+              401|403) break ;;
+            esac
+          fi
+        fi
         echo "Waiting for Keycloak 26.8.2 or later to replace the running Keycloak..."
         sleep 5
       done

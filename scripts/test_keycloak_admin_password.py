@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import textwrap
 import time
@@ -14,6 +15,16 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PASSWORD = "local-bootstrap-test-password"
+
+# Decided from the image tag, so version-specific tests skip before a container starts.
+_TAG = re.search(r":(\d+)\.(\d+)\.(\d+)", os.environ.get("KEYCLOAK_TEST_IMAGE", ""))
+HAS_ADMIN_API_SCOPE = bool(_TAG) and tuple(map(int, _TAG.groups())) >= (26, 8, 2)
+new_keycloak = pytest.mark.skipif(
+    not HAS_ADMIN_API_SCOPE, reason="Needs Keycloak 26.8.2 or later"
+)
+old_keycloak = pytest.mark.skipif(
+    HAS_ADMIN_API_SCOPE, reason="Needs a Keycloak before 26.8.2"
+)
 
 
 def request(url, data=None, token=None, method=None, json_body=None):
@@ -241,8 +252,7 @@ def provisioner_without_admin_api_scope(url, password=""):
     master = url + "/admin/realms/master"
     _, scopes = request(master + "/client-scopes", token=auth["access_token"])
     scope = next((s for s in scopes if s["name"] == "kc-admin-api"), None)
-    if scope is None:
-        pytest.skip("This Keycloak has no kc-admin-api scope (added in 26.8.2)")
+    assert scope is not None
     _, clients = request(
         master + "/clients?clientId=openhands-provisioner", token=auth["access_token"]
     )
@@ -261,6 +271,7 @@ def provisioner_without_admin_api_scope(url, password=""):
     assert provisioner_admin_status(url) == 401
 
 
+@new_keycloak
 @pytest.mark.parametrize("password", ["", CONSOLE_PASSWORD])
 def test_upgrade_adds_admin_api_scope_to_existing_provisioner(keycloak, password):
     provisioner_without_admin_api_scope(keycloak, password)
@@ -351,6 +362,10 @@ def test_console_password_is_only_passed_to_provisioning_container():
         "key": "admin-ui-password",
         "optional": True,
     }
+    needs = next(
+        item for item in init["env"] if item["name"] == "KEYCLOAK_NEEDS_ADMIN_API_SCOPE"
+    )
+    assert needs["value"] == "true"
     for container in spec["containers"]:
         assert not any(
             item["name"] == "KEYCLOAK_ADMIN_UI_PASSWORD" for item in container["env"]
@@ -410,6 +425,7 @@ def run_scope_hook(
     timeout=60,
     success=True,
     client_secret="",
+    extra_env=None,
 ):
     template = (
         ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
@@ -429,6 +445,7 @@ def run_scope_hook(
             tuple(map(int, target_version.split("."))) >= (26, 8, 2)
         ).lower(),
         MODE=mode,
+        **(extra_env or {}),
     )
     try:
         result = subprocess.run(
@@ -452,6 +469,7 @@ def run_scope_hook(
     return output
 
 
+@new_keycloak
 @pytest.mark.parametrize(
     "password,client_id",
     [
@@ -471,15 +489,15 @@ def test_scope_hook_adds_admin_api_scope_without_app_restart(
     assert "nothing to do" in run_scope_hook(keycloak, "26.8.2", password, client_id)
 
 
+@new_keycloak
 def test_scope_hook_needs_no_admin_login_when_the_provisioner_works(keycloak):
     reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
-    if not has_admin_api_scope(keycloak, CONSOLE_PASSWORD):
-        pytest.skip("This Keycloak has no kc-admin-api scope (added in 26.8.2)")
     # The console password was cleared, so neither secret matches the admin user.
     out = run_scope_hook(keycloak, "26.8.2", password="")
     assert "has Admin REST API access; nothing to do" in out
 
 
+@new_keycloak
 def test_scope_hook_fails_clearly_when_no_admin_password_works(keycloak):
     provisioner_without_admin_api_scope(keycloak, CONSOLE_PASSWORD)
     out = run_scope_hook(keycloak, "26.8.2", password="", success=False)
@@ -487,18 +505,16 @@ def test_scope_hook_fails_clearly_when_no_admin_password_works(keycloak):
     assert provisioner_admin_status(keycloak) == 401
 
 
+@old_keycloak
 def test_scope_hook_is_a_no_op_before_26_8_2(keycloak):
     reconcile(keycloak, client_id="openhands-provisioner")
-    if has_admin_api_scope(keycloak):
-        pytest.skip("This Keycloak has the kc-admin-api scope")
     assert "nothing to do" in run_scope_hook(keycloak, "26.8.0")
 
 
+@old_keycloak
 def test_scope_hook_waits_while_keycloak_is_older_than_the_target(keycloak):
     # Without --wait, the hook can start before the new Keycloak replaces the old one.
     reconcile(keycloak, client_id="openhands-provisioner")
-    if has_admin_api_scope(keycloak):
-        pytest.skip("This Keycloak has the kc-admin-api scope")
     out = run_scope_hook(keycloak, "26.8.2", timeout=15)
     assert out.startswith("TIMEOUT") and "Waiting for Keycloak 26.8.2" in out
 
@@ -514,28 +530,27 @@ def test_scope_hook_skips_an_install_without_a_provisioner(keycloak):
     assert 'Client "openhands-provisioner" does not exist' in out
 
 
+@old_keycloak
 @pytest.mark.parametrize("password,passes", [(CONSOLE_PASSWORD, True), ("", False)])
 def test_pre_upgrade_check_needs_a_working_admin_login(keycloak, password, passes):
     # Runs against the old Keycloak, before the 26.8.2 migration.
     reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
-    if has_admin_api_scope(keycloak, CONSOLE_PASSWORD):
-        pytest.skip("Runs against a Keycloak before 26.8.2")
     out = run_scope_hook(keycloak, "26.8.2", password, mode="check", success=passes)
     if passes:
         assert "admin login works" in out
     else:
-        assert "Set the Keycloak Admin Password" in out
+        assert "Set a new Keycloak Admin Password" in out
 
 
 def test_pre_upgrade_check_skips_upgrades_that_keep_keycloak_before_26_8_2(keycloak):
     reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
-    assert run_scope_hook(keycloak, "26.8.0", mode="check") == ""
+    out = run_scope_hook(keycloak, "26.8.0", mode="check")
+    assert "does not need the kc-admin-api scope" in out
 
 
+@old_keycloak
 def test_keycloak_config_waits_while_the_old_keycloak_still_serves(keycloak):
     reconcile(keycloak, client_id="openhands-provisioner")
-    if has_admin_api_scope(keycloak):
-        pytest.skip("Runs against a Keycloak before 26.8.2")
     with pytest.raises(subprocess.TimeoutExpired) as error:
         reconcile(
             keycloak, client_id="openhands-provisioner", needs_scope=True, timeout=15
@@ -545,16 +560,16 @@ def test_keycloak_config_waits_while_the_old_keycloak_still_serves(keycloak):
     assert "Waiting for Keycloak 26.8.2 or later" in out
 
 
+@old_keycloak
 def test_pre_upgrade_check_applies_a_changed_console_password(keycloak):
     reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
-    if has_admin_api_scope(keycloak, CONSOLE_PASSWORD):
-        pytest.skip("Runs against a Keycloak before 26.8.2")
     changed = "changed console password"
     out = run_scope_hook(keycloak, "26.8.2", changed, mode="check")
     assert "admin login works" in out
     assert login(keycloak, changed)[0] == 200
 
 
+@new_keycloak
 @pytest.mark.parametrize("password,passes", [(CONSOLE_PASSWORD, True), ("", False)])
 def test_pre_upgrade_check_after_keycloak_rejects_the_provisioner(
     keycloak, password, passes
@@ -562,6 +577,7 @@ def test_pre_upgrade_check_after_keycloak_rejects_the_provisioner(
     provisioner_without_admin_api_scope(keycloak, CONSOLE_PASSWORD)
     out = run_scope_hook(keycloak, "26.8.2", password, mode="check", success=passes)
     assert ("admin login works" in out) == passes
+    assert ("to the current password of the Keycloak admin user" in out) != passes
 
 
 def test_scope_hook_leaves_a_client_with_a_wrong_secret_alone(keycloak):
@@ -570,10 +586,9 @@ def test_scope_hook_leaves_a_client_with_a_wrong_secret_alone(keycloak):
     assert 'rejects the "openhands-provisioner" client secret' in out
 
 
+@new_keycloak
 def test_scope_hook_fails_clearly_when_the_provisioner_lacks_admin_rights(keycloak):
     reconcile(keycloak, client_id="openhands-provisioner")
-    if not has_admin_api_scope(keycloak):
-        pytest.skip("This Keycloak has no kc-admin-api scope (added in 26.8.2)")
     _, auth = login(keycloak, BOOTSTRAP_PASSWORD)
     master = keycloak + "/admin/realms/master"
     _, clients = request(
@@ -596,3 +611,19 @@ def test_scope_hook_fails_clearly_when_the_provisioner_lacks_admin_rights(keyclo
     )
     out = run_scope_hook(keycloak, "26.8.2", timeout=30, success=False)
     assert "still has no Admin REST API access (provisioner: forbidden" in out
+
+
+def test_keycloak_test_image_matches_the_admin_api_scope_premise(keycloak):
+    reconcile(keycloak)
+    assert has_admin_api_scope(keycloak) == HAS_ADMIN_API_SCOPE
+
+
+def test_pre_upgrade_check_stops_the_upgrade_when_keycloak_does_not_answer():
+    out = run_scope_hook(
+        "http://127.0.0.1:9",
+        "26.8.2",
+        mode="check",
+        success=False,
+        extra_env={"CHECK_WAIT_SECONDS": "5"},
+    )
+    assert "did not answer for 5 seconds" in out
