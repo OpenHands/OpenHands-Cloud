@@ -1,11 +1,9 @@
 {{- /*
-Keycloak 26.8.2 rejects Admin REST API tokens without the kc-admin-api client scope, and its
-migration adds the scope only to built-in clients. The keycloak-config init container adds it to
-the provisioner client, but only when the app pod restarts, and a redeploy or the README
-roll-forward moves Keycloak to 26.8.2 without a restart. Adding the scope needs an admin login,
-so the pre-upgrade check stops the upgrade before the one-way migration when no admin password
-works, and the post-upgrade fix adds the scope. Fresh installs need neither: keycloak-config
-creates the client with the scope.
+Keycloak 26.8.2 rejects Admin REST API tokens without the kc-admin-api scope, and its migration
+adds the scope only to built-in clients. keycloak-config adds it to the provisioner only when the
+app pod restarts, which a redeploy skips, so the post-upgrade fix adds it. That needs an admin
+login, which the pre-upgrade check proves before the one-way migration. Fresh installs get the
+scope from keycloak-config.
 */ -}}
 {{- define "openhands.keycloakAdminApiScopeScript" -}}
 set -eu
