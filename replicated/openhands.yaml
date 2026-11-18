@@ -899,6 +899,13 @@ spec:
           agentServerImage:
             repository: 'repl{{ ConfigOption "custom_sandbox_image_repository" }}'
             tag: 'repl{{ ConfigOption "custom_sandbox_image_tag" }}'
+    # Skipped when blank: the runtime-api rejects an empty RUNTIME_INIT_IMAGE.
+    - when: '{{repl ne (ConfigOption "sandbox_init_image") "" }}'
+      recursiveMerge: true
+      values:
+        runtime-api:
+          env:
+            RUNTIME_INIT_IMAGE: 'repl{{ ConfigOption "sandbox_init_image" }}'
     - when: '{{repl HasLocalRegistry }}'
       recursiveMerge: true
       values:
