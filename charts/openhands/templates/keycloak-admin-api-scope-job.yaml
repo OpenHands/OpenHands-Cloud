@@ -1,0 +1,104 @@
+{{- /*
+The 26.8.2 migration adds the kc-admin-api scope only to built-in clients. keycloak-config adds it
+to the provisioner when the app pod starts, which a Keycloak version change triggers; the
+post-upgrade fix covers an upgrade that leaves the app pod running. Adding the scope needs an admin
+login, which the pre-upgrade check proves before the one-way migration.
+*/ -}}
+{{- if and .Values.enabled .Values.keycloak.enabled .Release.IsUpgrade (include "openhands.keycloakProvisionRealm" .) (eq (include "openhands.keycloakNeedsAdminApiScope" .) "true") }}
+{{- /*
+The check matters only while a migration to 26.8.2 may be pending: the running Keycloak is older,
+its version cannot be read (a digest-pinned image), or an earlier rollout has not finished.
+*/}}
+{{- $kc := lookup "apps/v1" "StatefulSet" .Release.Namespace .Values.keycloak.fullnameOverride }}
+{{- $running := "" }}
+{{- range (dig "spec" "template" "spec" "containers" list $kc) }}
+{{- if eq .name "keycloak" }}
+{{- $running = regexFind "[0-9]+\\.[0-9]+\\.[0-9]+" (regexFind ":[^:@/]+$" .image) }}
+{{- end }}
+{{- end }}
+{{- $rolling := ne (dig "status" "currentRevision" "" $kc) (dig "status" "updateRevision" "" $kc) }}
+{{- /* An unreadable version counts as 0.0.0, so a digest-pinned image is checked. */}}
+{{- $pending := and $kc (or (semverCompare "<26.8.2" (default "0.0.0" $running)) $rolling) }}
+{{- $jobs := list (dict "mode" "fix" "hook" "post-upgrade" "weight" "0") }}
+{{- if and (dig "preUpgradeAdminCheck" "enabled" true .Values.keycloak) $pending }}
+{{- $jobs = prepend $jobs (dict "mode" "check" "hook" "pre-upgrade" "weight" "9") }}
+{{- end }}
+{{- range $job := $jobs }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $.Release.Name }}-keycloak-admin-api-{{ $job.mode }}
+  labels:
+    {{- include "openhands.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: keycloak-admin-api-{{ $job.mode }}
+  annotations:
+    "helm.sh/hook": {{ $job.hook }}
+    {{- if eq $job.mode "check" }}
+    # Before the backup (weight 10), so a failed check stops the upgrade before any copy or migration.
+    {{- end }}
+    "helm.sh/hook-weight": {{ $job.weight | quote }}
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  # No retries: a retried pod would wait again and end as DeadlineExceeded, hiding the script's error.
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "openhands.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: keycloak-admin-api-{{ $job.mode }}
+    spec:
+      {{- with $.Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: Never
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "openhands.affinity" $) }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: keycloak-admin-api-{{ $job.mode }}
+          image: '{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}'
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              {{- include "openhands.keycloakAdminApiScopeScript" $ | nindent 14 }}
+          env:
+            {{- $env := $.Values.env | default dict }}
+            - name: KEYCLOAK_SERVER_URL
+              value: {{ index $env "KEYCLOAK_SERVER_URL" | default $.Values.keycloak.url | quote }}
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: admin-password
+            {{- range $name := list "KEYCLOAK_ADMIN_CLIENT_ID" "KEYCLOAK_ADMIN_CLIENT_SECRET" }}
+            {{- with index $env $name }}
+            - name: {{ $name }}
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            - name: KEYCLOAK_ADMIN_UI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: admin-ui-password
+                  optional: true
+            - name: TARGET_VERSION
+              value: {{ include "openhands.keycloakTargetVersion" $ | quote }}
+            - name: NEEDS_ADMIN_API_SCOPE
+              value: {{ include "openhands.keycloakNeedsAdminApiScope" $ | quote }}
+            - name: MODE
+              value: {{ $job.mode }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+{{- end }}
+{{- end }}

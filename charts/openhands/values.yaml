@@ -525,6 +525,13 @@ keycloak:
       limits:
         memory: "512Mi"
         cpu: "500m"
+  # Parent-chart pre-upgrade hook (not consumed by the Keycloak subchart): before an upgrade to
+  # Keycloak 26.8.2 or later, check the Keycloak admin login that adding the kc-admin-api scope
+  # needs, and stop the upgrade before the one-way migration if it fails. Disable only to deploy a
+  # fix while Keycloak cannot answer.
+  # README, "Keycloak 26.3 to 26.8".
+  preUpgradeAdminCheck:
+    enabled: true
   # Parent-chart flag (not consumed by the Keycloak subchart): run the
   # realm-config init container that creates the OpenHands realm, its OIDC
   # client, and identity providers if missing, and updates them otherwise.

@@ -53,7 +53,8 @@ false
 {{- end -}}
 
 {{/*
-Adds the kc-admin-api client scope to the app's Keycloak admin client. Run by keycloak-config.
+Adds the kc-admin-api client scope to the app's Keycloak admin client. Run by the
+keycloak-admin-api hooks (MODE=check before, MODE=fix after an upgrade) and by keycloak-config.
 */}}
 {{- define "openhands.keycloakAdminApiScopeScript" -}}
 set -eu
@@ -64,11 +65,20 @@ SECRET=${KEYCLOAK_ADMIN_CLIENT_SECRET:-$KEYCLOAK_ADMIN_PASSWORD}
 KC=$KEYCLOAK_SERVER_URL
 # Bounded, so a Keycloak that accepts a connection but never answers cannot stall the hook.
 CURL="curl --connect-timeout 5 --max-time 20"
+CHECK_WAIT_SECONDS=${CHECK_WAIT_SECONDS:-240}
 
+# Before the migration the provisioner can still set the admin password, so any new console password
+# restores the admin login. After the migration only the current admin password works.
 no_admin() {
   if [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then TRIED="the bootstrap admin password and the console password"; else TRIED="the bootstrap admin password (no console password is set)"; fi
   echo "ERROR: the \"$CLIENT_ID\" client needs the kc-admin-api scope for Keycloak $TARGET_VERSION. Adding it needs a login as the Keycloak admin user, and Keycloak rejects $TRIED." >&2
-  echo "Set the Keycloak Admin Password (keycloak-admin secret, key admin-ui-password) to the current password of the Keycloak admin user, then deploy again." >&2
+  if [ "$1" = before ]; then
+    echo "Set a new Keycloak Admin Password (keycloak-admin secret, key admin-ui-password) and deploy again. This check applies it to the admin user before Keycloak migrates." >&2
+  elif [ "$1" = applied ]; then
+    echo "The check set the console password on the admin user, and Keycloak still rejects the sign-in. The admin user in the master realm may have a one-time password or a required action, or be disabled. Fix that, then deploy again." >&2
+  else
+    echo "Set the Keycloak Admin Password (keycloak-admin secret, key admin-ui-password) to the current password of the Keycloak admin user, then deploy again." >&2
+  fi
   exit 1
 }
 
@@ -114,11 +124,67 @@ admin_token() {
   return $TOKEN_RC
 }
 
+# Returns 1 when Keycloak rejects both passwords, and stops the check when Keycloak stops answering.
+admin_login_works() {
+  RC=0; admin_token >/dev/null || RC=$?
+  if [ "$RC" -eq 2 ]; then
+    echo "ERROR: Keycloak stopped answering during the admin login check. Make Keycloak reachable, then deploy again." >&2
+    exit 1
+  fi
+  return $RC
+}
+
+# A console password changed in this deploy reaches the admin user only when keycloak-config runs,
+# after the migration. The old Keycloak still accepts the provisioner, so apply it now.
+apply_console_password() {
+  [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ] || return 0
+  if ! USERS=$($CURL -fsS "$KC/admin/realms/master/users?username=admin&exact=true" -H "Authorization: Bearer $PT") \
+    || ! ADMIN_ID=$(printf '%s' "$USERS" | jq -er '.[0].id'); then
+    echo "ERROR: could not find the Keycloak admin user to apply the console password. Check that Keycloak answers and that the master realm has a user named admin, then deploy again." >&2
+    exit 1
+  fi
+  if ! jq -n --arg password "$KEYCLOAK_ADMIN_UI_PASSWORD" '{type: "password", value: $password, temporary: false}' \
+    | $CURL -fsS -X PUT "$KC/admin/realms/master/users/$ADMIN_ID/reset-password" \
+      -H "Authorization: Bearer $PT" -H "Content-Type: application/json" --data @-; then
+    echo "ERROR: Keycloak refused the console password for the admin user, for example because of the master realm password policy. Choose another Keycloak Admin Password, then deploy again." >&2
+    exit 1
+  fi
+  echo "Applied the console password to the Keycloak admin user."
+}
+
 if [ "$NEEDS_ADMIN_API_SCOPE" != true ]; then
   echo "Keycloak $TARGET_VERSION does not need the kc-admin-api scope; nothing to do."
   exit 0
 fi
 
+if [ "$MODE" = check ]; then
+  # The migration is one way, so the upgrade waits here until the admin login is proven.
+  START=$(date +%s)
+  while provisioner_status && [ "$STATUS" = down ]; do
+    [ $(($(date +%s) - START)) -lt "$CHECK_WAIT_SECONDS" ] || {
+      echo "ERROR: Keycloak did not answer for $CHECK_WAIT_SECONDS seconds (HTTP ${CODE:-none}), so the admin login cannot be checked before the one-way migration. Make Keycloak reachable, then deploy again. To deploy a fix while Keycloak cannot answer, turn off \"Check Keycloak Admin Login Before Upgrade\" (keycloak.preUpgradeAdminCheck.enabled=false)." >&2
+      exit 1
+    }
+    echo "Waiting for Keycloak to answer..."
+    sleep 5
+  done
+  case $STATUS in
+    works) echo "Client \"$CLIENT_ID\" already has Admin REST API access." ;;
+    no-client) echo "Client \"$CLIENT_ID\" does not exist; nothing to check." ;;
+    bad-client) echo "WARNING: Keycloak rejects the \"$CLIENT_ID\" client secret; the upgrade does not change this client." >&2 ;;
+    old) if ! admin_login_works; then
+           [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ] || no_admin before
+           apply_console_password
+           admin_login_works || no_admin applied
+         fi
+         echo "The Keycloak admin login works, so the post-upgrade hook can add the kc-admin-api scope." ;;
+    *) admin_login_works || no_admin after
+       echo "The Keycloak admin login works, so the post-upgrade hook can add the kc-admin-api scope." ;;
+  esac
+  exit 0
+fi
+
+# Below the hook Job's activeDeadlineSeconds (600), so the reason reaches the Job log.
 FIX_WAIT_SECONDS=${FIX_WAIT_SECONDS:-540}
 START=$(date +%s)
 # $1 is old (Keycloak answers but is older than the target) or down.
@@ -132,7 +198,7 @@ wait_or_give_up() {
   exit 1
 }
 
-# This can run before the new Keycloak starts, so wait until it rejects the provisioner.
+# Without --wait this can run before the new Keycloak starts, so wait until it rejects the provisioner.
 while :; do
   provisioner_status
   case $STATUS in
@@ -146,7 +212,7 @@ done
 # A forbidden provisioner can come from the old Keycloak too, so wait for the new one to create the scope.
 while :; do
   RC=0; TOKEN=$(admin_token) || RC=$?
-  [ "$RC" -ne 1 ] || no_admin
+  [ "$RC" -ne 1 ] || no_admin after
   KC_STATE=down
   if [ "$RC" -eq 0 ] && SCOPES=$($CURL -fsS "$KC/admin/realms/master/client-scopes" -H "Authorization: Bearer $TOKEN"); then
     SCOPE_ID=$(printf '%s' "$SCOPES" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
