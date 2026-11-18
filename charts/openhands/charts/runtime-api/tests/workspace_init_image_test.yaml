@@ -1,0 +1,96 @@
+suite: workspace init image environment
+templates:
+  - templates/deployment.yaml
+  - templates/warm-runtimes-cronjob.yaml
+tests:
+  - it: passes the default image to the API
+    template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_INIT_IMAGE
+            value: "busybox:1.36"
+
+  - it: passes the mirrored tag image to the API
+    template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.RUNTIME_INIT_IMAGE: "registry.example.com/mirror/busybox:1.36"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_INIT_IMAGE
+            value: "registry.example.com/mirror/busybox:1.36"
+
+  - it: passes the digest image to the API
+    template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.RUNTIME_INIT_IMAGE: "registry.example.com:5000/busybox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_INIT_IMAGE
+            value: "registry.example.com:5000/busybox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+  - it: passes the default image to the warm reconciler
+    template: templates/warm-runtimes-cronjob.yaml
+    set:
+      warmRuntimes.enabled: true
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_INIT_IMAGE
+            value: "busybox:1.36"
+
+  - it: passes the mirrored tag image to the warm reconciler
+    template: templates/warm-runtimes-cronjob.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.RUNTIME_INIT_IMAGE: "registry.example.com/mirror/busybox:1.36"
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_INIT_IMAGE
+            value: "registry.example.com/mirror/busybox:1.36"
+
+  - it: passes the digest image to the warm reconciler
+    template: templates/warm-runtimes-cronjob.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.RUNTIME_INIT_IMAGE: "registry.example.com:5000/busybox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_INIT_IMAGE
+            value: "registry.example.com:5000/busybox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+  - it: emits the override once in the API environment
+    template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.RUNTIME_INIT_IMAGE: "registry.example.com/mirror/busybox:1.36"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name == "RUNTIME_INIT_IMAGE")].value
+          value: "registry.example.com/mirror/busybox:1.36"
+
+  - it: passes the sandbox pull-secret setting to the API
+    template: templates/deployment.yaml
+    set:
+      warmRuntimes.enabled: true
+      env.RUNTIME_IMAGE_PULL_SECRETS: "sandbox-registry-secret"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_IMAGE_PULL_SECRETS
+            value: "sandbox-registry-secret"
