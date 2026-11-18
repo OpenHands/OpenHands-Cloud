@@ -64,6 +64,8 @@ env:
   INCLUDE_START_PROBE: "true"
   INCLUDE_LIVENESS_PROBE: "true"
   RUNTIME_CLASS: "sysbox-runc"
+  # Must provide BusyBox-compatible utilities; sandbox pull secrets apply here too.
+  RUNTIME_INIT_IMAGE: "busybox:1.36"
 
 resources:
   limits:
