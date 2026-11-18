@@ -1593,16 +1593,12 @@ spec:
         - name: sandbox_init_image
           title: Workspace Init Image
           help_text: |
-            Optional. The image that prepares each sandbox's workspace volume before
-            the sandbox starts. Enter a full reference with a tag or an @sha256:
-            digest, e.g. registry.example.com/mirror/busybox:1.36. The image must
-            provide a BusyBox-compatible shell and utilities. Leave blank to use the
-            default, busybox:1.36 from Docker Hub.
-
-            The image is pulled with the install's registry pull secret, the same one
-            used for the OpenHands images, so keep the mirror in the registry you
-            already connected to Replicated. If you set Custom Sandbox Image registry
-            credentials, those are used instead, so use that registry.
+            Optional. The image that prepares each sandbox's workspace volume. Enter a
+            full reference with a tag or an @sha256: digest, e.g.
+            registry.example.com/mirror/busybox:1.36. It must be BusyBox-compatible.
+            Clear the field and redeploy to use the default, busybox:1.36 from Docker
+            Hub. The install's registry pull secret pulls the image, or the Custom
+            Sandbox Image credentials if you set them.
           type: text
           required: false
           validation:
