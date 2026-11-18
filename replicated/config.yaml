@@ -1590,6 +1590,21 @@ spec:
           type: password
           when: 'repl{{ ConfigOptionEquals "custom_sandbox_image_enabled" "1" }}'
           required: false
+        - name: sandbox_init_image
+          title: Workspace Init Image
+          help_text: |
+            Optional. The image that prepares each sandbox's workspace volume. Enter a
+            full reference with a tag or an @sha256: digest, e.g.
+            registry.example.com/mirror/busybox:1.36. It must be BusyBox-compatible.
+            Clear the field and redeploy to use the default, busybox:1.36 from Docker
+            Hub. The install's registry pull secret pulls the image, or the Custom
+            Sandbox Image credentials if you set them.
+          type: text
+          required: false
+          validation:
+            regex:
+              pattern: ^\S*$
+              message: Must not contain spaces
         - name: sandbox_additional_host_paths
           title: Additional Host Path Mounts
           help_text: >-
