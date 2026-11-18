@@ -1297,11 +1297,9 @@ runtime-api:
     # Replicated installer turns it on in replicated/openhands.yaml, since OHE
     # clusters are fixed-size.
     RUNTIME_PENDING_REAP_ENABLED: "false"
-    # Image of the init container that prepares each sandbox's workspace volume.
-    # The runtime-api subchart defaults it to busybox:1.36. To use a mirror, set a
-    # full reference (tag or @sha256: digest) of a BusyBox-compatible image, and
-    # name its pull secret in RUNTIME_IMAGE_PULL_SECRETS. Needs a runtime-api
-    # image that supports the setting.
+    # Image that prepares each sandbox's workspace volume; defaults to busybox:1.36.
+    # Takes a tag or @sha256: digest, pulled with RUNTIME_IMAGE_PULL_SECRETS. Older
+    # runtime-api images ignore it.
     # RUNTIME_INIT_IMAGE: "registry.example.com/mirror/busybox:1.36"
 
 # squat/generic-device-plugin DaemonSet that advertises host device nodes
