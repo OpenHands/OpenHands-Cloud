@@ -1022,6 +1022,10 @@ valkey:
       cpu: 150m
       memory: 192Mi
       ephemeral-storage: 2Gi
+  metrics:
+    exporter:
+      image:
+        tag: "v1.97.0"
 
 maintenanceTasks:
   enabled: true
