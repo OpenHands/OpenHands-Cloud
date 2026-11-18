@@ -91,7 +91,7 @@ jobs:
 
             if [ "$count" = 0 ]; then
               echo "| ${lane} | ${trigger} | **no run** | — |" >> "$GITHUB_STEP_SUMMARY"
-              echo "::error::${lane}: no run of ${wf} for ${trigger} after $((WAIT_ATTEMPTS * WAIT_INTERVAL))s — the workflow never fired"
+              echo "::error::${lane}: no run of ${wf} appeared for ${trigger} after ${attempt} queries"
               FAILED=1; return
             fi
             echo "| ${lane} | ${trigger} | ${status}/${conclusion:-n/a} | ${url} |" >> "$GITHUB_STEP_SUMMARY"

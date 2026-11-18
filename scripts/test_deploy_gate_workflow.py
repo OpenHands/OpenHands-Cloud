@@ -95,7 +95,10 @@ def test_gate_fails_after_bounded_wait_when_beta_run_never_appears(tmp_path):
 
     assert result.returncode == 1
     assert beta_queries == WAIT_ATTEMPTS
-    assert "beta: no run of release-replicated-beta.yml" in result.stderr + result.stdout
+    assert (
+        "::error::beta: no run of release-replicated-beta.yml appeared "
+        f"for tag `openhands/0.111.0` after {WAIT_ATTEMPTS} queries"
+    ) in result.stdout.splitlines()
 
 
 if __name__ == "__main__":
