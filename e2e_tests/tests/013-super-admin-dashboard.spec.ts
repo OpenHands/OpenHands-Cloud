@@ -321,8 +321,27 @@ test.describe("Super Admin dashboard @super-admin", () => {
         `super-admin-group-current-role-${orgAId}`,
       );
 
+      // The role dropdown is re-mounted when the reloaded user list carries the
+      // new role, which closes any menu opened before that reload lands.
+      let roleSaved = false;
+      const saved = page.waitForResponse((response) => {
+        roleSaved ||=
+          new URL(response.url()).pathname ===
+          `/api/admin/directory/users/${userId}/groups`;
+        return roleSaved;
+      });
+      const reloaded = page.waitForResponse(
+        (response) =>
+          roleSaved &&
+          response.request().method() === "GET" &&
+          new URL(response.url()).pathname === "/api/admin/directory/users",
+      );
       await roleInOrgA.getByTestId("dropdown-trigger").click();
       await page.getByRole("option", { name: "Admin", exact: true }).click();
+      expect((await saved).ok(), "change the role in organization A").toBe(
+        true,
+      );
+      await reloaded;
       await expect(roleInOrgA.getByRole("combobox")).toHaveValue("Admin");
 
       await roleInOrgA.getByTestId("dropdown-trigger").click();
