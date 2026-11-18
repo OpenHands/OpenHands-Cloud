@@ -28,6 +28,28 @@ render. See [Automations chart configuration](#automations-chart-configuration).
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### Workspace init image
+
+Set `runtime-api.env.RUNTIME_INIT_IMAGE` to use a mirrored BusyBox image for
+PVC-backed sandbox initialization. The default is `busybox:1.36`. A full image
+reference can include a tag, registry port, or `@sha256:` digest.
+
+```yaml
+runtime-api:
+  env:
+    RUNTIME_INIT_IMAGE: registry.example.com/mirror/busybox:1.36
+    RUNTIME_IMAGE_PULL_SECRETS: sandbox-registry-secret
+```
+
+Use a BusyBox-compatible image; the init container needs its shell and filesystem
+utilities. Create pull secrets in the sandbox namespace. The setting applies to
+new pod templates, including warm pods and templates rebuilt on resume. Existing
+pods keep their image. FUSE-backed sandboxes do not use this init container.
+
+The runtime-api image must support `RUNTIME_INIT_IMAGE`; older images ignore the
+setting. If initialization fails after an override, restore a reachable,
+compatible image and recreate the affected sandbox pod.
+
 ### License
 
 An upcoming release will enforce the OpenHands Enterprise license through
