@@ -3,13 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["pytest", "PyYAML"]
 # ///
-"""Behavior checks for the deploy gate's wait-for-run logic.
-
-Runs the real `Assert both lanes deployed their newest trigger` step under bash
-with a fake `gh` (and `yq`) on PATH. The fake serves zero Beta runs for the first
-N queries, modelling the delay between a release tag appearing and Actions
-listing the run it triggered.
-"""
+"""Runs the deploy gate's real shell step against a fake `gh` that lists no Beta run for the first N queries."""
 
 import os
 import subprocess

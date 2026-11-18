@@ -68,10 +68,8 @@ jobs:
             echo "| --- | --- | --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # A tag/push run is registered by Actions a few seconds after the ref
-          # appears, and the release is visible to this gate before that. Poll
-          # a bounded time on zero results so a fresh trigger is not misread as
-          # "never fired". Only the zero-result case waits; API errors fail fast.
+          # Actions lists a tag-triggered run a few seconds after the release is
+          # visible, so zero runs right after a release does not mean "never fired".
           WAIT_ATTEMPTS=${WAIT_ATTEMPTS:-12}
           WAIT_INTERVAL=${WAIT_INTERVAL:-5}
 
