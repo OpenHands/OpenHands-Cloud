@@ -68,10 +68,24 @@ jobs:
             echo "| --- | --- | --- | --- |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          # A tag/push run is registered by Actions a few seconds after the ref
+          # appears, and the release is visible to this gate before that. Poll
+          # a bounded time on zero results so a fresh trigger is not misread as
+          # "never fired". Only the zero-result case waits; API errors fail fast.
+          WAIT_ATTEMPTS=${WAIT_ATTEMPTS:-12}
+          WAIT_INTERVAL=${WAIT_INTERVAL:-5}
+
           check() {   # <lane> <workflow file> <runs query> <trigger description>
-            local lane=$1 wf=$2 q=$3 trigger=$4 runs count run status conclusion url
-            runs=$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?${q}")
-            count=$(jq -r .total_count <<<"$runs")
+            local lane=$1 wf=$2 q=$3 trigger=$4 runs count run status conclusion url attempt=1
+            while :; do
+              runs=$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?${q}")
+              count=$(jq -r .total_count <<<"$runs")
+              [ "$count" != 0 ] && break
+              [ "$attempt" -ge "$WAIT_ATTEMPTS" ] && break
+              echo "${lane}: no run of ${wf} for ${trigger} yet (attempt ${attempt}/${WAIT_ATTEMPTS})"
+              attempt=$((attempt + 1))
+              sleep "$WAIT_INTERVAL"
+            done
             run=$(jq -c '.workflow_runs[0] // {}' <<<"$runs")
             status=$(jq -r '.status // ""' <<<"$run")
             conclusion=$(jq -r '.conclusion // ""' <<<"$run")
@@ -79,7 +93,7 @@ jobs:
 
             if [ "$count" = 0 ]; then
               echo "| ${lane} | ${trigger} | **no run** | — |" >> "$GITHUB_STEP_SUMMARY"
-              echo "::error::${lane}: no run of ${wf} for ${trigger} — the workflow never fired"
+              echo "::error::${lane}: no run of ${wf} for ${trigger} after $((WAIT_ATTEMPTS * WAIT_INTERVAL))s — the workflow never fired"
               FAILED=1; return
             fi
             echo "| ${lane} | ${trigger} | ${status}/${conclusion:-n/a} | ${url} |" >> "$GITHUB_STEP_SUMMARY"
