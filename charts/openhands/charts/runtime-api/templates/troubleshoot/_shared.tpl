@@ -10,8 +10,8 @@
 - clusterVersion:
     outcomes:
       - fail:
-          when: "< 1.26.0"
-          message: "Kubernetes version 1.26.0 or later is required"
+          when: "< 1.27.0"
+          message: "Kubernetes version 1.27.0 or later is required"
       - pass:
           message: "Kubernetes version is supported"
 - nodeResources:
