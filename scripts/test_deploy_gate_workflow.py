@@ -99,4 +99,4 @@ def test_gate_fails_after_bounded_wait_when_beta_run_never_appears(tmp_path):
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    raise SystemExit(pytest.main([__file__, "-v"]))
