@@ -236,7 +236,10 @@ def test_image_sources_match_the_images_scan_docker_images_discovers():
         for query, file in re.findall(r"=\$\(yq '([^']+)' (\S+)\)", script)
     }
     assert discovered
-    assert set(diff.IMAGE_SOURCES.values()) == discovered
+    # The fusey image is built after a pin change merges, so a PR cannot scan it
+    # and scan-docker-images.yml only adds it on push.
+    pr_discoverable = discovered - {("charts/openhands/values.yaml", ("global", "fuseyImage", "version"))}
+    assert set(diff.IMAGE_SOURCES.values()) == pr_discoverable
 
 
 def _workflow():
