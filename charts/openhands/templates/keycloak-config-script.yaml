@@ -6,6 +6,8 @@ metadata:
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
 data:
+  keycloak-admin-api-scope.sh: |
+    {{- include "openhands.keycloakAdminApiScopeScript" . | nindent 4 }}
   keycloak-config.sh: |
     #!/bin/sh
     set -e
@@ -118,6 +120,11 @@ data:
       ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=tmpadmin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
       if [ "$ACCESS_TOKEN" = "null" ]; then
         NEW_ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=admin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
+        # An earlier deploy moved the admin login to the console password; Keycloak 26.8.2 then
+        # rejects the provisioner until this run adds its kc-admin-api scope.
+        if [ "$NEW_ACCESS_TOKEN" = "null" ] && [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
+          NEW_ACCESS_TOKEN=$(curl -s "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" --data-urlencode client_id=admin-cli --data-urlencode grant_type=password --data-urlencode username=admin --data-urlencode "password=$KEYCLOAK_ADMIN_UI_PASSWORD" | jq -r '.access_token')
+        fi
         if [ "$NEW_ACCESS_TOKEN" = "null" ]; then
           echo "Couldn't login using either the \"admin\" or \"tmpadmin\" accounts."
           exit 1;
@@ -206,6 +213,12 @@ data:
         echo "$RESPONSE" | jq '[.]' > "$ADMIN_CREDENTIAL_DIR/role.json"
         keycloak_write POST "$KC_MASTER/users/$PROVISIONER_USER_ID/role-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
         keycloak_write POST "$KC_MASTER/clients/$PROVISIONER_ID/scope-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+        # Keycloak 26.8.2+ rejects Admin REST API tokens without the kc-admin-api scope; older versions lack it.
+        keycloak_get_optional "$KC_MASTER/client-scopes"
+        ADMIN_API_SCOPE_ID=$(echo "$RESPONSE" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
+        if [ -n "$ADMIN_API_SCOPE_ID" ]; then
+          keycloak_write PUT "$KC_MASTER/clients/$PROVISIONER_ID/default-client-scopes/$ADMIN_API_SCOPE_ID" /dev/null
+        fi
         USE_PROVISIONER=true
       fi
       refresh_access_token
@@ -226,6 +239,14 @@ data:
         fi
         unset CURRENT_TOKEN
       fi
+    fi
+
+    # This pod can start before the new Keycloak replaces the old one, so wait for it and make sure
+    # the provisioner can use its Admin REST API.
+    if [ "${KEYCLOAK_NEEDS_ADMIN_API_SCOPE:-false}" = true ]; then
+      MODE=fix NEEDS_ADMIN_API_SCOPE=true TARGET_VERSION="$KEYCLOAK_TARGET_VERSION" \
+        sh "${KEYCLOAK_ADMIN_API_SCOPE_SCRIPT:-/scripts/keycloak-admin-api-scope.sh}"
+      refresh_access_token
     fi
 
     ERROR_MESSAGE=$(curl -s "$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.error')

@@ -2,18 +2,33 @@
 
 import json
 import os
+import re
 import subprocess
+import tempfile
 import textwrap
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_PASSWORD = "local-bootstrap-test-password"
+SCOPE_SCRIPT_FILE = Path(tempfile.gettempdir()) / "keycloak-admin-api-scope-test.sh"
+
+# Decided from the image tag, so version-specific tests skip before a container starts.
+_TAG = re.search(r":(\d+)\.(\d+)\.(\d+)", os.environ.get("KEYCLOAK_TEST_IMAGE", ""))
+HAS_ADMIN_API_SCOPE = bool(_TAG) and tuple(map(int, _TAG.groups())) >= (26, 8, 2)
+new_keycloak = pytest.mark.skipif(
+    not HAS_ADMIN_API_SCOPE, reason="Needs Keycloak 26.8.2 or later"
+)
+old_keycloak = pytest.mark.skipif(
+    HAS_ADMIN_API_SCOPE, reason="Needs a Keycloak before 26.8.2"
+)
 
 
 def request(url, data=None, token=None, method=None, json_body=None):
@@ -45,6 +60,11 @@ def login(url, password):
             "password": password,
         },
     )
+
+
+@pytest.fixture(autouse=True)
+def _scope_script_file():
+    SCOPE_SCRIPT_FILE.write_text(scope_script())
 
 
 @pytest.fixture
@@ -90,7 +110,23 @@ def keycloak():
         )
 
 
-def reconcile(url, password="", success=True, client_id="", client_secret=""):
+def scope_script():
+    template = (ROOT / "charts/openhands/templates/_keycloak.yaml").read_text()
+    return template.split('define "openhands.keycloakAdminApiScopeScript" -}}\n', 1)[
+        1
+    ].split("\n{{- end }}", 1)[0]
+
+
+def reconcile(
+    url,
+    password="",
+    success=True,
+    client_id="",
+    client_secret="",
+    needs_scope=False,
+    timeout=None,
+    extra_env=None,
+):
     template = (
         ROOT / "charts/openhands/templates/keycloak-config-script.yaml"
     ).read_text()
@@ -104,9 +140,19 @@ def reconcile(url, password="", success=True, client_id="", client_secret=""):
         KEYCLOAK_ADMIN_UI_PASSWORD=password,
         KEYCLOAK_ADMIN_CLIENT_ID=client_id,
         KEYCLOAK_ADMIN_CLIENT_SECRET=client_secret,
+        KEYCLOAK_NEEDS_ADMIN_API_SCOPE=str(needs_scope).lower(),
+        KEYCLOAK_TARGET_VERSION="26.8.2",
+        KEYCLOAK_ADMIN_API_SCOPE_SCRIPT=str(SCOPE_SCRIPT_FILE),
+        **(extra_env or {}),
     )
     result = subprocess.run(
-        ["sh"], input=script, env=env, text=True, capture_output=True, check=False
+        ["sh"],
+        input=script,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=timeout,
     )
     if not success:
         assert result.returncode != 0
@@ -128,11 +174,11 @@ def test_existing_install_password_changes_and_restart(keycloak):
     first = 'first + & = " quote \\ $ ` password'
     reconcile(keycloak, first)
     assert login(keycloak, first)[0] == 200
-    assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 401
+    assert login(keycloak, BOOTSTRAP_PASSWORD)[1]["error"] == "invalid_grant"
     second = "second-admin-password"
     reconcile(keycloak, second)
     assert login(keycloak, second)[0] == 200
-    assert login(keycloak, first)[0] == 401
+    assert login(keycloak, first)[1]["error"] == "invalid_grant"
     _, auth = login(keycloak, second)
     assert (
         request(
@@ -151,7 +197,7 @@ def test_existing_install_password_changes_and_restart(keycloak):
     )
     assert users_after[0]["id"] == users_before[0]["id"]
     assert login(keycloak, second)[0] == 200
-    assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 401
+    assert login(keycloak, BOOTSTRAP_PASSWORD)[1]["error"] == "invalid_grant"
 
 
 def test_fresh_install_with_custom_password(keycloak):
@@ -204,6 +250,55 @@ def test_application_service_account_exists_without_console_password(
         assert login(keycloak, "changed-again")[0] == 200
 
 
+def provisioner_admin_status(url):
+    _, token = request(
+        url + "/realms/master/protocol/openid-connect/token",
+        {
+            "client_id": "openhands-provisioner",
+            "grant_type": "client_credentials",
+            "client_secret": BOOTSTRAP_PASSWORD,
+        },
+    )
+    return request(url + "/admin/realms/master", token=token["access_token"])[0]
+
+
+CONSOLE_PASSWORD = 'console + & " password'
+
+
+def provisioner_without_admin_api_scope(url, password=""):
+    """Set up the provisioner without kc-admin-api, like a client created before 26.8.2."""
+    reconcile(url, password, client_id="openhands-provisioner")
+    _, auth = login(url, password or BOOTSTRAP_PASSWORD)
+    master = url + "/admin/realms/master"
+    _, scopes = request(master + "/client-scopes", token=auth["access_token"])
+    scope = next((s for s in scopes if s["name"] == "kc-admin-api"), None)
+    assert scope is not None
+    _, clients = request(
+        master + "/clients?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    assert (
+        request(
+            master
+            + "/clients/"
+            + clients[0]["id"]
+            + "/default-client-scopes/"
+            + scope["id"],
+            token=auth["access_token"],
+            method="DELETE",
+        )[0]
+        == 204
+    )
+    assert provisioner_admin_status(url) == 401
+
+
+@new_keycloak
+@pytest.mark.parametrize("password", ["", CONSOLE_PASSWORD])
+def test_upgrade_adds_admin_api_scope_to_existing_provisioner(keycloak, password):
+    provisioner_without_admin_api_scope(keycloak, password)
+    reconcile(keycloak, password, client_id="openhands-provisioner", needs_scope=True)
+    assert provisioner_admin_status(keycloak) == 200
+
+
 @pytest.mark.parametrize("matching_secret", [True, False])
 def test_partial_provisioner_setup_and_client_collision(keycloak, matching_secret):
     reconcile(keycloak)
@@ -247,7 +342,7 @@ def test_partial_provisioner_setup_and_client_collision(keycloak, matching_secre
         assert login(keycloak, "next-dashboard-password")[0] == 200
     else:
         assert login(keycloak, BOOTSTRAP_PASSWORD)[0] == 200
-        assert login(keycloak, "new-dashboard-password")[0] == 401
+        assert login(keycloak, "new-dashboard-password")[1]["error"] == "invalid_grant"
 
 
 def test_console_password_is_only_passed_to_provisioning_container():
@@ -263,6 +358,8 @@ def test_console_password_is_only_passed_to_provisioning_container():
             "automation.enabled=false",
             "--set",
             "keycloak.enabled=true",
+            "--set",
+            "keycloak.image.tag=26.8.2-debian-12-oh1",
         ],
         text=True,
     )
@@ -287,6 +384,14 @@ def test_console_password_is_only_passed_to_provisioning_container():
         "key": "admin-ui-password",
         "optional": True,
     }
+    needs = next(
+        item for item in init["env"] if item["name"] == "KEYCLOAK_NEEDS_ADMIN_API_SCOPE"
+    )
+    assert needs["value"] == "true"
+    target = next(
+        item for item in init["env"] if item["name"] == "KEYCLOAK_TARGET_VERSION"
+    )
+    assert target["value"] == "26.8.2"
     for container in spec["containers"]:
         assert not any(
             item["name"] == "KEYCLOAK_ADMIN_UI_PASSWORD" for item in container["env"]
@@ -327,3 +432,349 @@ def test_unconfigured_install_does_not_create_or_reconcile_service_client(keyclo
     assert secret["value"] == "unrelated-service-secret"
     _, roles = request(client_url + "/scope-mappings/realm", token=auth["access_token"])
     assert not any(role["name"] == "admin" for role in roles)
+
+
+def has_admin_api_scope(url, password=""):
+    _, auth = login(url, password or BOOTSTRAP_PASSWORD)
+    _, scopes = request(
+        url + "/admin/realms/master/client-scopes", token=auth["access_token"]
+    )
+    return any(s["name"] == "kc-admin-api" for s in scopes)
+
+
+def run_scope_hook(
+    url,
+    target_version,
+    password="",
+    client_id="openhands-provisioner",
+    mode="fix",
+    timeout=60,
+    success=True,
+    client_secret="",
+    extra_env=None,
+):
+    script = scope_script()
+    env = dict(
+        os.environ,
+        KEYCLOAK_SERVER_URL=url,
+        KEYCLOAK_ADMIN_PASSWORD=BOOTSTRAP_PASSWORD,
+        KEYCLOAK_ADMIN_UI_PASSWORD=password,
+        KEYCLOAK_ADMIN_CLIENT_ID=client_id,
+        KEYCLOAK_ADMIN_CLIENT_SECRET=client_secret,
+        TARGET_VERSION=target_version,
+        NEEDS_ADMIN_API_SCOPE=str(
+            tuple(map(int, target_version.split("."))) >= (26, 8, 2)
+        ).lower(),
+        MODE=mode,
+        **(extra_env or {}),
+    )
+    try:
+        result = subprocess.run(
+            ["sh"],
+            input=script,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        out = error.stdout or ""
+        output = "TIMEOUT\n" + (out if isinstance(out, str) else out.decode())
+    else:
+        output = result.stdout + result.stderr
+        assert (result.returncode == 0) == success, output
+    assert BOOTSTRAP_PASSWORD not in output
+    if password:
+        assert password not in output
+    return output
+
+
+@new_keycloak
+@pytest.mark.parametrize(
+    "password,client_id",
+    [
+        ("", "openhands-provisioner"),
+        (CONSOLE_PASSWORD, "openhands-provisioner"),
+        # A console password alone makes keycloak-config create openhands-provisioner.
+        (CONSOLE_PASSWORD, ""),
+    ],
+)
+def test_scope_hook_adds_admin_api_scope_without_app_restart(
+    keycloak, password, client_id
+):
+    provisioner_without_admin_api_scope(keycloak, password)
+    out = run_scope_hook(keycloak, "26.8.2", password, client_id)
+    assert "has the kc-admin-api scope" in out
+    assert provisioner_admin_status(keycloak) == 200
+    assert "nothing to do" in run_scope_hook(keycloak, "26.8.2", password, client_id)
+
+
+@new_keycloak
+def test_scope_hook_needs_no_admin_login_when_the_provisioner_works(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    # The console password was cleared, so neither secret matches the admin user.
+    out = run_scope_hook(keycloak, "26.8.2", password="")
+    assert "has Admin REST API access; nothing to do" in out
+
+
+@new_keycloak
+def test_scope_hook_fails_clearly_when_no_admin_password_works(keycloak):
+    provisioner_without_admin_api_scope(keycloak, CONSOLE_PASSWORD)
+    out = run_scope_hook(keycloak, "26.8.2", password="", success=False)
+    assert "Set the Keycloak Admin Password" in out
+    assert provisioner_admin_status(keycloak) == 401
+
+
+@old_keycloak
+def test_scope_hook_is_a_no_op_before_26_8_2(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    assert "nothing to do" in run_scope_hook(keycloak, "26.8.0")
+
+
+@old_keycloak
+def test_scope_hook_waits_while_keycloak_is_older_than_the_target(keycloak):
+    # The script can start before the new Keycloak replaces the old one.
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(keycloak, "26.8.2", timeout=15)
+    assert out.startswith("TIMEOUT") and "Waiting for Keycloak 26.8.2" in out
+
+
+def test_scope_hook_keeps_waiting_while_keycloak_is_down():
+    out = run_scope_hook("http://127.0.0.1:9", "26.8.2", timeout=10)
+    assert out.startswith("TIMEOUT") and "Waiting for Keycloak 26.8.2" in out
+
+
+@old_keycloak
+def test_scope_hook_gives_up_when_keycloak_stays_older_than_the_target(keycloak):
+    # For example, keycloak.image.digest pins an older image than keycloak.image.tag.
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(
+        keycloak, "26.8.2", success=False, extra_env={"FIX_WAIT_SECONDS": "3"}
+    )
+    assert "still older than 26.8.2 after 3 seconds" in out
+    assert "keycloak.image.digest" in out
+
+
+@old_keycloak
+def test_keycloak_config_gives_up_when_keycloak_stays_older_than_the_target(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    result = reconcile(
+        keycloak,
+        client_id="openhands-provisioner",
+        needs_scope=True,
+        success=False,
+        timeout=30,
+        extra_env={"FIX_WAIT_SECONDS": "3"},
+    )
+    assert "keycloak.image.digest" in result.stderr
+
+
+@old_keycloak
+def test_scope_hook_gives_up_when_the_old_keycloak_forbids_and_stays(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    remove_provisioner_admin_role(keycloak)
+    out = run_scope_hook(
+        keycloak, "26.8.2", success=False, extra_env={"FIX_WAIT_SECONDS": "3"}
+    )
+    assert "still older than 26.8.2 after 3 seconds" in out
+
+
+def test_scope_hook_gives_up_when_keycloak_stays_down():
+    out = run_scope_hook(
+        "http://127.0.0.1:9",
+        "26.8.2",
+        success=False,
+        extra_env={"FIX_WAIT_SECONDS": "2"},
+    )
+    assert "Keycloak did not answer for 2 seconds" in out
+
+
+def test_scope_hook_skips_an_install_without_a_provisioner(keycloak):
+    reconcile(keycloak)
+    out = run_scope_hook(keycloak, "26.8.2", client_id="")
+    assert 'Client "openhands-provisioner" does not exist' in out
+
+
+@old_keycloak
+def test_keycloak_config_waits_while_the_old_keycloak_still_serves(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    with pytest.raises(subprocess.TimeoutExpired) as error:
+        reconcile(
+            keycloak, client_id="openhands-provisioner", needs_scope=True, timeout=15
+        )
+    out = error.value.stdout or ""
+    out = out if isinstance(out, str) else out.decode()
+    assert "Waiting for Keycloak 26.8.2 to serve the admin API" in out
+
+
+def test_scope_hook_leaves_a_client_with_a_wrong_secret_alone(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(keycloak, "26.8.2", client_secret="not-the-client-secret")
+    assert 'rejects the "openhands-provisioner" client secret' in out
+
+
+@new_keycloak
+def test_scope_hook_fails_clearly_when_the_provisioner_lacks_admin_rights(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    _, auth = login(keycloak, BOOTSTRAP_PASSWORD)
+    master = keycloak + "/admin/realms/master"
+    _, clients = request(
+        master + "/clients?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    _, user = request(
+        master + "/clients/" + clients[0]["id"] + "/service-account-user",
+        token=auth["access_token"],
+    )
+    _, admin_role = request(master + "/roles/admin", token=auth["access_token"])
+    # With the scope but without the admin role, the admin API answers 403.
+    assert (
+        request(
+            master + "/users/" + user["id"] + "/role-mappings/realm",
+            token=auth["access_token"],
+            method="DELETE",
+            json_body=[admin_role],
+        )[0]
+        == 204
+    )
+    out = run_scope_hook(keycloak, "26.8.2", timeout=30, success=False)
+    assert "still has no Admin REST API access (provisioner: forbidden" in out
+
+
+def test_keycloak_test_image_matches_the_admin_api_scope_premise(keycloak):
+    reconcile(keycloak)
+    assert has_admin_api_scope(keycloak) == HAS_ADMIN_API_SCOPE
+
+
+def remove_provisioner_admin_role(url):
+    _, auth = login(url, BOOTSTRAP_PASSWORD)
+    master = url + "/admin/realms/master"
+    _, clients = request(
+        master + "/clients?clientId=openhands-provisioner", token=auth["access_token"]
+    )
+    _, user = request(
+        master + "/clients/" + clients[0]["id"] + "/service-account-user",
+        token=auth["access_token"],
+    )
+    _, admin_role = request(master + "/roles/admin", token=auth["access_token"])
+    assert (
+        request(
+            master + "/users/" + user["id"] + "/role-mappings/realm",
+            token=auth["access_token"],
+            method="DELETE",
+            json_body=[admin_role],
+        )[0]
+        == 204
+    )
+
+
+@old_keycloak
+def test_scope_hook_waits_for_the_scope_when_the_old_keycloak_forbids(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    remove_provisioner_admin_role(keycloak)
+    out = run_scope_hook(keycloak, "26.8.2", timeout=15)
+    assert out.startswith("TIMEOUT")
+    assert "to create the kc-admin-api scope" in out
+
+
+def test_scope_hook_retries_an_admin_login_that_gets_no_answer():
+    # Keycloak 26.8.2 rejects the provisioner, then drops the admin login, as during a pod swap.
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            if "grant_type=client_credentials" in body:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"access_token": "provisioner"}')
+            else:
+                self.close_connection = True
+
+        def do_GET(self):
+            self.send_response(401)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}", "26.8.2", timeout=10
+        )
+    finally:
+        server.shutdown()
+    assert out.startswith("TIMEOUT")
+    assert "to create the kc-admin-api scope" in out
+
+
+def stub_keycloak(token_reply, admin_reply):
+    """A stand-in Keycloak. token_reply(grant) and admin_reply(path) return (status, body)."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, status, body):
+            if status is None:
+                self.close_connection = True
+                return
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+            grant = "client_credentials" if "client_credentials" in body else "password"
+            self._send(*token_reply(grant))
+
+        def do_GET(self):
+            self._send(*admin_reply(self.path))
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_scope_hook_retries_an_admin_login_error_that_is_not_a_rejected_password():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (500, '{"error": "unknown_error"}')
+        ),
+        lambda path: (401, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}", "26.8.2", timeout=10
+        )
+    finally:
+        server.shutdown()
+    assert out.startswith("TIMEOUT")
+    assert "to create the kc-admin-api scope" in out
+
+
+def test_scope_hook_gives_up_when_the_admin_login_never_answers():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (None, "")
+        ),
+        lambda path: (401, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            success=False,
+            extra_env={"FIX_WAIT_SECONDS": "2"},
+        )
+    finally:
+        server.shutdown()
+    assert "Keycloak did not answer for 2 seconds" in out
+
+

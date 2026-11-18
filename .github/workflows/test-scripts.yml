@@ -69,3 +69,44 @@ jobs:
           --with ruamel.yaml
           --with PyYAML
           python -m pytest scripts -q
+
+  # The job above pins Keycloak 26.3.3, where the kc-admin-api tests skip. 26.8.0 is the
+  # patch-upgrade source and 26.8.2 the target version; one job each keeps every job in its timeout.
+  keycloak-scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        keycloak: ['26.8.0', '26.8.2']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.18.4'
+
+      - name: Build OpenHands chart dependencies
+        run: |
+          helm repo add lmnr https://lmnr-ai.github.io/lmnr-helm
+          helm repo add minio https://charts.min.io/
+          helm repo add rustfs https://charts.rustfs.com/
+          helm repo add valkey https://valkey.io/valkey-helm/
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm dependency build charts/openhands
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run Keycloak script tests against Keycloak ${{ matrix.keycloak }}
+        env:
+          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:${{ matrix.keycloak }}
+        run: >-
+          uv run
+          --python 3.12
+          --with pytest
+          --with PyYAML
+          python -m pytest scripts/test_keycloak_admin_password.py -q
