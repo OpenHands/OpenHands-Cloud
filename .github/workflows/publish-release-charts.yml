@@ -1,12 +1,17 @@
 name: Publish Released Helm Chart
 
-# Publishes the STABLE chart version to GHCR when release-please tags a chart
-# release. This replaces the old "publish a stable version on every merge to
-# main" — stable charts now publish only when a release is cut.
+# Publishes a chart version to GHCR when a chart release is tagged. For
+# openhands that is either a release candidate (X.Y.Z-rc.N, tagged by
+# release-please) or a stable release (X.Y.Z, tagged when a promotion PR merges;
+# see docs/releases.md). The other charts only cut stable releases.
 #
-# release-please creates the tag with the shared release App token, so this push
-# event triggers workflows (a tag pushed by the default GITHUB_TOKEN would be
+# The tags are created with the shared release App token, so this push event
+# triggers workflows (a tag pushed by the default GITHUB_TOKEN would be
 # suppressed by GitHub's recursion guard and never fire this job).
+#
+# Only openhands release candidates bump saas-deploy. A stable tag sits on the
+# commit of an rc that already went out, and promoting an older rc must not roll
+# staging back from a newer one.
 #
 # Tag shape is <component>/<version> (e.g. openhands/0.7.69). The patterns below
 # don't overlap: `openhands/*` matches openhands/0.7.69 but not
@@ -28,6 +33,7 @@ jobs:
     outputs:
       component: ${{ steps.parse.outputs.component }}
       version: ${{ steps.parse.outputs.version }}
+      prerelease: ${{ steps.parse.outputs.prerelease }}
       source-sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Parse component and version from tag
@@ -39,9 +45,13 @@ jobs:
           # component, and everything up to the last / for the version.
           COMPONENT="${TAG%/*}"
           VERSION="${TAG##*/}"
+          # A SemVer prerelease (0.94.0-rc.3) has a "-" after the version core.
+          PRERELEASE=false
+          [[ "$VERSION" == *-* ]] && PRERELEASE=true
           {
             echo "component=${COMPONENT}"
             echo "version=${VERSION}"
+            echo "prerelease=${PRERELEASE}"
             echo "path=charts/${COMPONENT}"
           } >> "$GITHUB_OUTPUT"
           echo "Publishing ${COMPONENT} ${VERSION} from charts/${COMPONENT}"
@@ -85,7 +95,7 @@ jobs:
   dispatch-staging-chart-bump:
     name: Dispatch staging chart bump
     needs: publish
-    if: ${{ needs.publish.outputs.component == 'openhands' }}
+    if: ${{ needs.publish.outputs.component == 'openhands' && needs.publish.outputs.prerelease == 'true' }}
     runs-on: ubuntu-24.04
     environment: staging-chart-bump-dispatcher
     permissions:
@@ -126,6 +136,7 @@ jobs:
       ${{
         needs.publish.result == 'success' &&
         needs.publish.outputs.component == 'openhands' &&
+        needs.publish.outputs.prerelease == 'true' &&
         github.actor_id == '290150379'
       }}
     runs-on: ubuntu-24.04

@@ -22,6 +22,9 @@
     ".": {
       "release-type": "helm",
       "component": "openhands",
+      "versioning": "prerelease",
+      "prerelease": true,
+      "prerelease-type": "rc.1",
       "tag-separator": "/",
       "include-v-in-tag": false,
       "changelog-type": "github-scoped",

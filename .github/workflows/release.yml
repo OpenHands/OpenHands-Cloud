@@ -18,9 +18,15 @@ name: release
 #      the next version to 0.8.0 publishes 0.8.0-alpha.<run>; a chart with no
 #      pending release publishes nothing.
 #
+# openhands is different on both counts. Its release PR cuts release candidates
+# (X.Y.Z-rc.N), and it publishes no alphas: every rc is already an internal
+# build. A stable openhands release comes only from merging a promotion PR (see
+# promote-release.yml); the `promote` job below turns that merge into the stable
+# tag. docs/releases.md describes the whole flow.
+#
 # Merging a release PR tags the chart; the tag (created with the release App
 # token, so it can trigger workflows) fires publish-release-charts.yml to publish
-# the STABLE chart to GHCR.
+# the chart to GHCR.
 on:
   push:
     branches:
@@ -54,7 +60,161 @@ jobs:
       manifest-file: .release-please-manifest.image-loader.json
       github-scoped-notes: true
 
+  # Turns a merged promotion PR (opened by promote-release.yml) into the stable
+  # release: the GitHub Release and the openhands/X.Y.Z tag, placed on the SAME
+  # commit as the promoted rc so stable ships exactly what was tested. The tag
+  # fires the publish workflows. On any other push this job finds no promotion PR
+  # and does nothing.
+  #
+  # It runs before the openhands release-please job on purpose. The promotion PR
+  # moved the manifest to X.Y.Z, and release-please counts commits from the
+  # openhands/X.Y.Z release. If it ran first, that release would not exist yet.
+  promote:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Find the promotion PR this push merged
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          # Only a PR the release App opened, with the promotion label, merged
+          # into this branch as exactly this commit counts.
+          pr=$(gh api "repos/${REPO}/commits/${SHA}/pulls" | jq -c \
+            --arg sha "$SHA" --arg branch "$BRANCH" '
+              first(.[] | select(
+                .merged_at != null and
+                .merge_commit_sha == $sha and
+                .base.ref == $branch and
+                .user.login == "openhands-release-bot[bot]" and
+                any(.labels[]; .name == "autorelease: openhands promote") and
+                (.head.ref | startswith("release-promote/openhands/"))
+              )) // empty')
+          if [ -z "$pr" ]; then
+            echo "This push is not a promotion merge; nothing to do."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The rc comes from the head branch name: the workflow set it, and
+          # unlike the PR body nobody can edit it after the fact.
+          head=$(jq -r '.head.ref' <<<"$pr")
+          rc_tag="${head#release-promote/}"
+          if [[ ! "$rc_tag" =~ ^openhands/([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]]; then
+            echo "::error::promotion branch ${head} does not name an rc tag"
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+
+          # Everything between the markers in the PR body becomes the Release
+          # body, so reviewers can edit the notes before merging.
+          jq -r '.body' <<<"$pr" \
+            | sed -n '/<!-- notes:start -->/,/<!-- notes:end -->/p' \
+            | sed '1d;$d' > "${RUNNER_TEMP}/notes.md"
+          if [ ! -s "${RUNNER_TEMP}/notes.md" ]; then
+            echo "::error::promotion PR body has no notes between the notes markers"
+            exit 1
+          fi
+
+          {
+            echo "found=true"
+            echo "number=$(jq -r '.number' <<<"$pr")"
+            echo "rc_tag=${rc_tag}"
+            echo "version=${version}"
+            echo "stable_tag=openhands/${version}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Promotion PR #$(jq -r '.number' <<<"$pr") merged: ${rc_tag} -> openhands/${version}"
+
+      - name: Checkout
+        if: steps.pr.outputs.found == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the rc commit
+        if: steps.pr.outputs.found == 'true'
+        id: rc
+        shell: bash
+        env:
+          RC_TAG: ${{ steps.pr.outputs.rc_tag }}
+          STABLE_TAG: ${{ steps.pr.outputs.stable_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          rc_sha=$(git rev-parse --verify --quiet "refs/tags/${RC_TAG}^{commit}") || {
+            echo "::error::rc tag ${RC_TAG} does not exist"
+            exit 1
+          }
+          # release-please on this branch counts commits from the stable tag, so
+          # the tag has to sit on this branch's history.
+          if ! git merge-base --is-ancestor "$rc_sha" "$SHA"; then
+            echo "::error::${RC_TAG} (${rc_sha}) is not on this branch's history"
+            exit 1
+          fi
+          # Tags are immutable (repo ruleset). If an earlier attempt already
+          # created this one, it must point at the rc; then only the Release may
+          # still be missing.
+          existing=$(git rev-parse --verify --quiet "refs/tags/${STABLE_TAG}^{commit}" || true)
+          if [ -n "$existing" ] && [ "$existing" != "$rc_sha" ]; then
+            echo "::error::${STABLE_TAG} already exists at ${existing}, not at ${RC_TAG} (${rc_sha})"
+            exit 1
+          fi
+          echo "sha=${rc_sha}" >> "$GITHUB_OUTPUT"
+
+      # Only the release App may create openhands/* tags (repo ruleset), and its
+      # events are what fire the tag-triggered publish workflows; a tag created
+      # with GITHUB_TOKEN would trigger nothing.
+      - name: Mint release App token
+        if: steps.pr.outputs.found == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Create the stable release
+        if: steps.pr.outputs.found == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          RC_TAG: ${{ steps.pr.outputs.rc_tag }}
+          RC_SHA: ${{ steps.rc.outputs.sha }}
+          STABLE_TAG: ${{ steps.pr.outputs.stable_tag }}
+          VERSION: ${{ steps.pr.outputs.version }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          if gh release view "$STABLE_TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release ${STABLE_TAG} already exists; nothing to do."
+            exit 0
+          fi
+          # Same title shape release-please uses for the rc releases.
+          gh release create "$STABLE_TAG" \
+            --repo "$REPO" \
+            --target "$RC_SHA" \
+            --title "openhands: v${VERSION}" \
+            --notes-file "${RUNNER_TEMP}/notes.md" \
+            --latest
+          {
+            echo "### Promoted ${RC_TAG} to ${STABLE_TAG}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Promotion PR | #${PR_NUMBER} |"
+            echo "| Commit | \`${RC_SHA}\` |"
+            echo "| Release | https://github.com/${REPO}/releases/tag/${STABLE_TAG} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   openhands:
+    # Needs the stable release from `promote` to exist first (see above). If
+    # promote fails, this is skipped rather than left to cut a bogus release PR.
+    needs: promote
     permissions:
       contents: write
       pull-requests: write
@@ -77,13 +237,13 @@ jobs:
       github-scoped-notes: true
 
   # Which charts changed on this push. Runs in parallel with the release-please
-  # jobs above; publish-alpha gates each chart's publish on this.
+  # jobs above; publish-alpha gates each chart's publish on this. openhands is
+  # not listed: it publishes release candidates instead of alphas.
   detect-changes:
     runs-on: ubuntu-24.04
     outputs:
       crd-check: ${{ steps.changes.outputs.crd-check }}
       image-loader: ${{ steps.changes.outputs.image-loader }}
-      openhands: ${{ steps.changes.outputs.openhands }}
       openhands-secrets: ${{ steps.changes.outputs.openhands-secrets }}
     steps:
       - name: Checkout
@@ -100,7 +260,7 @@ jobs:
         run: |
           # Manual runs reconsider every chart; pushes diff the pushed range.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            for chart in crd-check image-loader openhands openhands-secrets; do
+            for chart in crd-check image-loader openhands-secrets; do
               echo "${chart}=true" >> "$GITHUB_OUTPUT"
             done
             echo "workflow_dispatch: marking all charts changed"
@@ -116,9 +276,8 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # crd-check, image-loader, and openhands-secrets are independent
-          # release lines: each changes only when files under its own chart
-          # directory change.
+          # Each chart changes only when files under its own chart directory
+          # change.
           for chart in crd-check image-loader openhands-secrets; do
             if echo "$CHANGED_FILES" | grep -q "^charts/${chart}/"; then
               echo "${chart}=true" >> "$GITHUB_OUTPUT"
@@ -129,29 +288,12 @@ jobs:
             fi
           done
 
-          # openhands is the umbrella release line: its release-please config is
-          # rooted at the repo root with exclude-paths for the three charts above
-          # (see release-please-config.openhands.json), so a change to
-          # charts/infra/, replicated/, or anything else outside those charts
-          # counts as an openhands change — as do its own embedded subcharts
-          # under charts/openhands/charts/. openhands is "changed" whenever any
-          # touched file is NOT under one of those three independent charts.
-          OPENHANDS_CHANGES=$(echo "$CHANGED_FILES" | \
-            grep -vE '^charts/(crd-check|image-loader|openhands-secrets)/' || true)
-          if [ -n "$OPENHANDS_CHANGES" ]; then
-            echo "openhands=true" >> "$GITHUB_OUTPUT"
-            echo "Changes detected for openhands (outside the independent charts)"
-          else
-            echo "openhands=false" >> "$GITHUB_OUTPUT"
-            echo "No openhands-relevant changes"
-          fi
-
   # Edge alpha publish. Waits for the release-please jobs so each chart's release
   # PR (and therefore its proposed next version) reflects this push, then
   # publishes an alpha of every changed chart at that chart's next candidate
   # version. Main-only — release/** pushes just refresh their release PRs.
   publish-alpha:
-    needs: [crd-check, image-loader, openhands, openhands-secrets, detect-changes]
+    needs: [crd-check, image-loader, openhands-secrets, detect-changes]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
@@ -169,8 +311,6 @@ jobs:
             path: charts/crd-check
           - name: image-loader
             path: charts/image-loader
-          - name: openhands
-            path: charts/openhands
           - name: openhands-secrets
             path: charts/openhands-secrets
       max-parallel: 1
@@ -205,14 +345,7 @@ jobs:
           # wasn't release-worthy, e.g. a chore) ⇒ no candidate ⇒ no alpha.
           BRANCH="release-please--branches--main--components--${CHART_NAME}"
           MANIFEST=".release-please-manifest.${CHART_NAME}.json"
-          # openhands is the umbrella release line rooted at the repo root, so its
-          # manifest key is "." (not charts/openhands); the other charts key on
-          # their own chart path.
-          if [ "$CHART_NAME" = "openhands" ]; then
-            KEY="."
-          else
-            KEY="charts/${CHART_NAME}"
-          fi
+          KEY="charts/${CHART_NAME}"
 
           CAND_RAW=$(gh api -H "Accept: application/vnd.github.raw" \
             "repos/${REPO}/contents/${MANIFEST}?ref=${BRANCH}" 2>/dev/null) || CAND_RAW=""

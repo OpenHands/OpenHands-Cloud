@@ -14,6 +14,11 @@ on:
       - '.github/workflows/release-gate.yml'
       - '.github/workflows/dispatch-e2e-test-revision-bump.yml'
       - '.github/workflows/publish-release-charts.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/promote-release.yml'
+      - '.github/workflows/release-replicated-beta.yml'
+      - '.github/workflows/release-replicated-stable.yml'
+      - 'release-please-config.openhands.json'
       - '.github/workflows/test-scripts.yml'
       - '.github/workflows/preview-browser-login.yml'
       # The LiteLLM checksum guard's wiring assertions live in
