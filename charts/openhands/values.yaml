@@ -1022,6 +1022,10 @@ valkey:
       cpu: 150m
       memory: 192Mi
       ephemeral-storage: 2Gi
+  metrics:
+    exporter:
+      image:
+        tag: "v1.97.0"
 
 maintenanceTasks:
   enabled: true
@@ -1724,7 +1728,7 @@ crdCheck:
   enabled: false
   image:
     repository: docker.io/rancher/kubectl
-    tag: v1.33.0
+    tag: v1.33.13
     pullPolicy: IfNotPresent
   timeout: 120s
   backoffLimit: 6
