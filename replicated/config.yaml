@@ -1156,6 +1156,17 @@ spec:
           type: file
           when: 'repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}'
           required: true
+        - name: github_scope_repo_search_to_installations
+          title: Limit Repository Search to GitHub App Installations
+          help_text: >-
+            When enabled, the repository picker (web and Slack) only shows a user's
+            personal repositories if the GitHub App is installed on their own
+            account. Repositories from organizations where the App is installed are
+            always shown. When disabled, a user's personal repositories are shown
+            even when the App is installed only on an organization.
+          type: bool
+          default: "0"
+          when: 'repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}'
 
     - name: gitlab_authentication
       title: GitLab Authentication

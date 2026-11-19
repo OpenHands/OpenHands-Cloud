@@ -281,6 +281,10 @@
       name: github-app
       key: app-slug
       optional: true
+{{- if .Values.github.scopeRepoSearchToInstallations }}
+- name: GITHUB_SCOPE_REPO_SEARCH_TO_INSTALLATIONS
+  value: "true"
+{{- end }}
 {{- end }}
 {{- if .Values.gitlab.enabled }}
 - name: GITLAB_APP_CLIENT_ID

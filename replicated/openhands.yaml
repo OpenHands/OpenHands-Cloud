@@ -641,6 +641,7 @@ spec:
       linkMethod: 'email'
     github:
       enabled: repl{{ ConfigOptionEquals "github_auth_enabled" "1" }}
+      scopeRepoSearchToInstallations: repl{{ ConfigOptionEquals "github_scope_repo_search_to_installations" "1" }}
     gitlab:
       enabled: repl{{ ConfigOptionEquals "gitlab_auth_enabled" "1" }}
       host: 'repl{{ ConfigOption "gitlab_host" }}'

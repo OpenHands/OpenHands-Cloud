@@ -235,6 +235,11 @@ runtimeFileArchive:
 
 github:
   enabled: false
+  # Restrict repository search to what the GitHub App installations cover: the
+  # user's personal repos are searched only when the App is installed on their
+  # own account. Sets GITHUB_SCOPE_REPO_SEARCH_TO_INSTALLATIONS=true. Off by
+  # default, which keeps searching personal repos regardless of installations.
+  scopeRepoSearchToInstallations: false
 
 enrichUserInteractionData:
   enabled: false
