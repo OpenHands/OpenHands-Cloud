@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-# Import the script directly, mirroring the sibling update_openhands_charts tests.
 sys.path.insert(0, str(Path(__file__).parent))
 
 import bump_image_tag
