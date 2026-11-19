@@ -49,6 +49,9 @@ The runtime-api image must support this setting; older images ignore it.
 Redeploy runtime-api after changing the value. It applies only to newly created
 budgets. Existing budgets and any workaround CronJob need separate migration.
 
+In the Replicated installer, set **Sandbox Eviction Limit** under **Sandbox
+Configuration**. It accepts nonnegative integers and defaults to `0`.
+
 ### Workspace init image
 
 Set `runtime-api.env.RUNTIME_INIT_IMAGE` to use a mirrored BusyBox image for

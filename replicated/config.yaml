@@ -1514,6 +1514,20 @@ spec:
             regex:
               pattern: ^[1-9][0-9]*m$
               message: Must be a CPU value in millicores (e.g., 500m, 1000m)
+        - name: sandbox_pdb_max_unavailable
+          title: Sandbox Eviction Limit
+          help_text: >-
+            Maximum unavailable pods allowed by each sandbox's disruption budget.
+            0 blocks voluntary eviction; 1 allows node drains to interrupt a sandbox.
+            Applies to new budgets only, including warm sandboxes.
+            Existing budgets need separate migration.
+          type: text
+          default: "0"
+          required: true
+          validation:
+            regex:
+              pattern: ^[0-9]+$
+              message: Must be a non-negative integer
         - name: sandbox_warm_runtime_count
           title: Warm Runtime Count
           help_text: Number of warm runtime sandboxes to keep ready so new conversations start instantly. Set to 0 to disable and cold-start each sandbox.
