@@ -669,6 +669,8 @@ laminar:
       tag: "9.1.2-alpine"
     clickhouse:
       tag: "26.3-alpine"
+    curl:
+      tag: "8.23.0"
 
   clickhouse:
     diagnostics:
@@ -903,6 +905,9 @@ rustfs:
     rustfs:
       access_key: "default"
       secret_key: "notasecret"
+  image:
+    rustfs:
+      tag: "1.0.6"
   replicaCount: 1
   # The subchart defaults this on, publishing its console at a placeholder host.
   # The store is only ever reached in-cluster.
