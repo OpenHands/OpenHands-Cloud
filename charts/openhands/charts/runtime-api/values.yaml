@@ -64,6 +64,7 @@ env:
   INCLUDE_START_PROBE: "true"
   INCLUDE_LIVENESS_PROBE: "true"
   RUNTIME_CLASS: "sysbox-runc"
+  RUNTIME_PDB_MAX_UNAVAILABLE: "0"
   # Needs BusyBox's shell and utilities; pulled with RUNTIME_IMAGE_PULL_SECRETS.
   RUNTIME_INIT_IMAGE: "busybox:1.36"
 

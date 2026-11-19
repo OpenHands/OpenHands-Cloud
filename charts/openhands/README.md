@@ -28,6 +28,27 @@ render. See [Automations chart configuration](#automations-chart-configuration).
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
 
+### Sandbox disruption budgets
+
+Set `runtime-api.env.RUNTIME_PDB_MAX_UNAVAILABLE` to a nonnegative integer to
+control each sandbox's PodDisruptionBudget, including warm sandboxes.
+The default is `0`, which blocks voluntary eviction of single-replica sandboxes.
+
+```yaml
+runtime-api:
+  env:
+    RUNTIME_PDB_MAX_UNAVAILABLE: "1"
+```
+
+With `1`, node drains can evict a sandbox, interrupting running processes and
+connections. A replacement pod can start when storage and scheduling constraints
+permit. In-memory state does not survive eviction; local volumes can prevent
+rescheduling onto another node.
+
+The runtime-api image must support this setting; older images ignore it.
+Redeploy runtime-api after changing the value. It applies only to newly created
+budgets. Existing budgets and any workaround CronJob need separate migration.
+
 ### Workspace init image
 
 Set `runtime-api.env.RUNTIME_INIT_IMAGE` to use a mirrored BusyBox image for
