@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.94.1
+  tag: 1.95.0
 
 # OpenHands Enterprise license from Customer Center. Set a license key, or an
 # offline license file if this install can't reach Customer Center. An upcoming
@@ -669,6 +669,8 @@ laminar:
       tag: "9.1.2-alpine"
     clickhouse:
       tag: "26.3-alpine"
+    curl:
+      tag: "8.23.0"
 
   clickhouse:
     diagnostics:
@@ -903,6 +905,9 @@ rustfs:
     rustfs:
       access_key: "default"
       secret_key: "notasecret"
+  image:
+    rustfs:
+      tag: "1.0.6"
   replicaCount: 1
   # The subchart defaults this on, publishing its console at a placeholder host.
   # The store is only ever reached in-cluster.
