@@ -1306,6 +1306,8 @@ runtime-api:
     # Replicated installer turns it on in replicated/openhands.yaml, since OHE
     # clusters are fixed-size.
     RUNTIME_PENDING_REAP_ENABLED: "false"
+    # Sandbox eviction during node drains can interrupt running work.
+    # RUNTIME_PDB_MAX_UNAVAILABLE: "1"
     # Image that prepares each sandbox's workspace volume; defaults to busybox:1.36.
     # Takes a tag or @sha256: digest, pulled with RUNTIME_IMAGE_PULL_SECRETS. Older
     # runtime-api images ignore it.
