@@ -20,6 +20,7 @@ def option() -> dict:
 def test_installer_preserves_the_zero_default(option: dict) -> None:
     assert option["type"] == "text"
     assert option["default"] == "0"
+    assert option["required"] is True
     assert "value" not in option
     assert "when" not in option
 
