@@ -45,9 +45,7 @@ connections. A replacement pod can start when storage and scheduling constraints
 permit. In-memory state does not survive eviction; local volumes can prevent
 rescheduling onto another node.
 
-The runtime-api image must support this setting; older images ignore it.
-Redeploy runtime-api after changing the value. It applies only to newly created
-budgets. Existing budgets and any workaround CronJob need separate migration.
+It applies only to newly created budgets.
 
 ### Workspace init image
 
