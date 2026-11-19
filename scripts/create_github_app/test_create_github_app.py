@@ -213,6 +213,7 @@ class TestBuildAppManifest:
         "permission,expected_level",
         [
             ("actions", "write"),
+            ("checks", "read"),
             ("contents", "write"),
             ("emails", "read"),
             ("issues", "write"),
@@ -232,7 +233,7 @@ class TestBuildAppManifest:
     def test_manifest_has_only_expected_permissions(self):
         """Test that manifest has exactly the expected permissions, no more."""
         manifest = build_app_manifest(base_domain="example.com")
-        expected = {"actions", "contents", "emails", "issues", "metadata", "organization_events", "pull_requests", "repository_hooks", "statuses", "workflows"}
+        expected = {"actions", "checks", "contents", "emails", "issues", "metadata", "organization_events", "pull_requests", "repository_hooks", "statuses", "workflows"}
         assert set(manifest["default_permissions"].keys()) == expected
 
     def test_manifest_webhook_url(self):
@@ -258,9 +259,11 @@ class TestBuildAppManifest:
             assert "localhost" not in url
 
     @pytest.mark.parametrize("event", [
+        "check_suite",
         "issue_comment",
         "pull_request",
         "pull_request_review_comment",
+        "status",
         "workflow_run",
     ])
     def test_manifest_subscribes_to_event(self, event):
@@ -272,9 +275,11 @@ class TestBuildAppManifest:
         """Test that manifest subscribes to exactly the expected events, no more."""
         manifest = build_app_manifest(base_domain="example.com")
         expected = {
+            "check_suite",
             "issue_comment",
             "pull_request",
             "pull_request_review_comment",
+            "status",
             "workflow_run",
         }
         assert set(manifest["default_events"]) == expected
