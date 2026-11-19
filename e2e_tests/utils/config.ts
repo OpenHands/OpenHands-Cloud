@@ -100,6 +100,7 @@ export const ROLE_ONLY_SPECS: Record<RunUser, readonly string[]> = {
     "009-budgets.spec.ts",
     "010-personal-budget-guards.spec.ts",
     "012-first-install.spec.ts",
+    "021-repository-conversation.spec.ts",
   ],
   "new-user": [
     "006-org-management.spec.ts",
