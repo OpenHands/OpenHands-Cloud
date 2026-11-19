@@ -47,6 +47,9 @@ rescheduling onto another node.
 
 It applies only to newly created budgets.
 
+In the Replicated installer, set **Sandbox Eviction Limit** under **Sandbox
+Configuration**. It accepts nonnegative integers and defaults to `0`.
+
 ### Workspace init image
 
 Set `runtime-api.env.RUNTIME_INIT_IMAGE` to use a mirrored BusyBox image for

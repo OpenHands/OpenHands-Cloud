@@ -421,6 +421,7 @@ spec:
         # them. Older runtime-api images ignore this variable.
         WARM_RUNTIME_CONFIG_OVERLAY: "1"
         RUNTIME_BASE_URL: '{{repl ConfigOption "computed_runtime_base_hostname" }}'
+        RUNTIME_PDB_MAX_UNAVAILABLE: 'repl{{ ConfigOption "sandbox_pdb_max_unavailable" }}'
         # Joins the sandbox ID to RUNTIME_BASE_URL. "-" keeps each sandbox one
         # label deep ({id}-runtime.<base>) so a single *.<base> wildcard covers
         # it; "." nests it under the runtime base. The path-routing block below
