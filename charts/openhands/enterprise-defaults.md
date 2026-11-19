@@ -28,6 +28,11 @@ in your overlay replaces each default without creating a duplicate entry.
   fresh install, the first user to sign in becomes the first Super Admin and
   goes through the first-install setup. An upgraded install that already has
   users does not run the setup again.
+- `SUPER_ADMIN_EMAILS` is a comma-separated list of emails that always hold
+  the Super Admin role. A listed user gets the role when they sign in, so you
+  can guarantee or recover admin access without a database console. When it
+  is set, the first user becomes a Super Admin only if listed. It is empty by
+  default.
 - `HIDE_PERSONAL_WORKSPACES` also changes the server. The organization list
   marks a personal workspace hidden for a user who belongs to a team
   organization, and sign-in moves a member of the default organization out of
