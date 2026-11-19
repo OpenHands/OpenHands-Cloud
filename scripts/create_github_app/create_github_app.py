@@ -122,6 +122,7 @@ def build_app_manifest(
         "request_oauth_on_install": False,
         "default_permissions": {
             "actions": "write",
+            "checks": "read",
             "contents": "write",
             "emails": "read",
             "issues": "write",
@@ -133,9 +134,11 @@ def build_app_manifest(
             "workflows": "write",
         },
         "default_events": [
+            "check_suite",
             "issue_comment",
             "pull_request",
             "pull_request_review_comment",
+            "status",
             "workflow_run",
         ],
         "hook_attributes": {
