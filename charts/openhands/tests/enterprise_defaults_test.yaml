@@ -43,6 +43,22 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_SUPER_ADMIN, value: "false"}
           count: 1
+  - it: leaves the Super Admin email list empty by default
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: SUPER_ADMIN_EMAILS, value: ""}
+          count: 1
+  - it: sets the Super Admin email list from env
+    set:
+      env.SUPER_ADMIN_EMAILS: "alice@example.com,bob@example.com"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: SUPER_ADMIN_EMAILS, value: "alice@example.com,bob@example.com"}
+          count: 1
   - it: leaves the structured web client flags unset by default
     asserts:
       - template: deployment.yaml
