@@ -109,6 +109,40 @@ A ready-to-copy version is in
       tag: ${{ needs.prepare-tag.outputs.tag }}
 ```
 
+### The `runtime-api` fusey version
+
+The fuse warm pool image is `<agentServerImage.tag>-fusey<fuseyImage.version>`, and
+runtime-api builds it from `fusey-image.env`. So that the chart's
+`global.fuseyImage.version` cannot drift from that file, runtime-api passes its
+`FUSEY_VERSION` along with the tag, and the bump PR sets it in both values files:
+
+```yaml
+  prepare-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      fusey_version: ${{ steps.t.outputs.fusey_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: t
+        run: |
+          echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          sed -n 's/^FUSEY_VERSION=/fusey_version=/p' fusey-image.env >> "$GITHUB_OUTPUT"
+
+  bump-chart:
+    needs: prepare-tag
+    uses: OpenHands/OpenHands-Cloud/.github/workflows/bump-image-tag.yml@main
+    secrets: inherit
+    with:
+      component: runtime-api
+      chart_file: charts/openhands/charts/runtime-api/values.yaml
+      tag: ${{ needs.prepare-tag.outputs.tag }}
+      fusey_version: ${{ needs.prepare-tag.outputs.fusey_version }}
+```
+
+Only the version moves. The agent-server tag stays owned by its own bump, and
+`scripts/fusey_image.py` still fails a release if the resulting image is not published.
+
 ### The `openhands` component
 
 The OpenHands chart's `appVersion` is intended to track its default image tag.
@@ -138,6 +172,7 @@ single-file behavior:
 | `image_tag_path` | no | `.image.tag` | yq-style path to the tag scalar. Supports nested keys and list indices, e.g. `.warmRuntimes.configs[0].image`. |
 | `metadata_file` | no | empty | Optional YAML file containing a scalar that should track `tag`, such as a chart's `Chart.yaml`. |
 | `metadata_path` | no | `.appVersion` | yq-style path to the optional scalar in `metadata_file`. |
+| `fusey_version` | no | empty | Fusey version to set as `global.fuseyImage.version` in both the umbrella and runtime-api values files. See [The `runtime-api` fusey version](#the-runtime-api-fusey-version). |
 | `base_branch` | no | `main` | Branch to open the PR against. |
 | `chart_repo` | no | `OpenHands/OpenHands-Cloud` | Repo to update, `owner/name`. |
 | `pr_branch` | no | `bump-image-tag/<component>` | Head branch. The default rolls a single open PR per component, advancing it to the latest tag. Set something tag-specific (e.g. `bump-image-tag/runtime-api/${{ needs.prepare-tag.outputs.tag }}`) to get one PR per release. |
