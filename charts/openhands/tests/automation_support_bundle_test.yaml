@@ -38,3 +38,34 @@ tests:
         notMatchRegex:
           path: stringData.support-bundle-spec
           pattern: "automation-config-snapshot"
+
+  - it: reports which step a run failed at, without its free-text error
+    set:
+      replicated.enabled: true
+      automation.enabled: true
+    asserts:
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "status_detail->>'phase' AS detail_phase, status_detail->>'kind' AS detail_kind"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "automation_runs failures by cause \\(14d\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "\\(error_detail IS NOT NULL\\) AS has_error_detail"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        matchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "integration_events by source \\(14d\\)"
+      - template: troubleshoot/secrets.yaml
+        documentIndex: 1
+        notMatchRegex:
+          path: stringData.support-bundle-spec
+          pattern: "status_detail->>'(detail|formatted_detail)'|, error_detail|[^_]error_detail,|event_payload|disabled_reason"
