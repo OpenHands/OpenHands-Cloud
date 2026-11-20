@@ -14,6 +14,7 @@ spec:
       "bitbucket-data-center-app" (list "host" "client-id" "client-secret" "bot-token")
       "github-app"                (list "app-id" "app-slug" "client-id" "client-secret" "private-key" "webhook-secret")
       "gitlab-app"                (list "client-id" "client-secret")
+      "jira-app"                  (list "client-id" "client-secret")
       "jira-dc-app"               (list "base-url" "client-id" "client-secret" "service-account-email" "service-account-pat")
       "keycloak-realm"            (list "client-id" "client-secret" "smtp-password")
       "litellm-env-secrets"       (list "ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GOOGLE_API_KEY" "GOOGLE_APPLICATION_CREDENTIALS_JSON" "VERTEXAI_PROJECT" "VERTEXAI_LOCATION" "DEEPSEEK_API_KEY" "MISTRAL_API_KEY" "AZURE_API_KEY" "AZURE_TENANT_ID" "AZURE_CLIENT_ID" "AZURE_CLIENT_SECRET" "AZURE_API_BASE" "AZURE_API_VERSION" "GROQ_API_KEY" "OPENROUTER_API_KEY" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_REGION_NAME" "CUSTOM_API_KEY" "CUSTOM_API_BASE")
@@ -592,6 +593,17 @@ spec:
                 ("jira_dc_workspaces rows",
                  "SELECT id, name, org_id, admin_user_id, status, svc_acc_email, created_at, updated_at "
                  "FROM jira_dc_workspaces ORDER BY name, id"),
+                ("jira_workspaces rows",
+                 "SELECT id, name, org_id, jira_cloud_id, admin_user_id, status, svc_acc_email, created_at, updated_at "
+                 "FROM jira_workspaces ORDER BY name, id"),
+                # Linked users per workspace; an OAuth token only exists for OAuth-linked users.
+                ("jira_dc_users link counts",
+                 "SELECT jira_dc_workspace_id, status, COUNT(*) AS users, "
+                 "COUNT(oauth_access_token_encrypted) AS with_oauth_token "
+                 "FROM jira_dc_users GROUP BY 1, 2 ORDER BY 1, 2"),
+                ("jira_users link counts",
+                 "SELECT jira_workspace_id, status, COUNT(*) AS users "
+                 "FROM jira_users GROUP BY 1, 2 ORDER BY 1, 2"),
                 ("offline_tokens freshness summary",
                  "SELECT COUNT(*) AS token_count, MIN(updated_at) AS oldest_refresh, "
                  "MAX(updated_at) AS newest_refresh FROM offline_tokens"),
@@ -657,6 +669,7 @@ spec:
                 "REQUIRE_PAYMENT", "ADD_DEBUGGING_ROUTES",
                 "AUTOMATION_EVENT_FORWARDING_ENABLED", "AUTOMATION_SERVICE_URL",
                 "ENABLE_JIRA", "ENABLE_JIRA_DC", "ENABLE_LINEAR",
+                "JIRA_ENABLE_OAUTH", "JIRA_WEBHOOKS_ENABLED",
                 "JIRA_DC_WEBHOOKS_ENABLED", "JIRA_DC_ENABLE_OAUTH", "JIRA_DC_BASE_URL",
                 "SLACK_WEBHOOKS_ENABLED", "BITBUCKET_DATA_CENTER_HOST", "GITLAB_HOST",
                 "AZURE_DEVOPS_TENANT_ID",
@@ -675,11 +688,16 @@ spec:
                 "BITBUCKET_DATA_CENTER_BOT_TOKEN", "BITBUCKET_DATA_CENTER_CLIENT_SECRET",
                 "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET",
                 "GITLAB_APP_CLIENT_SECRET", "AZURE_DEVOPS_CLIENT_SECRET", "AZURE_DEVOPS_WEBHOOK_SECRET",
-                "JIRA_DC_CLIENT_SECRET", "JIRA_DC_SERVICE_ACCOUNT_PAT",
+                "JIRA_CLIENT_SECRET", "JIRA_DC_CLIENT_SECRET", "JIRA_DC_SERVICE_ACCOUNT_PAT",
                 "AUTOMATION_WEBHOOK_SECRET", "AUTOMATIONS_SERVICE_KEY",
                 "LITE_LLM_API_KEY", "SANDBOX_API_KEY", "JWT_SECRET",
             ]
             config = {k: os.environ.get(k) for k in NONSECRET}
+            # The app treats an unset *_ENABLE_OAUTH as OAuth.
+            for flag, oauth in (("ENABLE_JIRA", "JIRA_ENABLE_OAUTH"), ("ENABLE_JIRA_DC", "JIRA_DC_ENABLE_OAUTH")):
+                on = os.environ.get(flag) == "true"
+                config[oauth.replace("ENABLE_OAUTH", "LINK_METHOD")] = (
+                    None if not on else "oauth" if os.environ.get(oauth, "1") in ("1", "true") else "email_match")
             presence = {k: ("set" if os.environ.get(k) else "empty_or_unset") for k in SECRET_PRESENCE}
             print(json.dumps({"config": config, "secret_presence": presence}, indent=2, default=str))
         timeout: 30s
