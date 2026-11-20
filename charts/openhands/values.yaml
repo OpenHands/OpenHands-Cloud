@@ -936,8 +936,12 @@ rustfs:
 
 postgresql:
   enabled: true
+  # Rebuild from github.com/OpenHands/third-party-images: PostgreSQL 16.15 in the layout of chart
+  # 15.5.38's default image (16.4.0), with Debian updates. Minor upgrade, same data format.
   image:
-    repository: bitnamilegacy/postgresql
+    registry: ghcr.io
+    repository: openhands/third-party-images/postgresql
+    tag: 16.15.0-debian-12-oh2
   auth:
     username: postgres
     existingSecret: postgres-password
@@ -973,8 +977,12 @@ externalDatabase:
 
 redis:
   enabled: true
+  # Rebuild from github.com/OpenHands/third-party-images: Redis 7.4.12 in the layout of chart
+  # 20.3.0's default image (7.4.1), with Debian updates. Patch upgrade.
   image:
-    repository: bitnamilegacy/redis
+    registry: ghcr.io
+    repository: openhands/third-party-images/redis
+    tag: 7.4.12-debian-12-oh1
   architecture: standalone
   auth:
     enabled: true
