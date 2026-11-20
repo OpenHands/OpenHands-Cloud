@@ -103,10 +103,12 @@ def run_gate(
     deployed_min_ago=30,
     labels=(),
     label_events=(),
+    permission="write",
+    existing_comments=(),
     argo_down=False,
 ):
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
+    bin_dir.mkdir(parents=True)
     for name, body in (("gh", FAKE_GH), ("curl", FAKE_CURL)):
         (bin_dir / name).write_text(body)
         (bin_dir / name).chmod(0o755)
@@ -140,8 +142,8 @@ def run_gate(
             {"event": "labeled", "label": {"name": "override-e2e-gate"}, "actor": {"login": who}, "created_at": when}
             for who, when in label_events
         ],
-        f"repos/OpenHands/OpenHands-Cloud/issues/{PR_NUMBER}/comments": [],
-        "repos/OpenHands/OpenHands-Cloud/collaborators/": {"permission": "write"},
+        f"repos/OpenHands/OpenHands-Cloud/issues/{PR_NUMBER}/comments": [{"body": b} for b in existing_comments],
+        "repos/OpenHands/OpenHands-Cloud/collaborators/": {"permission": permission},
     }
     (tmp_path / "gh.json").write_text(json.dumps(gh_data))
     (tmp_path / "argo.json").write_text(json.dumps({"items": argo_items}))
@@ -281,6 +283,23 @@ def test_blocks_on_a_stale_result(tmp_path):
     assert "is stale (21h old, max 20h)" in result.stdout
 
 
+def test_a_result_is_fresh_until_it_is_max_age_hours_old(tmp_path):
+    # The age is whole hours, so a result 20h01m old counts as 20h and is still fresh.
+    fresh = run_gate(
+        tmp_path / "fresh",
+        [argo_run(own(), "Succeeded", 21 * 60 - 1, 20 * 60 + 1)],
+        deployed_min_ago=21 * 60,
+    )
+    assert fresh.returncode == 0, fresh.stdout + fresh.stderr
+    stale = run_gate(
+        tmp_path / "stale",
+        [argo_run(own(), "Succeeded", 22 * 60 - 1, 21 * 60 + 1)],
+        deployed_min_ago=22 * 60,
+    )
+    assert stale.returncode == 1
+    assert "is stale (21h old, max 20h)" in stale.stdout
+
+
 def test_blocks_when_argo_is_unreachable(tmp_path):
     result = run_gate(tmp_path, [], argo_down=True)
     assert result.returncode == 1
@@ -308,6 +327,43 @@ def test_override_applied_before_the_signal_is_rejected(tmp_path):
     )
     assert result.returncode == 1
     assert "predates the signal" in result.stdout
+
+
+def test_override_by_someone_without_write_access_is_rejected(tmp_path):
+    result = run_gate(
+        tmp_path,
+        [argo_run(own(), "Failed", 29, 15)],
+        labels=["override-e2e-gate"],
+        label_events=[("outsider", ts(5))],
+        permission="read",
+    )
+    assert result.returncode == 1
+    assert "who lacks write permission (read)" in result.stdout
+
+
+def test_override_applied_in_the_same_second_as_the_signal_is_rejected(tmp_path):
+    failed = argo_run(own(), "Failed", 29, 15)
+    result = run_gate(
+        tmp_path,
+        [failed],
+        labels=["override-e2e-gate"],
+        label_events=[("maintainer", failed["status"]["finishedAt"])],
+    )
+    assert result.returncode == 1
+    assert "predates the signal" in result.stdout
+
+
+def test_an_override_is_recorded_on_the_pr_only_once(tmp_path):
+    override_when = ts(5)
+    result = run_gate(
+        tmp_path,
+        [argo_run(own(), "Failed", 29, 15)],
+        labels=["override-e2e-gate"],
+        label_events=[("maintainer", override_when)],
+        existing_comments=[f"<!-- release-gate-override:{override_when} -->"],
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.comments == ""
 
 
 def test_override_cannot_carry_over_to_a_newer_deploy(tmp_path):
