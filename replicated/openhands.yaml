@@ -583,7 +583,7 @@ spec:
     redis:
       enabled: true
       image:
-        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/redis'
+        repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/third-party-images/redis'
       auth:
         password: '{{repl ConfigOption "redis_password" | Base64Encode }}'
     # Conversation/session files live on the bundled MinIO, which is durable
@@ -887,7 +887,7 @@ spec:
       values:
         postgresql:
           image:
-            repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/bitnamilegacy/postgresql'
+            repository: 'proxy/{{repl LicenseFieldValue "appSlug"}}/ghcr.io/openhands/third-party-images/postgresql'
         keycloak:
           postgresql:
             image:
