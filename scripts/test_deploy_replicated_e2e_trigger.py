@@ -203,8 +203,7 @@ def test_release_gate_reads_the_result_from_argo():
     assert "openhands-e2e-${E2E_INSTANCE}-" in command
     assert ".status.finishedAt" in command
     assert "sort_by(.finished)" in command
-    # No trace of the old GitHub-job-name matching. GitHub is asked only which
-    # build is deployed, never for the E2E result.
+    # GitHub is asked only which build is deployed, never for the E2E result.
     assert command.count("actions/workflows/") == 1
     assert "actions/workflows/${DEPLOY_WORKFLOW}/runs" in command
     assert 'startswith($name + " /")' not in command

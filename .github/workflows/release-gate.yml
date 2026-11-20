@@ -1,8 +1,7 @@
 name: Release gate (unstable E2E)
 
-# Blocks the openhands release-please PR unless an unstable E2E that ran on the
-# newest unstable deploy passed. A green run from before that deploy tested an
-# older build than the one this release would ship.
+# Blocks the openhands release-please PR unless an unstable E2E passed on the
+# newest unstable deploy.
 # Enforce by adding the `release-gate` context to the main ruleset.
 
 on:
@@ -61,10 +60,7 @@ jobs:
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # The newest unstable deploy is the build this release would ship. A
-          # green E2E that finished before it landed says nothing about it: on
-          # 2026-11-05 a release merged on such a result six minutes after an
-          # image bump, before the E2E for that bump had started.
+          # An E2E that finished before the newest deploy tested an older build.
           deploy=$(gh api "repos/${REPO}/actions/workflows/${DEPLOY_WORKFLOW}/runs?branch=main&per_page=1" \
             --jq '.workflow_runs[0] // empty
               | [.id, .run_attempt, .status, (.conclusion // "none"), .head_sha, .updated_at, .html_url]
@@ -78,9 +74,10 @@ jobs:
           deploy_short=${deploy_sha:0:8}
 
           deployed_at=""
-          if [ "$deploy_status" = "completed" ] && [ "$deploy_conclusion" = "success" ]; then
+          # The run also fails when the E2E trigger fails, which leaves the deploy intact.
+          if [ "$deploy_status" = "completed" ]; then
             deployed_at=$(gh api "repos/${REPO}/actions/runs/${deploy_id}/attempts/${deploy_attempt}/jobs?per_page=100" \
-              --jq '[.jobs[] | select(.name | startswith("deploy /")) | .completed_at // empty] | first // empty')
+              --jq '[.jobs[] | select((.name | startswith("deploy /")) and .conclusion == "success") | .completed_at // empty] | first // empty')
           fi
 
           listing=$(curl --fail-with-body --silent --show-error --max-time 30 \
@@ -91,11 +88,8 @@ jobs:
               exit 1
             }
 
-          # Runs that tested the deployed build: the one this deploy triggered
-          # (matched by name, so clock skew cannot drop it), plus any scheduled
-          # or manual run created after the deploy finished. Running runs stay
-          # in the list so the gate can say "pending" instead of reading an
-          # older result.
+          # The deploy's own run is matched by name, which clock skew cannot
+          # break. Unfinished runs stay in the list so the gate waits for them.
           runs=$(jq -c \
             --arg prefix "openhands-e2e-${E2E_INSTANCE}-" \
             --arg own "openhands-e2e-${E2E_INSTANCE}-gh-${deploy_id}-" \
@@ -136,11 +130,8 @@ jobs:
           if [ "$deploy_status" != "completed" ]; then
             gate_reason="unstable deploy of ${deploy_short} is still ${deploy_status}"
             signal_time="$deploy_updated"
-          elif [ "$deploy_conclusion" != "success" ]; then
-            gate_reason="unstable deploy of ${deploy_short} finished ${deploy_conclusion}"
-            signal_time="$deploy_updated"
           elif [ -z "$deployed_at" ]; then
-            gate_reason="unstable run for ${deploy_short} did not deploy"
+            gate_reason="unstable deploy of ${deploy_short} did not succeed (run ${deploy_conclusion})"
             signal_time="$deploy_updated"
           elif [ -z "$signal" ] && [ "$in_flight" -gt 0 ]; then
             gate_reason="${E2E_INSTANCE} E2E for deploy ${deploy_short} is still running"

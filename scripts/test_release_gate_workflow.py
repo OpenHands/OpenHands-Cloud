@@ -3,12 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["pytest", "PyYAML"]
 # ///
-"""Runs the release gate's real shell step against fake `gh` and `curl`.
-
-The gate must only pass on an unstable E2E that tested the newest unstable
-deploy. On 2026-11-05 a release merged six minutes after an image bump, on a
-green result from the build before it.
-"""
+"""Runs the release gate's real shell step against fake `gh` and `curl`."""
 
 import json
 import os
@@ -104,6 +99,7 @@ def run_gate(
     argo_items,
     deploy_status="completed",
     deploy_conclusion="success",
+    deploy_job_conclusion="success",
     deployed_min_ago=30,
     labels=(),
     label_events=(),
@@ -127,7 +123,11 @@ def run_gate(
     }
     jobs = [
         {"name": "release", "completed_at": ts(deployed_min_ago + 3)},
-        {"name": "deploy / Deploy to unstable", "completed_at": ts(deployed_min_ago)},
+        {
+            "name": "deploy / Deploy to unstable",
+            "conclusion": deploy_job_conclusion,
+            "completed_at": ts(deployed_min_ago),
+        },
         {"name": "E2E Replicated / trigger-e2e", "completed_at": ts(deployed_min_ago - 0.2)},
     ]
     gh_data = {
@@ -177,7 +177,7 @@ def run_gate(
 
 
 def test_blocks_while_the_e2e_for_the_newest_deploy_is_running(tmp_path):
-    # The 2026-11-05 race: an older green run exists, the new build's run has not finished.
+    # An older green run exists, but the run for the newest build has not finished.
     result = run_gate(
         tmp_path,
         [
@@ -213,9 +213,20 @@ def test_blocks_when_the_deploy_failed(tmp_path):
         tmp_path,
         [argo_run("openhands-e2e-unstable-scheduled-1", "Succeeded", 90, 80)],
         deploy_conclusion="failure",
+        deploy_job_conclusion="failure",
     )
     assert result.returncode == 1
-    assert "unstable deploy of b8b3e07a finished failure" in result.stdout
+    assert "unstable deploy of b8b3e07a did not succeed (run failure)" in result.stdout
+
+
+def test_a_failed_e2e_trigger_does_not_hide_a_good_deploy(tmp_path):
+    # The run fails when the Argo trigger fails, but the deploy job succeeded.
+    result = run_gate(
+        tmp_path,
+        [argo_run("openhands-e2e-unstable-scheduled-2", "Succeeded", 10, 2)],
+        deploy_conclusion="failure",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_passes_when_the_deploy_triggered_run_succeeded(tmp_path):
