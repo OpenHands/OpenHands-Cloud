@@ -81,6 +81,10 @@ spec:
               name: keycloak-admin
               key: admin-ui-password
               optional: true
+        - name: KEYCLOAK_NEEDS_ADMIN_API_SCOPE
+          value: {{ include "openhands.keycloakNeedsAdminApiScope" . | quote }}
+        - name: KEYCLOAK_TARGET_VERSION
+          value: {{ include "openhands.keycloakTargetVersion" . | quote }}
         {{- if and .Values.enterpriseSSO.enabled .Values.enterpriseSSO.idpMetadataUrl }}
         {{- /* Keep these init-only; openhands.env already emits .Values.env overrides. */}}
         {{- if not (hasKey (.Values.env | default dict) "ENTERPRISE_SSO_DISPLAY_NAME") }}

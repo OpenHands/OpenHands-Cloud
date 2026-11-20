@@ -1,0 +1,66 @@
+suite: Keycloak kc-admin-api scope step in keycloak-config
+templates:
+  - deployment.yaml
+  - keycloak-config-script.yaml
+  - keycloak-realm-template.yaml
+  - litellm-config-script.yaml
+set:
+  enabled: true
+  automation.enabled: false
+  keycloak.enabled: true
+  databaseMigrations.waitForDatabase: false
+  databaseMigrations.createDatabases: false
+  databaseMigrations.migrate: false
+tests:
+  - it: adds the scope from Keycloak 26.8.2 on
+    set:
+      keycloak.image.tag: 26.8.2-debian-12-oh1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: KEYCLOAK_NEEDS_ADMIN_API_SCOPE
+            value: "true"
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: KEYCLOAK_TARGET_VERSION
+            value: 26.8.2
+      - template: keycloak-config-script.yaml
+        matchRegex:
+          path: data["keycloak-admin-api-scope.sh"]
+          pattern: kc-admin-api
+  - it: skips the scope for a Keycloak before 26.8.2
+    set:
+      keycloak.image.tag: 26.8.1-debian-12-oh1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: KEYCLOAK_NEEDS_ADMIN_API_SCOPE
+            value: "false"
+  - it: skips the scope for an unversioned tag
+    set:
+      keycloak.image.tag: latest
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: KEYCLOAK_NEEDS_ADMIN_API_SCOPE
+            value: "false"
+  - it: skips the scope for an external Keycloak, whose version the tag does not describe
+    set:
+      keycloak.enabled: false
+      keycloak.provisionRealm: true
+      keycloak.image.tag: 26.8.2-debian-12-oh1
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: KEYCLOAK_NEEDS_ADMIN_API_SCOPE
+            value: "false"
