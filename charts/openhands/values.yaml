@@ -903,12 +903,9 @@ minio:
     limits:
       memory: 512Mi
       cpu: 100m
-  # This MinIO's Go (1.19) sizes GOMAXPROCS from the host's cores, not the CPU
-  # limit. Above ~200 host cores its default transition_workers (100) fails its
-  # own >= GOMAXPROCS/2 check, and the half-applied config leaves root access
-  # disabled (PLTF-4069). Derived from limits.cpu, rounded up, so the limit
-  # stays the only number to change; empty (Go's default) when unlimited. The
-  # minio chart runs tpl on each value against its own .Values.
+  # Go sizes GOMAXPROCS from the host's cores, not the CPU limit. Above ~200
+  # cores MinIO's own config check fails and root access stays off (#1490).
+  # The minio subchart renders this value, so .Values here is minio's own.
   environment:
     GOMAXPROCS: >-
       {{- $limits := (.Values.resources | default dict).limits -}}
