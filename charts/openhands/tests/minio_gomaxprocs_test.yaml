@@ -109,3 +109,25 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: GOMAXPROCS, value: ""}
+
+  - it: lets a consumer override the computed value
+    set:
+      minio.environment.GOMAXPROCS: "4"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "4"}
+
+  - it: keeps the computed value when a consumer adds another variable
+    set:
+      minio.environment.MINIO_BROWSER: "off"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_BROWSER, value: "off"}
