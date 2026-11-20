@@ -1,0 +1,111 @@
+suite: bundled MinIO GOMAXPROCS follows its CPU limit
+templates:
+  - charts/minio/templates/deployment.yaml
+  # deployment.yaml checksums these into its pod annotations.
+  - charts/minio/templates/configmap.yaml
+  - charts/minio/templates/secrets.yaml
+set:
+  minio.enabled: true
+tests:
+  - it: rounds the chart default 100m up to 1
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+
+  - it: matches the Replicated limit of "2"
+    set:
+      minio.resources:
+        requests: {cpu: "1", memory: 512Mi}
+        limits: {cpu: "2", memory: 2Gi}
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: accepts a numeric whole-core limit
+    set:
+      minio.resources.limits.cpu: 3
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "3"}
+
+  - it: keeps an exact millicore multiple
+    set:
+      minio.resources.limits.cpu: 1000m
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+
+  - it: rounds millicores up
+    set:
+      minio.resources.limits.cpu: 1001m
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: rounds a larger millicore limit up
+    set:
+      minio.resources.limits.cpu: 2500m
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "3"}
+
+  - it: rounds a fractional core below 1 up to 1
+    set:
+      minio.resources.limits.cpu: "0.5"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+
+  - it: rounds a fractional core up, not to nearest
+    set:
+      minio.resources.limits.cpu: 1.2
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: leaves Go's default when there is no CPU limit
+    set:
+      minio.resources.limits.cpu: null
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: ""}
+
+  - it: leaves Go's default when there is no limits block
+    set:
+      minio.resources.limits: null
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        notFailedTemplate: {}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: ""}
+
+  - it: leaves Go's default when there is no resources block
+    set:
+      minio.resources: null
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        notFailedTemplate: {}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: ""}

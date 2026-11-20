@@ -903,6 +903,20 @@ minio:
     limits:
       memory: 512Mi
       cpu: 100m
+  # This MinIO's Go (1.19) sizes GOMAXPROCS from the host's cores, not the CPU
+  # limit. Above ~200 host cores its default transition_workers (100) fails its
+  # own >= GOMAXPROCS/2 check, and the half-applied config leaves root access
+  # disabled (PLTF-4069). Derived from limits.cpu, rounded up, so the limit
+  # stays the only number to change; empty (Go's default) when unlimited. The
+  # minio chart runs tpl on each value against its own .Values.
+  environment:
+    GOMAXPROCS: >-
+      {{- $limits := (.Values.resources | default dict).limits -}}
+      {{- $cpu := $limits.cpu | default "" | toString -}}
+      {{- if not $cpu -}}
+      {{- else if hasSuffix "m" $cpu -}}{{ div (add (atoi (trimSuffix "m" $cpu)) 999) 1000 }}
+      {{- else -}}{{ ceil (float64 $cpu) }}
+      {{- end -}}
 
 # Opt-in alternative to the bundled MinIO. RustFS speaks S3, so point the app at
 # it with the ordinary filestore values — no separate wiring:
