@@ -1,0 +1,237 @@
+suite: Keycloak kc-admin-api scope hooks
+templates:
+  - templates/keycloak-admin-api-scope-job.yaml
+release:
+  name: openhands
+  namespace: openhands
+kubernetesProvider:
+  scheme:
+    apps/v1/StatefulSet:
+      gvr:
+        group: apps
+        version: v1
+        resource: statefulsets
+      namespaced: true
+set:
+  automation.enabled: false
+  keycloak.enabled: true
+  keycloak.image.tag: 26.8.2-debian-12-oh1
+tests:
+  - it: checks the admin login before the backup when a migration to 26.8.2 is pending
+    release:
+      upgrade: true
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: proxy/openhands/ghcr.io/openhands/third-party-images/keycloak:26.8.0-debian-12-oh2
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade
+        documentIndex: 0
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "9"
+        documentIndex: 0
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+        documentIndex: 0
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+        documentIndex: 0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MODE
+            value: check
+        documentIndex: 0
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+        documentIndex: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "0"
+        documentIndex: 1
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+        documentIndex: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+        documentIndex: 1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MODE
+            value: fix
+        documentIndex: 1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TARGET_VERSION
+            value: 26.8.2
+        documentIndex: 1
+  - it: skips the check when Keycloak already runs 26.8.2
+    release:
+      upgrade: true
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak:26.8.2-debian-12-oh1
+    asserts:
+      - hasDocuments:
+          count: 1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MODE
+            value: fix
+  - it: skips the check when no Keycloak runs yet
+    release:
+      upgrade: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+  - it: needs the kc-admin-api scope from Keycloak 26.8.2 on
+    release:
+      upgrade: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NEEDS_ADMIN_API_SCOPE
+            value: "true"
+  - it: renders no hooks for a Keycloak target before 26.8.2
+    release:
+      upgrade: true
+    set:
+      keycloak.image.tag: 26.8.1-debian-12-r0
+      keycloak.preUpgradeBackup.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: checks when the running Keycloak version cannot be read
+    release:
+      upgrade: true
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak@sha256:2bd0dcba55c7500e7a6794ca4c0770662923d60ae16cafe098bdaa05cb713b80
+    asserts:
+      - hasDocuments:
+          count: 2
+  - it: checks when an earlier Keycloak rollout has not finished
+    release:
+      upgrade: true
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak:26.8.2-debian-12-oh1
+          status:
+            currentRevision: keycloak-old
+            updateRevision: keycloak-new
+    asserts:
+      - hasDocuments:
+          count: 2
+  - it: skips the check when it is turned off
+    release:
+      upgrade: true
+    set:
+      keycloak.preUpgradeAdminCheck.enabled: false
+    kubernetesProvider:
+      objects:
+        - apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: keycloak
+            namespace: openhands
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: keycloak
+                    image: ghcr.io/openhands/third-party-images/keycloak:26.8.0-debian-12-oh2
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-upgrade
+  - it: passes only the Keycloak settings, not the whole app environment
+    release:
+      upgrade: true
+    set:
+      env.KEYCLOAK_ADMIN_CLIENT_ID: openhands-provisioner
+      env.KEYCLOAK_ADMIN_CLIENT_SECRET: provisioner-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KEYCLOAK_ADMIN_CLIENT_ID
+            value: openhands-provisioner
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KEYCLOAK_ADMIN_CLIENT_SECRET
+            value: provisioner-secret
+      - lengthEqual:
+          path: spec.template.spec.containers[0].env
+          count: 8
+  - it: is not rendered on a fresh install
+    asserts:
+      - hasDocuments:
+          count: 0
+  - it: is not rendered without the bundled Keycloak
+    release:
+      upgrade: true
+    set:
+      keycloak.enabled: false
+      keycloak.provisionRealm: true
+    asserts:
+      - hasDocuments:
+          count: 0

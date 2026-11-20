@@ -534,7 +534,7 @@ def test_scope_hook_is_a_no_op_before_26_8_2(keycloak):
 
 @old_keycloak
 def test_scope_hook_waits_while_keycloak_is_older_than_the_target(keycloak):
-    # The script can start before the new Keycloak replaces the old one.
+    # Without --wait, the hook can start before the new Keycloak replaces the old one.
     reconcile(keycloak, client_id="openhands-provisioner")
     out = run_scope_hook(keycloak, "26.8.2", timeout=15)
     assert out.startswith("TIMEOUT") and "Waiting for Keycloak 26.8.2" in out
@@ -590,10 +590,38 @@ def test_scope_hook_gives_up_when_keycloak_stays_down():
     assert "Keycloak did not answer for 2 seconds" in out
 
 
+def test_fix_wait_ends_before_the_hook_deadline():
+    # Otherwise Kubernetes kills the Job before the script logs why it waited.
+    wait = int(re.search(r"FIX_WAIT_SECONDS:-(\d+)", scope_script()).group(1))
+    job = (
+        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
+    ).read_text()
+    deadline = int(re.search(r"activeDeadlineSeconds: (\d+)", job).group(1))
+    assert wait + 30 <= deadline
+
+
 def test_scope_hook_skips_an_install_without_a_provisioner(keycloak):
     reconcile(keycloak)
     out = run_scope_hook(keycloak, "26.8.2", client_id="")
     assert 'Client "openhands-provisioner" does not exist' in out
+
+
+@old_keycloak
+@pytest.mark.parametrize("password,passes", [(CONSOLE_PASSWORD, True), ("", False)])
+def test_pre_upgrade_check_needs_a_working_admin_login(keycloak, password, passes):
+    # Runs against the old Keycloak, before the 26.8.2 migration.
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    out = run_scope_hook(keycloak, "26.8.2", password, mode="check", success=passes)
+    if passes:
+        assert "admin login works" in out
+    else:
+        assert "Set a new Keycloak Admin Password" in out
+
+
+def test_pre_upgrade_check_skips_upgrades_that_keep_keycloak_before_26_8_2(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    out = run_scope_hook(keycloak, "26.8.0", mode="check")
+    assert "does not need the kc-admin-api scope" in out
 
 
 @old_keycloak
@@ -606,6 +634,26 @@ def test_keycloak_config_waits_while_the_old_keycloak_still_serves(keycloak):
     out = error.value.stdout or ""
     out = out if isinstance(out, str) else out.decode()
     assert "Waiting for Keycloak 26.8.2 to serve the admin API" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_applies_a_changed_console_password(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    changed = "changed console password"
+    out = run_scope_hook(keycloak, "26.8.2", changed, mode="check")
+    assert "admin login works" in out
+    assert login(keycloak, changed)[0] == 200
+
+
+@new_keycloak
+@pytest.mark.parametrize("password,passes", [(CONSOLE_PASSWORD, True), ("", False)])
+def test_pre_upgrade_check_after_keycloak_rejects_the_provisioner(
+    keycloak, password, passes
+):
+    provisioner_without_admin_api_scope(keycloak, CONSOLE_PASSWORD)
+    out = run_scope_hook(keycloak, "26.8.2", password, mode="check", success=passes)
+    assert ("admin login works" in out) == passes
+    assert ("to the current password of the Keycloak admin user" in out) != passes
 
 
 def test_scope_hook_leaves_a_client_with_a_wrong_secret_alone(keycloak):
@@ -646,6 +694,17 @@ def test_keycloak_test_image_matches_the_admin_api_scope_premise(keycloak):
     assert has_admin_api_scope(keycloak) == HAS_ADMIN_API_SCOPE
 
 
+def test_pre_upgrade_check_stops_the_upgrade_when_keycloak_does_not_answer():
+    out = run_scope_hook(
+        "http://127.0.0.1:9",
+        "26.8.2",
+        mode="check",
+        success=False,
+        extra_env={"CHECK_WAIT_SECONDS": "5"},
+    )
+    assert "did not answer for 5 seconds" in out
+
+
 def remove_provisioner_admin_role(url):
     _, auth = login(url, BOOTSTRAP_PASSWORD)
     master = url + "/admin/realms/master"
@@ -675,6 +734,24 @@ def test_scope_hook_waits_for_the_scope_when_the_old_keycloak_forbids(keycloak):
     out = run_scope_hook(keycloak, "26.8.2", timeout=15)
     assert out.startswith("TIMEOUT")
     assert "to create the kc-admin-api scope" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_stops_on_a_refused_console_password(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    _, auth = login(keycloak, CONSOLE_PASSWORD)
+    assert (
+        request(
+            keycloak + "/admin/realms/master",
+            token=auth["access_token"],
+            method="PUT",
+            json_body={"passwordPolicy": "length(40)"},
+        )[0]
+        == 204
+    )
+    out = run_scope_hook(keycloak, "26.8.2", "too short", mode="check", success=False)
+    assert "Keycloak refused the console password" in out
+    assert "Set a new Keycloak Admin Password" not in out
 
 
 def test_scope_hook_retries_an_admin_login_that_gets_no_answer():
@@ -778,3 +855,111 @@ def test_scope_hook_gives_up_when_the_admin_login_never_answers():
     assert "Keycloak did not answer for 2 seconds" in out
 
 
+def test_pre_upgrade_check_reports_a_missing_admin_user():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (400, '{"error": "invalid_grant"}')
+        ),
+        lambda path: (200, "[]") if "client-scopes" in path else (500, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            CONSOLE_PASSWORD,
+            mode="check",
+            success=False,
+        )
+    finally:
+        server.shutdown()
+    assert "could not find the Keycloak admin user" in out
+
+
+def test_pre_upgrade_check_gives_up_on_a_keycloak_that_never_answers():
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            time.sleep(60)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            mode="check",
+            timeout=45,
+            success=False,
+            extra_env={"CHECK_WAIT_SECONDS": "1"},
+        )
+    finally:
+        server.shutdown()
+    assert "did not answer for 1 seconds" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_explains_an_admin_user_that_cannot_sign_in(keycloak):
+    reconcile(keycloak, CONSOLE_PASSWORD, client_id="openhands-provisioner")
+    _, auth = login(keycloak, CONSOLE_PASSWORD)
+    master = keycloak + "/admin/realms/master"
+    _, users = request(
+        master + "/users?username=admin&exact=true", token=auth["access_token"]
+    )
+    assert (
+        request(
+            master + "/users/" + users[0]["id"],
+            token=auth["access_token"],
+            method="PUT",
+            json_body={"requiredActions": ["CONFIGURE_TOTP"]},
+        )[0]
+        == 204
+    )
+    out = run_scope_hook(
+        keycloak, "26.8.2", "another console password", mode="check", success=False
+    )
+    assert "may have a one-time password or a required action" in out
+
+
+@old_keycloak
+def test_pre_upgrade_check_passes_a_client_with_a_wrong_secret(keycloak):
+    reconcile(keycloak, client_id="openhands-provisioner")
+    out = run_scope_hook(
+        keycloak, "26.8.2", mode="check", client_secret="not-the-client-secret"
+    )
+    assert "the upgrade does not change this client" in out
+
+
+def test_check_wait_ends_before_the_hook_deadline():
+    wait = int(re.search(r"CHECK_WAIT_SECONDS:-(\d+)", scope_script()).group(1))
+    job = (
+        ROOT / "charts/openhands/templates/keycloak-admin-api-scope-job.yaml"
+    ).read_text()
+    deadline = int(re.search(r"activeDeadlineSeconds: (\d+)", job).group(1))
+    assert wait + 30 <= deadline
+
+
+def test_pre_upgrade_check_does_not_blame_the_password_when_the_admin_login_gets_no_answer():
+    server = stub_keycloak(
+        lambda grant: (
+            (200, '{"access_token": "provisioner"}')
+            if grant == "client_credentials"
+            else (None, "")
+        ),
+        lambda path: (401, "{}"),
+    )
+    try:
+        out = run_scope_hook(
+            f"http://127.0.0.1:{server.server_port}",
+            "26.8.2",
+            mode="check",
+            success=False,
+        )
+    finally:
+        server.shutdown()
+    assert "stopped answering during the admin login check" in out
+    assert "Set the Keycloak Admin Password" not in out
