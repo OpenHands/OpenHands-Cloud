@@ -437,7 +437,7 @@ global:
   # release this chart pins.
   fuseyImage:
     repository: ghcr.io/openhands/agent-server-fusey
-    version: 0.0.14
+    version: 0.0.15
   security:
     # This allows using the bitnamilegacy image repo.
     # See: https://github.com/bitnami/containers/issues/83267
