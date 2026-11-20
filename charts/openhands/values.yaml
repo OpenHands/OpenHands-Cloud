@@ -904,7 +904,7 @@ minio:
       memory: 512Mi
       cpu: 100m
   # Go sizes GOMAXPROCS from the host's cores, not the CPU limit. Above ~200
-  # cores MinIO's own config check fails and root access stays off (#1490).
+  # cores MinIO's own config check fails and root access stays off.
   # The minio subchart renders this value, so .Values here is minio's own.
   environment:
     GOMAXPROCS: >-
