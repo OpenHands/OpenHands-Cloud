@@ -45,10 +45,15 @@ connections. A replacement pod can start when storage and scheduling constraints
 permit. In-memory state does not survive eviction; local volumes can prevent
 rescheduling onto another node.
 
-It applies only to newly created budgets.
+runtime-api applies the value only when it creates a budget. When the infra
+chart's sandbox upgrade coordinator is enabled, it also sets every existing idle
+sandbox budget to `sandboxUpgradeCoordinator.idleMaxUnavailable` (default `0`).
+Keep that value equal to `RUNTIME_PDB_MAX_UNAVAILABLE`, or the coordinator
+overwrites the budgets that runtime-api created.
 
 In the Replicated installer, set **Sandbox Eviction Limit** under **Sandbox
-Configuration**. It accepts nonnegative integers and defaults to `0`.
+Configuration**. It accepts `0` or `1` and defaults to `0`. The installer sets
+both values, and existing sandbox budgets follow it after the deploy.
 
 ### Workspace init image
 
