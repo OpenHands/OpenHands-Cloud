@@ -74,8 +74,6 @@
   value: {{ .Values.filestore.bucket }}
 - name: SANDBOX_KEEP_RUNTIME_ALIVE
   value: 'true'
-- name: SANDBOX_CLOSE_DELAY
-  value: "1800"
 {{- if eq .Values.filestore.type "s3" }}
 {{- /* Empty endpoint targets the bundled MinIO when it is deployed, otherwise
        real AWS (boto3 uses the regional endpoint). */}}
