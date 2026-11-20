@@ -1,6 +1,8 @@
 name: Release gate (unstable E2E)
 
-# Blocks the openhands release-please PR when the latest unstable E2E is not green.
+# Blocks the openhands release-please PR unless an unstable E2E that ran on the
+# newest unstable deploy passed. A green run from before that deploy tested an
+# older build than the one this release would ship.
 # Enforce by adding the `release-gate` context to the main ruleset.
 
 on:
@@ -27,6 +29,7 @@ env:
   ARGO_NAMESPACE: "openhands-e2e"
   ARGO_BASE: "https://workflows.dev.all-hands.dev"
   E2E_INSTANCE: "unstable"
+  DEPLOY_WORKFLOW: "release-replicated-unstable.yml"
   # Must stay under Argo's 24h ttlStrategy, or aged-out runs read as "no run".
   E2E_MAX_AGE_HOURS: "20"
 
@@ -58,61 +61,106 @@ jobs:
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Scheduled and deploy-triggered runs share this name prefix, so one
-          # list covers both. Job names would miss the scheduled ones entirely.
+          # The newest unstable deploy is the build this release would ship. A
+          # green E2E that finished before it landed says nothing about it: on
+          # 2026-11-05 a release merged on such a result six minutes after an
+          # image bump, before the E2E for that bump had started.
+          deploy=$(gh api "repos/${REPO}/actions/workflows/${DEPLOY_WORKFLOW}/runs?branch=main&per_page=1" \
+            --jq '.workflow_runs[0] // empty
+              | [.id, .run_attempt, .status, (.conclusion // "none"), .head_sha, .updated_at, .html_url]
+              | @tsv')
+          if [ -z "$deploy" ]; then
+            echo "::error::no ${DEPLOY_WORKFLOW} run found on main"
+            echo "| Unstable deploy | **no run** — blocked |" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          IFS=$'\t' read -r deploy_id deploy_attempt deploy_status deploy_conclusion deploy_sha deploy_updated deploy_url <<<"$deploy"
+          deploy_short=${deploy_sha:0:8}
+
+          deployed_at=""
+          if [ "$deploy_status" = "completed" ] && [ "$deploy_conclusion" = "success" ]; then
+            deployed_at=$(gh api "repos/${REPO}/actions/runs/${deploy_id}/attempts/${deploy_attempt}/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name | startswith("deploy /")) | .completed_at // empty] | first // empty')
+          fi
+
           listing=$(curl --fail-with-body --silent --show-error --max-time 30 \
             --header "Authorization: Bearer ${ARGO_GATE_TOKEN}" \
-            "${ARGO_BASE}/api/v1/workflows/${ARGO_NAMESPACE}?listOptions.labelSelector=workflows.argoproj.io/phase!=Running") || {
+            "${ARGO_BASE}/api/v1/workflows/${ARGO_NAMESPACE}") || {
               echo "::error::could not reach Argo to read the ${E2E_INSTANCE} E2E result"
               echo "| E2E result | **Argo unreachable** — blocked |" >> "$GITHUB_STEP_SUMMARY"
               exit 1
             }
 
-          signal=$(jq -r --arg prefix "openhands-e2e-${E2E_INSTANCE}-" '
+          # Runs that tested the deployed build: the one this deploy triggered
+          # (matched by name, so clock skew cannot drop it), plus any scheduled
+          # or manual run created after the deploy finished. Running runs stay
+          # in the list so the gate can say "pending" instead of reading an
+          # older result.
+          runs=$(jq -c \
+            --arg prefix "openhands-e2e-${E2E_INSTANCE}-" \
+            --arg own "openhands-e2e-${E2E_INSTANCE}-gh-${deploy_id}-" \
+            --arg since "$deployed_at" '
             [ (.items // [])[]
+              | select($since != "")
               | select(.metadata.name | startswith($prefix))
-              | select(.status.finishedAt != null and .status.finishedAt != "")
-              | {name: .metadata.name, phase: .status.phase, finished: .status.finishedAt}
-            ]
-            | sort_by(.finished)
-            | last
+              | select((.metadata.name | startswith($own)) or (.metadata.creationTimestamp >= $since))
+              | {name: .metadata.name, phase: (.status.phase // "Pending"), finished: (.status.finishedAt // "")}
+            ]' <<<"$listing")
+          in_flight=$(jq '[.[] | select(.finished == "")] | length' <<<"$runs")
+          signal=$(jq -r '
+            [.[] | select(.finished != "")] | sort_by(.finished) | last
             | if . == null then empty else [.name, .phase, .finished] | @tsv end
-          ' <<<"$listing")
+          ' <<<"$runs")
 
-          if [ -z "$signal" ]; then
-            echo "::error::no finished openhands-e2e-${E2E_INSTANCE}-* workflow found in Argo"
-            {
-              echo "| E2E result | **no run** — blocked |"
-              echo ""
-              echo "Argo keeps finished runs for 24h and has no archive database, so this also means no run has completed in the last day. Check the CronWorkflow: \`kubectl -n openhands-e2e get cronworkflow openhands-e2e-unstable-scheduled\`"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          wf_name=""
+          E2E_CONCLUSION=""
+          signal_time=""
+          run_url="$deploy_url"
+          latest_cell="—"
+          if [ -n "$signal" ]; then
+            IFS=$'\t' read -r wf_name E2E_CONCLUSION signal_time <<<"$signal"
+            run_url="${ARGO_BASE}/workflows/${ARGO_NAMESPACE}/${wf_name}"
+            latest_cell="[\`${wf_name}\`](${run_url}) \`${E2E_CONCLUSION}\` at ${signal_time}"
           fi
-          IFS=$'\t' read -r wf_name E2E_CONCLUSION run_completed <<<"$signal"
-          run_url="${ARGO_BASE}/workflows/${ARGO_NAMESPACE}/${wf_name}"
-          # Normalise Argo's phase to the success word the rest of this uses.
-          [ "$E2E_CONCLUSION" = "Succeeded" ] && E2E_CONCLUSION=success
 
-          now=$(date -u +%s)
-          signal_epoch=$(date -u -d "$run_completed" +%s)
-          age_h=$(( (now - signal_epoch) / 3600 ))
           {
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Latest E2E result | \`${E2E_CONCLUSION}\` |"
-            echo "| Workflow | [\`${wf_name}\`](${run_url}) |"
-            echo "| Completed | ${run_completed} |"
-            echo "| Age | ${age_h}h (max ${E2E_MAX_AGE_HOURS}h) |"
+            echo "| Unstable deploy | [\`${deploy_short}\`](${deploy_url}) \`${deploy_status}/${deploy_conclusion}\` |"
+            echo "| Deployed at | ${deployed_at:-—} |"
+            echo "| E2E runs since deploy | $(jq length <<<"$runs") (${in_flight} running) |"
+            echo "| Latest finished E2E | ${latest_cell} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           gate_reason=""
-          if [ "$E2E_CONCLUSION" != "success" ]; then
-            gate_reason="latest ${E2E_INSTANCE} E2E finished ${E2E_CONCLUSION}"
-          elif [ "$age_h" -gt "$E2E_MAX_AGE_HOURS" ]; then
-            gate_reason="latest ${E2E_INSTANCE} E2E is stale (${age_h}h old, max ${E2E_MAX_AGE_HOURS}h)"
-          else
-            echo "Latest ${E2E_INSTANCE} E2E is green and fresh (${age_h}h old)."
-            exit 0
+          if [ "$deploy_status" != "completed" ]; then
+            gate_reason="unstable deploy of ${deploy_short} is still ${deploy_status}"
+            signal_time="$deploy_updated"
+          elif [ "$deploy_conclusion" != "success" ]; then
+            gate_reason="unstable deploy of ${deploy_short} finished ${deploy_conclusion}"
+            signal_time="$deploy_updated"
+          elif [ -z "$deployed_at" ]; then
+            gate_reason="unstable run for ${deploy_short} did not deploy"
+            signal_time="$deploy_updated"
+          elif [ -z "$signal" ] && [ "$in_flight" -gt 0 ]; then
+            gate_reason="${E2E_INSTANCE} E2E for deploy ${deploy_short} is still running"
+            signal_time="$deployed_at"
+          elif [ -z "$signal" ]; then
+            gate_reason="no ${E2E_INSTANCE} E2E has run since deploy ${deploy_short} finished at ${deployed_at}"
+            signal_time="$deployed_at"
+          elif [ "$E2E_CONCLUSION" != "Succeeded" ]; then
+            gate_reason="latest ${E2E_INSTANCE} E2E for deploy ${deploy_short} finished ${E2E_CONCLUSION}"
+          fi
+
+          signal_epoch=$(date -u -d "$signal_time" +%s)
+          if [ -z "$gate_reason" ]; then
+            age_h=$(( ($(date -u +%s) - signal_epoch) / 3600 ))
+            if [ "$age_h" -gt "$E2E_MAX_AGE_HOURS" ]; then
+              gate_reason="latest ${E2E_INSTANCE} E2E is stale (${age_h}h old, max ${E2E_MAX_AGE_HOURS}h)"
+            else
+              echo "${E2E_INSTANCE} E2E ${wf_name} passed on deploy ${deploy_short} (${age_h}h old)."
+              exit 0
+            fi
           fi
 
           labels=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name')
@@ -137,7 +185,7 @@ jobs:
 
           override_epoch=$(date -u -d "$override_when" +%s)
           if [ "$override_epoch" -le "$signal_epoch" ]; then
-            echo "::error::override by ${applier} at ${override_when} predates the signal at ${run_completed}; remove and reapply ${OVERRIDE_LABEL} to authorize this result"
+            echo "::error::override by ${applier} at ${override_when} predates the signal at ${signal_time}; remove and reapply ${OVERRIDE_LABEL} to authorize this result"
             exit 1
           fi
 
@@ -172,7 +220,7 @@ jobs:
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
           fi
 
-          echo "Override honored for the signal completed at ${run_completed}."
+          echo "Override honored for the signal at ${signal_time}."
 
   refresh-release-gate:
     name: Refresh release gate
