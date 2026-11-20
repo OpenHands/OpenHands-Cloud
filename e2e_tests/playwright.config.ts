@@ -71,6 +71,10 @@ export default defineConfig({
   reporter: getReporters(),
 
   // Timeout configuration
+  // Ends the run before the Argo workflow's 20-minute activeDeadlineSeconds
+  // (which includes ~1 minute of checkout and npm ci) kills the pod, so
+  // reporters still finish the ReportPortal launch and record the hung test.
+  globalTimeout: process.env.CI ? 17 * 60_000 : 0,
   timeout: 120_000, // 2 minutes per test (agent operations can be slow)
   expect: {
     timeout: 30_000, // 30 seconds for assertions
