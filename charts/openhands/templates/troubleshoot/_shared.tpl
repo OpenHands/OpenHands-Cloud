@@ -49,11 +49,13 @@
       - fail:
           when: "count() < 1"
           message: "At least one node is required for bundled object storage"
+      {{/* ephemeralStorageCapacity is post-filesystem-overhead: a nominal 200 GB disk reports
+           ~182-194GiB. Threshold sits below the documented minimum so correct sizing doesn't fail. */}}
       - fail:
-          when: "max(ephemeralStorageCapacity) < 200Gi"
-          message: "At least one node with 200Gi of storage is required when bundled object storage uses OpenEBS hostpath"
+          when: "max(ephemeralStorageCapacity) < 175Gi"
+          message: "At least one node with a 200 GB disk is required when bundled object storage uses OpenEBS hostpath"
       - pass:
-          message: "Embedded storage capacity meets the 200Gi minimum"
+          message: "Embedded storage capacity meets the 200 GB disk minimum"
 {{- end }}
 - storageClass:
     checkName: "Default Storage Class"
