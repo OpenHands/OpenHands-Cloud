@@ -1,0 +1,81 @@
+suite: sandbox-upgrade-coordinator idle budget
+templates:
+  - templates/sandbox-upgrade-coordinator.yaml
+tests:
+  - it: restores sandbox budgets to 0 by default
+    documentIndex: 4
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PDB_IDLE_MAX_UNAVAILABLE
+            value: "0"
+
+  - it: passes the configured idle budget to the coordinator as a string
+    documentIndex: 4
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+      sandboxUpgradeCoordinator.idleMaxUnavailable: "1"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PDB_IDLE_MAX_UNAVAILABLE
+            value: "1"
+
+  - it: accepts an integer idle budget
+    documentIndex: 4
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+      sandboxUpgradeCoordinator.idleMaxUnavailable: 1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PDB_IDLE_MAX_UNAVAILABLE
+            value: "1"
+
+  - it: restores to the configured value and never hard-codes 0 for the idle phase
+    documentIndex: 3
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["coordinator.sh"]
+          pattern: set_pdbs "\$IDLE" "\$IDLE"
+      - notMatchRegex:
+          path: data["coordinator.sh"]
+          pattern: set_pdbs '0' '0'
+
+  - it: rejects an idle budget that is not a canonical nonnegative integer
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+      sandboxUpgradeCoordinator.idleMaxUnavailable: "01"
+    asserts:
+      - failedTemplate:
+          errorPattern: idleMaxUnavailable must be a nonnegative integer
+
+  - it: rejects a percentage idle budget
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+      sandboxUpgradeCoordinator.idleMaxUnavailable: "50%"
+    asserts:
+      - failedTemplate:
+          errorPattern: idleMaxUnavailable must be a nonnegative integer
+
+  - it: rejects an empty idle budget
+    set:
+      sandboxUpgradeCoordinator.enabled: true
+      sandboxUpgradeCoordinator.idleMaxUnavailable: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: idleMaxUnavailable must be a nonnegative integer
+
+  - it: renders nothing when disabled, whatever the idle budget
+    set:
+      sandboxUpgradeCoordinator.idleMaxUnavailable: "not-a-number"
+    asserts:
+      - hasDocuments:
+          count: 0

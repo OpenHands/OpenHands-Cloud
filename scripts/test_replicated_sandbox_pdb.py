@@ -25,13 +25,13 @@ def test_installer_preserves_the_zero_default(option: dict) -> None:
     assert "when" not in option
 
 
-@pytest.mark.parametrize("value", ["0", "1", "3", "10"])
-def test_installer_accepts_nonnegative_integers(option: dict, value: str) -> None:
+@pytest.mark.parametrize("value", ["0", "1"])
+def test_installer_accepts_the_two_meaningful_limits(option: dict, value: str) -> None:
     assert re.search(option["validation"]["regex"]["pattern"], value)
 
 
-@pytest.mark.parametrize("value", ["", "-1", "1.5", "50%", "true", " 1", "1 "])
-def test_installer_rejects_invalid_limits(option: dict, value: str) -> None:
+@pytest.mark.parametrize("value", ["", "-1", "1.5", "50%", "true", " 1", "1 ", "00", "01", "2", "10"])
+def test_installer_rejects_other_limits(option: dict, value: str) -> None:
     assert not re.search(option["validation"]["regex"]["pattern"], value)
 
 

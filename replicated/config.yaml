@@ -1519,15 +1519,15 @@ spec:
           help_text: >-
             Maximum unavailable pods allowed by each sandbox's disruption budget.
             0 blocks voluntary eviction; 1 allows node drains to interrupt a sandbox.
-            Applies to new budgets only, including warm sandboxes.
-            Existing budgets need separate migration.
+            Applies to new and existing sandboxes, including warm sandboxes.
+            Existing budgets are updated automatically after the deploy.
           type: text
           default: "0"
           required: true
           validation:
             regex:
-              pattern: ^[0-9]+$
-              message: Must be a non-negative integer
+              pattern: ^[01]$
+              message: Must be 0 or 1
         - name: sandbox_warm_runtime_count
           title: Warm Runtime Count
           help_text: Number of warm runtime sandboxes to keep ready so new conversations start instantly. Set to 0 to disable and cold-start each sandbox.
