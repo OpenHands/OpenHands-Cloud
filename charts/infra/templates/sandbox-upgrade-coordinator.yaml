@@ -10,8 +10,11 @@ the eviction API, which a maxUnavailable=0 PDB always rejects, so the upgrade
 stalls on a cordoned node.
 
 What it does: while an upgrade is rolling nodes, it relaxes the sandbox PDBs to
-maxUnavailable=100% so the drain can evict the pods, then sets them back to
-maxUnavailable=0 when the upgrade finishes. It does NOT touch the sandbox
+maxUnavailable=100% so the drain can evict the pods, then sets them back to the
+idle budget (idleMaxUnavailable, default 0) when the upgrade finishes. The idle
+budget must equal runtime-api's RUNTIME_PDB_MAX_UNAVAILABLE: while idle, the
+coordinator enforces it on every sandbox PDB, so it also converges PDBs that were
+created with another value. It does NOT touch the sandbox
 Deployments — those stay at replicas=1, so Kubernetes recreates each pod as soon
 as the node uncordons, and the node-local workspace PVC survives the reboot.
 Sandboxes come back on their own with their workspace intact; the interruption
@@ -39,8 +42,8 @@ drain. It stays running on the draining node, relaxes the PDBs so the drain
 proceeds, and after the node reboots into the new k0s it restores them.
 
 Safety: the relax is idempotent and only widens a PDB during a detected upgrade;
-the moment the Installation leaves a drain state the PDBs go back to
-maxUnavailable=0. If this controller is down, the worst case is the upgrade
+the moment the Installation leaves a drain state the PDBs go back to the idle
+budget. If this controller is down, the worst case is the upgrade
 stalls on a cordoned node (autopilot's drain retries every 120s) — PDB
 protection is never silently lost.
 
@@ -53,6 +56,10 @@ the controller idles harmlessly (it cannot read the CRD, so it changes nothing).
 */ -}}
 {{- if .Values.sandboxUpgradeCoordinator.enabled }}
 {{- $c := .Values.sandboxUpgradeCoordinator }}
+{{- $idle := toString $c.idleMaxUnavailable }}
+{{- if not (regexMatch "^(0|[1-9][0-9]*)$" $idle) }}
+{{- fail (printf "sandboxUpgradeCoordinator.idleMaxUnavailable must be a nonnegative integer without leading zeros, got %q" $idle) }}
+{{- end }}
 {{- $name := printf "%s-sandbox-upgrade-coordinator" .Release.Name }}
 {{- $ns := .Release.Namespace }}
 apiVersion: v1
@@ -125,12 +132,18 @@ data:
     #   1. Every INTERVAL seconds, read status.state of all Installation CRDs.
     #   2. If any is in a drain state (upgrade rolling nodes) → relax every
     #      sandbox PDB to maxUnavailable=100% so the node can drain.
-    #   3. Otherwise (idle) → restore every sandbox PDB to maxUnavailable=0
-    #      to protect running sandboxes.
+    #   3. Otherwise (idle) → set every sandbox PDB to the idle budget
+    #      (PDB_IDLE_MAX_UNAVAILABLE, from idleMaxUnavailable). With 0 this
+    #      protects running sandboxes; with 1 or more it keeps the eviction
+    #      limit the operator chose, and no longer resets it to 0.
     #   4. If state is unreadable (CRD missing / API error) → leave PDBs as-is.
     #
     # Only PDBs matching the sandbox selector are touched, and only when the
     # value actually differs — steady state writes nothing and logs nothing.
+    #
+    # The idle budget comes from the pod environment, not this ConfigMap: a
+    # ConfigMap edit does not restart a DaemonSet, an env change does.
+    IDLE="${PDB_IDLE_MAX_UNAVAILABLE:?PDB_IDLE_MAX_UNAVAILABLE is required}"
     # 
     # Namespace runtime-api drops sandboxes into (its K8S_NAMESPACE), which in
     # the openhands chart is the openhands release namespace. The sandbox PDBs
@@ -177,9 +190,9 @@ data:
 
     # Set spec.maxUnavailable on every sandbox PDB to the desired value, patching
     # only the ones that differ so steady state is a no-op (no writes, no log
-    # spam) and runtime-api creating fresh PDBs at 0 is left alone.
-    #   $1 = value as it appears in jsonpath output ("0" or "100%")
-    #   $2 = the same value as a JSON literal (0 or "100%")
+    # spam) and fresh PDBs that already hold the desired value are left alone.
+    #   $1 = value as it appears in jsonpath output ("0", "1", "100%")
+    #   $2 = the same value as a JSON literal (0, 1, "100%")
     set_pdbs() {
       want_str="$1"
       want_json="$2"
@@ -204,9 +217,9 @@ data:
           PHASE="draining"
           set_pdbs '100%' '"100%"'
         else
-          [ "$PHASE" = "draining" ] && log "k0s upgrade finished; restoring sandbox PDBs (maxUnavailable=0)"
+          [ "$PHASE" = "draining" ] && log "k0s upgrade finished; restoring sandbox PDBs (maxUnavailable=$IDLE)"
           PHASE="idle"
-          set_pdbs '0' '0'
+          set_pdbs "$IDLE" "$IDLE"
         fi
       else
         [ "$PHASE" != "unknown" ] && log "WARN: cannot read Installation state (CRD missing or API error); leaving PDBs unchanged"
@@ -261,6 +274,8 @@ spec:
             # kubectl writes its discovery cache under $HOME; give it a writable one.
             - name: HOME
               value: /tmp
+            - name: PDB_IDLE_MAX_UNAVAILABLE
+              value: {{ $idle | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

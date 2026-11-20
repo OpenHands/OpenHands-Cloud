@@ -102,6 +102,12 @@ sandboxUpgradeCoordinator:
   # Namespace where runtime-api creates sandbox pods and their PDBs (its
   # K8S_NAMESPACE). In the openhands chart this is the openhands release namespace.
   runtimeNamespace: openhands
+  # maxUnavailable the coordinator sets on every sandbox PDB when no node roll is
+  # underway. Keep it equal to runtime-api's RUNTIME_PDB_MAX_UNAVAILABLE: the
+  # coordinator enforces this value on all sandbox PDBs, including existing ones.
+  # 0 blocks voluntary eviction; 1 lets a drain evict a one-pod sandbox. A string
+  # holding a nonnegative integer without leading zeros.
+  idleMaxUnavailable: "0"
   # Label selector identifying sandbox PDBs (runtime-api labels each sandbox and
   # its PDB with runtime_id).
   sandboxSelector: runtime_id

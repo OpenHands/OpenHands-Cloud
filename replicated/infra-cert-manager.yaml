@@ -25,6 +25,9 @@ spec:
       enabled: true
       # runtime-api's K8S_NAMESPACE in the openhands chart.
       runtimeNamespace: openhands
+      # Same value runtime-api gets in openhands.yaml: the coordinator restores
+      # sandbox PDBs to it, so it must not reset them to 0.
+      idleMaxUnavailable: '{{repl ConfigOption "sandbox_pdb_max_unavailable" }}'
       image:
         repository: 'images.r9.all-hands.dev/proxy/{{repl LicenseFieldValue "appSlug"}}/docker.io/alpine/k8s'
       imagePullSecrets:
