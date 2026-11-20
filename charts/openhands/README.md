@@ -969,7 +969,7 @@ helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 
 ### Keycloak 26.3 to 26.8
 
-The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.0. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards.
+The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.2. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards.
 
 `helm upgrade` backs the database up first. A pre-upgrade hook (`keycloak.preUpgradeBackup`) reads the schema version from Keycloak's `migration_model` table and, when it differs from the version in `keycloak.image.tag`, copies `bitnami_keycloak` to `bitnami_keycloak_backup_26_3_0` on the same server while Keycloak 26.3 is still running. It runs after the other pre-upgrade hooks, so a failed check such as a Strict budget preflight stops the upgrade before the copy. If the copy fails, the upgrade stops before anything changes; the reason is in the log of the `<release>-keycloak-backup` Job. That includes a copy still running after `keycloak.preUpgradeBackup.activeDeadlineSeconds` minus 60 seconds (240 by default), for example one blocked by a lock on a Keycloak table; raise it for a large database. If the backup database already exists, the hook keeps it rather than copying again. So if an earlier attempt stopped after the backup but before Keycloak 26.8 started (for example, a manifest failed to apply or the 26.8 image could not be pulled), drop `bitnami_keycloak_backup_26_3_0` before retrying, or the backup will miss changes made since that attempt. The hook needs a database user that can `CREATE DATABASE` (the bundled `postgres` user can) and PostgreSQL 17 or older, since it runs `pg_dump` 17. If yours does not, back up the database yourself and upgrade with `keycloak.preUpgradeBackup.enabled=false` (on Replicated, untick **Back Up Keycloak Database Before Upgrade** under **Upgrade Checks**). The hook does not run under `helm template`, so ArgoCD and similar tools must back up by hand:
 
@@ -981,13 +981,13 @@ kubectl exec -n openhands <release>-postgresql-0 -- \
 To roll back, scale the `keycloak` StatefulSet to 0, swap the databases, and upgrade with `keycloak.image` set back to `docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0`:
 
 ```sql
-ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_0;
+ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_2;
 ALTER DATABASE bitnami_keycloak_backup_26_3_0 RENAME TO bitnami_keycloak;
 ```
 
 If you skip the swap, the hook stops the upgrade with a message, because Keycloak 26.3 cannot start on the 26.8 schema.
 
-The rollback does not keep changes made on 26.8, such as new Keycloak users. They stay in `bitnami_keycloak_26_8_0`.
+The rollback does not keep changes made on 26.8, such as new Keycloak users. They stay in `bitnami_keycloak_26_8_2`.
 
 On Replicated, the admin console has no rollback button, so run these steps on the cluster. For an online install, keep the image proxy path: run `helm upgrade` with `--reuse-values`, `keycloak.image.repository=proxy/openhands/docker.io/bitnamilegacy/keycloak`, and `keycloak.image.tag=26.3.0-debian-12-r0`. The admin console does not know about this `helm upgrade` and continues to show the new release. The next deploy from the admin console applies Keycloak 26.8 again. This includes a **Redeploy**, a config change, and an update. The hook backs up the restored 26.3 database again before Keycloak migrates it.
 
@@ -995,7 +995,9 @@ To go forward to 26.8 again, find the cause in the `keycloak-0` log of the faile
 
 With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`. The hook never drops backups, and every later upgrade that changes the Keycloak version, patch releases included, adds another full copy of the database, so drop old `bitnami_keycloak_backup_*` databases before they fill the PostgreSQL volume.
 
-Keycloak 26.8.2 rejects Admin REST API tokens that lack the `kc-admin-api` client scope, and its migration adds that scope only to the built-in clients. The chart adds it to the app's admin client (`KEYCLOAK_ADMIN_CLIENT_ID`, `openhands-provisioner` on Replicated). That needs a login as the Keycloak `admin` user, with the console password (`keycloak-admin` secret, key `admin-ui-password`) or the bootstrap admin password.
+Patch upgrades can migrate one way too. Keycloak 26.8.2 runs a data migration on first start, so an upgrade from 26.8.0 backs up to `bitnami_keycloak_backup_26_8_0`. To roll back to 26.8.0, follow the steps above with that backup database, and upgrade with `keycloak.image.tag=26.8.0-debian-12-oh3`. Keep `keycloak.image.repository` as it is. The `helm upgrade` notes warn only about an upgrade from 26.3, not about a patch upgrade.
+
+Keycloak 26.8.2 also rejects Admin REST API tokens that lack the `kc-admin-api` client scope, and its migration adds that scope only to the built-in clients. The chart adds it to the app's admin client (`KEYCLOAK_ADMIN_CLIENT_ID`, `openhands-provisioner` on Replicated). That needs a login as the Keycloak `admin` user, with the console password (`keycloak-admin` secret, key `admin-ui-password`) or the bootstrap admin password.
 
 - When the running Keycloak is older than 26.8.2, a pre-upgrade hook checks that login while the old Keycloak still runs. If neither password works, or Keycloak does not answer for 4 minutes, it stops the upgrade before the backup and the migration. The reason is in the log of the `<release>-keycloak-admin-api-check` Job. The Job log says which password to set (on Replicated, **Keycloak Admin Password**). While the app's admin client still works on the old Keycloak, any new console password works, because the check applies it to the `admin` user before Keycloak migrates. Otherwise, set the current password of the `admin` user. To deploy a fix while Keycloak cannot answer, turn the check off with `keycloak.preUpgradeAdminCheck.enabled=false` (on Replicated, **Check Keycloak Admin Login Before Upgrade** under **Upgrade Checks**), and if the admin login then fails after the migration, add the scope to the admin client yourself.
 - An `admin` user with a one-time password or a required action cannot sign in with a password, so the check stops the upgrade. Remove them from the `admin` user in the `master` realm first.
