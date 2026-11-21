@@ -1,0 +1,203 @@
+suite: bundled MinIO GOMAXPROCS follows its CPU limit
+templates:
+  - charts/minio/templates/deployment.yaml
+  - charts/minio/templates/statefulset.yaml
+  # Both workload templates checksum these into their pod annotations.
+  - charts/minio/templates/configmap.yaml
+  - charts/minio/templates/secrets.yaml
+set:
+  minio.enabled: true
+tests:
+  - it: rounds the chart default 100m up to 1
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+
+  - it: leaves the configured worker count in place at 201 CPUs
+    set:
+      minio.resources.limits.cpu: "201"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: ""}
+
+  - it: raises the worker count when the rounded CPU limit reaches 202
+    set:
+      minio.resources.limits.cpu: "201.1"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: "101"}
+
+  - it: lets a consumer override the computed worker count
+    set:
+      minio.resources.limits.cpu: "202"
+      minio.environment.MINIO_API_TRANSITION_WORKERS: "125"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: "125"}
+
+  - it: matches the Replicated limit of "2"
+    set:
+      minio.resources:
+        requests: {cpu: "1", memory: 512Mi}
+        limits: {cpu: "2", memory: 2Gi}
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: accepts a numeric whole-core limit
+    set:
+      minio.resources.limits.cpu: 3
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "3"}
+
+  - it: sets GOMAXPROCS on the distributed MinIO StatefulSet
+    set:
+      minio.mode: distributed
+      minio.replicas: 4
+      minio.persistence.enabled: true
+      minio.resources.limits.cpu: "2"
+    asserts:
+      - template: charts/minio/templates/statefulset.yaml
+        documentSelector:
+          path: kind
+          value: StatefulSet
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: accepts a CPU limit in decimal exponent form
+    set:
+      minio.resources.limits.cpu: "2e1"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "20"}
+
+  - it: keeps an exact millicore multiple
+    set:
+      minio.resources.limits.cpu: 1000m
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+
+  - it: accepts a millicore limit written with a decimal point
+    set:
+      minio.resources.limits.cpu: "2000.0m"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: rounds millicores up
+    set:
+      minio.resources.limits.cpu: 1001m
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: rounds a larger millicore limit up
+    set:
+      minio.resources.limits.cpu: 2500m
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "3"}
+
+  - it: rounds a fractional core below 1 up to 1
+    set:
+      minio.resources.limits.cpu: "0.5"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+
+  - it: rounds a fractional core up, not to nearest
+    set:
+      minio.resources.limits.cpu: 1.2
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: leaves Go's default when there is no CPU limit
+    set:
+      minio.resources.limits.cpu: null
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: ""}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: ""}
+
+  - it: leaves Go's default when there is no limits block
+    set:
+      minio.resources.limits: null
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        notFailedTemplate: {}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: ""}
+
+  - it: leaves Go's default when there is no resources block
+    set:
+      minio.resources: null
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        notFailedTemplate: {}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: ""}
+
+  - it: lets a consumer override the computed value
+    set:
+      minio.environment.GOMAXPROCS: "205"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "205"}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: "102"}
+
+  - it: keeps the computed value when a consumer adds another variable
+    set:
+      minio.environment.MINIO_BROWSER: "off"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "1"}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_BROWSER, value: "off"}
