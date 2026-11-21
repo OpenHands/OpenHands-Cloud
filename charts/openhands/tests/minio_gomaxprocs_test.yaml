@@ -1,7 +1,8 @@
 suite: bundled MinIO GOMAXPROCS follows its CPU limit
 templates:
   - charts/minio/templates/deployment.yaml
-  # deployment.yaml checksums these into its pod annotations.
+  - charts/minio/templates/statefulset.yaml
+  # Both workload templates checksum these into their pod annotations.
   - charts/minio/templates/configmap.yaml
   - charts/minio/templates/secrets.yaml
 set:
@@ -33,6 +34,30 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: GOMAXPROCS, value: "3"}
+
+  - it: sets GOMAXPROCS on the distributed MinIO StatefulSet
+    set:
+      minio.mode: distributed
+      minio.replicas: 4
+      minio.persistence.enabled: true
+      minio.resources.limits.cpu: "2"
+    asserts:
+      - template: charts/minio/templates/statefulset.yaml
+        documentSelector:
+          path: kind
+          value: StatefulSet
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
+  - it: accepts a CPU limit in decimal exponent form
+    set:
+      minio.resources.limits.cpu: "2e1"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "20"}
 
   - it: keeps an exact millicore multiple
     set:
