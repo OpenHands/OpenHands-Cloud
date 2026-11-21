@@ -626,6 +626,11 @@ If `minio.persistence.enabled` is `false`, Kubernetes deletes the stored objects
 with the old pod. Back up any objects you need to keep before upgrading.
 Replicated installs use a persistent volume claim for MinIO.
 
+If the effective `GOMAXPROCS` is 202 or higher, the chart sets
+`MINIO_API_TRANSITION_WORKERS` to the minimum that MinIO accepts.
+To keep a higher worker count, set `minio.environment.MINIO_API_TRANSITION_WORKERS`
+in your values.
+
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,

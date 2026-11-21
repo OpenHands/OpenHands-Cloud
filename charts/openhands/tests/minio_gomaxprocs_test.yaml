@@ -15,6 +15,34 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: GOMAXPROCS, value: "1"}
 
+  - it: leaves the configured worker count in place at 201 CPUs
+    set:
+      minio.resources.limits.cpu: "201"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: ""}
+
+  - it: raises the worker count when the rounded CPU limit reaches 202
+    set:
+      minio.resources.limits.cpu: "201.1"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: "101"}
+
+  - it: lets a consumer override the computed worker count
+    set:
+      minio.resources.limits.cpu: "202"
+      minio.environment.MINIO_API_TRANSITION_WORKERS: "125"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: "125"}
+
   - it: matches the Replicated limit of "2"
     set:
       minio.resources:
@@ -121,6 +149,10 @@ tests:
         contains:
           path: spec.template.spec.containers[0].env
           content: {name: GOMAXPROCS, value: ""}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: ""}
 
   - it: leaves Go's default when there is no limits block
     set:
@@ -146,12 +178,16 @@ tests:
 
   - it: lets a consumer override the computed value
     set:
-      minio.environment.GOMAXPROCS: "4"
+      minio.environment.GOMAXPROCS: "205"
     asserts:
       - template: charts/minio/templates/deployment.yaml
         contains:
           path: spec.template.spec.containers[0].env
-          content: {name: GOMAXPROCS, value: "4"}
+          content: {name: GOMAXPROCS, value: "205"}
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: MINIO_API_TRANSITION_WORKERS, value: "102"}
 
   - it: keeps the computed value when a consumer adds another variable
     set:

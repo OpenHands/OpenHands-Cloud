@@ -916,6 +916,12 @@ minio:
       {{- else if hasSuffix "m" $cpu -}}{{ ceil (divf (trimSuffix "m" $cpu) 1000) }}
       {{- else -}}{{ ceil (float64 $cpu) }}
       {{- end -}}
+    # MinIO requires at least GOMAXPROCS / 2 transition workers. An empty
+    # value lets MinIO use its own configuration when 100 workers suffice.
+    MINIO_API_TRANSITION_WORKERS: >-
+      {{- $procs := tpl (.Values.environment.GOMAXPROCS | default "") $ | atoi -}}
+      {{- $minimum := div $procs 2 -}}
+      {{- if gt $minimum 100 -}}{{ $minimum }}{{- end -}}
 
 # Opt-in alternative to the bundled MinIO. RustFS speaks S3, so point the app at
 # it with the ordinary filestore values — no separate wiring:
