@@ -294,13 +294,19 @@ warmRuntimes:
   # `name` explicitly. Maps merge cleanly across values layers.
   # Each entry may also set display_name and resources.requests/limits.cpu/memory
   # when running a Runtime API version that supports named sizing templates.
-  # A per-entry count of 0 keeps it discoverable without reserving warm capacity.
+  # Set count to 0 to keep a spec discoverable with prewarming disabled.
+  # Omit count to inherit warmRuntimes.count. When upgrading from a chart
+  # that dropped an explicit zero, that entry now disables prewarming
+  # instead of inheriting the global count.
   # Set `fuse_s3_mount: true` on an entry for fusey warm pods: dormant startup,
   # /workspace FUSE-mounted from object storage instead of a PVC. Needs the
   # FUSEY_* env on runtime-api and /dev/fuse on the sandbox nodes (see the
   # device-plugin subchart).
   # Optionally set idle_seconds to a positive integer for a named Sandbox Spec.
   # Omission uses cleanup.idle_seconds, the deployment-wide idle timeout.
+  # The bundled Runtime API 0.16.1 uses the deployment timeout for every spec.
+  # Per-spec idle_seconds requires the first Runtime API release containing
+  # https://github.com/OpenHands/runtime-api/pull/773, which is unreleased.
   configsByName:
     # Keep the map key stable for existing Helm overrides.
     default:
