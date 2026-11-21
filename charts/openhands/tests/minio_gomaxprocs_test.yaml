@@ -43,6 +43,15 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: GOMAXPROCS, value: "1"}
 
+  - it: accepts a millicore limit written with a decimal point
+    set:
+      minio.resources.limits.cpu: "2000.0m"
+    asserts:
+      - template: charts/minio/templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: GOMAXPROCS, value: "2"}
+
   - it: rounds millicores up
     set:
       minio.resources.limits.cpu: 1001m

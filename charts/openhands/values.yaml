@@ -913,7 +913,7 @@ minio:
       {{- $limits := (.Values.resources | default dict).limits -}}
       {{- $cpu := $limits.cpu | default "" | toString -}}
       {{- if not $cpu -}}
-      {{- else if hasSuffix "m" $cpu -}}{{ div (add (atoi (trimSuffix "m" $cpu)) 999) 1000 }}
+      {{- else if hasSuffix "m" $cpu -}}{{ ceil (divf (trimSuffix "m" $cpu) 1000) }}
       {{- else -}}{{ ceil (float64 $cpu) }}
       {{- end -}}
 
