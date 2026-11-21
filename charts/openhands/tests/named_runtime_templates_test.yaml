@@ -1,4 +1,4 @@
-suite: named sandbox image and resource templates
+suite: named Sandbox Specs
 templates:
   - charts/runtime-api/templates/warm-runtimes-configmap.yaml
 tests:
@@ -14,6 +14,7 @@ tests:
           command: [agent-server]
           environment: {}
           count: 0
+          idle_seconds: 600
           resources:
             requests: {memory: 6Gi, cpu: 1000m}
             limits: {memory: 8Gi, cpu: 2000m}
@@ -23,6 +24,9 @@ tests:
           pattern: '"count": 0'
       - matchRegex:
           path: data["warm-runtimes.json"]
+          pattern: '"idle_seconds": 600'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
           pattern: '"display_name": "Custom Build \(8 GB\)"'
       - matchRegex:
           path: data["warm-runtimes.json"]
@@ -30,7 +34,7 @@ tests:
       - matchRegex:
           path: data["warm-runtimes.json"]
           pattern: '"resources": \{"limits":\{"cpu":"2000m","memory":"8Gi"\},"requests":\{"cpu":"1000m","memory":"6Gi"\}\}'
-  - it: keeps legacy templates valid without optional labels or resources
+  - it: keeps legacy templates valid without optional settings
     set:
       runtime-api.warmRuntimes.enabled: true
       runtime-api.warmRuntimes.count: 2
@@ -42,7 +46,7 @@ tests:
     asserts:
       - notMatchRegex:
           path: data["warm-runtimes.json"]
-          pattern: '"(display_name|resources)"'
+          pattern: '"(display_name|resources|idle_seconds)"'
       - matchRegex:
           path: data["warm-runtimes.json"]
           pattern: '"count": 2'
@@ -64,3 +68,15 @@ tests:
       - matchRegex:
           path: data["warm-runtimes.json"]
           pattern: '"count": 2'
+
+  - it: renders a per-spec idle timeout from the named map
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.configsByName.custom_large:
+        working_dir: /workspace
+        command: [agent-server]
+        idle_seconds: 900
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "custom_large",[\s\S]*?"idle_seconds": 900'

@@ -1,11 +1,21 @@
-# OpenHands Cloud Helm Chart
+# OpenHands Enterprise Helm Chart
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
+
+## Enterprise policy defaults
+
+By default the chart hides personal LLM key editing and the Billing page, and
+disables email changes. It shows the Automations page only when the app has a
+service URL. Explicit `env` overrides win. See
+[enterprise-defaults.md](enterprise-defaults.md) before you upgrade.
+
+Local Automations defaults on and needs configuration before the chart can
+render. See [Automations chart configuration](#automations-chart-configuration).
 
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3.2.0+
+- Helm 3.18.4 (CI baseline; older versions are not qualified here), or compatible Helm 4
 - Ingress controller (recommended: Traefik)
 - A TLS solution for certificates (recommended: cert-manager)
 
@@ -17,6 +27,78 @@ This Helm chart deploys the complete OpenHands stack, including all required dep
 
 See the [values.yaml](values.yaml) file for the full list of configurable parameters.
 Make sure to update all values marked with "REQUIRED" comments.
+
+### Sandbox disruption budgets
+
+Set `runtime-api.env.RUNTIME_PDB_MAX_UNAVAILABLE` to a nonnegative integer to
+control each sandbox's PodDisruptionBudget, including warm sandboxes.
+The default is `0`, which blocks voluntary eviction of single-replica sandboxes.
+
+```yaml
+runtime-api:
+  env:
+    RUNTIME_PDB_MAX_UNAVAILABLE: "1"
+```
+
+With `1`, node drains can evict a sandbox, interrupting running processes and
+connections. A replacement pod can start when storage and scheduling constraints
+permit. In-memory state does not survive eviction; local volumes can prevent
+rescheduling onto another node.
+
+It applies only to newly created budgets.
+
+### Workspace init image
+
+Set `runtime-api.env.RUNTIME_INIT_IMAGE` to use a mirrored BusyBox image for
+PVC-backed sandbox initialization. The default is `busybox:1.36`. A full image
+reference can include a tag, registry port, or `@sha256:` digest.
+
+```yaml
+runtime-api:
+  env:
+    RUNTIME_INIT_IMAGE: registry.example.com/mirror/busybox:1.36
+    RUNTIME_IMAGE_PULL_SECRETS: sandbox-registry-secret
+```
+
+Use a BusyBox-compatible image; the init container needs its shell and filesystem
+utilities. Create pull secrets in the sandbox namespace. The setting applies to
+new pod templates, including warm pods and templates rebuilt on resume. Existing
+pods keep their image. FUSE-backed sandboxes do not use this init container.
+
+The runtime-api image must support `RUNTIME_INIT_IMAGE`; older images ignore the
+setting. If initialization fails after an override, restore a reachable,
+compatible image and recreate the affected sandbox pod.
+
+### License
+
+An upcoming release will enforce the OpenHands Enterprise license through
+Customer Center. Set your license now so the upgrade to that release doesn't
+change anything for your users. Until then, an install without a license keeps
+working, and `helm install` and `helm upgrade` print a warning.
+
+Set the license key from Customer Center:
+
+```yaml
+license:
+  key: <license-key>
+```
+
+If the install can't reach Customer Center, download an offline license file
+from Customer Center and pass it instead:
+
+```bash
+helm upgrade openhands ... --set-file license.offlineLicense=<path-to-offline-license>
+```
+
+The chart stores either one in the `openhands-license` Secret. To manage the
+Secret yourself, create it with a `license-key` or `offline-license` entry, set
+`license.existingSecret` to its name, and restart the openhands pods after you
+change it:
+
+```bash
+kubectl create secret generic my-license -n openhands \
+  --from-literal=license-key=<license-key>
+```
 
 ### Organization condenser defaults
 
@@ -322,8 +404,8 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
      idpMetadataUrl: "https://idp.example.com/saml/metadata"
    # When idpMetadataUrl is provided, the chart automatically creates and keeps updated the
    # enterprise_sso SAML identity provider in the bundled Keycloak on every pod start.
-   # The managed provider validates SAML signatures, trusts the assertion email for account
-   # linking, and stores an ownership marker in Keycloak. Turning enabled off disables only
+   # The managed provider validates SAML signatures, marks the imported IdP email verified,
+   # and stores an ownership marker in Keycloak. Turning enabled off disables only
    # a provider with that marker, even if idpMetadataUrl is cleared in the same rollout.
    # Leave idpMetadataUrl empty to configure the provider manually in the Keycloak admin
    # console instead; the chart does not disable providers without its ownership marker.
@@ -336,6 +418,27 @@ Enterprise SSO signs users in with a corporate SAML identity provider through th
    - Attribute: `identity_provider`
    - Value: `enterprise_sso:saml`
    - Sync mode: `FORCE`
+
+   Configure the IdP to send attributes named exactly `email`, `firstName`, and
+   `lastName` (case-sensitive). With a persistent NameID, these attributes populate
+   the new user's email and names. Entra/ADFS default claim URIs need explicit
+   remapping. Attribute NameFormat does not change matching by attribute name.
+
+   The chart manages `openhands-profile-email`, `openhands-profile-firstName`,
+   and `openhands-profile-lastName` using `saml-user-attribute-idp-mapper` with
+   `attribute.name` and `user.attribute` set to the corresponding attribute,
+   `attribute.name.format: ATTRIBUTE_FORMAT_UNSPECIFIED`, and `syncMode: IMPORT`.
+   Add these mappers too when setting up the provider manually. Chart-managed
+   mapper edits are overwritten on startup; use distinct names for custom mappers
+   and avoid multiple conflicting importers for the same user field.
+
+   IMPORT fills profiles only for new users. It does not backfill existing accounts
+   or synchronize later IdP email/name changes. The provider's `trustEmail: true`
+   marks an imported email verified. This chart does not change the
+   first-broker-login flow; whether a verified imported email links to an
+   existing account depends on that flow and is untested. Preserve ownership
+   verification and test existing-email collisions and application
+   organization/invitation policies.
 
 ### LiteLLM configuration
 
@@ -683,6 +786,179 @@ runtime-api:
 
 > **Note:** The VolumeSnapshot CRDs must be installed in your cluster. Most managed Kubernetes services (GKE, EKS) include these by default. If not, see the [Kubernetes VolumeSnapshot documentation](https://kubernetes.io/docs/concepts/storage/volume-snapshots/).
 
+### Sandbox Network Isolation
+
+We recommend restricting sandbox network access with the chart's sandbox egress NetworkPolicy. With
+the policy enabled, sandboxes can reach the internet, cluster DNS, your ingress controller, and the
+bundled LiteLLM and Laminar. They can't reach node, pod, or VPC-internal addresses, which include
+the kubelet, cloud metadata servers, other sandboxes, the application's databases, and the
+Kubernetes API server when its endpoint is private. Some network plugins, including the VPC CNI on
+EKS, always allow a pod to reach the node it runs on, so on those clusters sandboxes can still reach
+their own node. The policy selects only sandbox pods in runtime-api's sandbox namespace
+(`runtime-api.sandbox_namespace`), so the other pods in that namespace are unaffected.
+
+The policy requires a network plugin that enforces NetworkPolicy:
+
+- **GKE**: Dataplane V2, or network policy enforcement (`--enable-network-policy`).
+- **EKS**: The VPC CNI with `enableNetworkPolicy` set to `"true"`.
+- **AKS**: Azure CNI Powered by Cilium, Calico, or Azure Network Policy Manager.
+- **OpenShift**: OVN-Kubernetes, the default plugin.
+
+Flannel alone doesn't enforce NetworkPolicy.
+
+To enable the policy, review these settings under `sandboxNetworkPolicy` in `values.yaml` against
+your cluster:
+
+- `internet.blockedCIDRs`: Add your node, pod, and Service CIDRs if any fall outside the defaults.
+  If your Kubernetes API server endpoint is public, add its IP
+  (`kubectl -n default get endpointslices -l kubernetes.io/service-name=kubernetes`).
+- `ingressController`: Match your ingress controller's pods and container ports. Sandboxes reach
+  runtime URLs and the app at their public hostnames. If those hostnames resolve to an internal
+  load balancer or to node IPs (a NodePort or hostPort ingress controller), add those addresses as
+  `ipBlock` entries and add the ports that clients connect to, usually 80 and 443.
+- `extraEgress`: Add the internal destinations that sandboxes need, such as git servers, proxies,
+  package mirrors, and private LLM endpoints.
+- `ipv6.enabled`: Set to `true` on IPv6 and dual-stack clusters. If your nodes or pods use global
+  IPv6 addresses, add those ranges to `ipv6.blockedCIDRs`.
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.15/32  # Internal git server
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+The `dns` and `ingressController` rules use the NetworkPolicy egress rule format. When you
+override `to` or `ports`, your list replaces the default list.
+
+#### GKE
+
+The defaults work on GKE. If your cluster uses NodeLocal DNSCache without Dataplane V2 and its
+Service range is private, add the kube-dns Service IP
+(`kubectl -n kube-system get svc kube-dns`) to the DNS rule:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values: [kube-dns, node-local-dns]
+      - ipBlock:
+          cidr: 10.3.0.10/32  # Your kube-dns Service IP
+```
+
+#### EKS
+
+Sandboxes reach an internet-facing load balancer through the internet rule. For an internal load
+balancer, add its subnets to `ingressController` as described above.
+
+In its default `standard` mode, the VPC CNI allows all traffic from a new pod until it applies the
+pod's policies, which takes a few seconds. To block traffic until then, set
+`NETWORK_POLICY_ENFORCING_MODE` to `strict`. Strict mode requires a network policy for every pod
+in the cluster.
+
+#### AKS
+
+The defaults block `168.63.129.16`, the Azure platform endpoint. If your node pools use LocalDNS,
+add its addresses to the DNS rule:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchExpressions:
+            - key: k8s-app
+              operator: In
+              values: [kube-dns, node-local-dns]
+      - ipBlock:
+          cidr: 169.254.10.10/32
+      - ipBlock:
+          cidr: 169.254.10.11/32
+```
+
+With Azure CNI Powered by Cilium, LocalDNS also needs the policy described in
+[Microsoft's LocalDNS guidance](https://learn.microsoft.com/en-us/azure/aks/azure-cni-powered-by-cilium#is-aks-local-dns-supported-with-azure-cni-powered-by-cilium).
+
+#### OpenShift
+
+OpenShift serves cluster DNS from the `openshift-dns` namespace on port 5353. This example also
+allows the default OpenShift router:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  dns:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+    ports:
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 5353
+  ingressController:
+    to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-ingress
+        podSelector:
+          matchLabels:
+            ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+    ports:
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 443
+```
+
+If the router uses the `HostNetwork` endpoint publishing strategy, allow your node CIDR instead,
+as described in the next section.
+
+#### On-Premises and Other Clusters
+
+If your ingress controller listens on node IPs through a NodePort or hostPort, add your node CIDR
+and the ports that clients connect to:
+
+```yaml
+sandboxNetworkPolicy:
+  enabled: true
+  ingressController:
+    to:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+      - ipBlock:
+          cidr: 10.0.1.0/24  # Your node CIDR
+    ports:
+      - protocol: TCP
+        port: 8000
+      - protocol: TCP
+        port: 8443
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 443
+```
+
 ## Upgrading
 
 To upgrade the chart:
@@ -693,7 +969,7 @@ helm upgrade openhands -n openhands . -f my-values.yaml -n openhands
 
 ### Keycloak 26.3 to 26.8
 
-The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.0. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards.
+The bundled Keycloak moves from `bitnamilegacy/keycloak:26.3.0` to Keycloak 26.8.2. On first start, Keycloak migrates its database to the 26.8 schema, and Keycloak 26.3 cannot run against it afterwards.
 
 `helm upgrade` backs the database up first. A pre-upgrade hook (`keycloak.preUpgradeBackup`) reads the schema version from Keycloak's `migration_model` table and, when it differs from the version in `keycloak.image.tag`, copies `bitnami_keycloak` to `bitnami_keycloak_backup_26_3_0` on the same server while Keycloak 26.3 is still running. It runs after the other pre-upgrade hooks, so a failed check such as a Strict budget preflight stops the upgrade before the copy. If the copy fails, the upgrade stops before anything changes; the reason is in the log of the `<release>-keycloak-backup` Job. That includes a copy still running after `keycloak.preUpgradeBackup.activeDeadlineSeconds` minus 60 seconds (240 by default), for example one blocked by a lock on a Keycloak table; raise it for a large database. If the backup database already exists, the hook keeps it rather than copying again. So if an earlier attempt stopped after the backup but before Keycloak 26.8 started (for example, a manifest failed to apply or the 26.8 image could not be pulled), drop `bitnami_keycloak_backup_26_3_0` before retrying, or the backup will miss changes made since that attempt. The hook needs a database user that can `CREATE DATABASE` (the bundled `postgres` user can) and PostgreSQL 17 or older, since it runs `pg_dump` 17. If yours does not, back up the database yourself and upgrade with `keycloak.preUpgradeBackup.enabled=false` (on Replicated, untick **Back Up Keycloak Database Before Upgrade** under **Upgrade Checks**). The hook does not run under `helm template`, so ArgoCD and similar tools must back up by hand:
 
@@ -705,19 +981,29 @@ kubectl exec -n openhands <release>-postgresql-0 -- \
 To roll back, scale the `keycloak` StatefulSet to 0, swap the databases, and upgrade with `keycloak.image` set back to `docker.io/bitnamilegacy/keycloak:26.3.0-debian-12-r0`:
 
 ```sql
-ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_0;
+ALTER DATABASE bitnami_keycloak RENAME TO bitnami_keycloak_26_8_2;
 ALTER DATABASE bitnami_keycloak_backup_26_3_0 RENAME TO bitnami_keycloak;
 ```
 
 If you skip the swap, the hook stops the upgrade with a message, because Keycloak 26.3 cannot start on the 26.8 schema.
 
-The rollback does not keep changes made on 26.8, such as new Keycloak users. They stay in `bitnami_keycloak_26_8_0`.
+The rollback does not keep changes made on 26.8, such as new Keycloak users. They stay in `bitnami_keycloak_26_8_2`.
 
 On Replicated, the admin console has no rollback button, so run these steps on the cluster. For an online install, keep the image proxy path: run `helm upgrade` with `--reuse-values`, `keycloak.image.repository=proxy/openhands/docker.io/bitnamilegacy/keycloak`, and `keycloak.image.tag=26.3.0-debian-12-r0`. The admin console does not know about this `helm upgrade` and continues to show the new release. The next deploy from the admin console applies Keycloak 26.8 again. This includes a **Redeploy**, a config change, and an update. The hook backs up the restored 26.3 database again before Keycloak migrates it.
 
 To go forward to 26.8 again, find the cause in the `keycloak-0` log of the failed 26.8 start. If the cause is in your setup, fix it, and then upgrade without the 26.3 image setting. On Replicated, deploy from the admin console. If the cause is in Keycloak 26.8 or in this chart, contact OpenHands support. Do not deploy until a release with a fix is available. If automatic deployments are on, turn them off until then.
 
 With a manual dump, restore it into an empty `bitnami_keycloak` with `pg_restore` instead. Once 26.8 has run long enough that you will not roll back, drop `bitnami_keycloak_backup_26_3_0`. The hook never drops backups, and every later upgrade that changes the Keycloak version, patch releases included, adds another full copy of the database, so drop old `bitnami_keycloak_backup_*` databases before they fill the PostgreSQL volume.
+
+Patch upgrades can migrate one way too. Keycloak 26.8.2 runs a data migration on first start, so an upgrade from 26.8.0 backs up to `bitnami_keycloak_backup_26_8_0`. To roll back to 26.8.0, follow the steps above with that backup database, and upgrade with `keycloak.image.tag=26.8.0-debian-12-oh3`. Keep `keycloak.image.repository` as it is. The `helm upgrade` notes warn only about an upgrade from 26.3, not about a patch upgrade.
+
+Keycloak 26.8.2 also rejects Admin REST API tokens that lack the `kc-admin-api` client scope, and its migration adds that scope only to the built-in clients. The chart adds it to the app's admin client (`KEYCLOAK_ADMIN_CLIENT_ID`, `openhands-provisioner` on Replicated). That needs a login as the Keycloak `admin` user, with the console password (`keycloak-admin` secret, key `admin-ui-password`) or the bootstrap admin password.
+
+- When the running Keycloak is older than 26.8.2, a pre-upgrade hook checks that login while the old Keycloak still runs. If neither password works, or Keycloak does not answer for 4 minutes, it stops the upgrade before the backup and the migration. The reason is in the log of the `<release>-keycloak-admin-api-check` Job. The Job log says which password to set (on Replicated, **Keycloak Admin Password**). While the app's admin client still works on the old Keycloak, any new console password works, because the check applies it to the `admin` user before Keycloak migrates. Otherwise, set the current password of the `admin` user. To deploy a fix while Keycloak cannot answer, turn the check off with `keycloak.preUpgradeAdminCheck.enabled=false` (on Replicated, **Check Keycloak Admin Login Before Upgrade** under **Upgrade Checks**), and if the admin login then fails after the migration, add the scope to the admin client yourself.
+- An `admin` user with a one-time password or a required action cannot sign in with a password, so the check stops the upgrade. Remove them from the `admin` user in the `master` realm first.
+- A post-upgrade hook (`<release>-keycloak-admin-api-fix`) adds the scope. It waits for Keycloak 26.8.2 to start, so run `helm upgrade` with `--timeout 10m` or longer.
+- `helm template` (ArgoCD) runs neither hook, so nothing checks the admin login before the migration. The `keycloak-config` init container of the `openhands` pod waits for Keycloak 26.8.2 and adds the scope. The move to 26.8.2 restarts that pod.
+- The hook and the init container wait up to 9 minutes. If Keycloak is still older than 26.8.2 after that, they fail and the log says why. One cause is a `keycloak.image.digest` that pins an older image than `keycloak.image.tag`. The init container then restarts and waits again.
 
 ## Uninstallation
 
@@ -731,7 +1017,7 @@ Note: This will not delete any PVCs or secrets created. You'll need to delete th
 
 ### Budget policy changes
 
-The bundled LiteLLM proxy uses unmodified 1.100.5 pinned by digest and
+The bundled LiteLLM proxy uses unmodified 1.103.11 pinned by digest and
 `litellm-helm.proxy_config.general_settings.user_api_key_cache_ttl: 0`.
 Both are required for a budget change (including disabling a user's limit)
 to affect the next request using an existing key. Older proxies can keep enforcing
@@ -739,3 +1025,47 @@ a removed limit from cached authorization data, even after a successful save.
 This increases authorization database reads; production throughput has not been
 load-tested. It does not enable or disable LLM response caching. If you use an
 external LiteLLM proxy, configure and validate the same behavior there.
+
+
+## Automations chart configuration
+
+Local Automations defaults on. It requires configuration before the chart can
+render; incomplete prerequisites fail before a rollout. This is a breaking
+change: an existing install that upgrades with unchanged values fails to render
+until it either configures the inputs below or sets `automation.enabled: false`.
+Nothing is applied when the render fails. These inputs apply to the app and
+secrets charts, which are separate releases:
+
+- Set `automation.filestore.type` explicitly (`s3` or `gcs`), and configure its
+  package bucket, endpoint and credentials/identity. App conversation storage is
+  separate and is not changed by this feature.
+- Use durable `automation.database` storage. For a fresh shared PostgreSQL, set
+  `postgresql.primary.persistence.enabled: true`; `existingClaim` alone does not
+  enable persistence. For a pre-provisioned external DB, configure its connection
+  and password Secret and set `createDatabaseUser: false`.
+- Provision the existing automation service, webhook, Git-sync, KV and DB password
+  Secrets first. The companion chart defaults on and requires the corresponding
+  nonempty `config.automation_service_key`, `config.automation_webhook_secret`,
+  `config.automation_git_sync_secret`, `config.automation_kv_secret` and
+  `config.automations_db_password` values (the DB password may fall back to
+  `config.postgres_password`). Retain existing key
+  values; the chart does not generate or rotate encryption keys.
+- An enabled upgrade requires `automation.upgradeAcknowledged: true` after backup
+  and review. Pin `automation.database.createDatabaseUser` to its deployed mode.
+  Online guards reject DB/package-store repointing, adding superuser bootstrap,
+  and an in-place emptyDir-to-PVC conversion. The acknowledgment migrates nothing.
+- Set `automation.enabled: false` to retain the former default-off behavior.
+  Keep existing Secrets for a previously active service, even while disabled.
+  For an installation that never used Automations, its secrets release may also
+  explicitly set `automation.enabled: false`.
+
+Explicit app auth/forwarding overrides remain supported. For a separately
+managed service, disable the local dependency and configure `automationService.*`
+and its existing auth Secrets. See the [configured values example](examples/enterprise-automations.yaml)
+and [external-service values example](examples/external-automations.yaml).
+
+Secret/data-path lookup guards require an online render in an existing namespace
+and read access to its default ServiceAccount and exact referenced Secrets.
+Client-only/GitOps rendering cannot prove these prerequisites exist. Live
+upgrade/execution qualification remains open. Provider installation docs and
+skills will be a separate PR after platform review of this Helm change.

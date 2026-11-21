@@ -1,34 +1,45 @@
 {{- /*
-  Ingress entry for the agent-canvas frontend-only deployment.
-
-  Agent Canvas is mounted under a configurable subpath on a consumer-provided
-  host. The frontend bundle is built with the same basename and static-server
-  receives the same --base-path.
+  The path must match the frontend bundle's basename and static-server's
+  --base-path.
 */}}
 {{- $agentCanvas := index .Values "agent-canvas" -}}
-{{- if and $agentCanvas.enabled $agentCanvas.ingress.enabled }}
 {{- $ingress := $agentCanvas.ingress -}}
-{{- $host := required "agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true" $ingress.host -}}
+{{- $appHost := include "openhands.appHost" . -}}
+{{- if and $agentCanvas.enabled (or $ingress.enabled .Values.ingress.enabled) }}
+{{- $host := $ingress.host | default $appHost -}}
+{{- if $ingress.enabled -}}
+{{- $host = required "agent-canvas.ingress.host is required when agent-canvas.ingress.enabled is true" $host -}}
+{{- end -}}
+{{- if $host }}
 {{- $path := default "/canvas" $ingress.path -}}
+{{- $className := $ingress.className | default .Values.ingress.class -}}
+{{- /* Shares the app's host, so it needs the app's annotations, such as the certificate issuer. */ -}}
+{{- $annotations := $ingress.annotations -}}
+{{- if not $ingress.host -}}
+{{- $annotations = .Values.ingress.root.annotations | default .Values.ingress.annotations -}}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: openhands-agent-canvas-ingress
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
-  {{- with $ingress.annotations }}
+  {{- with $annotations }}
   annotations:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
 spec:
-  ingressClassName: {{ default "traefik" $ingress.className }}
-  {{- with $ingress.tls }}
-  {{- if .enabled }}
+  ingressClassName: {{ $className }}
+  {{- if $ingress.tls.enabled }}
   tls:
   - hosts:
     - {{ $host }}
-    secretName: {{ required "agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true" .secretName }}
-  {{- end }}
+    secretName: {{ required "agent-canvas.ingress.tls.secretName is required when agent-canvas.ingress.tls.enabled is true" $ingress.tls.secretName }}
+  {{- else if and (not $ingress.host) .Values.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $host }}
+    secretName: {{ include "openhands.tlsSecretName" $ }}
   {{- end }}
   rules:
   - host: {{ $host }}
@@ -41,4 +52,5 @@ spec:
             name: agent-canvas
             port:
               number: {{ default 8000 (index $agentCanvas "service" "port") }}
+{{- end }}
 {{- end }}

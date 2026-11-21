@@ -112,7 +112,7 @@ jobs:
           yq -i ".version = \"${PREVIEW}\"" "${CHART_PATH}/Chart.yaml"
           echo "version=${PREVIEW}" >> "$GITHUB_OUTPUT"
 
-      - name: Test ${{ matrix.chart.name }} chart with default values
+      - name: Test ${{ matrix.chart.name }} chart with configured render inputs
         if: steps.check.outputs.should_publish == 'true'
         env:
           CHART_NAME: ${{ matrix.chart.name }}
@@ -121,15 +121,7 @@ jobs:
           echo "Updating dependencies for ${CHART_NAME}"
           helm dependency update "${CHART_PATH}"
 
-          echo "Running helm lint for ${CHART_NAME}"
-          helm lint "${CHART_PATH}"
-
-          if grep -q '^type: library' "${CHART_PATH}/Chart.yaml"; then
-            echo "Skipping helm template for library chart ${CHART_NAME}"
-          else
-            echo "Running helm template for ${CHART_NAME}"
-            helm template "${CHART_PATH}" --debug
-          fi
+          bash scripts/validate-chart-render.sh "${CHART_PATH}" "${CHART_NAME}"
 
       - name: Prepare registry owner
         if: steps.check.outputs.should_publish == 'true'
@@ -195,17 +187,4 @@ jobs:
         run: |
           echo "Updating dependencies for ${CHART_NAME}"
           helm dependency update "${CHART_PATH}"
-          echo "Running helm lint for ${CHART_NAME}"
-          helm lint "${CHART_PATH}"
-
-      - name: Template ${{ matrix.chart.name }} chart
-        env:
-          CHART_NAME: ${{ matrix.chart.name }}
-          CHART_PATH: ${{ matrix.chart.path }}
-        run: |
-          if grep -q '^type: library' "${CHART_PATH}/Chart.yaml"; then
-            echo "Skipping helm template for library chart ${CHART_NAME}"
-            exit 0
-          fi
-          echo "Running helm template for ${CHART_NAME}"
-          helm template "${CHART_PATH}" --debug
+          bash scripts/validate-chart-render.sh "${CHART_PATH}" "${CHART_NAME}"

@@ -13,7 +13,7 @@ image:
   # images via Release Please). Environments that want a specific build can
   # override this, but the default should track a published release so the
   # chart ships a known-good version out of the box.
-  tag: "1.29.0"
+  tag: "1.41.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -36,7 +36,8 @@ service:
 ingress:
   enabled: false
   host: ""
-  className: traefik
+  # Empty uses the umbrella chart's ingress.class.
+  className: ""
   annotations: {}
   path: /canvas
   tls:
@@ -63,6 +64,9 @@ staticServer:
   # https://app.all-hands.dev). Leave empty for the standard
   # user-managed "Manage Backends" flow.
   lockToCloud: ""
+  # ConfigMap whose AGENT_CANVAS_LOCK_TO_CLOUD key supplies the --lock-to-cloud
+  # URL when lockToCloud is empty. An empty key value leaves the lock off.
+  lockToCloudConfigMap: ""
   rejectPrefixes:
     - /api
     - /server_info

@@ -33,20 +33,16 @@ ok()   { jq -e '.success == true' >/dev/null 2>&1; }
 why()  { local b; b="$(cat)"; jq -re '.error // empty' <<<"$b" 2>/dev/null \
            || printf '%s' "${b:-$(tr -s '\n' ' ' <"$ERR")}"; }
 
-# kotsadm's gateway returns a bare 502/503/504 (empty body) for a beat while it
-# restarts mid-upgrade, so an upgrade-service call can fail on a request nothing
-# rejected. Every POST/PUT during the window (start-upgrade-service, config,
-# deploy, resume-deploy) goes through this, reusing the same cursor and booted
-# upgrade service and backing off inside the existing run deadline. Retry only
-# those transient codes; a real rejection (.success=false) or anything else still
-# fails at once via why().
-
+# While kotsadm restarts mid-upgrade, its gateway answers a bare 502/503/504, or
+# nothing until curl times out (000), to requests nothing rejected; retry those
+# within the run deadline. A timed-out POST may have landed anyway, but then the
+# retry just fails with kotsadm's own reason, no worse than giving up.
 retry_gateway() {
   local delay=10 R verb="$1"; shift
   while :; do
-    R="$(TMO=120 api -H 'Content-Type: application/json' -X "$verb" "$@" || true)"
+    R="$(TMO="${GATEWAY_TIMEOUT_SECONDS:-120}" api -H 'Content-Type: application/json' -X "$verb" "$@" || true)"
     ok <<<"$R" && { printf '%s' "$R"; return 0; }
-    { grep -Eq 'HTTP (502|503|504)' "$ERR" && waiting; } || { printf '%s' "$R"; return 1; }
+    { grep -Eq 'HTTP (000|502|503|504)' "$ERR" && waiting; } || { printf '%s' "$R"; return 1; }
     echo "  KOTS gateway hit a transient error ($(tr -s '\n' ' ' <"$ERR")); retrying in ${delay}s" >&2
     sleep "$delay"; delay=$(( delay * 2 )); [ "$delay" -gt 60 ] && delay=60
   done

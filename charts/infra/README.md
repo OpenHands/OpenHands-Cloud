@@ -35,7 +35,26 @@ application chart runs.
   Sysbox and register the `sysbox` containerd runtime through a k0s
   containerd drop-in. It targets Embedded Cluster (k0s) and discovers the
   containerd config path at runtime, so it works regardless of the EC
-  `--data-dir`. Requires a Debian/Ubuntu host with internet access.
+  `--data-dir`. Sysbox binaries are bundled; installation needs no package downloads.
+- `templates/sysbox-preflight.yaml` checks each selected Sysbox node before a
+  Replicated deployment. The same host check runs before the installer configures
+  Sysbox or marks the node ready.
+
+## Sysbox host prerequisites
+
+Sysbox requires systemd, kernel 6.3+, the commands `rsync`, `modprobe`, `iptables`
+and `fusermount3`, and a working `/dev/fuse` device on every selected node.
+On Debian/Ubuntu, install `rsync kmod iptables fuse3` and enable FUSE with
+`sudo modprobe fuse`. If the module is unavailable, install a kernel with
+`CONFIG_FUSE_FS` support. Prepare these prerequisites before an air-gapped install.
+
+The check enters the host mount namespace from a temporary privileged DaemonSet
+in `kube-system`, using the installer's runner image, node selector and tolerations.
+KOTS supplies `sysbox.preflightPullSecretData` for the proxy or local registry;
+Troubleshoot creates and cleans up the collector's temporary pull secret.
+It checks host commands and opens `/dev/fuse`; it does not install packages, load
+modules or change host files. This detects missing prerequisites, not every
+possible Sysbox compatibility problem. A running sandbox remains the end-to-end check.
 
 ## Releases
 

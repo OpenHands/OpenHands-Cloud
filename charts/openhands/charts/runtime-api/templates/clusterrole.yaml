@@ -16,6 +16,13 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  {{- if .Values.fuseMount.enabled }}
+  # Activating a fuse runtime execs `fusey mount` in the sandbox pod. The
+  # Kubernetes client opens the exec websocket with GET, so both verbs are needed.
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
+  {{- end }}
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

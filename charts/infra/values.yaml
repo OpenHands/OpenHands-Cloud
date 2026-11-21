@@ -69,7 +69,7 @@ crdCheck:
   enabled: false
   image:
     repository: docker.io/rancher/kubectl
-    tag: v1.33.0
+    tag: v1.33.13
     pullPolicy: IfNotPresent
   timeout: 120s
   backoffLimit: 6
@@ -97,7 +97,7 @@ sandboxUpgradeCoordinator:
   enabled: false
   image:
     repository: docker.io/alpine/k8s
-    tag: "1.30.0"
+    tag: "1.36.6"
     pullPolicy: IfNotPresent
   # Namespace where runtime-api creates sandbox pods and their PDBs (its
   # K8S_NAMESPACE). In the openhands chart this is the openhands release namespace.
@@ -132,14 +132,15 @@ sandboxUpgradeCoordinator:
 # The Sysbox binaries and systemd units are baked into the image below (the
 # official nestybox/sysbox-deploy-k8s image), so the install needs no internet
 # access (fixes air-gap) and is not tied to Debian/Ubuntu: the binaries are
-# portable Go builds and k0s ships its own containerd, so any systemd host with
-# kernel >= 6.3 works. Kernel >= 6.3 is enforced by the openhands chart's Sysbox
-# preflight.
+# portable Go builds and k0s ships its own containerd. The host must provide
+# FUSE, rsync, modprobe, iptables and fusermount3, in addition to kernel >= 6.3.
 sysbox:
   enabled: false
   # Sysbox CE version, used for the on-host idempotency/version check and for
   # logging. Must match the Sysbox version encoded in image.tag below.
   version: "0.7.0"
+  # KOTS supplies registry credentials before the installer's pull secret exists.
+  preflightPullSecretData: ""
   # Name of the RuntimeClass + handler. Must stay in sync with the containerd
   # runtime name in files/install-sysbox.sh and the runtime-api RUNTIME_CLASS
   # value (replicated/openhands.yaml).

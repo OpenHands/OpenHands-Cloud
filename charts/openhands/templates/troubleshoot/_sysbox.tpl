@@ -6,10 +6,7 @@ recent kernel. If the kernel is too old the deploy would come up broken
 (sandboxes can't mount sysfs), so the kernel analyzer fails and tells the
 operator to switch Sandbox Isolation to "runc".
 
-The Sysbox runtime is installed on every node from binaries baked into the
-installer image (no download, and not tied to Debian/Ubuntu), so there is no
-egress or package-manager precondition to check — the kernel floor is the only
-hard gate.
+The infra chart separately checks host tools and FUSE on each Sysbox node.
 
 Preconditions checked (kernel requirement is from the Kubernetes user-namespaces
 docs: kernel 6.3 is where tmpfs gained idmap-mount support; containerd 2.0+ ships

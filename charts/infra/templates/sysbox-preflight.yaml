@@ -1,0 +1,96 @@
+{{- if .Values.sysbox.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-sysbox-preflight
+  labels:
+    {{- include "infra.labels" . | nindent 4 }}
+    troubleshoot.sh/kind: preflight
+stringData:
+  preflight.yaml: |
+    apiVersion: troubleshoot.sh/v1beta2
+    kind: Preflight
+    metadata:
+      name: {{ .Release.Name }}-sysbox-preflight
+    spec:
+      collectors:
+        - runDaemonSet:
+            name: sysbox-host-prerequisites
+            namespace: kube-system
+            timeout: 120s
+            {{- with .Values.sysbox.preflightPullSecretData }}
+            imagePullSecret:
+              type: kubernetes.io/dockerconfigjson
+              data:
+                .dockerconfigjson: {{ . | quote }}
+            {{- end }}
+            podSpec:
+              hostPID: true
+              automountServiceAccountToken: false
+              {{- with .Values.sysbox.imagePullSecrets }}
+              imagePullSecrets:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.sysbox.nodeSelector }}
+              nodeSelector:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.sysbox.tolerations }}
+              tolerations:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              containers:
+                - name: check
+                  image: "{{ .Values.sysbox.runnerImage.repository }}:{{ .Values.sysbox.runnerImage.tag }}"
+                  imagePullPolicy: {{ .Values.sysbox.runnerImage.pullPolicy }}
+                  securityContext:
+                    privileged: true
+                  env:
+                    - name: HOST_CHECK_SCRIPT
+                      value: |
+{{ .Files.Get "files/check-sysbox-host.sh" | indent 24 }}
+                  command: ["/bin/bash", "-c"]
+                  args:
+                    - exec nsenter --target 1 --mount -- /bin/bash -c "$HOST_CHECK_SCRIPT"
+      # Troubleshoot labels every runDaemonSet pod the same way, so a preflight
+      # running at the same time (another pending version) adds logs from its
+      # pods here. Only an explicit FAIL from the host script blocks; a log
+      # without the completion line is a warning.
+      analyzers:
+        - textAnalyze:
+            checkName: "Sysbox: host prerequisite check completed"
+            fileName: sysbox-host-prerequisites/*.log
+            regex: '(?m)^SYSBOX_CHECK_COMPLETE=OK$'
+            strict: false
+            outcomes:
+              - pass:
+                  when: "true"
+                  message: "Host prerequisite check completed."
+              - warn:
+                  when: "false"
+                  message: "Could not check this node. If another version's preflights ran at the same time, rerun preflights for this version. Otherwise inspect the sysbox-host-prerequisites collector logs and verify its image can be pulled and privileged pods can run in kube-system."
+        - textAnalyze:
+            checkName: "Sysbox: required host commands"
+            fileName: sysbox-host-prerequisites/*.log
+            regex: '(?m)^SYSBOX_TOOLS=FAIL$'
+            strict: true
+            outcomes:
+              - fail:
+                  when: "true"
+                  message: "Install rsync, kmod, iptables and fuse3 on this node (or the equivalent packages for your distribution), then rerun preflights. Collector logs list missing commands."
+              - pass:
+                  when: "false"
+                  message: "No missing host commands were reported (rsync, modprobe, iptables, fusermount3)."
+        - textAnalyze:
+            checkName: "Sysbox: host FUSE device"
+            fileName: sysbox-host-prerequisites/*.log
+            regex: '(?m)^SYSBOX_FUSE=FAIL$'
+            strict: true
+            outcomes:
+              - fail:
+                  when: "true"
+                  message: "Enable FUSE on this node with sudo modprobe fuse and make /dev/fuse accessible. If the module is unavailable, install a kernel with CONFIG_FUSE_FS support, then rerun preflights."
+              - pass:
+                  when: "false"
+                  message: "No host FUSE problem was reported."
+{{- end }}

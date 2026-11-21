@@ -181,8 +181,8 @@ def test_enterprise_sso_writes_use_status_checked_helper() -> None:
 
     provider_path = '"$KC_REALM/identity-provider/instances/enterprise_sso'
     instances_path = '"$KC_REALM/identity-provider/instances'
-    assert script.count(f"keycloak_write PUT {provider_path}") == 3
-    assert script.count(f"keycloak_write POST {instances_path}") == 2
+    assert script.count(f"keycloak_write PUT {provider_path}") == 4
+    assert script.count(f"keycloak_write POST {instances_path}") == 3
     assert not re.search(
         r'keycloak_api_call "curl -s -X (?:POST|PUT) [^\n]*enterprise_sso',
         script,
@@ -295,6 +295,8 @@ def test_keycloak_identity_provider_socket_timeout() -> None:
             "template",
             "test",
             str(OPENHANDS_CHART),
+            "--set",
+            "automation.enabled=false",
             "--set",
             "enabled=true",
             "--set",
@@ -482,6 +484,8 @@ def test_enterprise_sso_env_overrides_render_once_for_keycloak_init() -> None:
             "template",
             "test",
             str(OPENHANDS_CHART),
+            "--set",
+            "automation.enabled=false",
             "--show-only",
             "templates/deployment.yaml",
             "--set",

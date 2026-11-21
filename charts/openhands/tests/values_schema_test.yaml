@@ -135,3 +135,12 @@ tests:
       orgDefaults.condenser.overwriteExisting: false
     asserts:
       - notFailedTemplate: {}
+  - it: rejects a sandboxNetworkPolicy rule whose to is a map instead of a list
+    set:
+      sandboxNetworkPolicy.dns.to:
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+    asserts:
+      - failedTemplate:
+          errorPattern: "sandboxNetworkPolicy/dns/to.*want array"

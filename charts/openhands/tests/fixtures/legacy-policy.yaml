@@ -1,0 +1,4 @@
+automation:
+  enabled: false
+  filestore:
+    type: gcs

@@ -3,7 +3,7 @@
 
 # Configuration values will be passed from the parent chart
 automation:
-  enabled: false
+  enabled: true
 
 config:
   # Security secrets

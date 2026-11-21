@@ -94,7 +94,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: TARGET_VERSION
-            value: 26.8.0
+            value: 26.8.2
       - contains:
           path: spec.template.spec.containers[0].env
           content:

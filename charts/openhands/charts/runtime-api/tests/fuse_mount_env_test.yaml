@@ -1,0 +1,229 @@
+suite: fuse mount environment
+templates:
+  - templates/deployment.yaml
+  - templates/warm-runtimes-cronjob.yaml
+  - templates/fuse-validations.yaml
+tests:
+  - it: adds no fuse configuration by default
+    template: templates/deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_STORAGE_PROVIDER
+            value: s3
+
+  - it: passes the storage settings to the API deployment
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.pathPrefix: ws
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      fuseMount.s3.endpoint: http://openhands-minio:9000
+      fuseMount.s3.region: us-east-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_STORAGE_PROVIDER
+            value: s3
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_BUCKET
+            value: workspaces
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_PATH_PREFIX
+            value: ws
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_API_BASE_URL
+            value: https://runtime-api.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ENDPOINT_URL
+            value: http://openhands-minio:9000
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_S3_REGION
+            value: us-east-1
+
+  - it: passes the storage settings to the warm-pool reconciler
+    template: templates/warm-runtimes-cronjob.yaml
+    set:
+      warmRuntimes.enabled: true
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_BUCKET
+            value: workspaces
+
+  - it: defaults the path prefix to runtimes
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.pathPrefix: ""
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_PATH_PREFIX
+            value: runtimes
+
+  - it: takes the API base URL from env when it is already set there
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://from-values.example.com
+      env.RUNTIME_API_BASE_URL: https://from-env.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_API_BASE_URL
+            value: https://from-env.example.com
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUNTIME_API_BASE_URL
+            value: https://from-values.example.com
+
+  - it: reads credentials from an existing secret
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      fuseMount.s3.existingSecret: workspace-s3
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: workspace-s3
+                key: AWS_ACCESS_KEY_ID
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: workspace-s3
+                key: AWS_SECRET_ACCESS_KEY
+
+  - it: uses inline credentials when no secret is given
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      fuseMount.s3.accessKeyId: key
+      fuseMount.s3.secretAccessKey: secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: key
+
+  - it: emits no credential variables for an ambient identity or gcs
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.storageProvider: gcs
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      fuseMount.s3.accessKeyId: ignored
+      fuseMount.s3.secretAccessKey: ignored
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FUSEY_STORAGE_PROVIDER
+            value: gcs
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: ignored
+
+  - it: accepts identical credentials for the fuse mount and the file archive
+    template: templates/deployment.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      fuseMount.s3.accessKeyId: key
+      fuseMount.s3.secretAccessKey: secret
+      runtimeFileArchive.enabled: true
+      runtimeFileArchive.storeType: s3
+      runtimeFileArchive.bucket: archives
+      runtimeFileArchive.s3.accessKeyId: key
+      runtimeFileArchive.s3.secretAccessKey: secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AWS_ACCESS_KEY_ID
+            value: key
+
+  - it: refuses different credentials for the fuse mount and the file archive
+    template: templates/fuse-validations.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+      fuseMount.s3.accessKeyId: key-a
+      fuseMount.s3.secretAccessKey: secret
+      runtimeFileArchive.enabled: true
+      runtimeFileArchive.storeType: s3
+      runtimeFileArchive.bucket: archives
+      runtimeFileArchive.s3.accessKeyId: key-b
+      runtimeFileArchive.s3.secretAccessKey: secret
+    asserts:
+      - failedTemplate:
+          errorPattern: different credentials
+
+  - it: refuses a missing bucket
+    template: templates/fuse-validations.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: fuseMount.bucket is required
+
+  - it: refuses a missing API base URL
+    template: templates/fuse-validations.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.bucket: workspaces
+    asserts:
+      - failedTemplate:
+          errorPattern: runtimeApiBaseUrl
+
+  - it: refuses an unknown storage provider
+    template: templates/fuse-validations.yaml
+    set:
+      fuseMount.enabled: true
+      fuseMount.storageProvider: azure
+      fuseMount.bucket: workspaces
+      fuseMount.runtimeApiBaseUrl: https://runtime-api.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: must be s3 or gcs

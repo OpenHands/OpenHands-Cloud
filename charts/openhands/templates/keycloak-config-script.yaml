@@ -6,6 +6,8 @@ metadata:
   labels:
     {{- include "openhands.labels" . | nindent 4 }}
 data:
+  keycloak-admin-api-scope.sh: |
+    {{- include "openhands.keycloakAdminApiScopeScript" . | nindent 4 }}
   keycloak-config.sh: |
     #!/bin/sh
     set -e
@@ -118,6 +120,11 @@ data:
       ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=tmpadmin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
       if [ "$ACCESS_TOKEN" = "null" ]; then
         NEW_ACCESS_TOKEN=$(curl -s -X POST "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=admin-cli" -d "grant_type=password" -d "username=admin" -d "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')
+        # An earlier deploy moved the admin login to the console password; Keycloak 26.8.2 then
+        # rejects the provisioner until this run adds its kc-admin-api scope.
+        if [ "$NEW_ACCESS_TOKEN" = "null" ] && [ -n "${KEYCLOAK_ADMIN_UI_PASSWORD:-}" ]; then
+          NEW_ACCESS_TOKEN=$(curl -s "$KEYCLOAK_SERVER_URL/realms/master/protocol/openid-connect/token" --data-urlencode client_id=admin-cli --data-urlencode grant_type=password --data-urlencode username=admin --data-urlencode "password=$KEYCLOAK_ADMIN_UI_PASSWORD" | jq -r '.access_token')
+        fi
         if [ "$NEW_ACCESS_TOKEN" = "null" ]; then
           echo "Couldn't login using either the \"admin\" or \"tmpadmin\" accounts."
           exit 1;
@@ -206,6 +213,12 @@ data:
         echo "$RESPONSE" | jq '[.]' > "$ADMIN_CREDENTIAL_DIR/role.json"
         keycloak_write POST "$KC_MASTER/users/$PROVISIONER_USER_ID/role-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
         keycloak_write POST "$KC_MASTER/clients/$PROVISIONER_ID/scope-mappings/realm" "$ADMIN_CREDENTIAL_DIR/role.json"
+        # Keycloak 26.8.2+ rejects Admin REST API tokens without the kc-admin-api scope; older versions lack it.
+        keycloak_get_optional "$KC_MASTER/client-scopes"
+        ADMIN_API_SCOPE_ID=$(echo "$RESPONSE" | jq -r '.[] | select(.name == "kc-admin-api") | .id')
+        if [ -n "$ADMIN_API_SCOPE_ID" ]; then
+          keycloak_write PUT "$KC_MASTER/clients/$PROVISIONER_ID/default-client-scopes/$ADMIN_API_SCOPE_ID" /dev/null
+        fi
         USE_PROVISIONER=true
       fi
       refresh_access_token
@@ -226,6 +239,14 @@ data:
         fi
         unset CURRENT_TOKEN
       fi
+    fi
+
+    # This pod can start before the new Keycloak replaces the old one, so wait for it and make sure
+    # the provisioner can use its Admin REST API.
+    if [ "${KEYCLOAK_NEEDS_ADMIN_API_SCOPE:-false}" = true ]; then
+      MODE=fix NEEDS_ADMIN_API_SCOPE=true TARGET_VERSION="$KEYCLOAK_TARGET_VERSION" \
+        sh "${KEYCLOAK_ADMIN_API_SCOPE_SCRIPT:-/scripts/keycloak-admin-api-scope.sh}"
+      refresh_access_token
     fi
 
     ERROR_MESSAGE=$(curl -s "$KEYCLOAK_SERVER_URL/admin/realms/$KEYCLOAK_REALM_NAME" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.error')
@@ -458,8 +479,37 @@ data:
         keycloak_write POST "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" /tmp/mapper-enterprise-sso.json || exit 1
         echo "  Created mapper: enterprise_sso/identity-provider"
       fi
+      # Import the profile attributes documented for enterprise SAML providers.
+      # Keycloak does not map these plain attribute names automatically when the
+      # IdP uses a persistent NameID. IMPORT avoids forcing later profile updates.
+      for profile_attribute in email firstName lastName; do
+        MAPPER_NAME="openhands-profile-$profile_attribute"
+        jq -n --arg name "$MAPPER_NAME" --arg attribute "$profile_attribute" '{
+          name: $name,
+          identityProviderAlias: "enterprise_sso",
+          identityProviderMapper: "saml-user-attribute-idp-mapper",
+          config: {
+            "attribute.name": $attribute,
+            "attribute.name.format": "ATTRIBUTE_FORMAT_UNSPECIFIED",
+            "user.attribute": $attribute,
+            syncMode: "IMPORT"
+          }
+        }' > /tmp/mapper-enterprise-sso-profile.json || exit 1
+        keycloak_api_call "curl -s \"$KC_REALM/identity-provider/instances/enterprise_sso/mappers\" $AUTH" || exit 1
+        PROFILE_MAPPER_ID=$(printf '%s\n' "$RESPONSE" | jq -r --arg name "$MAPPER_NAME" \
+          '.[] | objects | select(.name == $name) | .id // empty') || exit 1
+        if [ -n "$PROFILE_MAPPER_ID" ]; then
+          jq --arg id "$PROFILE_MAPPER_ID" '. + {id: $id}' /tmp/mapper-enterprise-sso-profile.json > /tmp/mapper-enterprise-sso-profile-update.json || exit 1
+          keycloak_write PUT "$KC_REALM/identity-provider/instances/enterprise_sso/mappers/$PROFILE_MAPPER_ID" /tmp/mapper-enterprise-sso-profile-update.json || exit 1
+          echo "  Updated mapper: enterprise_sso/$MAPPER_NAME"
+        else
+          keycloak_write POST "$KC_REALM/identity-provider/instances/enterprise_sso/mappers" /tmp/mapper-enterprise-sso-profile.json || exit 1
+          echo "  Created mapper: enterprise_sso/$MAPPER_NAME"
+        fi
+      done
+
       echo "enterprise_sso SAML identity provider configured."
-    ) || echo "WARNING: enterprise_sso auto-configuration failed (details above). Fix the SAML metadata URL and redeploy to retry; continuing startup." >&2
+    ) || echo "WARNING: enterprise_sso auto-configuration failed (details above). Check metadata retrieval and Keycloak provider/mapper errors above, then redeploy to retry; continuing startup." >&2
     {{- else if not .Values.enterpriseSSO.enabled }}
     # Reconcile on every toggle-off rollout, but only modify a provider stamped
     # as chart-managed by the auto-configuration path.

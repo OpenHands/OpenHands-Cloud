@@ -21,7 +21,7 @@ spec:
     {{- else }}
     - {{ .Values.ingress.host }}
     {{- end }}
-    secretName: app-all-hands-{{ .Values.tls.env }}-tls
+    secretName: {{ include "openhands.tlsSecretName" $ }}
   {{- end }}
   rules:
   {{- if .Values.ingress.prefixWithBranch }}

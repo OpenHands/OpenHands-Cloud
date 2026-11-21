@@ -1,0 +1,70 @@
+suite: license preflight
+# secrets.yaml includes the troubleshoot.preflights and troubleshoot.supportBundle
+# defines, which live in these two templates. Neither is an underscore partial,
+# so both have to be listed here or the includes fail to resolve; each test
+# scopes its asserts to secrets.yaml.
+templates:
+  - troubleshoot/secrets.yaml
+  - troubleshoot/preflights.yaml
+  - troubleshoot/support-bundle.yaml
+tests:
+  - it: warns, without failing, when no license is set
+    template: troubleshoot/secrets.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'data: "license-set: false"'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'checkName: "OpenHands Enterprise license"'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'warn:\n\s+when: "false"\n\s+message: "No OpenHands Enterprise license is set'
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: "OpenHands support will provide your license key"
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'fail:\n\s+when: "false"\n\s+message: "No OpenHands Enterprise license'
+
+  - it: passes when a license key is set, without copying the key into the spec
+    template: troubleshoot/secrets.yaml
+    set:
+      license.key: my-license-key
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'data: "license-set: true"'
+      - notMatchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: my-license-key
+
+  - it: passes when an offline license is set
+    template: troubleshoot/secrets.yaml
+    set:
+      license.offlineLicense: '{"key_id": "k1", "payload": "{}", "signature": "c2ln"}'
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'data: "license-set: true"'
+
+  - it: passes when an existing license Secret is named
+    template: troubleshoot/secrets.yaml
+    set:
+      license.existingSecret: my-license
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-preflight
+    asserts:
+      - matchRegex:
+          path: stringData["preflight.yaml"]
+          pattern: 'data: "license-set: true"'

@@ -73,6 +73,58 @@
 {{- /* No credential env at all: ambient AWS identity. */}}
 {{- end }}
 {{- end }}
+{{- if .Values.fuseMount.enabled }}
+{{- /*
+  Fuse-mounted workspaces. The broker (this API) and the sandbox pods talk to
+  the object store through presigned URLs, so only this chart needs the store's
+  endpoint and credentials. Inputs are checked in fuse-validations.yaml.
+*/}}
+{{- $fuse := .Values.fuseMount }}
+- name: FUSEY_STORAGE_PROVIDER
+  value: {{ $fuse.storageProvider | default "s3" | quote }}
+- name: FUSEY_BUCKET
+  value: {{ $fuse.bucket | quote }}
+- name: FUSEY_PATH_PREFIX
+  value: {{ $fuse.pathPrefix | default "runtimes" | quote }}
+{{- if not (hasKey .Values.env "RUNTIME_API_BASE_URL") }}
+- name: RUNTIME_API_BASE_URL
+  value: {{ $fuse.runtimeApiBaseUrl | quote }}
+{{- end }}
+{{- if eq ($fuse.storageProvider | default "s3") "s3" }}
+{{- with $fuse.s3.endpoint }}
+- name: AWS_ENDPOINT_URL
+  value: {{ . | quote }}
+{{- end }}
+{{- with $fuse.s3.region }}
+- name: FUSEY_S3_REGION
+  value: {{ . | quote }}
+{{- end }}
+{{- /*
+  boto3 reads one AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY pair, which the
+  runtimeFileArchive S3 block above also sets. fuse-validations.yaml ensures the
+  two agree, so emit the pair only once.
+*/}}
+{{- if and (include "runtime-api.s3CredentialsKey" $fuse.s3) (not (include "runtime-api.archiveS3CredentialsKey" .)) }}
+{{- if $fuse.s3.existingSecret }}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ $fuse.s3.existingSecret }}
+      key: {{ $fuse.s3.accessKeyIdKey | default "AWS_ACCESS_KEY_ID" }}
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ $fuse.s3.existingSecret }}
+      key: {{ $fuse.s3.secretAccessKeyKey | default "AWS_SECRET_ACCESS_KEY" }}
+{{- else }}
+- name: AWS_ACCESS_KEY_ID
+  value: {{ $fuse.s3.accessKeyId | quote }}
+- name: AWS_SECRET_ACCESS_KEY
+  value: {{ $fuse.s3.secretAccessKey | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .Values.runtimeInSameCluster }}
 - name: RUNTIME_IN_SAME_CLUSTER
   value: "true"

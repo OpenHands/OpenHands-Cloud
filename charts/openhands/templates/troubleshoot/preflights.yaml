@@ -9,18 +9,26 @@ metadata:
 spec:
   collectors:
     {{- include "troubleshoot.collectors.shared" . | nindent 4 }}
-    {{- if $tls.cert }}
+    {{- include "troubleshoot.collectors.license" . | nindent 4 }}
+    {{- if $tls.existingSecret }}
+    {{- include "troubleshoot.collectors.tlsExistingSecret" . | nindent 4 }}
+    {{- end }}
+    {{- if or $tls.cert $tls.existingSecret }}
     {{- include "troubleshoot.collectors.tlsHostname" . | nindent 4 }}
     {{- end }}
   analyzers:
     {{- include "troubleshoot.analyzers.shared" . | nindent 4 }}
+    {{- include "troubleshoot.analyzers.license" . | nindent 4 }}
     {{- if $sysbox.selected }}
     {{- include "troubleshoot.analyzers.sysbox" . | nindent 4 }}
     {{- end }}
     {{- if $sandboxNodes.selected }}
     {{- include "troubleshoot.analyzers.sandboxNodes" . | nindent 4 }}
     {{- end }}
-    {{- if $tls.cert }}
+    {{- if $tls.existingSecret }}
+    {{- include "troubleshoot.analyzers.tlsExistingSecret" . | nindent 4 }}
+    {{- end }}
+    {{- if or $tls.cert $tls.existingSecret }}
     {{- include "troubleshoot.analyzers.tlsHostname" . | nindent 4 }}
     {{- end }}
 {{- end -}}

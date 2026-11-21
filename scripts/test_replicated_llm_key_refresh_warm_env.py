@@ -50,6 +50,10 @@ REPLICATED_OPENHANDS = REPO_ROOT / "replicated" / "openhands.yaml"
 APP_HOSTNAME_TEMPLATE = '{{repl ConfigOption "computed_app_hostname" }}'
 APP_HOSTNAME = "app.example.com"
 WARM_CONFIGMAP = "charts/runtime-api/templates/warm-runtimes-configmap.yaml"
+AUTOMATION_ENABLED_SETS = (
+    "automation.enabled=true,automation.filestore.type=gcs,"
+    "postgresql.primary.persistence.enabled=true"
+)
 
 
 def rendered_env_value(manifest: str, env_name: str) -> str:
@@ -95,6 +99,8 @@ def render_openhands_app(spec: dict) -> str:
             f"ingress.host={APP_HOSTNAME}",
             "--set",
             f"litellm-helm.enabled={str(values['litellm-helm']['enabled']).lower()}",
+            "--set",
+            AUTOMATION_ENABLED_SETS,
             "--show-only",
             "templates/deployment.yaml",
         ],
@@ -112,7 +118,15 @@ def render_warm_configs(
     values layered over the chart defaults, with global.agentServerEnv merged in."""
     values = spec["values"]
     # count is a KOTS template string; only the configs matter here.
+    # fuse.enabled is another. Turn the fuse pool on, with the fuseMount settings
+    # the chart then requires, so its config is checked too.
     warm = {**values["runtime-api"]["warmRuntimes"], "count": 1}
+    warm["fuse"] = {**warm["fuse"], "enabled": True}
+    fuse_mount = {
+        "enabled": True,
+        "bucket": "workspaces",
+        "runtimeApiBaseUrl": "http://runtime-api",
+    }
     # Only agentServerEnv from global: the rest holds {{repl}} strings that
     # third-party subcharts tpl-render and helm cannot parse.
     agent_server_env = {
@@ -123,7 +137,7 @@ def render_warm_configs(
         yaml.safe_dump(
             {
                 "global": {"agentServerEnv": agent_server_env},
-                "runtime-api": {"warmRuntimes": warm},
+                "runtime-api": {"warmRuntimes": warm, "fuseMount": fuse_mount},
             },
             overrides,
         )
@@ -136,6 +150,8 @@ def render_warm_configs(
                 str(OPENHANDS_CHART),
                 "--namespace",
                 spec["namespace"],
+                "--set",
+                AUTOMATION_ENABLED_SETS,
                 "-f",
                 overrides.name,
                 "--show-only",
@@ -146,7 +162,11 @@ def render_warm_configs(
             capture_output=True,
             text=True,
         ).stdout
-    return json.loads(yaml.safe_load(manifest)["data"]["warm-runtimes.json"])["configs"]
+    configs = json.loads(yaml.safe_load(manifest)["data"]["warm-runtimes.json"])[
+        "configs"
+    ]
+    assert any(config.get("fuse_s3_mount") for config in configs), "no fuse pool"
+    return configs
 
 
 def test_replicated_warm_env_matches_app_injected_request_env() -> None:

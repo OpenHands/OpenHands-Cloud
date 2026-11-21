@@ -24,6 +24,7 @@ spec:
     sysbox:
       # Off by default. The "Sandbox Isolation" config option flips it on below.
       enabled: false
+      preflightPullSecretData: '{{repl LocalRegistryImagePullSecret }}'
       imagePullSecrets:
         - name: '{{repl ImagePullSecretName }}'
       image:

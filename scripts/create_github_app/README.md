@@ -63,6 +63,7 @@ The created GitHub App requests the following permissions:
 | Permission | Access | Description |
 |------------|--------|-------------|
 | Actions | Write | Manage GitHub Actions workflows |
+| Checks | Read | Receive check suite and check run results |
 | Contents | Write | Read and write repository contents |
 | Email addresses | Read | Access user email addresses |
 | Issues | Write | Manage issues |

@@ -10,9 +10,7 @@
 # pods with runtimeClassName: sysbox-runc get VM-like (user-namespace) isolation.
 # Idempotent: safe to re-run on every pod restart.
 #
-# Because the binaries are portable Go builds and k0s ships its own containerd,
-# this works on any systemd host with kernel >= 6.3 — not just Debian/Ubuntu.
-# (Kernel >= 6.3 is enforced by the openhands chart's Sysbox preflight.)
+# The host needs systemd, kernel >= 6.3, FUSE and the tools checked below.
 #
 # Order matters: Sysbox is installed BEFORE the containerd drop-in is written.
 # That way, when k0s reloads containerd to pick up the drop-in, containerd's
@@ -30,6 +28,9 @@ log() { echo "==> $*"; }
 
 # Re-gate readiness until this run finishes configuring the node.
 rm -f "$READY_FILE"
+
+log "checking Sysbox host prerequisites"
+bash -c "${HOST_CHECK_SCRIPT:?Sysbox host prerequisite check is missing}"
 
 # --- Discover the k0s-managed containerd config + binary --------------------
 # Embedded Cluster runs k0s with a custom --data-dir, so don't assume /etc/k0s.
@@ -79,8 +80,8 @@ log "drop-in:           $DROPIN"
 # The DaemonSet copied the Sysbox binaries and systemd units out of the nestybox
 # image into $SYSBOX_ARTIFACTS_DIR (bin/ + systemd/). We install them the same
 # way nestybox's own installer does for a containerd node, minus the CRI-O,
-# shiftfs and apt steps: shiftfs is unneeded for kernel >= 6.3, and the binaries
-# have no package dependencies for our validated Docker-in-Docker path.
+# shiftfs and apt steps: shiftfs is unneeded for kernel >= 6.3. Required host
+# tools must already be installed; the check above verifies them.
 #
 # We deliberately do NOT touch /etc/subuid or /etc/subgid. nestybox's installer
 # only configures those on its CRI-O path; on containerd with `hostUsers: false`

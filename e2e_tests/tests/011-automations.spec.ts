@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { newUserEmail, runUser, superAdminApiKey } from "../utils/config";
+import { fetchWebClientConfig } from "../utils/billing";
+import {
+  authNewUserFile,
+  newUserEmail,
+  runUser,
+  superAdminApiKey,
+} from "../utils/config";
 import {
   createPromptAutomation,
   deleteAutomation,
@@ -9,8 +15,12 @@ import {
   waitForRunTerminal,
   type AutomationResponse,
 } from "../utils/automations";
+import { Cleanup } from "../utils/cleanup";
 import {
   createOrg,
+  deleteOrg,
+  e2eOrgName,
+  e2eTimestamp,
   provisionUser,
   type OrgResponse,
   type ProvisionUserResponse,
@@ -43,6 +53,10 @@ import {
  *     assertion is proving that dispatch → sandbox spawn → callback →
  *     status persistence all wired up.
  *
+ *  3. **Service account lifecycle** — the owner creates a service account in
+ *     org A, finds it in the list, and deletes it. Skips when
+ *     ``feature_flags.enable_service_accounts`` is off.
+ *
  * Skip conditions:
  *  - ``runUser(testInfo) !== "new-user"`` — provisioning uses the new-user
  *    email, so this suite has nothing to do for the returning role.
@@ -51,12 +65,18 @@ import {
  *    skips rather than failing every case with a 404.
  *
  * Cleanup:
- *  - Every created automation is deleted in ``afterAll`` regardless of test
- *    outcome. Orgs and users are intentionally left in place: no delete-org
- *    endpoint is exposed to superadmin today, and org names are timestamped
- *    to prevent collisions across runs. The same new-user email is safe to
- *    re-provision indefinitely (the endpoint is idempotent).
+ *  - ``afterAll`` deletes every created automation, then its org (superadmin
+ *    ``DELETE /api/admin/organizations``), regardless of test outcome. The
+ *    New User is left in place: re-provisioning the same email is idempotent.
  */
+
+interface ServiceAccount {
+  id: string;
+  org_id: string;
+  name: string;
+  role: string;
+  is_disabled: boolean;
+}
 
 interface RoleFixture {
   role: "owner" | "member";
@@ -100,24 +120,10 @@ test.describe.serial("automations", () => {
     }
   });
 
+  const cleanup = new Cleanup();
+
   test.afterAll(async () => {
-    const targets = Object.values(fixtures).filter(
-      (f): f is RoleFixture & { automation: AutomationResponse } =>
-        Boolean(f?.automation),
-    );
-    for (const fixture of targets) {
-      try {
-        await deleteAutomation(
-          baseUrl,
-          fixture.provisioned.api_key,
-          fixture.automation.id,
-        );
-      } catch (err) {
-        console.warn(
-          `Cleanup: failed to delete automation ${fixture.automation.id}: ${err}`,
-        );
-      }
-    }
+    await cleanup.run();
   });
 
   // Test 1a + 1b: the regression guard, split so the report shows two
@@ -135,12 +141,15 @@ test.describe.serial("automations", () => {
         "Automation service not reachable on this cluster",
       );
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const timestamp = e2eTimestamp();
       const org = await createOrg(base, adminKey, {
-        name: `e2e automations ${role} ${timestamp}`,
+        name: e2eOrgName(`automations ${role}`, timestamp),
         contact_name: "Testy Tester",
         contact_email: "e2e_test@openhands.org",
       });
+      cleanup.defer(`delete org ${org.id}`, () =>
+        deleteOrg(base, adminKey, org.id),
+      );
       console.log(`Created org "${org.name}" (id=${org.id}) for role=${role}`);
 
       const provisioned = await provisionUser(base, adminKey, org.id, {
@@ -174,6 +183,9 @@ test.describe.serial("automations", () => {
         },
       );
 
+      cleanup.defer(`delete automation ${automation.id}`, () =>
+        deleteAutomation(base, provisioned.api_key, automation.id),
+      );
       expect(automation.id).toBeTruthy();
       expect(automation.enabled).toBe(true);
       expect(automation.trigger.type).toBe("cron");
@@ -233,5 +245,66 @@ test.describe.serial("automations", () => {
       );
     }
     expect(["COMPLETED", "FAILED"]).toContain(run.status);
+  });
+
+  // Test 3: service account lifecycle in the owner's org from test 1a. The
+  // delete asks the Automation Service whether an automation runs as the
+  // account, so it belongs with this suite.
+  test("owner creates, lists and deletes a service account", async ({
+    baseURL,
+    playwright,
+  }, testInfo) => {
+    test.skip(runUser(testInfo) !== "new-user", "new-user role only");
+    const { owner } = fixtures;
+    test.skip(!owner, "owner org must have been created by the prior test");
+    const orgId = (owner as RoleFixture).org.id;
+
+    // The session, not ``provisioned.api_key``: for an existing user that is
+    // their existing key of the same name, which can be bound to another org.
+    const api = await playwright.request.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+      storageState: authNewUserFile,
+    });
+    cleanup.defer("dispose service account request context", () =>
+      api.dispose(),
+    );
+
+    const config = await fetchWebClientConfig(api);
+    test.skip(
+      config.feature_flags?.enable_service_accounts !== true,
+      "service accounts are disabled (feature_flags.enable_service_accounts is falsy)",
+    );
+
+    const collection = `/api/organizations/${orgId}/service-accounts`;
+    const name = `e2e service account ${e2eTimestamp()}`;
+    const created = await api.post(collection, { data: { name } });
+    expect(created.status(), await created.text()).toBe(201);
+    const account = (await created.json()) as ServiceAccount;
+    cleanup.defer(`delete service account ${account.id}`, async () => {
+      const response = await api.delete(`${collection}/${account.id}`);
+      if (!response.ok() && response.status() !== 404) {
+        throw new Error(
+          `${response.status()} ${response.statusText()}: ${await response.text()}`,
+        );
+      }
+    });
+    expect(account).toMatchObject({
+      org_id: orgId,
+      name,
+      role: "service_account",
+      is_disabled: false,
+    });
+
+    const listed = await api.get(`${collection}?limit=100`);
+    expect(listed.status(), await listed.text()).toBe(200);
+    const listing = (await listed.json()) as { items: ServiceAccount[] };
+    expect(listing.items.map((item) => item.id)).toContain(account.id);
+
+    const deleted = await api.delete(`${collection}/${account.id}`);
+    expect(deleted.status(), await deleted.text()).toBe(204);
+
+    const gone = await api.get(`${collection}/${account.id}`);
+    expect(gone.status(), await gone.text()).toBe(404);
   });
 });

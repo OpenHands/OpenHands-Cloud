@@ -1,0 +1,7 @@
+automation:
+  filestore:
+    type: gcs
+postgresql:
+  primary:
+    persistence:
+      enabled: true

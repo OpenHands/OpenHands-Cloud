@@ -21,6 +21,8 @@ def render_openhands_env_secrets(custom_model: str) -> str:
             "template",
             "openhands-secrets",
             str(OPENHANDS_SECRETS_CHART),
+            "--set",
+            "automation.enabled=false",
             "--show-only",
             OPENHANDS_ENV_SECRETS_TEMPLATE,
             "--set",

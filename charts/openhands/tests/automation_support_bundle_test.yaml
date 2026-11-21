@@ -15,6 +15,7 @@ tests:
     set:
       replicated.enabled: true
       automation.enabled: true
+      postgresql.primary.persistence.enabled: true
     asserts:
       - template: troubleshoot/secrets.yaml
         documentIndex: 1

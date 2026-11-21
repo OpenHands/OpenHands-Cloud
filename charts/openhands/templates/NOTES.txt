@@ -14,11 +14,35 @@ is in {{ $.Values.keycloak.externalDatabase.database }}_backup_{{ regexFind "26\
 {{ end }}
 {{- end }}
 {{- end }}
+{{- $agentCanvas := index .Values "agent-canvas" }}
+{{- if and $agentCanvas.enabled .Release.IsUpgrade (not $agentCanvas.staticServer.lockToCloud) $agentCanvas.staticServer.lockToCloudConfigMap }}
+{{- $live := lookup "v1" "ConfigMap" .Release.Namespace "agent-canvas-config" }}
+{{- $oldURL := dig "data" "AGENT_CANVAS_LOCK_TO_CLOUD" "" $live }}
+{{- $newURL := include "openhands.agentCanvasLockURL" . }}
+{{- if and $live (ne $oldURL $newURL) }}
+WARNING: this upgrade changes the Agent Canvas lock URL from
+{{ $oldURL | default "no URL" }} to {{ $newURL | default "no URL" }}. The Canvas pod reads it only at start. If
+the pod did not restart during this upgrade, restart it:
+
+    kubectl rollout restart deployment/agent-canvas -n {{ .Release.Namespace }}
+
+{{ end }}
+{{- end }}
 {{- if and .Values.redis.enabled .Values.valkey.enabled }}
 NOTE: both cache backends are enabled, so two caches are deployed and Redis is
 the one in use. If you meant to move to Valkey, also set:
 
     redis.enabled=false
+
+{{ end }}
+{{- if and .Values.enabled (not (include "openhands.license.secretName" .)) }}
+WARNING: no OpenHands Enterprise license is set. An upcoming release will
+enforce the license through Customer Center. If you're an existing customer,
+OpenHands support will provide your license key. Before you upgrade to that
+release, set license.key to your license key, or set license.offlineLicense to
+an offline license file if this install can't reach Customer Center:
+
+    helm upgrade {{ .Release.Name }} ... --set license.key=<license-key>
 
 {{ end }}
 {{- if not .Values.enabled }}

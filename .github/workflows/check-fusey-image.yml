@@ -1,0 +1,55 @@
+name: Check fusey image
+
+# Blocking check on release-please PRs: the fusey image the charts name must be
+# published for both architectures. The chart derives its tag from the
+# agent-server tag and the fusey version (see scripts/fusey_image.py), so a
+# release cannot ship pointing at an image that was never built.
+#
+# runtime-api owns the pin (fusey-image.env) and builds the image on release,
+# before its chart bump PR opens, so a missing image means the chart pins have
+# drifted from runtime-api. The log says how to fix it. This check builds nothing.
+
+on:
+  # Deliberately unfiltered by path, for the reason check-agent-server-sync.yml
+  # gives: an always-triggered workflow can be a required check without leaving
+  # skipped PRs pending forever.
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-fusey-image:
+    name: Check fusey image
+    # On any other PR the job skips, which reports as success.
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        startsWith(github.head_ref, 'release-please--')
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Check the image is published
+        shell: bash
+        run: |
+          status=0
+          uv run scripts/fusey_image.py > report.txt 2>&1 || status=$?
+          cat report.txt
+          {
+            echo '### Fusey image'
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

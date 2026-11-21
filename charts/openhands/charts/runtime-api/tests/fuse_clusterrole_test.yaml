@@ -1,0 +1,26 @@
+suite: fuse mount cluster role
+templates:
+  - templates/clusterrole.yaml
+set:
+  runtimeInSameCluster: true
+  serviceAccount.createRBAC: true
+tests:
+  - it: does not grant pods/exec by default
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["pods/exec"]
+            verbs: ["get", "create"]
+
+  - it: grants pods/exec so runtime-api can mount fuse workspaces
+    set:
+      fuseMount.enabled: true
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["pods/exec"]
+            verbs: ["get", "create"]

@@ -3,8 +3,11 @@ import { test, expect } from "@playwright/test";
 import { fetchWebClientConfig } from "../utils/billing";
 import { newUserEmail, runUser, superAdminApiKey } from "../utils/config";
 import { HomePage } from "../pages";
+import { Cleanup } from "../utils/cleanup";
 import {
   createOrg,
+  deleteOrg,
+  e2eOrgName,
   provisionUser,
   type OrgResponse,
   type ProvisionUserResponse,
@@ -32,7 +35,8 @@ import {
  * The created org name is timestamped so repeated runs do not collide with the
  * server's unique-name constraint (``409 OrgNameExistsError``). The name is
  * shared across the tests via module scope; ``test.describe.serial`` keeps the
- * REST setup before the UI check within a single worker.
+ * REST setup before the UI check within a single worker. ``afterAll`` deletes
+ * the org, so the New User's org list does not grow across runs.
  *
  * The super-admin API key (``SUPER_ADMIN_API_KEY``) must be unbound so the
  * server resolves the target org per-request from the ``X-Org-Id`` header —
@@ -44,6 +48,11 @@ test.describe.serial("org management", () => {
   // runUser), so the skip happens at run time rather than at describe time.
   let org: OrgResponse;
   let provisioned: ProvisionUserResponse;
+  const cleanup = new Cleanup();
+
+  test.afterAll(async () => {
+    await cleanup.run();
+  });
 
   test("create an org and provision the new user into it", async ({
     baseURL,
@@ -52,14 +61,17 @@ test.describe.serial("org management", () => {
 
     const apiKey = superAdminApiKey();
     const email = newUserEmail();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
     // 1. Create the organization.
     org = await createOrg(baseURL || "", apiKey, {
-      name: `e2e test org ${timestamp}`,
+      name: e2eOrgName("test org"),
       contact_name: "Testy Tester",
       contact_email: "e2e_test@openhands.org",
     });
+    const created = org;
+    cleanup.defer(`delete org ${created.id}`, () =>
+      deleteOrg(baseURL || "", apiKey, created.id),
+    );
 
     console.log(`Created org "${org.name}" (id=${org.id})`);
     expect(org.id).toBeTruthy();

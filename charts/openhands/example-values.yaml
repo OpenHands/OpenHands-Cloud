@@ -2,6 +2,10 @@
 # image:
 #   tag: 0.47.0
 
+# License key from Customer Center. An upcoming release will enforce it.
+license:
+  key: ""
+
 env:
   # replace <your-model> with your LLM model and uncomment this variable
   # LITELLM_DEFAULT_MODEL: "litellm_proxy/<your-model>"

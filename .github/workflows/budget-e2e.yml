@@ -15,7 +15,8 @@ concurrency:
 jobs:
   certify:
     if: github.event_name == 'workflow_dispatch' || vars.BUDGET_E2E_SCHEDULE_ENABLED == 'true'
-    runs-on: ${{ vars.BUDGET_E2E_RUNNER || 'ubuntu-latest' }}
+    # Pinned to match the Argo runner image (playwright:v1.58.2-noble); 1.58.2 cannot install browsers on Ubuntu 26.04.
+    runs-on: ${{ vars.BUDGET_E2E_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 210
     environment: budget-e2e-staging
     defaults:
