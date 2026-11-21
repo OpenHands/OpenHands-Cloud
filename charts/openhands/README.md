@@ -619,6 +619,13 @@ To use an external PostgreSQL database instead of deploying one with the chart:
        DB_NAME: runtime_api_db
    ```
 
+### Upgrading Bundled MinIO
+
+The first upgrade that sets `GOMAXPROCS` replaces the bundled MinIO pod.
+If `minio.persistence.enabled` is `false`, Kubernetes deletes the stored objects
+with the old pod. Back up any objects you need to keep before upgrading.
+Replicated installs use a persistent volume claim for MinIO.
+
 ### Bring Your Own S3-Compatible Storage
 
 To use an external S3 (or S3-compatible) store instead of the bundled MinIO,

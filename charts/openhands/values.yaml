@@ -905,6 +905,8 @@ minio:
       cpu: 100m
   # Go sizes GOMAXPROCS from the host's cores, not the CPU limit. Above ~200
   # cores MinIO's own config check fails and root access stays off.
+  # The first upgrade with this default replaces the MinIO pod. Kubernetes
+  # deletes its stored objects when persistence.enabled is false.
   # The minio subchart renders this value, so .Values here is minio's own.
   environment:
     GOMAXPROCS: >-
