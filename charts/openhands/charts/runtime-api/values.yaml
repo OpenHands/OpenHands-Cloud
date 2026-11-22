@@ -2,7 +2,7 @@ image:
   repository: ghcr.io/openhands/runtime-api
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 0.16.1
+  tag: 0.17.0
   pullPolicy: Always
 
 nameOverride: ""
@@ -292,8 +292,9 @@ warmRuntimes:
   configs: []
   # Canonical map form. Each key becomes the config name unless the entry sets
   # `name` explicitly. Maps merge cleanly across values layers.
-  # Each entry may also set display_name and resources.requests/limits.cpu/memory
-  # when running a Runtime API version that supports named sizing templates.
+  # Each entry may also set resources.requests/limits.cpu/memory/ephemeral_storage
+  # and persistent_storage_size (e.g. "10Gi") when running a Runtime API version
+  # that supports named sizing templates.
   # Set count to 0 to keep a spec discoverable with prewarming disabled.
   # Omit count to inherit warmRuntimes.count. When upgrading from a chart
   # that dropped an explicit zero, that entry now disables prewarming
@@ -304,9 +305,8 @@ warmRuntimes:
   # device-plugin subchart).
   # Optionally set idle_seconds to a positive integer for a named Sandbox Spec.
   # Omission uses cleanup.idle_seconds, the deployment-wide idle timeout.
-  # The bundled Runtime API 0.16.1 uses the deployment timeout for every spec.
-  # Per-spec idle_seconds requires the first Runtime API release containing
-  # https://github.com/OpenHands/runtime-api/pull/773, which is unreleased.
+  # Optionally set persistent_storage_size for a named Sandbox Spec's persistent
+  # workspace volume. Omission uses the Runtime API's own default volume size.
   configsByName:
     # Keep the map key stable for existing Helm overrides.
     default:

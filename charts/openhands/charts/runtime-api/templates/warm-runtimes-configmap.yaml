@@ -91,11 +91,11 @@ data:
           {{- end }}
           "command": {{ $config.command | toJson }},
           "environment": {{ mergeOverwrite (deepCopy ($config.environment | default dict)) (deepCopy $globalAgentEnv) | toJson }}
-          {{- with $config.display_name }},
-          "display_name": {{ . | toJson }}
-          {{- end }}
           {{- with $config.resources }},
           "resources": {{ . | toJson }}
+          {{- end }}
+          {{- with $config.persistent_storage_size }},
+          "persistent_storage_size": {{ . | toJson }}
           {{- end }}
           {{- if and (hasKey $config "idle_seconds") (not (kindIs "invalid" $config.idle_seconds)) }},
           "idle_seconds": {{ $config.idle_seconds | toJson }}
