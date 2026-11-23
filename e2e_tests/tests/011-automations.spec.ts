@@ -152,9 +152,13 @@ test.describe.serial("automations", () => {
       );
       console.log(`Created org "${org.name}" (id=${org.id}) for role=${role}`);
 
+      // A unique key name: the server returns the user's existing key of the
+      // same name whatever org it is bound to, so a shared name would give
+      // the member the owner's key from org A.
       const provisioned = await provisionUser(base, adminKey, org.id, {
         email: newUserEmail(),
         role,
+        api_key_name: `e2e automations ${role} ${timestamp}`,
       });
       expect(provisioned.role).toBe(role);
       expect(provisioned.api_key).toBeTruthy();
