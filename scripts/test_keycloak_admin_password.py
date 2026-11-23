@@ -67,17 +67,13 @@ def _scope_script_file():
     SCOPE_SCRIPT_FILE.write_text(scope_script())
 
 
-@pytest.fixture
-def keycloak():
-    image = os.environ.get("KEYCLOAK_TEST_IMAGE")
-    if not image:
-        pytest.skip("Set KEYCLOAK_TEST_IMAGE to run Docker integration tests")
+def start_keycloak(image, remove_on_exit):
     container = subprocess.check_output(
         [
             "docker",
             "run",
             "-d",
-            "--rm",
+            *(["--rm"] if remove_on_exit else []),
             "-p",
             "127.0.0.1::8080",
             "-e",
@@ -97,12 +93,53 @@ def keycloak():
         for _ in range(120):
             try:
                 if request(url + "/realms/master")[0] == 200:
-                    break
+                    return container, url
             except (urllib.error.URLError, ConnectionError, TimeoutError):
                 pass
             time.sleep(1)
-        else:
-            pytest.fail("Local Keycloak did not become ready")
+        pytest.fail("Local Keycloak did not become ready")
+    except BaseException:
+        subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+        raise
+
+
+@pytest.fixture(scope="module")
+def keycloak_pristine_image():
+    """A Keycloak image whose database is initialised but otherwise untouched.
+
+    Every test changes the master realm, and the first reconcile consumes the
+    bootstrap admin, so tests cannot share a running Keycloak. Booting from an
+    initialised database skips the slow first-start setup, so each test still
+    gets a fresh Keycloak at a fraction of the cost.
+    """
+    image = os.environ.get("KEYCLOAK_TEST_IMAGE")
+    if not image:
+        pytest.skip("Set KEYCLOAK_TEST_IMAGE to run Docker integration tests")
+    snapshot = f"keycloak-admin-password-test:{os.getpid()}"
+    container, _ = start_keycloak(image, remove_on_exit=False)
+    try:
+        subprocess.run(
+            ["docker", "stop", "--time", "30", container],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["docker", "commit", container, snapshot],
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+    try:
+        yield snapshot
+    finally:
+        subprocess.run(["docker", "rmi", "-f", snapshot], capture_output=True)
+
+
+@pytest.fixture
+def keycloak(keycloak_pristine_image):
+    container, url = start_keycloak(keycloak_pristine_image, remove_on_exit=True)
+    try:
         yield url
     finally:
         subprocess.run(
