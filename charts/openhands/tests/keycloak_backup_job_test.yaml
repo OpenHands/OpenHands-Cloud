@@ -61,7 +61,7 @@ tests:
           value: Never
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie
+          value: ghcr.io/cloudnative-pg/postgresql:17.12-202611230809-minimal-trixie
       - contains:
           path: spec.template.spec.containers[0].env
           content:

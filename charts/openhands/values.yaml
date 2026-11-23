@@ -600,7 +600,7 @@ keycloak:
     - name: KC_DB_URL_PROPERTIES
       value: 'sslmode={{ .Values.externalDatabase.sslMode | default "prefer" }}'
   waitForDb:
-    image: "ghcr.io/cloudnative-pg/postgresql:17.11-202610050823-minimal-trixie"
+    image: "ghcr.io/cloudnative-pg/postgresql:17.12-202611230809-minimal-trixie"
   initContainers:
     - name: wait-for-db
       # The Bitnami Keycloak subchart renders initContainers through common.tplvalues.render,
