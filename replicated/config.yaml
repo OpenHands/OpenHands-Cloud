@@ -1772,7 +1772,7 @@ spec:
           title: Enable OAuth V2 Login
           help_text: Use the OAuth V2 login flow.
           type: bool
-          default: "0"
+          default: "1"
 
     - name: analytics_configuration
       title: Analytics Configuration

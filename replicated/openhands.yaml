@@ -132,6 +132,10 @@ spec:
       # OAuth V2 login. Needs both forms — see the ENABLE_JIRA_DC note above.
       OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
       ENABLE_OAUTH_V2_LOGIN: 'repl{{ ConfigOptionEquals "auth_v2_enabled" "1" }}'
+      # Fleet test only (shared-5, 2026-11-23): no KOTS item exists for this.
+      # Seed the integrated password IdP (migration 179) so "Login with
+      # Password" is offered on the login page; needs OAuth V2 login above.
+      ENABLE_INTEGRATED_IDP: true
       # Agent Profiles: the Agent Profiles and Agent Context settings pages and
       # organization agent profile management. Only the web client reads these
       # flags, so the FEATURE_FLAGS-prefixed form is the one that applies. They
