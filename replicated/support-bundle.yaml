@@ -17,6 +17,9 @@ spec:
     - data:
         name: kots/admin-console/config.yaml
         data: |
+          # License
+          license:
+            license_source: repl{{ ConfigOption "license_source" | mustToJson }}
           # Domain Configuration
           domain_configuration:
             hostname_mode: repl{{ ConfigOption "hostname_mode" | mustToJson }}
@@ -182,8 +185,11 @@ spec:
             custom_sandbox_image_tag: repl{{ ConfigOption "custom_sandbox_image_tag" | mustToJson }}
             custom_sandbox_image_registry_server: repl{{ ConfigOption "custom_sandbox_image_registry_server" | mustToJson }}
             custom_sandbox_image_registry_username: repl{{ ConfigOption "custom_sandbox_image_registry_username" | mustToJson }}
+            sandbox_init_image: repl{{ ConfigOption "sandbox_init_image" | mustToJson }}
             sandbox_additional_host_paths: repl{{ ConfigOption "sandbox_additional_host_paths" | mustToJson }}
             sandbox_kvm_enabled: repl{{ ConfigOption "sandbox_kvm_enabled" | mustToJson }}
+            sandbox_fuse_enabled: repl{{ ConfigOption "sandbox_fuse_enabled" | mustToJson }}
+            computed_sandbox_fuse_enabled: repl{{ ConfigOption "computed_sandbox_fuse_enabled" | mustToJson }}
             sandbox_dedicated_nodes: repl{{ ConfigOption "sandbox_dedicated_nodes" | mustToJson }}
           # Proxy Configuration
           proxy_configuration:
@@ -198,6 +204,7 @@ spec:
           # Upgrade Checks
           upgrade_checks:
             keycloak_pre_upgrade_backup: repl{{ ConfigOption "keycloak_pre_upgrade_backup" | mustToJson }}
+            keycloak_pre_upgrade_admin_check: repl{{ ConfigOption "keycloak_pre_upgrade_admin_check" | mustToJson }}
             budget_preflight_mode: repl{{ ConfigOption "budget_preflight_mode" | mustToJson }}
             budget_reconcile_gate_mode: repl{{ ConfigOption "budget_reconcile_gate_mode" | mustToJson }}
           # Experimental
@@ -227,6 +234,7 @@ spec:
           agent_features:
             agent_profiles_enabled: repl{{ ConfigOption "agent_profiles_enabled" | mustToJson }}
             model_routing_enabled: repl{{ ConfigOption "model_routing_enabled" | mustToJson }}
+            org_mcp_servers_enabled: repl{{ ConfigOption "org_mcp_servers_enabled" | mustToJson }}
           # Advanced Options
           advanced_options:
             openhands_resolver_label: repl{{ ConfigOption "openhands_resolver_label" | mustToJson }}
