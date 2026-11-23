@@ -55,9 +55,11 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      # test_keycloak_admin_password.py boots real Keycloak containers, so the
+      # keycloak-scripts job below runs it. Running it here as well pushed this
+      # job past its timeout.
       - name: Run scripts tests
         env:
-          KEYCLOAK_TEST_IMAGE: quay.io/keycloak/keycloak:26.3.3
           KEYCLOAK_BACKUP_TEST_POSTGRES_IMAGE: postgres:16
         run: >-
           uv run
@@ -70,9 +72,10 @@ jobs:
           --with ruamel.yaml
           --with PyYAML
           python -m pytest scripts -q
+          --ignore=scripts/test_keycloak_admin_password.py
 
-  # The job above pins Keycloak 26.3.3, where the kc-admin-api tests skip. 26.8.0 is the
-  # patch-upgrade source and 26.8.2 the shipped version; one job each keeps every job in its timeout.
+  # 26.8.0 is the patch-upgrade source and 26.8.2 the shipped version; one job each keeps
+  # every job in its timeout.
   keycloak-scripts:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
