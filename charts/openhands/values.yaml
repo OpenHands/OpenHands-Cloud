@@ -128,6 +128,12 @@ securityContext:
   runAsNonRoot: true
 
 env:
+  # Optional organization-wide Canvas sandbox selector (off by default).
+  # Requires the matching Enterprise API and Agent Canvas frontend versions.
+  # Define named Sandbox Specs in runtime-api.warmRuntimes.configsByName first.
+  # ENABLE_SANDBOX_SELECTOR: "true"
+  # SANDBOX_TEMPLATE_ORG_CONFIG: >-
+  #   {"<org-uuid>": {"template_ids": ["v1_current", "monorepo_large"], "default_template_id": "v1_current"}}
   # Hides editing only; saved personal credentials remain usable.
   OH_ALLOW_USER_LLM_CONFIGURATION: "false"
   HIDE_BILLING_PAGE: "true"
