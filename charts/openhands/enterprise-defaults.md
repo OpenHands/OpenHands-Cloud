@@ -70,6 +70,14 @@ set `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` and
 `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN`, because the app then
 ignores the plain flags in the web client.
 
+## OAuth v2 login
+
+`OH_AUTH_ENABLE_OAUTH_V2_LOGIN: "true"` turns on OAuth v2 login. The server and
+the web client both read it, so it works in either flag mode and they cannot
+disagree. The chart leaves it off. The older `ENABLE_OAUTH_V2_LOGIN` and
+`OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` still work while it is
+unset. If both are set, the structured one wins.
+
 ## Upgrading
 
 An install that omits these values takes the new defaults on upgrade. Before
