@@ -43,6 +43,22 @@ tests:
           path: spec.template.spec.containers[0].env
           content: {name: ENABLE_SUPER_ADMIN, value: "false"}
           count: 1
+  - it: enables the OAuth V2 login flow
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_OAUTH_V2_LOGIN, value: "true"}
+          count: 1
+  - it: turns the OAuth V2 login flow off with an explicit value
+    set:
+      env.ENABLE_OAUTH_V2_LOGIN: "false"
+    asserts:
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: ENABLE_OAUTH_V2_LOGIN, value: "false"}
+          count: 1
   - it: leaves the Super Admin email list empty by default
     asserts:
       - template: deployment.yaml
@@ -61,6 +77,11 @@ tests:
           count: 1
   - it: leaves the structured web client flags unset by default
     asserts:
+      - template: deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN}
+          any: true
       - template: deployment.yaml
         notContains:
           path: spec.template.spec.containers[0].env
