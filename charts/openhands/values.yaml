@@ -12,7 +12,7 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.96.0
+  tag: 1.97.1
 
 # OpenHands Enterprise license from Customer Center. Set a license key, or an
 # offline license file if this install can't reach Customer Center. An upcoming
@@ -134,6 +134,9 @@ env:
   # Shows /super-admin. On a fresh install the first user to sign in also gets
   # the first-install setup; upgraded installs with existing users do not.
   ENABLE_SUPER_ADMIN: "true"
+  # Uses the OAuth V2 login flow (the app's /oauth/{id}/login), which still signs
+  # in through Keycloak.
+  ENABLE_OAUTH_V2_LOGIN: "true"
   # Comma-separated emails that always hold the Super Admin role, granted when
   # they sign in. When set, the first user is a Super Admin only if listed.
   # Use it to guarantee or recover admin access. Empty means unset.

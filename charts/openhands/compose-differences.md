@@ -10,7 +10,6 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 
 | Name | What differs | Reason |
 |---|---|---|
-| `ENABLE_OAUTH_V2_LOGIN` | Compose turns on the app's OAuth v2 login, which its built-in password login uses. Helm leaves it off. | Compose uses the built-in password login. Helm signs in through Keycloak. |
 | `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
