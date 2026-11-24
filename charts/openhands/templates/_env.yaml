@@ -28,8 +28,6 @@
 {{- end }}
 - name: OPENHANDS_MCP_CONFIG_CLS
   value: {{ .Values.appConfig.OPENHANDS_MCP_CONFIG_CLS }}
-- name: OPENHANDS_CONVERSATION_VALIDATOR_CLS
-  value: {{ .Values.appConfig.OPENHANDS_CONVERSATION_VALIDATOR_CLS }}
 - name: OPENHANDS_EXPERIMENT_MANAGER_CLS
   value: {{ .Values.appConfig.OPENHANDS_EXPERIMENT_MANAGER_CLS }}
 {{- if ne .Values.dailyConversationLimit nil }}
