@@ -1,0 +1,174 @@
+name: Promote release candidate
+
+# Opens the PR that promotes an openhands release candidate to a stable release.
+# Merging that PR is the release decision. The `promote` job in release.yml then
+# tags openhands/X.Y.Z on the rc's commit, and the tag publishes the chart to
+# GHCR and the Replicated release to the stable channel. See docs/releases.md.
+#
+# The PR itself only moves the release line's manifest and Chart.yaml version to
+# X.Y.Z, so release-please cuts the next release candidate from there instead of
+# another rc of a version that has already shipped.
+on:
+  workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: "Release candidate to promote, e.g. openhands/0.94.0-rc.3 (leave blank for the newest rc on main)"
+        required: false
+        default: ""
+
+concurrency:
+  group: promote-release-candidate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-24.04
+    steps:
+      # The PR is opened as the release App so the PR's CI runs (GitHub doesn't
+      # trigger workflows for events created with GITHUB_TOKEN), and so the
+      # `promote` job in release.yml can tell a real promotion PR by its author.
+      - name: Mint release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Resolve the release candidate
+        id: rc
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.rc_tag }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          RC_TAG="$INPUT_TAG"
+          if [ -z "$RC_TAG" ]; then
+            RC_TAG=$(git tag --merged origin/main --list 'openhands/*-rc.*' --sort=-v:refname | sed -n 1p)
+            [ -n "$RC_TAG" ] || { echo "::error::no openhands release candidate on main"; exit 1; }
+          fi
+          if [[ ! "$RC_TAG" =~ ^openhands/([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]]; then
+            echo "::error::${RC_TAG} is not an openhands/X.Y.Z-rc.N tag"
+            exit 1
+          fi
+          VERSION="${BASH_REMATCH[1]}"
+          STABLE_TAG="openhands/${VERSION}"
+
+          RC_SHA=$(git rev-parse --verify --quiet "refs/tags/${RC_TAG}^{commit}") || {
+            echo "::error::tag ${RC_TAG} does not exist"
+            exit 1
+          }
+          gh release view "$RC_TAG" >/dev/null || {
+            echo "::error::${RC_TAG} has no GitHub Release; only release candidates cut by release-please can be promoted"
+            exit 1
+          }
+          if git rev-parse --verify --quiet "refs/tags/${STABLE_TAG}" >/dev/null; then
+            echo "::error::${STABLE_TAG} is already released"
+            exit 1
+          fi
+
+          # The PR goes to the release line that cut this rc: main, or the one
+          # release/* branch carrying a backport rc.
+          if git merge-base --is-ancestor "$RC_SHA" origin/main; then
+            BRANCH=main
+          else
+            mapfile -t BRANCHES < <(git branch -r --contains "$RC_SHA" --list 'origin/release/*' --format='%(refname:lstrip=3)')
+            if [ "${#BRANCHES[@]}" -ne 1 ]; then
+              echo "::error::expected ${RC_TAG} on main or exactly one release/* branch, found: ${BRANCHES[*]:-none}"
+              exit 1
+            fi
+            BRANCH="${BRANCHES[0]}"
+          fi
+
+          # The branch must still be cutting rcs of this version. If it has moved
+          # past X.Y.Z, resetting its manifest to X.Y.Z would make release-please
+          # cut versions that already exist.
+          CURRENT=$(git show "origin/${BRANCH}:.release-please-manifest.openhands.json" | jq -r '."."')
+          if [ "${CURRENT%%-*}" != "$VERSION" ] || [ "$CURRENT" = "$VERSION" ]; then
+            echo "::error::${BRANCH} is at ${CURRENT}, not on the ${VERSION} release candidates; ${RC_TAG} can no longer be promoted from it"
+            exit 1
+          fi
+
+          {
+            echo "rc_tag=${RC_TAG}"
+            echo "rc_sha=${RC_SHA}"
+            echo "version=${VERSION}"
+            echo "branch=${BRANCH}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Promoting ${RC_TAG} (${RC_SHA}) to ${STABLE_TAG} on ${BRANCH} (currently ${CURRENT})"
+
+      - name: Write release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RC_TAG: ${{ steps.rc.outputs.rc_tag }}
+        run: scripts/promotion_notes.sh "$RC_TAG" > "${RUNNER_TEMP}/notes.md"
+
+      - name: Commit the version change
+        shell: bash
+        env:
+          RC_TAG: ${{ steps.rc.outputs.rc_tag }}
+          VERSION: ${{ steps.rc.outputs.version }}
+          BRANCH: ${{ steps.rc.outputs.branch }}
+        run: |
+          # release.yml reads the rc tag back out of this branch name.
+          HEAD_BRANCH="release-promote/${RC_TAG}"
+          git checkout -B "$HEAD_BRANCH" "origin/${BRANCH}"
+          jq --arg v "$VERSION" '."." = $v' .release-please-manifest.openhands.json > manifest.tmp
+          mv manifest.tmp .release-please-manifest.openhands.json
+          yq -i ".version = \"${VERSION}\"" charts/openhands/Chart.yaml
+          git config user.name "openhands-release-bot[bot]"
+          git config user.email "290150379+openhands-release-bot[bot]@users.noreply.github.com"
+          git commit -am "chore(release): promote openhands ${RC_TAG#openhands/} to ${VERSION}"
+          # Re-running for the same rc replaces the branch with a fresh commit.
+          git push --force origin "$HEAD_BRANCH"
+          echo "HEAD_BRANCH=${HEAD_BRANCH}" >> "$GITHUB_ENV"
+
+      - name: Open or update the promotion PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RC_TAG: ${{ steps.rc.outputs.rc_tag }}
+          RC_SHA: ${{ steps.rc.outputs.rc_sha }}
+          VERSION: ${{ steps.rc.outputs.version }}
+          BRANCH: ${{ steps.rc.outputs.branch }}
+          LABEL: "autorelease: openhands promote"
+        run: |
+          {
+            echo "Promotes \`${RC_TAG}\` to the stable release **${VERSION}**."
+            echo ""
+            echo "Merging this PR:"
+            echo "- tags \`openhands/${VERSION}\` on the rc's commit (\`${RC_SHA:0:12}\`), so the stable release is exactly what was tested"
+            echo "- publishes chart ${VERSION} to GHCR, and the Replicated release to the stable channel and Beta"
+            echo "- moves \`${BRANCH}\` past ${VERSION}, so its next release PR cuts the next version's first release candidate"
+            echo ""
+            echo "The notes between the markers become the GitHub Release body. Edit them here before merging if needed."
+            echo ""
+            echo "<!-- notes:start -->"
+            cat "${RUNNER_TEMP}/notes.md"
+            echo "<!-- notes:end -->"
+          } > "${RUNNER_TEMP}/body.md"
+
+          gh label create "$LABEL" --color 0E8A16 \
+            --description "Promotes an openhands release candidate to stable" --force
+          TITLE="chore(release): promote openhands ${RC_TAG#openhands/} to ${VERSION}"
+          PR=$(gh pr list --head "$HEAD_BRANCH" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --title "$TITLE" --body-file "${RUNNER_TEMP}/body.md"
+          else
+            PR=$(gh pr create --base "$BRANCH" --head "$HEAD_BRANCH" \
+              --title "$TITLE" --body-file "${RUNNER_TEMP}/body.md" --label "$LABEL")
+          fi
+          echo "::notice title=Promotion PR::${PR}"
+          echo "Promotion PR: ${PR}" >> "$GITHUB_STEP_SUMMARY"

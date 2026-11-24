@@ -1,8 +1,10 @@
 # Automated development chart bumps
 
-When release-please publishes a stable `openhands` chart tag, this repository
-notifies `OpenHands/saas-deploy` so the new chart can deploy to development
-without waiting for a chart-bump pull request.
+When release-please publishes an `openhands` release candidate tag, this
+repository notifies `OpenHands/saas-deploy` so the new chart can deploy to
+development without waiting for a chart-bump pull request. Stable
+`openhands/X.Y.Z` tags don't dispatch, for the reason given in
+[staging chart bumps](./staging-chart-bumps.md).
 
 The sender lives in
 [`.github/workflows/publish-release-charts.yml`](../.github/workflows/publish-release-charts.yml):
@@ -24,7 +26,7 @@ The payload sent to `saas-deploy` is:
 | Field | Value |
 | ----- | ----- |
 | `chart` | `openhands` |
-| `version` | The chart version from the tag, for example `0.21.0`. |
+| `version` | The chart version from the tag, for example `0.94.0-rc.3`. |
 | `environment` | `development` |
 | `source-repo` | `OpenHands/OpenHands-Cloud` |
 | `source-sha` | The commit checked out at the release tag. |

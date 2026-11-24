@@ -1,30 +1,31 @@
 name: Release Replicated to Beta
 
-# When an openhands release is cut, build the Replicated app from that tagged
-# commit and publish it to the Beta channel.
+# When an openhands release candidate is cut, build the Replicated app from
+# that tagged commit and publish it to the Beta channel.
 #
 # openhands and the replicated config are versioned together (see
-# release-please-config.openhands.json), so the openhands/<version> tag that
-# release-please creates on a release-PR merge is exactly the point at which a
-# matching Replicated release should go to Beta. The per-push "Release Replicated
-# to Unstable" workflow keeps publishing bleeding-edge main to Unstable; this
-# adds the Beta line, gated on an actual release.
+# release-please-config.openhands.json), so the openhands/<version>-rc.<n> tag
+# that release-please creates on a release-PR merge is exactly the point at
+# which a matching Replicated release should go to Beta. The per-push "Release
+# Replicated to Unstable" workflow keeps publishing bleeding-edge main to
+# Unstable; this adds the Beta line, gated on an actual release candidate.
+# Stable tags go through release-replicated-stable.yml instead.
 #
 # After promoting, we record the release sequence Replicated assigned by tagging
 # the same commit Replicated/Beta/<sequence>, linking each openhands release to
 # its Replicated Beta release in git history. <sequence> is the global release
 # sequence (what `replicated release inspect <sequence>` takes).
 #
-# The openhands/* pattern matches openhands/0.7.85 but not
-# openhands-secrets/0.1.25 (that would need an explicit openhands-secrets/*).
+# The pattern matches openhands/0.94.0-rc.3 but not openhands/0.94.0, nor
+# openhands-secrets/0.1.25.
 on:
   push:
     tags:
-      - 'openhands/*'
+      - 'openhands/*-rc.*'
   workflow_dispatch:
     inputs:
       tag:
-        description: "openhands/<version> tag to (re)publish to Beta"
+        description: "openhands/<version>-rc.<n> tag to (re)publish to Beta"
         required: true
 
 # Never let two Beta publishes for the same release tag race.

@@ -1,21 +1,25 @@
 # Automated staging chart bumps
 
-When release-please publishes a stable `openhands` chart tag, this repo now
+When release-please publishes an `openhands` release candidate tag, this repo
 notifies `OpenHands/saas-deploy` so staging can receive the new chart through a
-normal pull request.
+normal pull request. See [releases](./releases.md) for how release candidates
+and stable releases are cut.
 
 The sender lives in
 [`.github/workflows/publish-release-charts.yml`](../.github/workflows/publish-release-charts.yml):
 
-1. An `openhands/<version>` tag push publishes
+1. An `openhands/<version>` tag push, such as `openhands/0.94.0-rc.3`, publishes
    `ghcr.io/openhands/helm-charts/openhands:<version>`.
 2. After that publish job succeeds, the `dispatch-staging-chart-bump` job runs.
 3. The job mints a token for the dedicated staging-chart dispatcher GitHub App.
 4. The job sends `repository_dispatch` to `OpenHands/saas-deploy` with
    `event_type: bump-chart-to-staging`.
 
-Only `openhands/*` tags dispatch to staging. Other released charts still publish
-to GHCR but do not ask `saas-deploy` for a staging PR.
+Only `openhands/*` release candidate tags dispatch to staging. Other released
+charts still publish to GHCR but do not ask `saas-deploy` for a staging PR.
+Stable `openhands/X.Y.Z` tags don't dispatch either: a stable tag sits on the
+commit of a release candidate that staging already received, and promoting an
+older release candidate must not roll staging back.
 
 ## Dispatch Payload
 
@@ -24,7 +28,7 @@ The payload sent to `saas-deploy` is:
 | Field | Value |
 | ----- | ----- |
 | `chart` | `openhands` |
-| `version` | The chart version from the tag, for example `0.8.3`. |
+| `version` | The chart version from the tag, for example `0.94.0-rc.3`. |
 | `environment` | `staging` |
 | `source-repo` | The publishing repository, currently `OpenHands/OpenHands-Cloud`. |
 | `source-sha` | The commit checked out at the release tag. |
