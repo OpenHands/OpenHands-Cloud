@@ -13,6 +13,8 @@ on:
       - '.github/workflows/e2e-replicated.yml'
       - '.github/workflows/release-gate.yml'
       - '.github/workflows/deploy-gate.yml'
+      - '.github/workflows/scan-docker-images.yml'
+      - '.trivyignore.yaml'
       - '.github/workflows/dispatch-e2e-test-revision-bump.yml'
       - '.github/workflows/publish-release-charts.yml'
       - '.github/workflows/test-scripts.yml'
