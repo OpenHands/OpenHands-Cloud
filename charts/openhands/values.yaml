@@ -12,7 +12,9 @@ image:
   repository: ghcr.io/openhands/enterprise-server
   # You must use a stable, semver tag. Do not use sha-based tags.
   # If you are hotfixing, you MUST create a patch release and use the semver tag.
-  tag: 1.97.1
+  # Branch-channel test build for OpenHands/enterprise#1262 (canvas build
+  # provenance). Branch-channel release only; never merge this pin to main.
+  tag: sha-15f67fb
 
 # OpenHands Enterprise license from Customer Center. Set a license key, or an
 # offline license file if this install can't reach Customer Center. An upcoming
