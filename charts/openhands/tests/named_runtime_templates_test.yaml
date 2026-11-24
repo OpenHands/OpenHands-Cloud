@@ -1,0 +1,112 @@
+suite: named Sandbox Specs
+templates:
+  - charts/runtime-api/templates/warm-runtimes-configmap.yaml
+tests:
+  - it: preserves a cold custom-image template with a zero count despite a nonzero global count
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 3
+      runtime-api.warmRuntimes.configs:
+        - name: Monorepo Large
+          display_name: Obsolete label
+          image: registry.example.test/custom:1
+          working_dir: /workspace/project
+          command: [agent-server]
+          environment: {}
+          count: 0
+          idle_seconds: 600
+          persistent_storage_size: 20Gi
+          resources:
+            requests: {memory: 6Gi, cpu: 1000m, ephemeral_storage: 2Gi}
+            limits: {memory: 8Gi, cpu: 2000m, ephemeral_storage: 4Gi}
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "Monorepo Large"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 0'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"idle_seconds": 600'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"persistent_storage_size": "20Gi"'
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: display_name
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"image": "registry.example.test/custom:1"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"resources": \{"limits":\{"cpu":"2000m","ephemeral_storage":"4Gi","memory":"8Gi"\},"requests":\{"cpu":"1000m","ephemeral_storage":"2Gi","memory":"6Gi"\}\}'
+  - it: keeps legacy templates valid without optional settings
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 2
+      runtime-api.warmRuntimes.configs:
+        - name: legacy
+          working_dir: /workspace
+          command: [agent-server]
+          environment: {}
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"(display_name|resources|idle_seconds|persistent_storage_size)"'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 2'
+
+  - it: inherits the global count when the per-template count is null
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.count: 2
+      runtime-api.warmRuntimes.configs:
+        - name: nullable
+          count: null
+          working_dir: /workspace
+          command: [agent-server]
+          environment: {}
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count":\s*,'
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"count": 2'
+
+  - it: renders a per-spec idle timeout from the named map
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.configsByName.custom_large:
+        working_dir: /workspace
+        command: [agent-server]
+        idle_seconds: 900
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "custom_large",[\s\S]*?"idle_seconds": 900'
+
+  - it: renders a per-spec persistent storage size from the named map
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.configsByName.custom_large:
+        working_dir: /workspace
+        command: [agent-server]
+        persistent_storage_size: 15Gi
+    asserts:
+      - matchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: '"name": "custom_large",[\s\S]*?"persistent_storage_size": "15Gi"'
+
+  - it: omits persistent_storage_size from the named map when unset
+    set:
+      runtime-api.warmRuntimes.enabled: true
+      runtime-api.warmRuntimes.configsByName.custom_large:
+        working_dir: /workspace
+        command: [agent-server]
+    asserts:
+      - notMatchRegex:
+          path: data["warm-runtimes.json"]
+          pattern: persistent_storage_size

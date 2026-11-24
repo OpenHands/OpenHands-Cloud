@@ -9,6 +9,7 @@ in your overlay replaces each default without creating a duplicate entry.
 | Billing page | hidden: `HIDE_BILLING_PAGE: "true"` | `"false"` |
 | Email changes | disabled: `EMAIL_CHANGE_ENABLED` and `OH_WEB_CLIENT_EMAIL_CHANGE_ENABLED` are `"false"` | set both to `"true"` |
 | Super Admin dashboard | shown at `/super-admin`: `ENABLE_SUPER_ADMIN: "true"` | `"false"` |
+| Login flow | OAuth V2 login, through Keycloak: `ENABLE_OAUTH_V2_LOGIN: "true"` | `"false"` |
 | Personal workspaces | hidden once a user belongs to an organization: `HIDE_PERSONAL_WORKSPACES: "true"` | `"false"` |
 | Automations page | shown only when the app has a service URL (`automationService.url`, `env.AUTOMATION_SERVICE_URL`, or the bundled service's URL when `automation.enabled` is true) | `env.ENABLE_AUTOMATIONS: "true"` |
 
@@ -33,6 +34,9 @@ in your overlay replaces each default without creating a duplicate entry.
   can guarantee or recover admin access without a database console. When it
   is set, the first user becomes a Super Admin only if listed. It is empty by
   default.
+- `ENABLE_OAUTH_V2_LOGIN` selects the OAuth V2 login page and callback
+  (`/oauth/{id}/login`, `/oauth/{id}/callback`). Keycloak and its identity
+  providers stay the sign-in source. Set it to `"false"` for the legacy login.
 - `HIDE_PERSONAL_WORKSPACES` also changes the server. The organization list
   marks a personal workspace hidden for a user who belongs to a team
   organization, and sign-in moves a member of the default organization out of
@@ -59,11 +63,20 @@ is not set. An install in that mode must set these instead:
 
 The two email variables work in both modes.
 
-The chart sets only plain flags, so the plain `ENABLE_SUPER_ADMIN` default reaches
-both the server and the web client. An install that already sets any
-`OH_WEB_CLIENT_FEATURE_FLAGS_*` variable must also set
-`OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN`, because the app then ignores
-the plain flag in the web client.
+The chart sets only plain flags, so the plain `ENABLE_SUPER_ADMIN` and
+`ENABLE_OAUTH_V2_LOGIN` defaults reach both the server and the web client. An
+install that already sets any `OH_WEB_CLIENT_FEATURE_FLAGS_*` variable must also
+set `OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_SUPER_ADMIN` and
+`OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN`, because the app then
+ignores the plain flags in the web client.
+
+## OAuth v2 login
+
+`OH_AUTH_ENABLE_OAUTH_V2_LOGIN: "true"` turns on OAuth v2 login. The server and
+the web client both read it, so it works in either flag mode and they cannot
+disagree. The chart leaves it off. The older `ENABLE_OAUTH_V2_LOGIN` and
+`OH_WEB_CLIENT_FEATURE_FLAGS_ENABLE_OAUTH_V2_LOGIN` still work while it is
+unset. If both are set, the structured one wins.
 
 ## Upgrading
 
