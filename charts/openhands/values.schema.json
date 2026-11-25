@@ -48,6 +48,15 @@
         "tag": { "type": "string", "minLength": 1 }
       }
     },
+    "slack": {
+      "type": "object",
+      "properties": {
+        "contextMode": {
+          "type": "string",
+          "enum": ["legacy", "mention_only", "requester_only"]
+        }
+      }
+    },
     "license": {
       "type": "object",
       "properties": {
