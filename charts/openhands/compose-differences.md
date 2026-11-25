@@ -10,6 +10,7 @@ These change what a user sees or can do. Each one is either fixed in Helm or giv
 
 | Name | What differs | Reason |
 |---|---|---|
+| `OPENHANDS_ENTERPRISE_RELEASE` | Helm sets this to the installed chart version. Docker Compose leaves it unset by default. | About uses this value to display the installed Helm release separately from the server version. |
 | `OH_ALLOW_USER_LLM_CONFIGURATION` | Compose: users can enter their own LLM keys. Helm: key editing is hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `HIDE_BILLING_PAGE` | Compose: Billing page follows the app default (shown). Helm: hidden (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
 | `EMAIL_CHANGE_ENABLED` | Compose: users can change their email. Helm: email changes are disabled (Enterprise policy default). | Enterprise policy for production installs, which matches Replicated. |
