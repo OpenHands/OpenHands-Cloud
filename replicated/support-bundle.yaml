@@ -203,6 +203,7 @@ spec:
             log_level: repl{{ ConfigOption "log_level" | mustToJson }}
           # Upgrade Checks
           upgrade_checks:
+            settings_cutover: repl{{ ConfigOption "settings_cutover" | mustToJson }}
             keycloak_pre_upgrade_backup: repl{{ ConfigOption "keycloak_pre_upgrade_backup" | mustToJson }}
             keycloak_pre_upgrade_admin_check: repl{{ ConfigOption "keycloak_pre_upgrade_admin_check" | mustToJson }}
             budget_preflight_mode: repl{{ ConfigOption "budget_preflight_mode" | mustToJson }}
