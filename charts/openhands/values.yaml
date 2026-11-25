@@ -100,6 +100,9 @@ userProvisioning:
 openOrgCreation:
   enabled: false
 
+# One release only (settings migration 223). See README before changing.
+settingsCutover: blocked
+
 databaseMigrations:
   waitForDatabase: true
   createDatabases: false

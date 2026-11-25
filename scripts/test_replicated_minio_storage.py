@@ -134,7 +134,7 @@ def test_selected_sizes_reach_bundled_minio_claim(tmp_path) -> None:
                 "openhands",
                 str(REPO_ROOT / "charts/openhands"),
                 "--set",
-                "automation.enabled=false",
+                "automation.enabled=false,settingsCutover=confirmed",
                 "--namespace",
                 "openhands",
                 "--set",

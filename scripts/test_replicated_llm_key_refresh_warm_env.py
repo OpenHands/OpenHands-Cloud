@@ -51,7 +51,7 @@ APP_HOSTNAME_TEMPLATE = '{{repl ConfigOption "computed_app_hostname" }}'
 APP_HOSTNAME = "app.example.com"
 WARM_CONFIGMAP = "charts/runtime-api/templates/warm-runtimes-configmap.yaml"
 AUTOMATION_ENABLED_SETS = (
-    "automation.enabled=true,automation.filestore.type=gcs,"
+    "settingsCutover=confirmed,automation.enabled=true,automation.filestore.type=gcs,"
     "postgresql.primary.persistence.enabled=true"
 )
 

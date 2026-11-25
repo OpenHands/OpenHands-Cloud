@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: integrations
     app: openhands-integrations
 spec:
-  replicas: {{ .Values.integrationEvents.deployment.replicas | default 2 }}
+  replicas: {{ ternary 0 (.Values.integrationEvents.deployment.replicas | default 2) (has .Values.settingsCutover (list "drain" "migrate")) }}
   selector:
     matchLabels:
       app: openhands-integrations

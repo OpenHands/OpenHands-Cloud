@@ -13,7 +13,7 @@ def test_replicated_application_containers_use_provisioner():
     client_id = replicated["spec"]["values"]["env"]["KEYCLOAK_ADMIN_CLIENT_ID"]
     rendered = subprocess.run(
         ["helm", "template", "openhands", str(ROOT / "charts/openhands"),
-         "--set", "automation.enabled=false", "--values", "-"],
+         "--set", "automation.enabled=false,settingsCutover=confirmed", "--values", "-"],
         input=yaml.safe_dump({"env": {"KEYCLOAK_ADMIN_CLIENT_ID": client_id}}),
         capture_output=True, text=True, check=True,
     )

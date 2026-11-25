@@ -2,6 +2,38 @@
 
 This Helm chart deploys the complete OpenHands stack, including all required dependencies. It's designed to be a one-stop solution for deploying OpenHands in a Kubernetes environment.
 
+## Maintenance window for settings migration 223 (one release)
+
+This release blocks enterprise-server renders until `settingsCutover` is set.
+This includes fresh installs: Helm cannot tell whether the database is empty,
+particularly under Argo CD. Do not carry a confirmation forward from another DB.
+
+1. Block traffic including webhooks; pause unrelated deploys, automatic rollback,
+   and any autoscaler/reconciler that could restart old clients. Rehearse
+   recovery in advance and keep the old image and values.
+2. Apply `drain` as a separate revision and wait. All three enterprise Deployments
+   must have **no pods**, including terminating pods. Check active Jobs, retries,
+   other namespaces/releases, scripts, and DB sessions. Suspending CronJobs only
+   prevents new schedules. Stop external clients and keep them stopped. Once
+   quiesced, take and verify the **application** database cutover backup.
+3. Only then apply `migrate` with the pinned target image. One `openhands` pod
+   runs `migrate-db`; keep ingress closed after it starts serving. Check its init
+   exit status, Alembic revision against the image head, settings data, and readiness.
+   Budget hooks are held until `confirmed`; run any required pre-migration budget
+   assessment separately against the old schema. Don't bundle unrelated upgrades.
+4. Apply `confirmed` to resume configured replicas, HPA, hooks and schedules.
+   Check all pod images, failed/catch-up Jobs and settings reads before reopening
+   traffic. A verified empty isolated DB can install directly with `confirmed`.
+
+In Replicated select the matching Upgrade Checks phase and deploy each change.
+For SaaS use separate, reviewed syncs of the wrapper's `openhands.settingsCutover`;
+never queue the next sync before checking the previous one. The chart does not
+verify phase history, exclude external clients, or block direct image swaps on an
+older chart. After migration, do not roll back the app alone: keep traffic off,
+repair forward or restore the paired DB and old release under maintenance.
+Remove the temporary gate only once all environments have crossed the settings migration;
+retain a supported maintenance path for installations skipping this release.
+
 ## Enterprise policy defaults
 
 By default the chart hides personal LLM key editing and the Billing page, and

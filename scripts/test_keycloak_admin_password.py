@@ -392,7 +392,7 @@ def test_console_password_is_only_passed_to_provisioning_container():
             "test",
             str(ROOT / "charts/openhands"),
             "--set",
-            "automation.enabled=false",
+            "automation.enabled=false,settingsCutover=confirmed",
             "--set",
             "keycloak.enabled=true",
             "--set",
