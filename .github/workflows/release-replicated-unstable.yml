@@ -15,6 +15,7 @@ on:
 
 jobs:
   release:
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
     outputs:
       kots_cursor: ${{ steps.cursor.outputs.kots_cursor }}
@@ -58,7 +59,15 @@ jobs:
           # shell: bash runs with -o pipefail, so a failing `make` fails the step
           # even though its output is piped to tee. main maps to the Unstable
           # channel in the Makefile.
-          make release ALLOW_MAIN_RELEASE=1 2>&1 | tee release.log
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            export ALLOW_MAIN_RELEASE=1
+          else
+            case "${GITHUB_REF_NAME,,}" in
+              stable|beta|unstable) echo "::error::Reserved Replicated channel name"; exit 1 ;;
+            esac
+          fi
+          CHANNEL=$(make -s print-channel)
+          make release 2>&1 | tee release.log
           # `replicated release create` prints `SEQUENCE: <n>` for the release it
           # created — the global release sequence the vendor portal URL uses.
           SEQUENCE=$(grep -oE 'SEQUENCE:[[:space:]]*[0-9]+' release.log | grep -oE '[0-9]+' | tail -1)
@@ -71,13 +80,13 @@ jobs:
           # Generate replicated URL for sequence release
           APP_SLUG=openhands
           URL="https://vendor.replicated.com/apps/${APP_SLUG}/releases/${SEQUENCE}/overview"
-          echo "::notice title=Replicated Unstable release ${SEQUENCE}::${URL}"
+          echo "::notice title=Replicated release ${SEQUENCE}::${URL}"
           {
-            echo "### Replicated Unstable release published"
+            echo "### Replicated release published"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Channel | Unstable |"
+            echo "| Channel | ${CHANNEL} |"
             echo "| Sequence | ${SEQUENCE} |"
             echo "| Vendor portal | [Release ${SEQUENCE} overview](${URL}) |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -107,7 +116,7 @@ jobs:
 
   deploy:
     needs: release
-    if: needs.release.outputs.kots_cursor != ''
+    if: github.ref == 'refs/heads/main' && needs.release.outputs.kots_cursor != ''
     uses: ./.github/workflows/deploy-replicated.yml
     with:
       instance: unstable
