@@ -146,6 +146,47 @@ export async function provisionUser(
   return (await response.json()) as ProvisionUserResponse;
 }
 
+/**
+ * Invite ``email`` into ``orgId`` as a member via
+ * ``POST /api/organizations/{org_id}/members/invite`` and return its
+ * acceptance link. A superadmin may invite into an org it is
+ * not a member of (OHE-2769).
+ */
+export async function inviteToOrg(
+  baseUrl: string,
+  apiKey: string,
+  orgId: string,
+  email: string,
+): Promise<string> {
+  assertE2eOnlyEmail(email);
+  const url = new URL(
+    `api/organizations/${orgId}/members/invite`,
+    baseUrl,
+  ).toString();
+  const response = await fetch(url, {
+    method: "POST",
+    headers: superAdminHeaders(apiKey),
+    body: JSON.stringify({ emails: [email], role: "member" }),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `inviteToOrg failed (${response.status} ${response.statusText}): ${body}`,
+    );
+  }
+  const { successful, failed } = JSON.parse(body) as {
+    successful: Array<{ email: string; invite_url: string | null }>;
+    failed: Array<{ email: string; error: string }>;
+  };
+  const inviteUrl = successful[0]?.invite_url;
+  if (!inviteUrl) {
+    throw new Error(
+      `inviteToOrg returned no invite_url for ${email}; failed: ${JSON.stringify(failed)}`,
+    );
+  }
+  return inviteUrl;
+}
+
 /** Delete any non-personal organization as a superadmin. A 404 counts as already deleted. */
 export async function deleteOrg(
   baseUrl: string,
