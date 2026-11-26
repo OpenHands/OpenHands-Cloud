@@ -453,6 +453,8 @@ sessions:
 slack:
   enabled: false
   clientId: ""
+  # Context for new native Slack conversations.
+  contextMode: legacy
 
 stripe:
   enabled: false

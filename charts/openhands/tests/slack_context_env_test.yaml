@@ -1,0 +1,39 @@
+suite: Native Slack context mode
+templates:
+  - integration-events-deployment.yaml
+tests:
+  - it: defaults to legacy when Slack is enabled
+    set:
+      slack.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="SLACK_CONTEXT_MODE")].value
+          value: legacy
+
+  - it: sets the requested mode on the integrations deployment
+    set:
+      slack.enabled: true
+      slack.contextMode: requester_only
+      env.ENABLE_V1_SLACK_RESOLVER: "true"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="SLACK_CONTEXT_MODE")].value
+          value: requester_only
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="ENABLE_V1_SLACK_RESOLVER")].value
+          value: "true"
+
+  - it: preserves a single environment entry when env supplies an override
+    set:
+      slack.enabled: true
+      slack.contextMode: requester_only
+      env.SLACK_CONTEXT_MODE: mention_only
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[?(@.name=="SLACK_CONTEXT_MODE")].value
+          value: mention_only
+
+  - it: omits the mode when Slack is disabled
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="SLACK_CONTEXT_MODE")]
