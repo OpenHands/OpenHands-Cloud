@@ -1704,7 +1704,7 @@ spec:
           title: Settings database maintenance (revision 223)
           help_text: Drain stops the chart's enterprise Deployments and suspends its scheduled tasks. Select Migrate only after verifying a restorable backup and no old database clients, or for a verified empty database. Confirm after verifying the target revision. Neither option checks the database.
           type: select_one
-          default: "blocked"
+          default: "drain"
           items:
             - name: "blocked"
               title: Block deployment
