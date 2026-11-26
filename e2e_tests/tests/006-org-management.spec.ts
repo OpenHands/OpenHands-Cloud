@@ -8,6 +8,7 @@ import {
   createOrg,
   deleteOrg,
   e2eOrgName,
+  inviteToOrg,
   provisionUser,
   type OrgResponse,
   type ProvisionUserResponse,
@@ -31,6 +32,8 @@ import {
  *  3. Open the user-context-menu and verify the ``org-selector`` dropdown lists
  *     exactly two options: the user's "Personal Workspace" and the newly
  *     created org.
+ *  4. Invite the New User into a second org, open the invite link in the
+ *     New User's browser, and verify the user joins that org (OHE-4213).
  *
  * The created org name is timestamped so repeated runs do not collide with the
  * server's unique-name constraint (``409 OrgNameExistsError``). The name is
@@ -144,5 +147,48 @@ test.describe.serial("org management", () => {
     const optionTexts = await options.allTextContents();
     console.log(`org-selector options: ${JSON.stringify(optionTexts)}`);
     expect(optionTexts.map((t) => t.trim()).sort()).toEqual(expected);
+  });
+
+  test("a signed-in user who opens an invite link joins the org", async ({
+    page,
+    baseURL,
+  }, testInfo) => {
+    test.skip(runUser(testInfo) !== "new-user", "new-user role only");
+
+    const apiKey = superAdminApiKey();
+    const inviteOrg = await createOrg(baseURL || "", apiKey, {
+      name: e2eOrgName("invite org"),
+      contact_name: "Testy Tester",
+      contact_email: "e2e_test@openhands.org",
+    });
+    cleanup.defer(`delete org ${inviteOrg.id}`, () =>
+      deleteOrg(baseURL || "", apiKey, inviteOrg.id),
+    );
+
+    const inviteUrl = await inviteToOrg(
+      baseURL || "",
+      apiKey,
+      inviteOrg.id,
+      newUserEmail(),
+    );
+
+    const accepted = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname ===
+          "/api/organizations/members/invite/accept",
+      { timeout: 60_000 },
+    );
+    await page.goto(inviteUrl);
+    const acceptResponse = await accepted;
+    expect(acceptResponse.status()).toBe(200);
+    expect((await acceptResponse.json()).org_id).toBe(inviteOrg.id);
+
+    const orgsResponse = await page.request.get("/api/organizations");
+    expect(orgsResponse.ok()).toBe(true);
+    const { items } = (await orgsResponse.json()) as {
+      items: Array<{ id: string }>;
+    };
+    expect(items.map((o) => o.id)).toContain(inviteOrg.id);
   });
 });
