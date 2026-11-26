@@ -50,3 +50,13 @@ def test_cutover_resources(phase, replicas):
         'enterprise-server:' in c['image'] for c in s['jobTemplate']['spec']['template']['spec']['containers'])]
     assert len(crons) == len(CRONS)
     assert all(s.get('suspend', False) == (not resumed) for s in crons)
+
+
+def test_kots_bootstrap_defaults_to_drain():
+    # KOTS renders Helm before the upgrade service exposes its config form.
+    config = yaml.safe_load((ROOT / 'replicated/config.yaml').read_text())
+    item, = [item for group in config['spec']['groups'] for item in group['items']
+             if item['name'] == 'settings_cutover']
+    assert item['default'] == 'drain'
+    assert 'ConfigOption "settings_cutover" | default "drain"' in (
+        ROOT / 'replicated/openhands.yaml').read_text()
