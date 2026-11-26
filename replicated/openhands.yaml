@@ -50,6 +50,7 @@ spec:
 
     duplicateEmailCheck: repl{{ ConfigOptionEquals "duplicate_email_check" "1" }}
 
+    settingsCutover: '{{repl ConfigOption "settings_cutover" | default "drain" }}'
     budgetPreflight:
       mode: 'repl{{ ConfigOption "budget_preflight_mode" }}'
     budgetReconcileGate:

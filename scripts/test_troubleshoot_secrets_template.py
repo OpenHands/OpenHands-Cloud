@@ -11,7 +11,7 @@ OPENHANDS_CHART = REPO_ROOT / "charts" / "openhands"
 
 def render(*set_args: str, show_only: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
     command = ["helm", "template", "openhands", str(OPENHANDS_CHART),
-               "--set", "automation.enabled=false"]
+               "--set", "automation.enabled=false,settingsCutover=confirmed"]
     if show_only is not None:
         command.extend(["--show-only", show_only])
     for arg in set_args:

@@ -144,6 +144,7 @@
         "teamId": { "type": "string" }
       }
     },
+    "settingsCutover": { "type": "string", "enum": ["blocked", "drain", "migrate", "confirmed"] },
     "databaseMigrations": {
       "type": "object",
       "properties": {

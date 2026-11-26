@@ -6,6 +6,12 @@ Each guard is scoped to .Values.enabled: when the enterprise-server is not
 deployed (enabled=false), the ingress and database env these guards check
 are never rendered, so a server-less release must not trip them.
 */}}
+{{- if and .Values.enabled (not (has .Values.settingsCutover (list "drain" "migrate" "confirmed"))) -}}
+{{- fail "Settings migration 223 is not rolling-compatible. Set settingsCutover=drain, verify all old DB clients have stopped and a restorable backup exists, then set migrate before confirmed (also required for a verified empty install)." -}}
+{{- end -}}
+{{- if and .Values.enabled (eq .Values.settingsCutover "migrate") (not .Values.databaseMigrations.migrate) -}}
+{{- fail "settingsCutover=migrate requires databaseMigrations.migrate=true for the single server migrator." -}}
+{{- end -}}
 {{- if and .Values.enabled .Values.ingress.enabled (not .Values.ingress.host) -}}
 {{- fail "ingress.enabled is true but ingress.host is empty. Set ingress.host to the hostname operators reach OpenHands on (e.g. app.example.com), or set ingress.enabled=false." -}}
 {{- end -}}

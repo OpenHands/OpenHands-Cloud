@@ -1,4 +1,4 @@
-{{- if and .Values.enabled .Values.autoscaling.enabled }}
+{{- if and (eq .Values.settingsCutover "confirmed") .Values.enabled .Values.autoscaling.enabled }}
 apiVersion: autoscaling/v2beta1
 kind: HorizontalPodAutoscaler
 metadata:

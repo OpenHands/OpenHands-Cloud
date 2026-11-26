@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: mcp
     app: openhands-mcp
 spec:
-  replicas: {{ .Values.mcpEvents.deployment.replicas | default 2 }}
+  replicas: {{ ternary 0 (.Values.mcpEvents.deployment.replicas | default 2) (has .Values.settingsCutover (list "drain" "migrate")) }}
   selector:
     matchLabels:
       app: openhands-mcp

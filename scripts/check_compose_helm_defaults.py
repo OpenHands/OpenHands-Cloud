@@ -86,7 +86,7 @@ def compose_services(compose: dict) -> set[str]:
 
 def render_chart(chart: Path, values: Path) -> list[dict]:
     result = subprocess.run(
-        ["helm", "template", "oh", str(chart), "-f", str(values)],
+        ["helm", "template", "oh", str(chart), "-f", str(values), "--set", "settingsCutover=confirmed"],
         capture_output=True,
         text=True,
     )

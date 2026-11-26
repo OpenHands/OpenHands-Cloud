@@ -8,7 +8,7 @@ chart_name=${2:?chart name is required}
 chart_args=("$chart_path")
 case "$chart_name" in
   openhands)
-    chart_args+=(-f charts/openhands/examples/enterprise-automations.yaml)
+    chart_args+=(-f charts/openhands/examples/enterprise-automations.yaml --set settingsCutover=confirmed)
     ;;
   openhands-secrets)
     chart_args+=(-f .github/helm/automation-secrets-render-only.yaml)

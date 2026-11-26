@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: server
     app: openhands
 spec:
-  replicas: {{ .Values.deployment.replicas }}
+  replicas: {{ if eq .Values.settingsCutover "drain" }}0{{ else if eq .Values.settingsCutover "migrate" }}1{{ else }}{{ .Values.deployment.replicas }}{{ end }}
   selector:
     matchLabels:
       app: openhands
