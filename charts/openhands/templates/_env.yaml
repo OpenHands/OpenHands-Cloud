@@ -36,6 +36,8 @@
 - name: OH_DAILY_CONVERSATION_LIMIT
   value: {{ .Values.dailyConversationLimit | quote }}
 {{- end }}
+- name: OPENHANDS_ENTERPRISE_RELEASE
+  value: {{ .Chart.Version | quote }}
 {{- /*
     Only the app-server startup lifespan reads these, so the copies that land in
     the maintenance CronJobs sharing this block are inert -- those run standalone
